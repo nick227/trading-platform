@@ -1,0 +1,274 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Direction {
+  buy
+  sell
+}
+
+enum ExecutionStatus {
+  queued
+  claimed
+  completed
+  failed
+}
+
+enum BotEventType {
+  rule_triggered
+  strategy_executed
+  error_occurred
+  bot_enabled
+  bot_disabled
+  config_updated
+}
+
+enum ExecutionAuditEventType {
+  execution_created
+  claimed
+  submit_attempted
+  submit_confirmed
+  reconciled
+  partial_fill
+  filled
+  cancelled
+  retry_scheduled
+  failed
+  risk_blocked
+}
+
+enum BotType {
+  RULE_BASED
+  STRATEGY_BASED
+}
+
+enum BotStatus {
+  draft
+  running
+  paused
+  error
+  offline
+}
+
+enum BotRuleType {
+  price_threshold
+  position_limit
+  daily_loss
+  market_hours
+  cooldown
+}
+
+model User {
+  id        String   @id
+  email     String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model Portfolio {
+  id          String   @id
+  userId      String
+  name        String
+  totalValue  Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model Strategy {
+  id          String   @id
+  name        String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  predictions Prediction[]
+  bots        Bot[]
+  executions  Execution[]
+}
+
+model Prediction {
+  id            String   @id
+  strategyId     String
+  ticker        String
+  direction     Direction
+  price         Float
+  confidence    Float
+  timeframe     String
+  createdAt     DateTime @default(now())
+
+  strategy      Strategy @relation(fields: [strategyId], references: [id])
+  executions    Execution[]
+}
+
+model BotTemplate {
+  id          String   @id
+  name        String
+  description String
+  type        BotType
+  config      Json?    // Default configuration template
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bots        Bot[]
+
+  @@index([type])
+  @@index([name])
+}
+
+model Bot {
+  id                String    @id
+  name              String
+  type              BotType
+  enabled            Boolean   @default(true)
+  status            BotStatus  @default(draft)
+  portfolioId        String
+  templateId         String?   // For RULE_BASED bots
+  strategyId         String?   // For STRATEGY_BASED bots
+  config            Json       // { tickers, quantity, direction, minConfidence }
+  lastRunAt          DateTime?
+  lastEventAt         DateTime?
+  lastExecutionAt     DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  // Relations
+  portfolio          Portfolio  @relation(fields: [portfolioId], references: [id])
+  template           BotTemplate? @relation(fields: [templateId], references: [id])
+  strategy           Strategy?   @relation(fields: [strategyId], references: [id])
+  rules              BotRule[]
+  events             BotEvent[]
+  executions         Execution[]
+  audits             ExecutionAudit[]
+
+  // Indexes
+  @@index([portfolioId, enabled])
+  @@index([type, status])
+  @@index([status])
+  @@index([lastRunAt])
+  @@index([lastEventAt])
+  @@index([lastExecutionAt])
+}
+
+model BotRule {
+  id        String     @id
+  botId     String
+  type       BotRuleType
+  order      Int        // Execution order
+  enabled    Boolean    @default(true)
+  config     Json       // Rule-specific configuration
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  // Relations
+  bot        Bot @relation(fields: [botId], references: [id])
+
+  // Indexes
+  @@index([botId, order])
+  @@index([botId, enabled])
+  @@index([type])
+}
+
+model BotEvent {
+  id         String   @id
+  botId       String
+  type        String   // Flexible event types
+  detail      String
+  metadata    Json?    // Event-specific data
+  executionId  String?  // Link to execution if applicable
+  createdAt   DateTime @default(now())
+
+  // Relations
+  bot         Bot @relation(fields: [botId], references: [id])
+  execution   Execution? @relation(fields: [executionId], references: [id])
+
+  // Indexes
+  @@index([botId, createdAt])
+  @@index([type, createdAt])
+  @@index([executionId])
+}
+
+model Execution {
+  id            String    @id
+  ticker        String
+  quantity       Int
+  price         Float
+  direction      Direction
+  status        String    // "queued" | "claimed" | "completed" | "failed"
+  portfolioId   String
+  botId         String?
+  strategyId    String?
+  predictionId  String?
+  clientOrderId String    // For broker integration
+  activeIntentKey String? // For execution tracking
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  portfolio     Portfolio @relation(fields: [portfolioId], references: [id])
+  bot           Bot?       @relation(fields: [botId], references: [id])
+  strategy      Strategy?  @relation(fields: [strategyId], references: [id])
+  prediction    Prediction? @relation(fields: [predictionId], references: [id])
+  events        BotEvent[]
+  audits        ExecutionAudit[]
+
+  @@index([portfolioId, createdAt])
+  @@index([ticker, createdAt])
+  @@index([botId, createdAt])
+  @@index([status, createdAt])
+  @@index([clientOrderId])
+}
+
+model ExecutionAudit {
+  id          String                  @id
+  executionId  String
+  userId      String
+  workerId    String?
+  eventType   ExecutionAuditEventType
+  detail      String
+  metadata    Json?
+  createdAt   DateTime                @default(now())
+
+  // Relations
+  execution   Execution @relation(fields: [executionId], references: [id])
+
+  @@index([executionId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([userId, createdAt])
+}
+
+model BrokerAccount {
+  id        String   @id
+  userId    String   @unique
+  broker    String
+  apiKey    String
+  secret    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model WorkerStatus {
+  id        String   @id
+  workerId  String   @unique
+  status    String
+  lastSeen  DateTime @default(now())
+  metadata  Json?
+
+  @@index([workerId])
+  @@index([status])
+}

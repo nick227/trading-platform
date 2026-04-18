@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.jsx$\")",
+      "Bash(npx prisma *)",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(npm install *)",
+      "Bash(npm view *)",
+      "Bash(node prisma/seed.js)",
+      "Bash(node --input-type=module --eval ' *)"
+    ]
+  }
+}

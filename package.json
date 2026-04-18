@@ -8,14 +8,16 @@
   "private": true,
   "workspaces": [
     "app",
-    "server"
+    "server",
+    "worker"
   ],
   "scripts": {
     "dev": "npm run dev --workspace=app",
+    "dev:worker": "npm run dev --workspace=worker",
     "test": "npm test --workspaces",
     "test:app": "npm test --workspace=app",
     "test:server": "npm test --workspace=server",
     "e2e": "npm run e2e --workspace=app",
-    "install:all": "npm install && npm install --workspace=app && npm install --workspace=server"
+    "install:all": "npm install && npm install --workspace=app && npm install --workspace=server && npm install --workspace=worker"
   }
 }

@@ -2,7 +2,7 @@ import { LineChart } from './LineChart'
 import { Button } from './Button'
 
 export function AssetRow({ asset, onOpen, onBot }) {
-  const miniPoints = asset.mini.map((y, index) => ({ x: String(index), y }))
+  const miniPoints = (asset.mini || []).map((y, index) => ({ x: String(index), y }))
 
   return (
     <article className="asset-row">

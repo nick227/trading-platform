@@ -3,14 +3,23 @@ import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
 import { buildExecutionWhere } from '../utils/pagination.js'
 
+function buildClientOrderId(executionId) {
+  return `tp_${executionId}`
+}
+
 export default {
   async createExecution(data) {
+    const executionId = generateId(ID_PREFIXES.EXECUTION)
+    const direction = data.direction.toLowerCase()
     const execution = await prisma.execution.create({
       data: {
-        id: generateId(ID_PREFIXES.EXECUTION),
+        id: executionId,
         ...data,
-        direction: data.direction.toLowerCase(), // Normalize direction input
-        status: 'proposed'
+        direction,
+        status: 'queued',
+        origin: data.botId ? 'bot' : 'manual',
+        clientOrderId: buildClientOrderId(executionId),
+        activeIntentKey: null
       }
     })
     
@@ -21,7 +30,7 @@ export default {
         executionId: execution.id,
         quantity: data.quantity,
         price: data.price,
-        direction: data.direction
+        direction
       }
       
       validateEventMetadata(eventType, metadata)
@@ -33,11 +42,28 @@ export default {
           portfolioId: data.portfolioId,
           executionId: execution.id,
           type: eventType,
-          detail: `Created ${data.direction} order for ${data.ticker}`,
+          detail: `Created ${direction} order for ${data.ticker}`,
           metadata
         }
       })
     }
+
+    await prisma.executionAudit.create({
+      data: {
+        id: generateId('aud'),
+        executionId: execution.id,
+        userId: execution.userId,
+        eventType: 'execution_created',
+        detail: `Execution queued for ${execution.ticker}`,
+        metadata: {
+          origin: execution.origin,
+          clientOrderId: execution.clientOrderId,
+          quantity: execution.quantity,
+          direction: execution.direction,
+          price: execution.price
+        }
+      }
+    })
     
     return execution
   },
@@ -94,15 +120,16 @@ export default {
       })
     ])
     
-    const directionCounts = countResult.reduce((acc, group) => {
-      acc[group.direction] = group._count
-      return acc
-    }, {})
-    
+    let buyExecutions = 0, sellExecutions = 0
+    for (const group of countResult) {
+      if (group.direction === 'buy') buyExecutions = group._count
+      else sellExecutions = group._count
+    }
+
     const summary = {
       totalExecutions: aggregate._count,
-      buyExecutions: directionCounts.buy || 0,
-      sellExecutions: directionCounts.sell || 0,
+      buyExecutions,
+      sellExecutions,
       winRate: 0, // Calculate based on sell prices vs avg cost
       totalVolume: aggregate._sum.quantity || 0,
       avgExecutionSize: aggregate._count > 0 ? (aggregate._sum.quantity || 0) / aggregate._count : 0,

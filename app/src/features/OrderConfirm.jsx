@@ -1,27 +1,13 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../app/AppProvider'
+import { getPrice } from '../services/prices.js'
+import executionsService from '../api/services/executionsService.js'
+import { STUB_USER_ID, STATUS } from '../api/constants.js'
 
-// Mock real-time price fetching
+// Real-time price fetching using price service
 const fetchLatestPrice = async (symbol) => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500))
-  
-  // Mock price data with small random variation
-  const basePrices = {
-    'NVDA': 275.56,
-    'AAPL': 168.75,
-    'TSLA': 266.67,
-    'MSFT': 378.92,
-    'GOOGL': 142.35,
-    'AMZN': 145.78,
-    'META': 485.23,
-    'BRK.B': 425.12
-  }
-  
-  const basePrice = basePrices[symbol] || 100
-  const variation = (Math.random() - 0.5) * 2 // ±1% variation
-  return parseFloat((basePrice * (1 + variation / 100)).toFixed(2))
+  return getPrice(symbol)
 }
 
 export default function OrderConfirm() {
@@ -36,10 +22,13 @@ export default function OrderConfirm() {
   const [latestPrice, setLatestPrice] = useState(null)
   const [priceLoading, setPriceLoading] = useState(true)
   const [priceError, setPriceError] = useState(null)
+  const [orderType, setOrderType] = useState('manual') // manual | bot
   const [isExecuting, setIsExecuting] = useState(false)
   const [executionError, setExecutionError] = useState(null)
-  const [executionSuccess, setExecutionSuccess] = useState(false)
-  
+  const [executionStatus, setExecutionStatus] = useState(null) // queued | processing | filled | cancelled | failed
+  const [executionId, setExecutionId] = useState(null)
+  const pollRef = useRef(null)
+
   // User bank balance
   const bankBalance = 4200
   const bankConnected = true
@@ -108,43 +97,82 @@ export default function OrderConfirm() {
     return true
   }
   
+  // Poll execution status until terminal state
+  const startStatusPolling = (id) => {
+    pollRef.current = setInterval(async () => {
+      const execution = await executionsService.getById(id)
+      if (!execution) return
+
+      setExecutionStatus(execution.status)
+
+      const terminal = [STATUS.FILLED, STATUS.CANCELLED, STATUS.FAILED]
+      if (terminal.includes(execution.status)) {
+        clearInterval(pollRef.current)
+        setIsExecuting(false)
+        if (execution.status === STATUS.FILLED) {
+          setTimeout(() => navigate('/orders'), 2000)
+        } else {
+          setExecutionError(
+            execution.status === STATUS.FAILED
+              ? 'Order failed after maximum retries.'
+              : `Order ${execution.status}${execution.cancelReason ? `: ${execution.cancelReason}` : ''}`
+          )
+        }
+      }
+    }, 2000)
+  }
+
+  // Clean up polling on unmount
+  useEffect(() => () => clearInterval(pollRef.current), [])
+
+  // Handle bot creation navigation
+  const handleCreateBot = () => {
+    if (!order) return
+    
+    navigate('/bots/create', {
+      state: {
+        defaultConfig: {
+          tickers: [order.asset],
+          quantity: orderDetails.quantity,
+          direction: order.type.toLowerCase()
+        }
+      }
+    })
+  }
+
   // Execute order
   const handleExecuteOrder = async () => {
     if (!validateOrder()) return
-    
+
     setIsExecuting(true)
     setExecutionError(null)
-    
+    setExecutionStatus(null)
+
     try {
-      // Simulate order execution delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      // Simulate random execution success/failure (90% success rate)
-      if (Math.random() > 0.1) {
-        setExecutionSuccess(true)
-        
-        // Update app state with new order
-        const executedOrder = {
-          ...order,
-          executedAt: new Date().toISOString(),
-          executedPrice: orderDetails.price,
-          executedQuantity: orderDetails.quantity,
-          executedValue: orderDetails.totalValue,
-          status: 'EXECUTED'
-        }
-        
-        dispatch({ type: 'SELECT_ORDER', payload: executedOrder.id })
-        
-        // Navigate back to orders after success
-        setTimeout(() => {
-          navigate('/orders')
-        }, 2000)
-      } else {
-        setExecutionError('Order execution failed. Please try again.')
+      const execution = await executionsService.create({
+        userId:      STUB_USER_ID,
+        portfolioId: 'prt_stub_demo',   // stub — replace with real portfolio selection
+        strategyId:  'str_stub_demo',   // stub — replace with real strategy selection
+        ticker:      order.asset,
+        side:        order.type,        // 'BUY' | 'SELL'
+        quantity:    orderDetails.quantity,
+        price:       orderDetails.price
+      })
+
+      if (!execution) {
+        setExecutionError('Failed to submit order. Please try again.')
+        setIsExecuting(false)
+        return
       }
-    } catch (error) {
-      setExecutionError('Order execution failed. Please try again.')
-    } finally {
+
+      setExecutionId(execution.id)
+      setExecutionStatus(execution.status)
+      dispatch({ type: 'SELECT_ORDER', payload: execution.id })
+
+      // Start polling for fill status
+      startStatusPolling(execution.id)
+    } catch {
+      setExecutionError('Failed to submit order. Please try again.')
       setIsExecuting(false)
     }
   }
@@ -303,6 +331,54 @@ export default function OrderConfirm() {
       {/* Error Messages */}
       {priceError && (
         <article style={{ 
+          background: '#fef2f2', 
+          border: '1px solid #fecaca', 
+          borderRadius: 8, 
+          padding: '1rem', 
+          marginBottom: '1.5rem',
+          color: '#dc2626'
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Price Error</div>
+          <div style={{ fontSize: '14px' }}>{priceError}</div>
+        </article>
+      )}
+
+      {/* Quick Bot Creation */}
+      <section style={{ marginBottom: '1.5rem' }}>
+        <h3 style={{ marginBottom: '1rem', fontSize: '18px', fontWeight: 600 }}>Quick Actions</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <button
+            className="primary pressable"
+            onClick={handleExecuteOrder}
+            disabled={priceLoading || isExecuting || executionStatus === STATUS.FILLED || !orderDetails}
+            style={{
+              padding: '1rem',
+              fontWeight: 600,
+              opacity: (priceLoading || isExecuting || executionStatus === STATUS.FILLED || !orderDetails) ? 0.5 : 1
+            }}
+          >
+            {executionStatus === STATUS.QUEUED     ? 'Order Queued...'     :
+             executionStatus === STATUS.PROCESSING ? 'Awaiting Fill...'    :
+             executionStatus === STATUS.FILLED     ? 'Order Filled'        :
+             isExecuting                           ? 'Submitting...'       :
+             `Confirm ${order.type} Order`}
+          </button>
+          
+          <button
+            className="ghost pressable"
+            onClick={handleCreateBot}
+            style={{ padding: '1rem', textAlign: 'left' }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Create Bot Instead</div>
+            <div style={{ fontSize: '14px', opacity: 0.8 }}>
+              Create automated trading bot for {order?.asset}
+            </div>
+          </button>
+        </div>
+      </section>
+
+      {executionError && (
+        <article style={{ 
           background: '#fff5f5', 
           border: '1px solid #fed7d7', 
           borderRadius: 8, 
@@ -310,8 +386,29 @@ export default function OrderConfirm() {
           marginBottom: '1.5rem',
           color: '#c0392b'
         }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Price Update Error</div>
-          <div style={{ fontSize: '14px' }}>{priceError}</div>
+          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Execution Error</div>
+          <div style={{ fontSize: '14px' }}>{executionError}</div>
+        </article>
+      )}
+
+      {executionStatus === STATUS.QUEUED && (
+        <article style={{ background: '#f0f6ff', border: '1px solid #bee3f8', borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', color: '#2b6cb0' }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Order Queued</div>
+          <div style={{ fontSize: '14px' }}>Your order is queued and will be submitted shortly.</div>
+        </article>
+      )}
+
+      {executionStatus === STATUS.PROCESSING && (
+        <article style={{ background: '#fffff0', border: '1px solid #fefcbf', borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', color: '#975a16' }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Order Submitted</div>
+          <div style={{ fontSize: '14px' }}>Order is processing — waiting for broker confirmation...</div>
+        </article>
+      )}
+
+      {executionStatus === STATUS.FILLED && (
+        <article style={{ background: '#f0f9f4', border: '1px solid #c6f6d5', borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', color: '#0a7a47' }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Order Filled</div>
+          <div style={{ fontSize: '14px' }}>Your order was executed successfully. Redirecting...</div>
         </article>
       )}
 
@@ -329,44 +426,31 @@ export default function OrderConfirm() {
         </article>
       )}
 
-      {executionSuccess && (
-        <article style={{ 
-          background: '#f0f9f4', 
-          border: '1px solid #c6f6d5', 
-          borderRadius: 8, 
-          padding: '1rem', 
-          marginBottom: '1.5rem',
-          color: '#0a7a47'
-        }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Order Executed Successfully!</div>
-          <div style={{ fontSize: '14px' }}>Redirecting to orders page...</div>
-        </article>
-      )}
-
-      {/* Action Buttons */}
-      <div style={{ display: 'grid', gap: '0.75rem' }}>
-        <button
-          className="primary pressable"
-          onClick={handleExecuteOrder}
-          disabled={priceLoading || isExecuting || executionSuccess || !orderDetails}
-          style={{ 
-            padding: '1rem',
-            fontWeight: 600,
-            opacity: (priceLoading || isExecuting || executionSuccess || !orderDetails) ? 0.5 : 1
-          }}
-        >
-          {isExecuting ? 'Executing Order...' : executionSuccess ? 'Order Executed' : `Confirm ${order.type} Order`}
-        </button>
-        
+      <footer style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
         <button
           className="ghost pressable"
-          onClick={() => navigate('/orders')}
-          disabled={isExecuting}
-          style={{ padding: '1rem' }}
+          onClick={() => navigate(-1)}
         >
           Cancel
         </button>
-      </div>
+        
+        <button
+          className="primary pressable"
+          onClick={handleExecuteOrder}
+          disabled={priceLoading || isExecuting || executionStatus === STATUS.FILLED || !orderDetails}
+          style={{
+            padding: '1rem',
+            fontWeight: 600,
+            opacity: (priceLoading || isExecuting || executionStatus === STATUS.FILLED || !orderDetails) ? 0.5 : 1
+          }}
+        >
+          {executionStatus === STATUS.QUEUED     ? 'Order Queued...'     :
+           executionStatus === STATUS.PROCESSING ? 'Awaiting Fill...'    :
+           executionStatus === STATUS.FILLED     ? 'Order Filled'        :
+           isExecuting                           ? 'Submitting...'       :
+           `Confirm ${order.type} Order`}
+        </button>
+      </footer>
     </div>
   )
 }

@@ -23,5 +23,7 @@ export const ID_PREFIXES = {
   PORTFOLIO: 'prt',
   BOT: 'bot',
   EVENT: 'evt',
-  RULE: 'rul'
+  RULE: 'rul',
+  BROKER: 'bkr',
+  TEMPLATE: 'tmpl'
 }

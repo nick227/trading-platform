@@ -22,6 +22,13 @@ vi.mock('../src/loaders/prisma.js', () => ({
     botEvent: {
       create: vi.fn()
     },
+    executionAudit: {
+      create: vi.fn(),
+      findMany: vi.fn()
+    },
+    workerStatus: {
+      findMany: vi.fn()
+    },
     prediction: {
       count: vi.fn()
     },
@@ -47,6 +54,9 @@ describe('API contract tests', () => {
     prisma.execution.findMany.mockReset()
     prisma.execution.findUnique.mockReset()
     prisma.botEvent.create.mockReset()
+    prisma.executionAudit.create.mockReset()
+    prisma.executionAudit.findMany.mockReset()
+    prisma.workerStatus.findMany.mockReset()
 
     app = await createApp()
     await registerRoutes(app)
@@ -111,13 +121,15 @@ describe('API contract tests', () => {
   it('creates an execution and returns 201', async () => {
     const execution = {
       id: 'exec_1',
+      userId: 'usr_1',
       ticker: 'NVDA',
       direction: 'buy',
       quantity: 1,
       price: 500,
       portfolioId: 'port_1',
       strategyId: 'str_1',
-      status: 'proposed'
+      status: 'queued',
+      clientOrderId: 'tp_exec_1'
     }
 
     prisma.execution.create.mockResolvedValue(execution)
@@ -125,6 +137,7 @@ describe('API contract tests', () => {
     const response = await request(app.server)
       .post('/api/executions')
       .send({
+        userId: 'usr_1',
         ticker: 'NVDA',
         direction: 'buy',
         quantity: 1,
@@ -143,7 +156,8 @@ describe('API contract tests', () => {
         price: 500,
         portfolioId: 'port_1',
         strategyId: 'str_1',
-        status: 'proposed'
+        status: 'queued',
+        clientOrderId: expect.stringMatching(/^tp_exe_/)
       })
     }))
   })

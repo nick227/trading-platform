@@ -18,18 +18,20 @@ export default async function botsRoutes(app, opts) {
   })
 
   // POST /api/bots
+  // strategyId is required for strategy_based bots, optional for rule_based.
   app.post('/', {
     schema: {
       body: {
         type: 'object',
-        required: ['name', 'portfolioId', 'strategyId'],
+        required: ['name', 'portfolioId'],
         properties: {
-          name: { type: 'string', minLength: 1 },
+          name:        { type: 'string', minLength: 1 },
           portfolioId: { type: 'string' },
-          strategyId: { type: 'string' },
-          enabled: { type: 'boolean' },
-          config: { type: 'object' },
-          userId: { type: 'string' }
+          strategyId:  { type: 'string' },
+          botType:     { type: 'string', enum: ['rule_based', 'strategy_based'] },
+          enabled:     { type: 'boolean' },
+          config:      { type: 'object' },
+          userId:      { type: 'string' }
         }
       }
     }

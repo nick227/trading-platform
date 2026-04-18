@@ -7,16 +7,81 @@ export default {
   async createBot(data) {
     const bot = await prisma.bot.create({
       data: {
-        id: generateId(ID_PREFIXES.BOT),
-        userId: data.userId || STUB_USER_ID,
+        id:          generateId(ID_PREFIXES.BOT),
+        userId:      data.userId || STUB_USER_ID,
         portfolioId: data.portfolioId,
-        strategyId: data.strategyId,
-        name: data.name,
-        enabled: data.enabled ?? true,
-        config: data.config ?? {}
+        strategyId:  data.strategyId ?? null,
+        templateId:  data.templateId ?? null,
+        botType:     data.botType ?? 'rule_based',
+        name:        data.name,
+        enabled:     data.enabled ?? true,
+        config:      data.config ?? {}
       }
     })
     return bot
+  },
+
+  // Create a bot + its rules atomically from a BotTemplate.
+  // Callers supply overrides (tickers, quantity) to customise the template defaults.
+  async createBotFromTemplate(data) {
+    const template = await prisma.botTemplate.findUnique({ where: { id: data.templateId } })
+    if (!template) return null
+
+    const config = {
+      ...template.config,               // direction, default quantity/tickers
+      ...(data.tickers   ? { tickers:  data.tickers }  : {}),
+      ...(data.quantity  ? { quantity: data.quantity }  : {})
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const bot = await tx.bot.create({
+        data: {
+          id:          generateId(ID_PREFIXES.BOT),
+          userId:      data.userId || STUB_USER_ID,
+          portfolioId: data.portfolioId,
+          strategyId:  data.strategyId ?? null,
+          templateId:  template.id,
+          botType:     template.botType,
+          name:        data.name ?? template.name,
+          enabled:     data.enabled ?? true,
+          config
+        }
+      })
+
+      // Copy template rules into BotRule rows owned by this bot
+      const ruleRows = template.rules.map(rule => ({
+        id:      generateId(ID_PREFIXES.RULE),
+        botId:   bot.id,
+        name:    rule.name,
+        type:    rule.type,
+        config:  rule.config,
+        enabled: true
+      }))
+
+      await tx.botRule.createMany({ data: ruleRows })
+
+      return tx.bot.findUnique({
+        where: { id: bot.id },
+        include: { rules: true }
+      })
+    })
+  },
+
+  // ─── Catalog ─────────────────────────────────────────────────────────────────
+
+  async getCatalog(query = {}) {
+    const where = {}
+    if (query.botType) where.botType = query.botType
+
+    const templates = await prisma.botTemplate.findMany({
+      where,
+      orderBy: { name: 'asc' }
+    })
+    return templates
+  },
+
+  async getCatalogTemplate(id) {
+    return prisma.botTemplate.findUnique({ where: { id } })
   },
 
   async getBots(query) {

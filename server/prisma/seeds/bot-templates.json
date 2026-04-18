@@ -1,0 +1,157 @@
+[
+  {
+    "id": "tmpl_momentum_buy",
+    "name": "Momentum Buy",
+    "description": "Buys a ticker when price rises above a configurable threshold. Enforces market hours, position limits, and a per-ticker cooldown to prevent overtrading.",
+    "botType": "rule_based",
+    "tags": ["momentum", "long", "threshold"],
+    "config": {
+      "direction": "buy",
+      "quantity": 1,
+      "tickers": []
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Price Above Threshold",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxShares": 100 }
+      },
+      {
+        "name": "Cooldown",
+        "type": "cooldown",
+        "config": { "windowMs": 3600000 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_dca_accumulator",
+    "name": "DCA Accumulator",
+    "description": "Dollar-cost averages into a position by buying on a fixed time interval regardless of price. Respects a max-shares ceiling so you never over-accumulate.",
+    "botType": "rule_based",
+    "tags": ["dca", "long", "accumulation"],
+    "config": {
+      "direction": "buy",
+      "quantity": 1,
+      "tickers": []
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxShares": 500 }
+      },
+      {
+        "name": "DCA Interval",
+        "type": "cooldown",
+        "config": { "windowMs": 86400000 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_momentum_sell",
+    "name": "Momentum Sell",
+    "description": "Sells a ticker when price drops below a configurable threshold. Mirrors the Momentum Buy template for paired long/short strategies.",
+    "botType": "rule_based",
+    "tags": ["momentum", "short", "threshold"],
+    "config": {
+      "direction": "sell",
+      "quantity": 1,
+      "tickers": []
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Price Below Threshold",
+        "type": "price_threshold",
+        "config": { "direction": "below", "price": 0 }
+      },
+      {
+        "name": "Cooldown",
+        "type": "cooldown",
+        "config": { "windowMs": 3600000 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_loss_guard",
+    "name": "Loss Guard",
+    "description": "Buys on each price tick but stops for the day once portfolio daily loss exceeds a threshold. Use as a risk-control overlay or standalone conservative bot.",
+    "botType": "rule_based",
+    "tags": ["risk", "long", "daily-loss"],
+    "config": {
+      "direction": "buy",
+      "quantity": 1,
+      "tickers": []
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Daily Loss Limit",
+        "type": "daily_loss",
+        "config": { "maxLoss": 500 }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxShares": 100 }
+      },
+      {
+        "name": "Cooldown",
+        "type": "cooldown",
+        "config": { "windowMs": 1800000 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_strategy_signal",
+    "name": "Strategy Signal",
+    "description": "Executes orders when a linked strategy emits a prediction. Rule controls (cooldown, market hours) prevent execution during off-hours or too frequently.",
+    "botType": "strategy_based",
+    "tags": ["signal", "strategy", "ml"],
+    "config": {
+      "direction": "buy",
+      "quantity": 1,
+      "tickers": []
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Cooldown",
+        "type": "cooldown",
+        "config": { "windowMs": 900000 }
+      },
+      {
+        "name": "Daily Loss Limit",
+        "type": "daily_loss",
+        "config": { "maxLoss": 1000 }
+      }
+    ]
+  }
+]

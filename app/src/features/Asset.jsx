@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useApp } from '../app/AppProvider'
 
 const predictionNotes = [
@@ -23,8 +23,21 @@ const chartPath = (series) => {
 
 export default function Asset() {
   const { ticker } = useParams()
+  const navigate = useNavigate()
   const { state, dispatch } = useApp()
   const symbol = String(ticker ?? '').toUpperCase()
+
+  const handleRunBot = () => {
+    navigate('/bots/create', { 
+      state: { 
+        defaultConfig: { 
+          tickers: [symbol],
+          quantity: 10,
+          direction: 'buy'
+        }
+      } 
+    })
+  }
 
   useEffect(() => {
     if (symbol) dispatch({ type: 'SELECT_ASSET', payload: symbol })
@@ -35,7 +48,7 @@ export default function Asset() {
     return (
       <div className="page container" style={{ maxWidth: 640, margin: '0 auto', padding: '2rem 1rem' }}>
         <h1 className="hero">No data for {symbol}</h1>
-        <p className="muted">This ticker is not in the mock portfolio.</p>
+        <p className="muted">No positions found for this ticker.</p>
         <Link className="primary pressable" to="/assets/NVDA" style={{ display: 'inline-block', marginTop: '1rem' }}>
           Open NVDA
         </Link>
@@ -98,7 +111,7 @@ export default function Asset() {
           <div style={{ display: 'grid', gap: '0.6rem', marginTop: '0.8rem' }}>
             <button className="primary pressable">Buy {asset.symbol}</button>
             <button className="ghost pressable">Sell {asset.symbol}</button>
-            <button className="ghost pressable">Run Bot</button>
+            <button className="ghost pressable" onClick={handleRunBot}>Run Bot</button>
           </div>
         </article>
 

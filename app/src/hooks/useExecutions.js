@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import executionsService from '../api/services/executionsService.js'
 import { usePolling } from './usePolling.js'
 
-export function useExecutions(poll = true) {
+export function useExecutions({ poll = false } = {}) {
   const [executions, setExecutions] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)

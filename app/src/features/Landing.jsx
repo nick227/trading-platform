@@ -2,26 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import StrategyChart from '../components/StrategyChart'
 import Calendar from '../components/Calendar'
-
-// Mock Alpha Engine Data
-const marketPulse = {
-  regime: 'RISK_ON',
-  signalBreadth: 68,
-  volatilityRegime: 'MODERATE',
-  topOpportunity: 'Semis + AI Infra',
-  vix: 16.8,
-  sp500Change: '+1.2%',
-  sentimentScore: 72.3,
-  lastUpdate: new Date().toLocaleTimeString()
-}
-
-const liveSignals = [
-  { symbol: 'NVDA', strategy: 'Volatility Breakout', confidence: 0.84, entry: 482.15, stop: 458.90, target: 545.20, timestamp: '09:32:15' },
-  { symbol: 'AMD', strategy: 'Sniper Coil', confidence: 0.79, entry: 178.42, stop: 169.50, target: 198.30, timestamp: '09:35:42' },
-  { symbol: 'SMCI', strategy: 'Silent Compounder', confidence: 0.91, entry: 612.88, stop: 582.24, target: 698.15, timestamp: '09:41:03' },
-  { symbol: 'PLTR', strategy: 'Narrative Lag', confidence: 0.73, entry: 24.67, stop: 23.44, target: 28.12, timestamp: '09:44:18' },
-  { symbol: 'TSLA', strategy: 'Ownership Vacuum', confidence: 0.68, entry: 238.91, stop: 227.96, target: 267.23, timestamp: '09:47:29' }
-]
+import { getMarketPulse, getLiveSignals, getFeaturedAssets } from '../services/marketData.js'
 
 const dimensionalPredictions = [
   { symbol: 'NVDA', axis: 'HIGH_VOL_TREND_TECH_AGGRESSIVE_7d', prediction: 0.084, confidence: 0.84, actual: null },
@@ -52,41 +33,7 @@ const strategyPerformance = [
   { name: 'Silent Compounder', edge: '+1.3%', winRate: '71%', trades: 54, avgHold: '8.7d', status: 'ACTIVE' }
 ]
 
-const featuredAssets = [
-  {
-    symbol: 'NVDA',
-    thesis: 'AI compute demand remains sticky with data center capex accelerating',
-    prediction: 'Bullish 78%',
-    entry: 482.15,
-    stop: 458.90,
-    target: 545.20,
-    riskReward: '2.1:1',
-    timeHorizon: '7d',
-    conviction: 'HIGH'
-  },
-  {
-    symbol: 'AAPL',
-    thesis: 'Services margin keeps cash flow resilient despite hardware cyclicality',
-    prediction: 'Neutral 54%',
-    entry: 189.73,
-    stop: 180.24,
-    target: 198.72,
-    riskReward: '1.2:1',
-    timeHorizon: '5d',
-    conviction: 'MEDIUM'
-  },
-  {
-    symbol: 'MSFT',
-    thesis: 'Cloud acceleration supports multiple expansion with AI tailwinds',
-    prediction: 'Bullish 72%',
-    entry: 412.56,
-    stop: 391.93,
-    target: 453.82,
-    riskReward: '1.8:1',
-    timeHorizon: '7d',
-    conviction: 'HIGH'
-  }
-]
+const featuredAssets = getFeaturedAssets()
 
 const recentTrades = [
   { symbol: 'GOOGL', entry: 142.38, exit: 147.92, pnl: 552.34, holdTime: '3d', exitReason: 'TARGET' },
@@ -99,6 +46,8 @@ export default function Landing() {
   const navigate = useNavigate()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [selectedSignal, setSelectedSignal] = useState(null)
+  const [marketPulse, setMarketPulse] = useState(getMarketPulse())
+  const [liveSignals, setLiveSignals] = useState(getLiveSignals())
 
   useEffect(() => {
     const timer = setInterval(() => {

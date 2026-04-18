@@ -1,19 +1,6 @@
 import React, { useState } from 'react'
 
-// Mock prediction data for the calendar
-const mockPredictions = [
-  { date: new Date(2026, 3, 5), type: 'BUY', symbol: 'NVDA', confidence: 0.84, target: 545.20, entry: 482.15 },
-  { date: new Date(2026, 3, 7), type: 'SELL', symbol: 'TSLA', confidence: 0.68, exit: 267.23, pnl: 1256.28 },
-  { date: new Date(2026, 3, 8), type: 'BUY', symbol: 'AMD', confidence: 0.79, target: 198.30, entry: 178.42 },
-  { date: new Date(2026, 3, 12), type: 'HIGH', symbol: 'SMCI', confidence: 0.91, target: 698.15, current: 612.88 },
-  { date: new Date(2026, 3, 15), type: 'WATCH', symbol: 'GOOGL', confidence: 0.73, range: '142-148' },
-  { date: new Date(2026, 3, 18), type: 'BUY', symbol: 'META', confidence: 0.81, target: 325.40, entry: 312.45 },
-  { date: new Date(2026, 3, 22), type: 'SELL', symbol: 'AAPL', confidence: 0.62, exit: 198.72, pnl: 445.18 },
-  { date: new Date(2026, 3, 25), type: 'BUY', symbol: 'MSFT', confidence: 0.71, target: 453.82, entry: 412.56 },
-  { date: new Date(2026, 3, 28), type: 'EVENT', symbol: 'FOMC', confidence: 1.0, type: 'ECONOMIC', impact: 'HIGH' },
-]
-
-export default function Calendar({ predictions = mockPredictions }) {
+export default function Calendar({ predictions = [] }) {
   const [currentDate, setCurrentDate] = useState(new Date())
   
   const year = currentDate.getFullYear()

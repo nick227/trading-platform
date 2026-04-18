@@ -11,7 +11,7 @@ function validateEventMetadata(type, metadata) {
       }
       break
     case 'execution_created':
-      if (!metadata.executionId || !metadata.quantity || !metadata.price || !metadata.direction) {
+      if (!metadata.executionId || metadata.quantity == null || metadata.price == null || !metadata.direction) {
         throw new Error('execution_created event requires executionId, quantity, price, and direction')
       }
       break

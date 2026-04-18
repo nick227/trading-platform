@@ -8,6 +8,7 @@ const routes = [
   { asset: true, label: 'Asset' },
   { path: '/bots', label: 'Add Bots', prefix: '/bots' },
   { path: '/orders', label: 'Add Orders', prefix: '/orders' },
+  { path: '/ops', label: 'Ops' },
   { path: '/profile', label: 'Profile' },
   { path: '/auth', label: 'Auth' }
 ]

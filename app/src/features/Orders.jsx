@@ -1,52 +1,11 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useState, useEffect, useMemo } from 'react'
 import { useApp } from '../app/AppProvider'
+import { getAvailableStocks, getAlphaPredictions, generatePriceHistory } from '../services/marketData.js'
+import { GlobalCaches } from '../services/robustCache.js'
 
-// Enhanced stock data with real-time pricing
-const availableStocks = [
-  { symbol: 'NVDA', name: 'NVIDIA Corporation', price: 275.56, change: +2.4, volume: '52.3M', sector: 'Technology', marketCap: '6.8T', pe: '65.2' },
-  { symbol: 'AAPL', name: 'Apple Inc.', price: 168.75, change: -1.2, volume: '48.7M', sector: 'Technology', marketCap: '2.6T', pe: '28.4' },
-  { symbol: 'TSLA', name: 'Tesla, Inc.', price: 266.67, change: +3.8, volume: '112.4M', sector: 'Automotive', marketCap: '846B', pe: '68.9' },
-  { symbol: 'MSFT', name: 'Microsoft Corporation', price: 378.92, change: +0.8, volume: '28.1M', sector: 'Technology', marketCap: '2.8T', pe: '32.1' },
-  { symbol: 'GOOGL', name: 'Alphabet Inc.', price: 142.35, change: -0.5, volume: '31.2M', sector: 'Technology', marketCap: '1.8T', pe: '25.7' },
-  { symbol: 'AMZN', name: 'Amazon.com Inc.', price: 145.78, change: +1.9, volume: '67.8M', sector: 'Consumer Discretionary', marketCap: '1.5T', pe: '45.3' },
-  { symbol: 'META', name: 'Meta Platforms Inc.', price: 485.23, change: +2.1, volume: '18.9M', sector: 'Technology', marketCap: '1.2T', pe: '24.8' },
-  { symbol: 'BRK.B', name: 'Berkshire Hathaway', price: 425.12, change: +0.3, volume: '3.2M', sector: 'Financial', marketCap: '783B', pe: '9.2' }
-]
-
-// Alpha engine predictions
-const alphaPredictions = {
-  'NVDA': { signal: 'STRONG_BUY', confidence: 85, target: 295.00, timeframe: '30d', reasoning: 'AI demand surge, data center expansion' },
-  'AAPL': { signal: 'HOLD', confidence: 62, target: 175.00, timeframe: '60d', reasoning: 'Stable earnings, moderate growth' },
-  'TSLA': { signal: 'BUY', confidence: 73, target: 285.00, timeframe: '45d', reasoning: 'Production ramp-up, energy segment growth' },
-  'MSFT': { signal: 'STRONG_BUY', confidence: 78, target: 410.00, timeframe: '30d', reasoning: 'Cloud dominance, AI integration' },
-  'GOOGL': { signal: 'HOLD', confidence: 58, target: 150.00, timeframe: '60d', reasoning: 'Search market stability, regulatory concerns' },
-  'AMZN': { signal: 'BUY', confidence: 69, target: 160.00, timeframe: '45d', reasoning: 'AWS growth, retail optimization' },
-  'META': { signal: 'STRONG_BUY', confidence: 81, target: 520.00, timeframe: '30d', reasoning: 'Metaverse investments, ad revenue recovery' },
-  'BRK.B': { signal: 'HOLD', confidence: 65, target: 440.00, timeframe: '90d', reasoning: 'Value investing, insurance stability' }
-}
-
-// User portfolio holdings for sell validation
-const userHoldings = {
-  'NVDA': { shares: 45, avgCost: 240.00 },
-  'AAPL': { shares: 32, avgCost: 156.25 },
-  'TSLA': { shares: 12, avgCost: 233.33 }
-}
-
-// Mock price history for charts
-const generatePriceHistory = (basePrice, volatility = 0.02) => {
-  const history = []
-  let currentPrice = basePrice * (1 - volatility * 10)
-  
-  for (let i = 0; i < 30; i++) {
-    currentPrice = currentPrice * (1 + (Math.random() - 0.5) * volatility)
-    history.push({
-      date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      price: parseFloat(currentPrice.toFixed(2))
-    })
-  }
-  return history
-}
+// User portfolio holdings for sell validation - will be derived from real executions
+const userHoldings = {}
 
 // Searchable Dropdown Component
 function SearchableDropdown({ stocks, selectedStock, onSelect, placeholder }) {
@@ -447,7 +406,7 @@ export default function Orders() {
   const { state, dispatch } = useApp()
   
   // State for order form
-  const [selectedStock, setSelectedStock] = useState(availableStocks[0])
+  const [selectedStock, setSelectedStock] = useState(getAvailableStocks()[0])
   const [orderType, setOrderType] = useState('BUY')
   const [orderAmount, setOrderAmount] = useState('')
   const [orderQuantity, setOrderQuantity] = useState('')
@@ -455,6 +414,7 @@ export default function Orders() {
   const [limitPrice, setLimitPrice] = useState('')
   const [stopPrice, setStopPrice] = useState('')
   const [priceHistory, setPriceHistory] = useState([])
+const [priceRange, setPriceRange] = useState({ min: 0, max: 0, range: 0 })
   
   // User bank balance and account info
   const bankBalance = 4200
@@ -473,7 +433,7 @@ export default function Orders() {
   useEffect(() => {
     const ticker = searchParams.get('ticker')
     if (ticker) {
-      const stock = availableStocks.find(s => s.symbol === ticker)
+      const stock = getAvailableStocks().find(s => s.symbol === ticker)
       if (stock) {
         setSelectedStock(stock)
       }
@@ -482,7 +442,17 @@ export default function Orders() {
   
   // Update price history when stock selection changes
   useEffect(() => {
-    setPriceHistory(generatePriceHistory(selectedStock.price))
+    const history = generatePriceHistory(selectedStock.price)
+    setPriceHistory(history)
+    
+    // Pre-calculate min/max for performance
+    if (history.length > 0) {
+      const prices = history.map(p => p.price)
+      const minPrice = Math.min(...prices)
+      const maxPrice = Math.max(...prices)
+      const priceRange = maxPrice - minPrice
+      setPriceRange({ min: minPrice, max: maxPrice, range: priceRange })
+    }
   }, [selectedStock])
   
   // Calculate order details
@@ -532,7 +502,7 @@ export default function Orders() {
     navigate('/orders/confirm', { state: { order: orderData } })
   }
   
-  const alphaData = alphaPredictions[selectedStock.symbol]
+  const alphaData = getAlphaPredictions()[selectedStock.symbol]
   
   // Calculate additional market data
   const dayHigh = selectedStock.price * 1.02
@@ -608,7 +578,7 @@ export default function Orders() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <div style={{ flex: 1 }}>
                 <SearchableDropdown
-                  stocks={availableStocks}
+                  stocks={getAvailableStocks()}
                   selectedStock={selectedStock}
                   onSelect={setSelectedStock}
                   placeholder="Search symbols or companies..."
@@ -697,19 +667,23 @@ export default function Orders() {
                 gap: '1px',
                 padding: '0.25rem 0'
               }}>
-                {priceHistory.slice(-40).map((point, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      flex: 1,
-                      height: `${((point.price - Math.min(...priceHistory.map(p => p.price))) / 
-                        (Math.max(...priceHistory.map(p => p.price)) - Math.min(...priceHistory.map(p => p.price)))) * 85 + 8}%`,
-                      background: point.price >= selectedStock.price ? '#0a7a47' : '#c0392b',
-                      borderRadius: '1px',
-                      opacity: 0.9
-                    }}
-                  />
-                ))}
+                {priceHistory.slice(-40).map((point, index) => {
+                  const heightPercent = priceRange.range > 0 
+                    ? ((point.price - priceRange.min) / priceRange.range) * 85 + 8
+                    : 50
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        flex: 1,
+                        height: `${heightPercent}%`,
+                        background: point.price >= selectedStock.price ? '#0a7a47' : '#c0392b',
+                        borderRadius: '1px',
+                        opacity: 0.9
+                      }}
+                    />
+                  )
+                })}
               </div>
             </div>
             

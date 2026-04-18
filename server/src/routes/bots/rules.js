@@ -63,7 +63,7 @@ export default async function botRulesRoutes(app, opts) {
           name: { type: 'string', minLength: 1 },
           type: { 
             type: 'string', 
-            enum: ['price_threshold', 'position_limit', 'daily_loss', 'market_hours'] 
+            enum: ['price_threshold', 'position_limit', 'daily_loss', 'market_hours', 'cooldown']
           },
           config: { type: 'object' },
           enabled: { type: 'boolean' }
@@ -90,7 +90,7 @@ export default async function botRulesRoutes(app, opts) {
           name: { type: 'string', minLength: 1 },
           type: { 
             type: 'string', 
-            enum: ['price_threshold', 'position_limit', 'daily_loss', 'market_hours'] 
+            enum: ['price_threshold', 'position_limit', 'daily_loss', 'market_hours', 'cooldown']
           },
           config: { type: 'object' },
           enabled: { type: 'boolean' }

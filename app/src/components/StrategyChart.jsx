@@ -23,39 +23,13 @@ ChartJS.register(
   Filler
 )
 
-// Mock data for strategy vs Dow comparison
-const generateMockData = () => {
-  const dates = []
-  const strategyReturns = []
-  const dowReturns = []
-  const predictions = []
-  
-  // Generate 60 days of data
-  let strategyValue = 100000
-  let dowValue = 100000
-  const today = new Date()
-  
-  for (let i = 59; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(date.getDate() - i)
-    dates.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
-    
-    // Simulate strategy outperformance
-    const dailyReturn = 0.0008 + (Math.random() - 0.5) * 0.02
-    const dowDailyReturn = 0.0003 + (Math.random() - 0.5) * 0.015
-    
-    strategyValue *= (1 + dailyReturn)
-    dowValue *= (1 + dowDailyReturn)
-    
-    strategyReturns.push(strategyValue)
-    dowReturns.push(dowValue)
-    
-  }
-  
-  return { dates, strategyReturns, dowReturns, predictions }
+// Strategy chart will accept real data props
+const defaultData = {
+  dates: [],
+  strategyReturns: [],
+  dowReturns: [],
+  predictions: []
 }
-
-const { dates, strategyReturns, dowReturns, predictions } = generateMockData()
 
 const chartOptions = {
   responsive: true,
@@ -119,11 +93,11 @@ const chartOptions = {
 }
 
 const chartData = {
-  labels: dates,
+  labels: defaultData.dates,
   datasets: [
     {
       label: 'Alpha Engine Strategy',
-      data: strategyReturns,
+      data: defaultData.strategyReturns,
       borderColor: '#1f8a4c',
       backgroundColor: 'rgba(31, 138, 76, 0.1)',
       borderWidth: 2,
@@ -134,7 +108,7 @@ const chartData = {
     },
     {
       label: 'DOW Jones Average',
-      data: dowReturns,
+      data: defaultData.dowReturns,
       borderColor: '#7a7a7a',
       backgroundColor: 'rgba(122, 122, 122, 0.1)',
       borderWidth: 2,
@@ -147,14 +121,8 @@ const chartData = {
   ]
 }
 
-// Add prediction points as a separate dataset
-const predictionData = predictions.map(pred => ({
-  x: pred.date,
-  y: pred.price,
-  type: pred.type,
-  symbol: pred.symbol,
-  confidence: pred.confidence
-}))
+// Add prediction points as a separate dataset (empty for now)
+const predictionData = []
 
 export default function StrategyChart() {
   return (
@@ -171,9 +139,13 @@ export default function StrategyChart() {
         pointerEvents: 'none',
         zIndex: 10
       }}>
-        {predictions.map((pred, index) => {
-          const xPosition = (pred.index / (dates.length - 1)) * 100
-          const yPosition = ((100000 - pred.price) / (Math.max(...strategyReturns) - Math.min(...strategyReturns))) * 100
+        {defaultData.predictions.map((pred, index) => {
+          const xPosition = defaultData.dates.length > 1 
+            ? (pred.x / (defaultData.dates.length - 1)) * 100 
+            : 50
+          const yPosition = defaultData.strategyReturns.length > 0 
+            ? ((100000 - pred.y) / (Math.max(...defaultData.strategyReturns) - Math.min(...defaultData.strategyReturns))) * 100
+            : 50
           
           return (
             <div

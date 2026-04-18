@@ -4,10 +4,12 @@ import Landing from '../features/Landing'
 import Portfolio from '../features/Portfolio'
 import Asset from '../features/Asset'
 import Bots from '../features/Bots'
+import BotCreate from '../features/BotCreate'
 import Orders from '../features/Orders'
 import BotConfirm from '../features/BotConfirm'
 import OrderConfirm from '../features/OrderConfirm'
 import Profile from '../features/Profile'
+import Ops from '../features/Ops'
 import Auth from '../features/Auth'
 import ApiTest from '../test/ApiTest'
 import ExecutionTest from '../test/ExecutionTest'
@@ -28,10 +30,12 @@ export function AppShell() {
         <Route path="/assets" element={<Navigate to="/assets/NVDA" replace />} />
         <Route path="/assets/:ticker" element={<Asset />} />
         <Route path="/bots" element={<Bots />} />
+        <Route path="/bots/create" element={<BotCreate />} />
         <Route path="/bots/confirm" element={<BotConfirm />} />
         <Route path="/orders" element={<Orders />} />
         <Route path="/orders/confirm" element={<OrderConfirm />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/ops" element={<Ops />} />
         <Route path="/test" element={<ApiTest />} />
         <Route path="/execution-test" element={<ExecutionTest />} />
         <Route path="/auth" element={<AuthScreen />} />

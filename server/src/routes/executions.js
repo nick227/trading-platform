@@ -28,8 +28,9 @@ export default async function executionsRoutes(app, opts) {
     schema: {
       body: {
         type: 'object',
-        required: ['ticker', 'direction', 'quantity', 'price', 'portfolioId', 'strategyId'],
+        required: ['userId', 'ticker', 'direction', 'quantity', 'price', 'portfolioId', 'strategyId'],
         properties: {
+          userId: { type: 'string' },
           ticker: { type: 'string' },
           direction: { enum: ['buy', 'sell'] },
           quantity: { type: 'number', minimum: 0 },

@@ -14,6 +14,6 @@ export function getPrice(ticker) {
   return stubPrices[ticker] || 100.00
 }
 
-export function getMarketValue(ticker, quantity) {
+export function getMarketValue({ ticker, quantity }) {
   return getPrice(ticker) * quantity
 }

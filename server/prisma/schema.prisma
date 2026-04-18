@@ -12,11 +12,8 @@ enum Direction {
   sell
 }
 
-enum ExecutionStatus {
-  proposed
-  filled
-  cancelled
-}
+// ExecutionStatus enum removed — status is now a plain String column.
+// Valid values: queued | processing | partially_filled | filled | cancelled | failed
 
 enum BotEventType {
   rule_triggered
@@ -26,11 +23,26 @@ enum BotEventType {
   error_occurred
 }
 
+enum ExecutionAuditEventType {
+  execution_created
+  claimed
+  submit_attempted
+  submit_confirmed
+  reconciled
+  partial_fill
+  filled
+  cancelled
+  retry_scheduled
+  failed
+  risk_blocked
+}
+
 enum BotRuleType {
   price_threshold
   position_limit
   daily_loss
   market_hours
+  cooldown
 }
 
 model Strategy {
@@ -80,20 +92,39 @@ model Portfolio {
   @@index([userId])
 }
 
+model BotTemplate {
+  id          String   @id  // stable slug, e.g. "tmpl_momentum_buy"
+  name        String
+  description String
+  botType     String   // "rule_based" | "strategy_based"
+  config      Json     // default { tickers, quantity, direction }
+  rules       Json     // array of { name, type, config } — copied to BotRule on instantiation
+  tags        Json?    // e.g. ["momentum", "long"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bots        Bot[]
+
+  @@index([botType])
+}
+
 model Bot {
   id           String     @id
-  userId       String     // Using STUB_USER_ID for now
+  userId       String
   portfolioId  String
-  strategyId   String
+  strategyId   String?    // null for rule_based bots
+  templateId   String?    // which BotTemplate created this bot (null if created manually)
+  botType      String     @default("rule_based") // "rule_based" | "strategy_based"
   name         String
   enabled      Boolean    @default(true)
-  config       Json       // Bot configuration
+  config       Json       // { tickers, quantity, direction }
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?  // Soft delete
 
-  portfolio Portfolio @relation(fields: [portfolioId], references: [id])
-  strategy  Strategy  @relation(fields: [strategyId], references: [id])
+  portfolio Portfolio    @relation(fields: [portfolioId], references: [id])
+  strategy  Strategy?    @relation(fields: [strategyId], references: [id])
+  template  BotTemplate? @relation(fields: [templateId], references: [id])
   rules     BotRule[]
   events    BotEvent[]
   executions Execution[]
@@ -101,17 +132,18 @@ model Bot {
   @@index([portfolioId])
   @@index([enabled])
   @@index([userId])
+  @@index([templateId])
 }
 
 model BotRule {
-  id        String     @id
+  id        String      @id
   botId     String
   name      String
   type      BotRuleType
-  config    Json       // Typed config based on type
-  enabled   Boolean    @default(true)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  config    Json        // Typed config based on type
+  enabled   Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   bot Bot @relation(fields: [botId], references: [id])
 
@@ -119,17 +151,17 @@ model BotRule {
 }
 
 model BotEvent {
-  id          String      @id
+  id          String       @id
   botId       String
-  portfolioId String      // Denormalized for performance
+  portfolioId String       // Denormalized for performance
   ruleId      String?
   executionId String?
   type        BotEventType
   detail      String
-  metadata    Json?       // Structured context
-  createdAt   DateTime    @default(now())
+  metadata    Json?        // Structured context
+  createdAt   DateTime     @default(now())
 
-  bot       Bot       @relation(fields: [botId], references: [id])
+  bot       Bot        @relation(fields: [botId], references: [id])
   execution Execution? @relation(fields: [executionId], references: [id])
 
   @@index([botId, createdAt])
@@ -139,28 +171,93 @@ model BotEvent {
 }
 
 model Execution {
-  id            String          @id
+  id            String    @id
+  userId        String    // required — maps to BrokerAccount.userId for credential lookup
   portfolioId   String
-  strategyId    String
+  strategyId    String?   // null for rule_based bot executions
   predictionId  String?
   botId         String?
   ticker        String
   direction     Direction
   quantity      Float
-  price         Float
-  status        ExecutionStatus
+  price         Float     // intent price (what was seen at order time)
+  origin        String    @default("manual") // 'manual' | 'bot'
+  // Queue fields
+  status        String    @default("queued") // queued | processing | partially_filled | filled | cancelled | failed
+  lockedAt      DateTime? // = processingStartedAt: when worker claimed this row
+  lockedBy      String?   // worker instance ID
+  attempts      Int       @default(0)
+  clientOrderId String?   @unique
+  activeIntentKey String? @unique
+  // Broker fields
+  brokerOrderId  String?
+  brokerStatus   String?
+  submittedAt    DateTime?
+  lastBrokerSyncAt DateTime?
+  filledAt       DateTime?
+  filledPrice    Float?   // truth: actual fill price from Alpaca
+  filledQuantity Float?
+  cancelReason   String?
+  // Cost fields
   commission    Float
   fees          Float
-  createdAt     DateTime        @default(now())
+  createdAt     DateTime  @default(now())
 
-  portfolio  Portfolio  @relation(fields: [portfolioId], references: [id])
-  strategy   Strategy   @relation(fields: [strategyId], references: [id])
+  portfolio  Portfolio   @relation(fields: [portfolioId], references: [id])
+  strategy   Strategy?   @relation(fields: [strategyId], references: [id])
   prediction Prediction? @relation(fields: [predictionId], references: [id])
-  bot        Bot?       @relation(fields: [botId], references: [id])
+  bot        Bot?        @relation(fields: [botId], references: [id])
   events     BotEvent[]
+  audits     ExecutionAudit[]
 
   @@index([portfolioId, createdAt])
   @@index([ticker, createdAt])
   @@index([strategyId])
   @@index([botId, createdAt])
+  @@index([status, lockedAt])          // worker claim query
+  @@index([botId, ticker, status])     // bot engine inflight check (DB fallback)
+  @@index([status, filledAt])          // daily loss rule: today's fills
+  @@index([createdAt, id])             // cursor pagination
+  @@index([userId])
+}
+
+model ExecutionAudit {
+  id          String                  @id
+  executionId String
+  userId      String
+  workerId    String?
+  eventType   ExecutionAuditEventType
+  detail      String
+  metadata    Json?
+  createdAt   DateTime                @default(now())
+
+  execution Execution @relation(fields: [executionId], references: [id])
+
+  @@index([executionId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([userId, createdAt])
+}
+
+model BrokerAccount {
+  id        String   @id
+  userId    String   @unique
+  broker    String   @default("alpaca")
+  apiKey    String
+  apiSecret String
+  paper     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model WorkerStatus {
+  id         String   @id  // hostname-pid
+  lastSeen   DateTime
+  startedAt  DateTime @default(now())
+  queueLagMs Int?
+  lastRestOkAt DateTime?
+  lastWsOkAt DateTime?
+  lastCalendarRefreshAt DateTime?
+  health     Json?
 }
