@@ -115,6 +115,58 @@ npm test --workspaces
 - MySQL (configured)
 - **Testing**: Vitest + Supertest
 
+## Deployment
+
+### Railway (Monorepo)
+
+This monorepo is configured for deployment on Railway with separate services for frontend and backend.
+
+#### Setup
+
+1. **Connect Repository**: Link this Git repository to Railway
+2. **Create Services**: Railway will automatically detect the monorepo structure and create two services:
+   - `app/` - Frontend (static site)
+   - `server/` - Backend API
+
+#### Database
+
+Railway provides managed databases. Attach a MySQL database to the `server` service.
+
+The `DATABASE_URL` environment variable will be automatically set by Railway.
+
+#### Environment Variables
+
+Set these in Railway dashboard for the `server` service:
+
+```
+NODE_ENV=production
+# DATABASE_URL will be set automatically by Railway
+```
+
+#### Build Configuration
+
+Each service has its own `railway.json`:
+
+- **Frontend** (`app/railway.json`): Builds with Vite, serves static files
+- **Backend** (`server/railway.json`): Runs Node.js server with Prisma migrations
+
+#### Deployment URLs
+
+After deployment:
+- Frontend: `https://your-app-name.up.railway.app`
+- Backend: `https://your-server-name.up.railway.app`
+- API Docs: `https://your-server-name.up.railway.app/docs`
+
+#### Frontend Proxy Configuration
+
+Update `app/vite.config.js` proxy to point to the deployed backend:
+
+```javascript
+proxy: {
+  '/api': 'https://your-server-name.up.railway.app'
+}
+```
+
 ## Git Workflow
 
 This is a monorepo managed as a single Git repository at the root level.

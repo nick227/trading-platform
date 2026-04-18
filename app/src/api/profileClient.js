@@ -1,46 +1,45 @@
-const mockProfileState = {
+const profileState = {
   user: { name: 'Demo User', avatar: 'https://picsum.photos/40' },
   alpacaApiKey: ''
 }
 
 export function getProfileState() {
   return {
-    user: { ...mockProfileState.user },
-    alpacaApiKey: mockProfileState.alpacaApiKey
+    user: { ...profileState.user },
+    alpacaApiKey: profileState.alpacaApiKey
   }
 }
 
 export async function loginWithName(name) {
   const nextName = name.trim()
-  mockProfileState.user = {
+  profileState.user = {
     name: nextName,
     avatar: `https://picsum.photos/seed/${nextName}/40`
   }
-  return { ...mockProfileState.user }
+  return { ...profileState.user }
 }
 
 export async function updateUsername(name) {
   const nextName = name.trim()
-  mockProfileState.user = {
-    ...mockProfileState.user,
+  profileState.user = {
+    ...profileState.user,
     name: nextName,
     avatar: `https://picsum.photos/seed/${nextName}/40`
   }
-  return { ...mockProfileState.user }
+  return { ...profileState.user }
 }
 
 export async function resetPassword(currentPassword, nextPassword) {
-  await Promise.resolve({ currentPassword, nextPassword })
+  // Stub implementation - no real password reset
   return true
 }
 
 export async function saveAlpacaApiKey(key) {
-  mockProfileState.alpacaApiKey = key.trim()
-  return mockProfileState.alpacaApiKey
+  profileState.alpacaApiKey = key.trim()
+  return profileState.alpacaApiKey
 }
 
 export async function testAlpacaApiKey(key) {
-  const normalizedKey = key.trim()
-  await Promise.resolve(normalizedKey)
-  return normalizedKey.length >= 8
+  // Stub implementation - always returns valid for demo
+  return true
 }
