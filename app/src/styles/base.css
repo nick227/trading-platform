@@ -1,0 +1,47 @@
+/* Base Styles & Reset */
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, sans-serif;
+  line-height: 1.4;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+p, h1, h2, h3 {
+  margin-top: 0;
+}
+
+.btn-reset {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Typography */
+.hero {
+  font-size: clamp(64px, 9vw, 110px);
+  letter-spacing: -0.06em;
+  line-height: 0.95;
+}
+
+h2 {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+p {
+  line-height: 1.5;
+}

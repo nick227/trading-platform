@@ -1,0 +1,50 @@
+/* UI Components */
+.btn {
+  height: 60px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: var(--text-md);
+
+  transform: translateZ(0);
+  transition:
+    transform var(--dur-fast) var(--ease-premium),
+    box-shadow var(--dur-fast) var(--ease-premium),
+    background var(--dur-fast) var(--ease-premium);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  box-shadow: var(--elevation-1);
+}
+
+.btn-ghost {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.btn:hover {
+  transform: translateY(-1px) scale(1.01);
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(0,0,0,0.08);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.card {
+  border-radius: var(--radius-main);
+  padding: var(--space-5);
+  background: var(--color-surface);
+
+  transition: transform var(--dur-fast) var(--ease-premium);
+}

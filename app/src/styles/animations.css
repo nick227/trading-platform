@@ -1,0 +1,46 @@
+/* Animations & Transitions */
+.page-enter {
+  animation: fadeUp var(--dur-med) var(--ease-premium);
+}
+
+.enter {
+  animation: enter var(--dur-med) var(--ease-premium);
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Section-level motion only */
+.section {
+  will-change: transform, opacity;
+}
+
+/* Optional subtle stagger */
+.stagger > * {
+  opacity: 0;
+  animation: enter var(--dur-med) var(--ease-premium) forwards;
+}
+
+.stagger > *:nth-child(1) { animation-delay: 20ms; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 60ms; }
+.stagger > *:nth-child(4) { animation-delay: 80ms; }

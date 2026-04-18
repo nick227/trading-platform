@@ -1,0 +1,126 @@
+.profile {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+  gap: 1rem;
+}
+
+.profile-head {
+  margin-bottom: 0.75rem;
+}
+
+.profile-title {
+  margin: 0;
+}
+
+.avatar-lg {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.08);
+}
+
+.profile-nav-shell {
+  background: #fff;
+  border-radius: 22px;
+  padding: 0.75rem;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.05);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+
+.tab {
+  border: 1px solid transparent;
+  background: #f5f5f5;
+  color: var(--text);
+  border-radius: 14px;
+  height: 40px;
+  padding: 0 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: color-mix(in srgb, var(--color-surface), blueviolet 18%);
+  color: var(--color-text);
+}
+
+.profile-content-shell {
+  background: #fff;
+  border-radius: 24px;
+  padding: 1rem;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.05);
+}
+
+.profile-pane {
+  display: grid;
+  gap: 1rem;
+}
+
+.profile-card {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.profile-card-title {
+  margin: 0;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.profile-status {
+  margin: 0;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  padding: 0 10px;
+  background: var(--color-surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chip-live {
+  border-color: color-mix(in srgb, var(--color-accent), #000 10%);
+  background: color-mix(in srgb, var(--color-accent), white 85%);
+}
+
+.profile-pane .list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.profile-pane .row {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 14px;
+  padding: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .avatar-lg {
+    width: 62px;
+    height: 62px;
+  }
+
+  .profile-content-shell {
+    border-radius: 18px;
+  }
+}

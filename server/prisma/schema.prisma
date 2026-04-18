@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Direction {
+  buy
+  sell
+}
+
+enum ExecutionStatus {
+  proposed
+  filled
+  cancelled
+}
+
+enum BotEventType {
+  rule_triggered
+  decision_made
+  execution_created
+  execution_skipped
+  error_occurred
+}
+
+enum BotRuleType {
+  price_threshold
+  position_limit
+  daily_loss
+  market_hours
+}
+
+model Strategy {
+  id          String   @id
+  name        String
+  description String
+  type        String
+  createdAt   DateTime @default(now())
+
+  predictions Prediction[]
+  bots       Bot[]
+  executions Execution[]
+
+  @@index([type])
+}
+
+model Prediction {
+  id           String    @id
+  strategyId   String
+  ticker       String
+  direction    Direction
+  confidence   Float
+  entryPrice   Float
+  stopPrice    Float
+  targetPrice  Float
+  createdAt    DateTime  @default(now())
+  regime       String
+  reasoning    String
+
+  strategy   Strategy   @relation(fields: [strategyId], references: [id])
+  executions Execution[]
+
+  @@index([ticker, createdAt])
+  @@index([strategyId])
+}
+
+model Portfolio {
+  id        String      @id
+  userId    String      // Using STUB_USER_ID for now
+  name      String
+  createdAt DateTime    @default(now())
+
+  executions Execution[]
+  bots       Bot[]
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model Bot {
+  id           String     @id
+  userId       String     // Using STUB_USER_ID for now
+  portfolioId  String
+  strategyId   String
+  name         String
+  enabled      Boolean    @default(true)
+  config       Json       // Bot configuration
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?  // Soft delete
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id])
+  strategy  Strategy  @relation(fields: [strategyId], references: [id])
+  rules     BotRule[]
+  events    BotEvent[]
+  executions Execution[]
+
+  @@index([portfolioId])
+  @@index([enabled])
+  @@index([userId])
+}
+
+model BotRule {
+  id        String     @id
+  botId     String
+  name      String
+  type      BotRuleType
+  config    Json       // Typed config based on type
+  enabled   Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id])
+
+  @@index([botId, enabled])
+}
+
+model BotEvent {
+  id          String      @id
+  botId       String
+  portfolioId String      // Denormalized for performance
+  ruleId      String?
+  executionId String?
+  type        BotEventType
+  detail      String
+  metadata    Json?       // Structured context
+  createdAt   DateTime    @default(now())
+
+  bot       Bot       @relation(fields: [botId], references: [id])
+  execution Execution? @relation(fields: [executionId], references: [id])
+
+  @@index([botId, createdAt])
+  @@index([portfolioId, createdAt])
+  @@index([executionId])
+  @@index([type])
+}
+
+model Execution {
+  id            String          @id
+  portfolioId   String
+  strategyId    String
+  predictionId  String?
+  botId         String?
+  ticker        String
+  direction     Direction
+  quantity      Float
+  price         Float
+  status        ExecutionStatus
+  commission    Float
+  fees          Float
+  createdAt     DateTime        @default(now())
+
+  portfolio  Portfolio  @relation(fields: [portfolioId], references: [id])
+  strategy   Strategy   @relation(fields: [strategyId], references: [id])
+  prediction Prediction? @relation(fields: [predictionId], references: [id])
+  bot        Bot?       @relation(fields: [botId], references: [id])
+  events     BotEvent[]
+
+  @@index([portfolioId, createdAt])
+  @@index([ticker, createdAt])
+  @@index([strategyId])
+  @@index([botId, createdAt])
+}

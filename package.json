@@ -1,0 +1,21 @@
+{
+  "name": "trading-platform",
+  "version": "1.0.0",
+  "description": "Trading platform - frontend + backend",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "app",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=app",
+    "test": "npm test --workspaces",
+    "test:app": "npm test --workspace=app",
+    "test:server": "npm test --workspace=server",
+    "e2e": "npm run e2e --workspace=app",
+    "install:all": "npm install && npm install --workspace=app && npm install --workspace=server"
+  }
+}

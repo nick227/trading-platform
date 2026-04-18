@@ -1,0 +1,53 @@
+/* Layout System */
+:root {
+  --max-width: 720px;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+  padding: var(--space-6) var(--space-5);
+  min-height: 100vh;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--block-gap);
+  margin-bottom: 80px;
+}
+
+.container {
+  width: 100%;
+  max-width: var(--container-lg);
+  margin: 0 auto;
+}
+
+.container-sm {
+  max-width: var(--container-sm);
+}
+
+.container-md {
+  max-width: var(--container-md);
+}
+
+.centered {
+  text-align: center;
+  margin-inline: auto;
+}
+
+.stack-sm { gap: var(--space-2); }
+.stack-md { gap: var(--space-4); }
+.stack-lg { gap: var(--space-6); }
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.muted {
+  max-width: 34rem;
+}

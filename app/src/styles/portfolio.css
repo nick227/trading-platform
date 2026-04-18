@@ -1,0 +1,54 @@
+/* Portfolio & Charts */
+.portfolio {
+  display:flex;
+  flex-direction:column;
+  gap:var(--space-6);
+}
+
+.portfolio-header {
+  display:flex;
+  align-items:center;
+  gap:var(--space-4);
+}
+
+.avatar {
+  border-radius:50%;
+}
+
+.portfolio-balance h2 {
+  font-size:48px;
+}
+
+.portfolio-assets {
+  display:flex;
+  flex-direction:column;
+  gap:var(--space-3);
+}
+
+.asset-card {
+  display:flex;
+  justify-content:space-between;
+  padding:var(--space-4);
+  border-radius:var(--radius-md);
+  background:var(--color-surface);
+  border:1px solid var(--color-border);
+}
+
+.positive { color: green; }
+.negative { color: red; }
+
+.chart-line {
+  fill: none;
+  stroke: var(--color-text);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: draw 800ms linear forwards;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}

@@ -1,0 +1,674 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import StrategyChart from '../components/StrategyChart'
+import Calendar from '../components/Calendar'
+
+// Mock Alpha Engine Data
+const marketPulse = {
+  regime: 'RISK_ON',
+  signalBreadth: 68,
+  volatilityRegime: 'MODERATE',
+  topOpportunity: 'Semis + AI Infra',
+  vix: 16.8,
+  sp500Change: '+1.2%',
+  sentimentScore: 72.3,
+  lastUpdate: new Date().toLocaleTimeString()
+}
+
+const liveSignals = [
+  { symbol: 'NVDA', strategy: 'Volatility Breakout', confidence: 0.84, entry: 482.15, stop: 458.90, target: 545.20, timestamp: '09:32:15' },
+  { symbol: 'AMD', strategy: 'Sniper Coil', confidence: 0.79, entry: 178.42, stop: 169.50, target: 198.30, timestamp: '09:35:42' },
+  { symbol: 'SMCI', strategy: 'Silent Compounder', confidence: 0.91, entry: 612.88, stop: 582.24, target: 698.15, timestamp: '09:41:03' },
+  { symbol: 'PLTR', strategy: 'Narrative Lag', confidence: 0.73, entry: 24.67, stop: 23.44, target: 28.12, timestamp: '09:44:18' },
+  { symbol: 'TSLA', strategy: 'Ownership Vacuum', confidence: 0.68, entry: 238.91, stop: 227.96, target: 267.23, timestamp: '09:47:29' }
+]
+
+const dimensionalPredictions = [
+  { symbol: 'NVDA', axis: 'HIGH_VOL_TREND_TECH_AGGRESSIVE_7d', prediction: 0.084, confidence: 0.84, actual: null },
+  { symbol: 'AMD', axis: 'MED_VOL_TREND_TECH_BALANCED_5d', prediction: 0.067, confidence: 0.79, actual: null },
+  { symbol: 'SMCI', axis: 'HIGH_VOL_TREND_TECH_AGGRESSIVE_20d', prediction: 0.112, confidence: 0.91, actual: null },
+  { symbol: 'AAPL', axis: 'LOW_VOL_CHOP_TECH_DEFENSIVE_7d', prediction: 0.023, confidence: 0.62, actual: 0.018 },
+  { symbol: 'MSFT', axis: 'MED_VOL_TREND_TECH_BALANCED_5d', prediction: 0.045, confidence: 0.71, actual: 0.052 }
+]
+
+const performanceMetrics = {
+  dailyPnL: 2847.32,
+  weeklyPnL: 12468.91,
+  monthlyPnL: 48927.45,
+  winRate: 0.68,
+  sharpeRatio: 1.84,
+  maxDrawdown: -0.082,
+  activePositions: 12,
+  totalTrades: 284,
+  avgWin: 342.18,
+  avgLoss: -189.73
+}
+
+const strategyPerformance = [
+  { name: 'Volatility Breakout', edge: '+2.1%', winRate: '72%', trades: 48, avgHold: '3.2d', status: 'ACTIVE' },
+  { name: 'AI Regime Filter', edge: '+1.7%', winRate: '68%', trades: 36, avgHold: '5.1d', status: 'ACTIVE' },
+  { name: 'DCA Accumulator', edge: '+0.9%', winRate: '64%', trades: 89, avgHold: '12.4d', status: 'ACTIVE' },
+  { name: 'Sniper Coil', edge: '+2.8%', winRate: '76%', trades: 27, avgHold: '2.1d', status: 'ACTIVE' },
+  { name: 'Silent Compounder', edge: '+1.3%', winRate: '71%', trades: 54, avgHold: '8.7d', status: 'ACTIVE' }
+]
+
+const featuredAssets = [
+  {
+    symbol: 'NVDA',
+    thesis: 'AI compute demand remains sticky with data center capex accelerating',
+    prediction: 'Bullish 78%',
+    entry: 482.15,
+    stop: 458.90,
+    target: 545.20,
+    riskReward: '2.1:1',
+    timeHorizon: '7d',
+    conviction: 'HIGH'
+  },
+  {
+    symbol: 'AAPL',
+    thesis: 'Services margin keeps cash flow resilient despite hardware cyclicality',
+    prediction: 'Neutral 54%',
+    entry: 189.73,
+    stop: 180.24,
+    target: 198.72,
+    riskReward: '1.2:1',
+    timeHorizon: '5d',
+    conviction: 'MEDIUM'
+  },
+  {
+    symbol: 'MSFT',
+    thesis: 'Cloud acceleration supports multiple expansion with AI tailwinds',
+    prediction: 'Bullish 72%',
+    entry: 412.56,
+    stop: 391.93,
+    target: 453.82,
+    riskReward: '1.8:1',
+    timeHorizon: '7d',
+    conviction: 'HIGH'
+  }
+]
+
+const recentTrades = [
+  { symbol: 'GOOGL', entry: 142.38, exit: 147.92, pnl: 552.34, holdTime: '3d', exitReason: 'TARGET' },
+  { symbol: 'META', entry: 312.45, exit: 308.91, pnl: -354.12, holdTime: '2d', exitReason: 'STOP' },
+  { symbol: 'TSLA', entry: 238.91, exit: 251.47, pnl: 1256.28, holdTime: '4d', exitReason: 'TARGET' },
+  { symbol: 'AMZN', entry: 178.23, exit: 182.94, pnl: 471.85, holdTime: '2d', exitReason: 'SIGNAL' }
+]
+
+export default function Landing() {
+  const navigate = useNavigate()
+  const [currentTime, setCurrentTime] = useState(new Date())
+  const [selectedSignal, setSelectedSignal] = useState(null)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="page container" style={{ maxWidth: 1200, margin: '0 auto', padding: '1rem 1rem 3rem' }}>
+
+      {/* Alpha Engine Deep Dive */}
+      <section style={{ background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)', borderRadius: 24, padding: '2rem', marginBottom: '1rem' }}>
+        <div style={{ textAlign: 'left', marginBottom: '2rem' }}>
+          <h2 style={{ margin: '0.5rem 0', fontSize: '2rem', fontWeight: 700, lineHeight: 1.2 }}>Alpha Engine</h2>
+          <p className="muted" style={{ textAlign: 'left', fontSize: '18px', lineHeight: 1.5 }}>
+            Algorithmic ML trading and continuous learning.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h3>Discovery</h3>
+              <ul>
+                <li>
+                  <strong>Realness Repricer</strong> — finds discounted stocks
+                </li>
+                <li>
+                  <strong>Narrative Lag</strong> — stocks falling behind narrative
+                </li>
+                <li>
+                  <strong>Silent Compounder</strong> — looks for steady growers
+                </li>
+                <li>
+                  <strong>Ownership Vacuum</strong> — spots unusual volume activity
+                </li>
+                <li>
+                  <strong>Volatility Breakout</strong> — detects early volatility
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h3>Engine</h3>
+              <ul>
+                <li>
+                  <strong>Baseline Momentum</strong> — buys sustained upward trend strength
+                </li>
+                <li>
+                  <strong>VWAP Reclaim</strong> — enters when price reclaims target level
+                </li>
+                <li>
+                  <strong>RSI Reversion</strong> — times oversold condition events
+                </li>
+                <li>
+                  <strong>Volatility Expansion</strong> — trades on breakout conditions
+                </li>
+                <li>
+                  <strong>ML Factor Model</strong> — combines ml signals to select trades
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3rem', alignItems: 'start' }}>
+          <div>
+            <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem', color: '#111' }}>Multi-Layer Intelligence</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: '#1f8a4c',
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  flexShrink: 0
+                }}>1</div>
+                <div>
+                  <h4 style={{ margin: '0 0 0.3rem 0', fontWeight: 600 }}>Discovery Strategies</h4>
+                  <p className="muted" style={{ margin: 0, lineHeight: 1.4 }}>
+                    Eight specialized strategies identify opportunities across volatility breakouts, sniper coils, narrative lags, and more.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: '#1f8a4c',
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  flexShrink: 0
+                }}>2</div>
+                <div>
+                  <h4 style={{ margin: '0 0 0.3rem 0', fontWeight: 600 }}>Consensus Layer</h4>
+                  <p className="muted" style={{ margin: 0, lineHeight: 1.4 }}>
+                    Cross-sectional ranking and confidence weighting aggregate signals into unified predictions.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: '#1f8a4c',
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  flexShrink: 0
+                }}>3</div>
+                <div>
+                  <h4 style={{ margin: '0 0 0.3rem 0', fontWeight: 600 }}>6D Dimensional Analysis</h4>
+                  <p className="muted" style={{ margin: 0, lineHeight: 1.4 }}>
+                    Predictions tagged by environment, sector, model, horizon, volatility, and liquidity for precise targeting.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem', color: '#111' }}>Continuous Learning</h3>
+            <div style={{ background: 'white', borderRadius: 16, padding: '1.5rem', border: '1px solid #e9ecef' }}>
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontWeight: 600 }}>Real-time Adaptation</span>
+                  <span style={{ color: '#1f8a4c', fontSize: '14px', fontWeight: 600 }}>ACTIVE</span>
+                </div>
+                <p className="muted" style={{ fontSize: '14px', lineHeight: 1.4 }}>
+                  Intraday learning loops adjust strategy parameters based on market conditions and performance feedback.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontWeight: 600 }}>Performance Surface Tracking</span>
+                  <span style={{ color: '#1f8a4c', fontSize: '14px', fontWeight: 600 }}>TRACKING</span>
+                </div>
+                <p className="muted" style={{ fontSize: '14px', lineHeight: 1.4 }}>
+                  Win rates, returns, and reliability metrics tracked across all dimensional axes for continuous optimization.
+                </p>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontWeight: 600 }}>Strategy Evolution</span>
+                  <span style={{ color: '#f39c12', fontSize: '14px', fontWeight: 600 }}>WEEKLY</span>
+                </div>
+                <p className="muted" style={{ fontSize: '14px', lineHeight: 1.4 }}>
+                  Automated parameter optimization and strategy selection based on performance decay and emerging edges.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Strategy Performance Chart */}
+      <section style={{ background: 'white', borderRadius: 24, padding: '1.5rem', boxShadow: '0 8px 26px rgba(0,0,0,0.06)', marginBottom: '1rem' }}>
+        <div style={{ marginBottom: '1rem' }}>
+          <div className="eyebrow">Performance Tracking</div>
+          <h2 style={{ margin: '0.5rem 0', fontSize: '1.5rem', fontWeight: 700 }}>Strategy vs Market</h2>
+          <p className="muted">60-day performance comparison with entry/exit predictions from our Volatility Breakout strategy</p>
+        </div>
+        <StrategyChart />
+      </section>
+
+      {/* Market Pulse & Performance Grid */}
+      <section style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <article style={{ background: 'linear-gradient(140deg, #111, #2a2a2a)', color: '#fff', borderRadius: 24, padding: '1.2rem' }}>
+          <div className="eyebrow" style={{ color: '#d9d9d9' }}>Market Pulse</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: '2rem', fontWeight: 700 }}>{marketPulse.regime}</div>
+              <div style={{ marginTop: '0.5rem', opacity: 0.88 }}>Signal breadth: {marketPulse.signalBreadth}% bullish</div>
+              <div style={{ opacity: 0.88 }}>Volatility regime: {marketPulse.volatilityRegime}</div>
+              <div style={{ opacity: 0.88 }}>VIX: {marketPulse.vix}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '1.2rem', fontWeight: 600, color: '#6effb6' }}>{marketPulse.sp500Change}</div>
+              <div style={{ fontSize: '0.9rem', opacity: 0.88 }}>S&P 500</div>
+              <div style={{ marginTop: '0.8rem', color: '#6effb6', fontWeight: 700 }}>Top: {marketPulse.topOpportunity}</div>
+            </div>
+          </div>
+        </article>
+
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <strong>Performance Today</strong>
+          <div style={{ marginTop: '0.8rem' }}>
+            <div className="muted">Daily P&L</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: performanceMetrics.dailyPnL > 0 ? '#1f8a4c' : '#c0392b' }}>
+              ${performanceMetrics.dailyPnL.toFixed(2)}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+              <div>
+                <div className="muted">Win Rate</div>
+                <div style={{ fontWeight: 600 }}>{(performanceMetrics.winRate * 100).toFixed(1)}%</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="muted">Sharpe</div>
+                <div style={{ fontWeight: 600 }}>{performanceMetrics.sharpeRatio.toFixed(2)}</div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      {/* Live Signals & Predictions */}
+      <section style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <strong>Live Signals</strong>
+            <div style={{ fontSize: '12px', color: '#7a7a7a' }}>{liveSignals.length} active</div>
+          </div>
+          <div style={{ marginTop: '0.8rem', maxHeight: '300px', overflowY: 'auto' }}>
+            {liveSignals.map((signal) => (
+              <div
+                key={signal.symbol}
+                style={{
+                  borderBottom: '1px solid #eee',
+                  paddingBottom: '0.8rem',
+                  marginBottom: '0.8rem',
+                  cursor: 'pointer',
+                  backgroundColor: selectedSignal?.symbol === signal.symbol ? '#f8f9fa' : 'transparent',
+                  padding: '0.5rem',
+                  borderRadius: '8px'
+                }}
+                onClick={() => setSelectedSignal(signal)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '16px' }}>{signal.symbol}</div>
+                    <div className="muted" style={{ fontSize: '12px' }}>{signal.strategy}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{
+                      backgroundColor: signal.confidence > 0.8 ? '#1f8a4c' : signal.confidence > 0.7 ? '#f39c12' : '#e74c3c',
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '11px',
+                      fontWeight: 600
+                    }}>
+                      {(signal.confidence * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '12px' }}>
+                  <div>
+                    <span className="muted">Entry:</span> ${signal.entry}
+                  </div>
+                  <div>
+                    <span className="muted">Stop:</span> ${signal.stop}
+                  </div>
+                  <div>
+                    <span className="muted">Target:</span> ${signal.target}
+                  </div>
+                  <div>
+                    <span className="muted">R:R</span> {((signal.target - signal.entry) / (signal.entry - signal.stop)).toFixed(1)}:1
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <strong>Dimensional Predictions</strong>
+          <div style={{ marginTop: '0.8rem', fontSize: '12px', color: '#7a7a7a' }}>6D Tagged Predictions</div>
+          <div style={{ maxHeight: '300px', overflowY: 'auto', marginTop: '0.5rem' }}>
+            {dimensionalPredictions.map((pred) => (
+              <div key={pred.symbol} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <strong>{pred.symbol}</strong>
+                  <span style={{ color: pred.actual ? '#1f8a4c' : '#7a7a7a' }}>
+                    {pred.actual ? `${(pred.actual * 100).toFixed(1)}%` : `${(pred.prediction * 100).toFixed(1)}%`}
+                  </span>
+                </div>
+                <div className="muted" style={{ fontSize: '11px', marginTop: '0.2rem' }}>{pred.axis}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '11px' }}>
+                  <span className="muted">Conf: {(pred.confidence * 100).toFixed(0)}%</span>
+                  {pred.actual && <span className="muted">Actual: {(pred.actual * 100).toFixed(1)}%</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      {/* Featured Assets with Enhanced Details */}
+      <section style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)', marginBottom: '1rem' }}>
+        <strong>Featured Assets</strong>
+        <div style={{ display: 'grid', gap: '0.8rem', marginTop: '0.8rem' }}>
+          {featuredAssets.map((asset) => (
+            <div key={asset.symbol} style={{
+              border: '1px solid #eee',
+              borderRadius: 12,
+              padding: '1rem',
+              backgroundColor: asset.conviction === 'HIGH' ? '#f8f9fa' : 'white'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <strong style={{ fontSize: '18px' }}>{asset.symbol}</strong>
+                    <span style={{
+                      backgroundColor: asset.prediction.includes('Bullish') ? '#1f8a4c' : asset.prediction.includes('Neutral') ? '#f39c12' : '#e74c3c',
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '11px',
+                      fontWeight: 600
+                    }}>
+                      {asset.prediction}
+                    </span>
+                    {asset.conviction === 'HIGH' && (
+                      <span style={{
+                        backgroundColor: '#6c5ce7',
+                        color: 'white',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 600
+                      }}>
+                        HIGH CONVICTION
+                      </span>
+                    )}
+                  </div>
+                  <div className="muted" style={{ marginTop: '0.3rem', fontSize: '14px' }}>{asset.thesis}</div>
+                  <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '12px' }}>
+                    <div>
+                      <span className="muted">Entry:</span> ${asset.entry}
+                    </div>
+                    <div>
+                      <span className="muted">Stop:</span> ${asset.stop}
+                    </div>
+                    <div>
+                      <span className="muted">Target:</span> ${asset.target}
+                    </div>
+                    <div>
+                      <span className="muted">R:R</span> {asset.riskReward}
+                    </div>
+                    <div>
+                      <span className="muted">Horizon:</span> {asset.timeHorizon}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  className="ghost pressable"
+                  onClick={() => navigate(`/assets/${asset.symbol}`)}
+                  style={{ padding: '0.5rem 1rem', fontSize: '12px' }}
+                >
+                  Analyze
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Strategy Performance & Recent Trades */}
+      <section style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <strong>Strategy Performance</strong>
+          <div style={{ marginTop: '0.8rem', maxHeight: '300px', overflowY: 'auto' }}>
+            {strategyPerformance.map((strategy) => (
+              <div key={strategy.name} style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr auto auto auto auto',
+                gap: '0.5rem',
+                borderBottom: '1px solid #eee',
+                paddingBottom: '0.5rem',
+                marginBottom: '0.5rem',
+                alignItems: 'center',
+                fontSize: '12px'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{strategy.name}</div>
+                  <div className="muted">{strategy.trades} trades</div>
+                </div>
+                <div style={{ color: '#1f8a4c', fontWeight: 700 }}>{strategy.edge}</div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: 600 }}>{strategy.winRate}</div>
+                  <div className="muted">Win Rate</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: 600 }}>{strategy.avgHold}</div>
+                  <div className="muted">Avg Hold</div>
+                </div>
+                <div>
+                  <span style={{
+                    backgroundColor: strategy.status === 'ACTIVE' ? '#1f8a4c' : '#e74c3c',
+                    color: 'white',
+                    padding: '2px 6px',
+                    borderRadius: '8px',
+                    fontSize: '10px',
+                    fontWeight: 600
+                  }}>
+                    {strategy.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <strong>Recent Trades</strong>
+          <div style={{ marginTop: '0.8rem', maxHeight: '300px', overflowY: 'auto' }}>
+            {recentTrades.map((trade, index) => (
+              <div key={index} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <strong>{trade.symbol}</strong>
+                  <span style={{ color: trade.pnl > 0 ? '#1f8a4c' : '#c0392b', fontWeight: 600 }}>
+                    ${trade.pnl.toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '12px' }}>
+                  <div>
+                    <span className="muted">${trade.entry} → ${trade.exit}</span>
+                  </div>
+                  <div>
+                    <span className="muted">{trade.holdTime}</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: '11px', color: '#7a7a7a' }}>
+                  Exit: {trade.exitReason}
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      {/* Trading Calendar */}
+      <section style={{ background: 'white', borderRadius: 24, padding: '2rem', boxShadow: '0 8px 26px rgba(0,0,0,0.06)', marginBottom: '1rem' }}>
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <div className="eyebrow">Trading Calendar</div>
+          <h2 style={{ margin: '0.5rem 0', fontSize: '2rem', fontWeight: 700, lineHeight: 1.2 }}>Alpha Engine Predictions</h2>
+          <p className="muted" style={{ maxWidth: 600, margin: '0 auto', fontSize: '18px', lineHeight: 1.5 }}>
+            Interactive calendar showing all trading signals, predictions, and economic events for the current month.
+          </p>
+        </div>
+
+        <Calendar />
+
+        {/* Call to Action */}
+        <div style={{ textAlign: 'center', marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid #e9ecef' }}>
+          <h3 style={{ fontSize: '1.3rem', fontWeight: 600, marginBottom: '1rem' }}>Never miss a trading opportunity</h3>
+          <p className="muted" style={{ marginBottom: '1.5rem' }}>
+            Get instant notifications when our Alpha Engine generates new signals or targets are reached.
+          </p>
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button className="primary pressable" onClick={() => navigate('/notifications')}>
+              Get Notified
+            </button>
+            <button className="ghost pressable" onClick={() => navigate('/signals')}>
+              View All Signals
+            </button>
+            <button className="ghost pressable" onClick={() => navigate('/calendar')}>
+              Export Calendar
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* System Health & Automation */}
+      <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <strong>System Health</strong>
+          <div style={{ marginTop: '0.8rem' }}>
+            <div className="muted">Bots Online</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>9 / 10</div>
+            <div style={{ color: '#1f8a4c', fontWeight: 600, fontSize: '14px' }}>Execution latency normal</div>
+          </div>
+        </article>
+
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <strong>Risk Metrics</strong>
+          <div style={{ marginTop: '0.8rem' }}>
+            <div className="muted">Portfolio Heat</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>6.8%</div>
+            <div style={{ color: '#f39c12', fontWeight: 600, fontSize: '14px' }}>Within limits</div>
+          </div>
+        </article>
+
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <strong>Prediction Quality</strong>
+          <div style={{ marginTop: '0.8rem' }}>
+            <div className="muted">7-day precision</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>71%</div>
+            <div style={{ color: '#1f8a4c', fontWeight: 600, fontSize: '14px' }}>Improving trend</div>
+          </div>
+        </article>
+      </section>
+
+      {/* What We Do Section */}
+      <section style={{ background: 'white', borderRadius: 24, padding: '2rem', boxShadow: '0 8px 26px rgba(0,0,0,0.06)', marginBottom: '1rem' }}>
+        <div style={{ textAlign: 'right', fontSize: '12px', color: '#7a7a7a' }}>
+          <div>Last Update</div>
+          <div style={{ fontSize: '14px', fontWeight: 600 }}>{currentTime.toLocaleTimeString()}</div>
+        </div>
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <h2 style={{ margin: '0.5rem 0', fontSize: '2rem', fontWeight: 700, lineHeight: 1.2 }}>Algorithmic Trading Made Intelligent</h2>
+          <p className="muted" style={{ maxWidth: 600, margin: '0 auto', fontSize: '18px', lineHeight: 1.5 }}>
+            Lumantic transforms complex market data into actionable trading intelligence through advanced machine learning and automated execution.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginBottom: '2rem' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>#</div>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 600, marginBottom: '0.5rem', color: '#111' }}>Signal Generation</h3>
+            <p className="muted" style={{ lineHeight: 1.5 }}>
+              Our Alpha Engine analyzes thousands of data points in real-time to generate high-confidence trading signals across multiple strategies and timeframes.
+            </p>
+            <button className="ghost pressable" style={{ marginTop: '1rem', fontSize: '14px' }} onClick={() => navigate('/signals')}>
+              Learn More
+            </button>
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>#</div>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 600, marginBottom: '0.5rem', color: '#111' }}>Risk Management</h3>
+            <p className="muted" style={{ lineHeight: 1.5 }}>
+              Sophisticated position sizing, stop-loss management, and portfolio heat controls protect capital while maximizing opportunity capture.
+            </p>
+            <button className="ghost pressable" style={{ marginTop: '1rem', fontSize: '14px' }} onClick={() => navigate('/risk')}>
+              Learn More
+            </button>
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>#</div>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 600, marginBottom: '0.5rem', color: '#111' }}>Automated Execution</h3>
+            <p className="muted" style={{ lineHeight: 1.5 }}>
+              Lightning-fast trade execution with minimal latency ensures signals are captured at optimal prices across multiple market conditions.
+            </p>
+            <button className="ghost pressable" style={{ marginTop: '1rem', fontSize: '14px' }} onClick={() => navigate('/bots')}>
+              Start a Bot
+            </button>
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'center', paddingTop: '2rem', borderTop: '1px solid #e9ecef' }}>
+          <h3 style={{ fontSize: '1.3rem', fontWeight: 600, marginBottom: '1rem' }}>Ready to get started?</h3>
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button className="primary pressable" onClick={() => navigate('/register')}>
+              Start Trading Now
+            </button>
+            <button className="ghost pressable" onClick={() => navigate('/demo')}>
+              Request Demo
+            </button>
+            <button className="ghost pressable" onClick={() => navigate('/notifications')}>
+              Get Notified
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
