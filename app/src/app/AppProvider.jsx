@@ -1,25 +1,11 @@
-import { createContext, useContext, useReducer, useEffect } from 'react'
-import executionsService from '../api/services/executionsService.js'
-import predictionsService from '../api/services/predictionsService.js'
-import portfoliosService from '../api/services/portfoliosService.js'
-import strategiesService from '../api/services/strategiesService.js'
+import { createContext, useContext, useReducer } from 'react'
 
 const AppCtx = createContext()
 
 const initial = {
-  assets: [],
-  bots: [],
-  orders: [],
-  trades: [],
-  executions: [],
-  predictions: [],
-  portfolios: [],
-  strategies: [],
   selectedAsset: 'NVDA',
   selectedBotId: null,
-  selectedOrderId: null,
-  loading: false,
-  error: null
+  selectedOrderId: null
 }
 
 function reducer(state, action){
@@ -30,20 +16,6 @@ function reducer(state, action){
       return { ...state, selectedBotId: action.payload }
     case 'SELECT_ORDER':
       return { ...state, selectedOrderId: action.payload }
-    case 'SET_LOADING':
-      return { ...state, loading: action.payload }
-    case 'SET_ERROR':
-      return { ...state, error: action.payload }
-    case 'SET_EXECUTIONS':
-      return { ...state, executions: action.payload }
-    case 'SET_PREDICTIONS':
-      return { ...state, predictions: action.payload }
-    case 'SET_PORTFOLIOS':
-      return { ...state, portfolios: action.payload }
-    case 'SET_STRATEGIES':
-      return { ...state, strategies: action.payload }
-    case 'ADD_EXECUTION':
-      return { ...state, executions: [action.payload, ...state.executions] }
     default:
       return state
   }
@@ -52,52 +24,8 @@ function reducer(state, action){
 export function AppProvider({ children }){
   const [state, dispatch] = useReducer(reducer, initial)
 
-  // Data fetching methods
-  const fetchData = async () => {
-    dispatch({ type: 'SET_LOADING', payload: true })
-    try {
-      const [executions, predictions, portfolios, strategies] = await Promise.all([
-        executionsService.getAll(),
-        predictionsService.getAll(),
-        portfoliosService.getAll(),
-        strategiesService.getAll()
-      ])
-
-      dispatch({ type: 'SET_EXECUTIONS', payload: executions })
-      dispatch({ type: 'SET_PREDICTIONS', payload: predictions })
-      dispatch({ type: 'SET_PORTFOLIOS', payload: portfolios })
-      dispatch({ type: 'SET_STRATEGIES', payload: strategies })
-      dispatch({ type: 'SET_ERROR', payload: null })
-    } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error.message })
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false })
-    }
-  }
-
-  const createExecution = async (executionData) => {
-    try {
-      const execution = await executionsService.create(executionData)
-      dispatch({ type: 'ADD_EXECUTION', payload: execution })
-      return execution
-    } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error.message })
-      throw error
-    }
-  }
-
-  // Initial data fetch
-  useEffect(() => {
-    fetchData()
-  }, [])
-
   return (
-    <AppCtx.Provider value={{ 
-      state, 
-      dispatch, 
-      fetchData, 
-      createExecution 
-    }}>
+    <AppCtx.Provider value={{ state, dispatch }}>
       {children}
     </AppCtx.Provider>
   )
