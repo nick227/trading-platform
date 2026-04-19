@@ -5,6 +5,7 @@ import executionRoutes from '../routes/executions.js'
 import portfolioRoutes from '../routes/portfolios.js'
 import brokerRoutes from '../routes/broker.js'
 import opsRoutes from '../routes/ops.js'
+import engineRoutes from '../routes/engine.js'
 
 export default async function registerRoutes(app) {
   await app.register(strategiesRoutes, { prefix: '/api/strategies' })
@@ -14,4 +15,5 @@ export default async function registerRoutes(app) {
   await app.register(portfolioRoutes, { prefix: '/api/portfolios' })
   await app.register(brokerRoutes, { prefix: '/api/broker' })
   await app.register(opsRoutes, { prefix: '/api/ops' })
+  await app.register(engineRoutes, { prefix: '/api/engine' })
 }

@@ -62,7 +62,8 @@ The server will be available at `http://localhost:3000` with API docs at `http:/
 
 ```bash
 DATABASE_URL="mysql://root:password@localhost:3306/trading_platform"
-ENGINE_URL="http://localhost:8000"
+ENGINE_URL="http://localhost:8090"
+OLD_ENGINE_URL="http://localhost:8000"
 PORT=3000
 ```
 

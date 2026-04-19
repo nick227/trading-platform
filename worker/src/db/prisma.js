@@ -1,6 +1,4 @@
-import serverPrisma from '../../../server/node_modules/@prisma/client/default.js'
-
-const { PrismaClient } = serverPrisma
+import { PrismaClient } from '@prisma/client'
 
 // Shared Prisma client for the worker process.
 // Uses the same DATABASE_URL env var as the API server.

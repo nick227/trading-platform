@@ -2,15 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import StrategyChart from '../components/StrategyChart'
 import Calendar from '../components/Calendar'
-import { getMarketPulse, getLiveSignals, getFeaturedAssets } from '../services/marketData.js'
+import { useAlphaDashboard, useAlphaSignals } from '../hooks/useAlphaEngine.js'
+import { getMarketPulse, getFeaturedAssets } from '../services/marketData.js'
 
-const dimensionalPredictions = [
-  { symbol: 'NVDA', axis: 'HIGH_VOL_TREND_TECH_AGGRESSIVE_7d', prediction: 0.084, confidence: 0.84, actual: null },
-  { symbol: 'AMD', axis: 'MED_VOL_TREND_TECH_BALANCED_5d', prediction: 0.067, confidence: 0.79, actual: null },
-  { symbol: 'SMCI', axis: 'HIGH_VOL_TREND_TECH_AGGRESSIVE_20d', prediction: 0.112, confidence: 0.91, actual: null },
-  { symbol: 'AAPL', axis: 'LOW_VOL_CHOP_TECH_DEFENSIVE_7d', prediction: 0.023, confidence: 0.62, actual: 0.018 },
-  { symbol: 'MSFT', axis: 'MED_VOL_TREND_TECH_BALANCED_5d', prediction: 0.045, confidence: 0.71, actual: 0.052 }
-]
 
 const performanceMetrics = {
   dailyPnL: 2847.32,
@@ -33,7 +27,6 @@ const strategyPerformance = [
   { name: 'Silent Compounder', edge: '+1.3%', winRate: '71%', trades: 54, avgHold: '8.7d', status: 'ACTIVE' }
 ]
 
-const featuredAssets = getFeaturedAssets()
 
 const recentTrades = [
   { symbol: 'GOOGL', entry: 142.38, exit: 147.92, pnl: 552.34, holdTime: '3d', exitReason: 'TARGET' },
@@ -42,12 +35,57 @@ const recentTrades = [
   { symbol: 'AMZN', entry: 178.23, exit: 182.94, pnl: 471.85, holdTime: '2d', exitReason: 'SIGNAL' }
 ]
 
+// Helper functions to transform alpha-engine data
+function transformSignalsToLiveFormat(signals) {
+  return signals.map(signal => ({
+    symbol: signal.symbol,
+    strategy: signal.source === 'top_ranked' ? 'Alpha Ranking' : 'Momentum Signal',
+    confidence: signal.confidence,
+    entry: '$145.32', // Mock data - would come from execution service
+    stop: '$142.15',
+    target: '$152.80',
+    type: signal.type
+  }))
+}
+
+function transformRankingsToPredictions(rankings) {
+  return rankings.map(ranking => ({
+    symbol: ranking.symbol,
+    axis: `${ranking.confidence > 0.8 ? 'HIGH' : ranking.confidence > 0.6 ? 'MED' : 'LOW'}_VOL_PREDICT_${ranking.symbol}_AGGRESSIVE_7d`,
+    prediction: (ranking.score || 0.05) * (ranking.rank > 0 ? 1 : -1),
+    confidence: ranking.confidence,
+    actual: null
+  }))
+}
+
+function transformRankingsToFeaturedAssets(rankings) {
+  return rankings.slice(0, 5).map(ranking => ({
+    symbol: ranking.symbol,
+    prediction: ranking.rank > 0 ? 'Bullish' : 'Bearish',
+    thesis: ranking.reasons?.slice(0, 2).join(', ') || 'Strong technical signal detected',
+    conviction: ranking.confidence > 0.8 ? 'HIGH' : ranking.confidence > 0.6 ? 'MEDIUM' : 'LOW',
+    entry: '$145.32', // Mock data
+    stop: '$142.15',
+    target: '$152.80',
+    riskReward: '2.1:1',
+    timeHorizon: '3-5d'
+  }))
+}
+
 export default function Landing() {
   const navigate = useNavigate()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [selectedSignal, setSelectedSignal] = useState(null)
   const [marketPulse, setMarketPulse] = useState(getMarketPulse())
-  const [liveSignals, setLiveSignals] = useState(getLiveSignals())
+  
+  // Alpha Engine data
+  const { dashboard, loading: dashboardLoading, error: dashboardError } = useAlphaDashboard()
+  const { signals, loading: signalsLoading } = useAlphaSignals({ refreshInterval: 30000 })
+  
+  // Transform alpha-engine data for UI components
+  const liveSignals = transformSignalsToLiveFormat(signals || [])
+  const dimensionalPredictions = transformRankingsToPredictions(dashboard?.topRankings?.rankings || [])
+  const featuredAssets = transformRankingsToFeaturedAssets(dashboard?.topRankings?.rankings || [])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -58,6 +96,30 @@ export default function Landing() {
 
   return (
     <div className="page container" style={{ maxWidth: 1200, margin: '0 auto', padding: '1rem 1rem 3rem' }}>
+
+      {/* Alpha Engine Status */}
+      {dashboardError && (
+        <section style={{ 
+          background: '#fef2f2', 
+          border: '1px solid #fecaca', 
+          borderRadius: 12, 
+          padding: '1rem', 
+          marginBottom: '1rem' 
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ 
+              width: '8px', 
+              height: '8px', 
+              borderRadius: '50%', 
+              backgroundColor: '#c0392b' 
+            }} />
+            <strong style={{ color: '#c0392b' }}>Alpha Engine Connection Error</strong>
+          </div>
+          <div style={{ fontSize: '14px', color: '#c0392b', marginTop: '0.5rem' }}>
+            {dashboardError}
+          </div>
+        </section>
+      )}
 
       {/* Alpha Engine Deep Dive */}
       <section style={{ background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)', borderRadius: 24, padding: '2rem', marginBottom: '1rem' }}>
@@ -272,57 +334,69 @@ export default function Landing() {
         <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <strong>Live Signals</strong>
-            <div style={{ fontSize: '12px', color: '#7a7a7a' }}>{liveSignals.length} active</div>
+            <div style={{ fontSize: '12px', color: '#7a7a7a' }}>
+              {signalsLoading ? 'Loading...' : `${liveSignals.length} active`}
+            </div>
           </div>
           <div style={{ marginTop: '0.8rem', maxHeight: '300px', overflowY: 'auto' }}>
-            {liveSignals.map((signal) => (
-              <div
-                key={signal.symbol}
-                style={{
-                  borderBottom: '1px solid #eee',
-                  paddingBottom: '0.8rem',
-                  marginBottom: '0.8rem',
-                  cursor: 'pointer',
-                  backgroundColor: selectedSignal?.symbol === signal.symbol ? '#f8f9fa' : 'transparent',
-                  padding: '0.5rem',
-                  borderRadius: '8px'
-                }}
-                onClick={() => setSelectedSignal(signal)}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '16px' }}>{signal.symbol}</div>
-                    <div className="muted" style={{ fontSize: '12px' }}>{signal.strategy}</div>
+            {signalsLoading ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+                Loading signals from Alpha Engine...
+              </div>
+            ) : liveSignals.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+                No active signals available
+              </div>
+            ) : (
+              liveSignals.map((signal) => (
+                <div
+                  key={signal.symbol}
+                  style={{
+                    borderBottom: '1px solid #eee',
+                    paddingBottom: '0.8rem',
+                    marginBottom: '0.8rem',
+                    cursor: 'pointer',
+                    backgroundColor: selectedSignal?.symbol === signal.symbol ? '#f8f9fa' : 'transparent',
+                    padding: '0.5rem',
+                    borderRadius: '8px'
+                  }}
+                  onClick={() => setSelectedSignal(signal)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '16px' }}>{signal.symbol}</div>
+                      <div className="muted" style={{ fontSize: '12px' }}>{signal.strategy}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{
+                        backgroundColor: signal.confidence > 0.8 ? '#1f8a4c' : signal.confidence > 0.7 ? '#f39c12' : '#e74c3c',
+                        color: 'white',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 600
+                      }}>
+                        {(signal.confidence * 100).toFixed(0)}%
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{
-                      backgroundColor: signal.confidence > 0.8 ? '#1f8a4c' : signal.confidence > 0.7 ? '#f39c12' : '#e74c3c',
-                      color: 'white',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: 600
-                    }}>
-                      {(signal.confidence * 100).toFixed(0)}%
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '12px' }}>
+                    <div>
+                      <span className="muted">Entry:</span> {signal.entry}
+                    </div>
+                    <div>
+                      <span className="muted">Stop:</span> {signal.stop}
+                    </div>
+                    <div>
+                      <span className="muted">Target:</span> {signal.target}
+                    </div>
+                    <div>
+                      <span className="muted">Type:</span> {signal.type}
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '12px' }}>
-                  <div>
-                    <span className="muted">Entry:</span> ${signal.entry}
-                  </div>
-                  <div>
-                    <span className="muted">Stop:</span> ${signal.stop}
-                  </div>
-                  <div>
-                    <span className="muted">Target:</span> ${signal.target}
-                  </div>
-                  <div>
-                    <span className="muted">R:R</span> {((signal.target - signal.entry) / (signal.entry - signal.stop)).toFixed(1)}:1
-                  </div>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </article>
 
@@ -330,21 +404,31 @@ export default function Landing() {
           <strong>Dimensional Predictions</strong>
           <div style={{ marginTop: '0.8rem', fontSize: '12px', color: '#7a7a7a' }}>6D Tagged Predictions</div>
           <div style={{ maxHeight: '300px', overflowY: 'auto', marginTop: '0.5rem' }}>
-            {dimensionalPredictions.map((pred) => (
-              <div key={pred.symbol} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <strong>{pred.symbol}</strong>
-                  <span style={{ color: pred.actual ? '#1f8a4c' : '#7a7a7a' }}>
-                    {pred.actual ? `${(pred.actual * 100).toFixed(1)}%` : `${(pred.prediction * 100).toFixed(1)}%`}
-                  </span>
-                </div>
-                <div className="muted" style={{ fontSize: '11px', marginTop: '0.2rem' }}>{pred.axis}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '11px' }}>
-                  <span className="muted">Conf: {(pred.confidence * 100).toFixed(0)}%</span>
-                  {pred.actual && <span className="muted">Actual: {(pred.actual * 100).toFixed(1)}%</span>}
-                </div>
+            {dashboardLoading ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+                Loading predictions from Alpha Engine...
               </div>
-            ))}
+            ) : dimensionalPredictions.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+                No predictions available
+              </div>
+            ) : (
+              dimensionalPredictions.map((pred) => (
+                <div key={pred.symbol} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <strong>{pred.symbol}</strong>
+                    <span style={{ color: pred.actual ? '#1f8a4c' : '#7a7a7a' }}>
+                      {pred.actual ? `${(pred.actual * 100).toFixed(1)}%` : `${(pred.prediction * 100).toFixed(1)}%`}
+                    </span>
+                  </div>
+                  <div className="muted" style={{ fontSize: '11px', marginTop: '0.2rem' }}>{pred.axis}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '11px' }}>
+                    <span className="muted">Conf: {(pred.confidence * 100).toFixed(0)}%</span>
+                    {pred.actual && <span className="muted">Actual: {(pred.actual * 100).toFixed(1)}%</span>}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </article>
       </section>
@@ -353,7 +437,16 @@ export default function Landing() {
       <section style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)', marginBottom: '1rem' }}>
         <strong>Featured Assets</strong>
         <div style={{ display: 'grid', gap: '0.8rem', marginTop: '0.8rem' }}>
-          {featuredAssets.map((asset) => (
+          {dashboardLoading ? (
+            <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+              Loading featured assets from Alpha Engine...
+            </div>
+          ) : featuredAssets.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+              No featured assets available
+            </div>
+          ) : (
+            featuredAssets.map((asset) => (
             <div key={asset.symbol} style={{
               border: '1px solid #eee',
               borderRadius: 12,
@@ -415,7 +508,7 @@ export default function Landing() {
                 </button>
               </div>
             </div>
-          ))}
+          )))}
         </div>
       </section>
 

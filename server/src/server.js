@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import createApp from './loaders/fastify.js'
 import registerRoutes from './loaders/routes.js'
 import prisma from './loaders/prisma.js'

@@ -1,9 +1,9 @@
-import { engineClient } from '../clients/engine.js'
+import { oldEngineClient } from '../clients/oldEngine.js'
 import { ID_PREFIXES, simpleHash } from '../utils/idGenerator.js'
 
 // NOTE: Prediction table exists but is not currently used.
-// Predictions are read directly from alpha-engine via engineClient.
-// This allows for future prediction storage/ingestion if needed.
+// Predictions are read from the legacy internal engine service.
+// Alpha-engine rankings/signals are exposed separately through /api/engine.
 
 function mapPrediction(raw) {
   // Stable, collision-safe ID using hash of stable input
@@ -36,7 +36,7 @@ function mapPrediction(raw) {
 
 export default {
   async getPredictions(query) {
-    const raw = await engineClient.getPredictions(query)
+    const raw = await oldEngineClient.getPredictions(query)
     
     // Dedupe predictions by ID to prevent duplicates
     const seen = new Set()

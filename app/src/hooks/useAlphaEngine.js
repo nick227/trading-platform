@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import alphaEngineService from '../api/services/alphaEngineService.js'
+import backendEngineService from '../api/services/backendEngineService.js'
 
 export function useAlphaEngineHealth() {
   const [health, setHealth] = useState({ status: 'unknown' })
@@ -8,7 +8,7 @@ export function useAlphaEngineHealth() {
 
   const checkHealth = useCallback(async () => {
     try {
-      const result = await alphaEngineService.checkHealth()
+      const result = await backendEngineService.checkHealth()
       setHealth(result)
       setError(null)
     } catch (err) {
@@ -39,8 +39,8 @@ export function useAlphaRankings(options = {}) {
     try {
       setLoading(true)
       const [topData, moversData] = await Promise.all([
-        alphaEngineService.getTopRankings(limit),
-        alphaEngineService.getRankingMovers(limit)
+        backendEngineService.getTopRankings(limit),
+        backendEngineService.getRankingMovers(limit)
       ])
       
       setRankings(topData)
@@ -74,7 +74,7 @@ export function useAlphaSignals(options = {}) {
   const fetchSignals = useCallback(async () => {
     try {
       setLoading(true)
-      const activeSignals = await alphaEngineService.getActiveSignals()
+      const activeSignals = await backendEngineService.getActiveSignals()
       setSignals(activeSignals)
       setError(null)
     } catch (err) {
@@ -108,8 +108,8 @@ export function useAlphaTicker(symbol) {
     try {
       setLoading(true)
       const [expData, perfData] = await Promise.all([
-        alphaEngineService.getTickerExplainability(symbol),
-        alphaEngineService.getTickerPerformance(symbol)
+        backendEngineService.getTickerExplainability(symbol),
+        backendEngineService.getTickerPerformance(symbol)
       ])
       
       setExplainability(expData)
@@ -138,7 +138,7 @@ export function useAlphaDashboard() {
   const fetchDashboard = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await alphaEngineService.getDashboardData()
+      const data = await backendEngineService.getDashboardData()
       setDashboard(data)
       setError(null)
     } catch (err) {

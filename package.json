@@ -13,13 +13,17 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=app",
+    "dev:server": "npm run dev --workspace=server",
     "dev:worker": "npm run dev --workspace=worker",
-    "dev:start": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-dev.ps1",
-    "dev:stop": "powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-dev.ps1",
+    "dev:start": "concurrently \"npm run dev:server\" \"npm run dev:worker\" \"npm run dev\"",
+    "dev:stop": "taskkill /f /im node.exe",
     "test": "npm test --workspaces",
     "test:app": "npm test --workspace=app",
     "test:server": "npm test --workspace=server",
     "e2e": "npm run e2e --workspace=app",
     "install:all": "npm install && npm install --workspace=app && npm install --workspace=server && npm install --workspace=worker"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

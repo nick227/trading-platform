@@ -1,0 +1,29 @@
+{
+    "startedAt":  "2026-04-19T13:28:53.6610091-05:00",
+    "processes":  [
+                      {
+                          "name":  "server",
+                          "pid":  26848,
+                          "stdout":  "C:\\wamp64\\www\\trading-platform\\tmp\\dev\\logs\\server.out.log",
+                          "stderr":  "C:\\wamp64\\www\\trading-platform\\tmp\\dev\\logs\\server.err.log"
+                      },
+                      {
+                          "name":  "worker",
+                          "pid":  6180,
+                          "stdout":  "C:\\wamp64\\www\\trading-platform\\tmp\\dev\\logs\\worker.out.log",
+                          "stderr":  "C:\\wamp64\\www\\trading-platform\\tmp\\dev\\logs\\worker.err.log"
+                      },
+                      {
+                          "name":  "app",
+                          "pid":  12804,
+                          "stdout":  "C:\\wamp64\\www\\trading-platform\\tmp\\dev\\logs\\app.out.log",
+                          "stderr":  "C:\\wamp64\\www\\trading-platform\\tmp\\dev\\logs\\app.err.log"
+                      }
+                  ],
+    "urls":  {
+                 "api":  "http://localhost:3001",
+                 "docs":  "http://localhost:3001/docs",
+                 "app":  "http://localhost:5173",
+                 "ops":  "http://localhost:5173/ops"
+             }
+}
