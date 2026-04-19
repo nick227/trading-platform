@@ -3,6 +3,6 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npm run preview"
+    "startCommand": "npm run preview -- --port $PORT"
   }
 }

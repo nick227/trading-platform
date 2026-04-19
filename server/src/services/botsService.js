@@ -12,25 +12,26 @@ export default {
         portfolioId: data.portfolioId,
         strategyId:  data.strategyId ?? null,
         templateId:  data.templateId ?? null,
-        botType:     data.botType ?? 'rule_based',
+        type:        data.type ?? 'RULE_BASED',
         name:        data.name,
         enabled:     data.enabled ?? true,
+        status:      data.status ?? 'draft',
         config:      data.config ?? {}
       }
     })
     return bot
   },
 
-  // Create a bot + its rules atomically from a BotTemplate.
-  // Callers supply overrides (tickers, quantity) to customise the template defaults.
+  // Create a bot from template with proper type handling
   async createBotFromTemplate(data) {
     const template = await prisma.botTemplate.findUnique({ where: { id: data.templateId } })
     if (!template) return null
 
     const config = {
       ...template.config,               // direction, default quantity/tickers
-      ...(data.tickers   ? { tickers:  data.tickers }  : {}),
-      ...(data.quantity  ? { quantity: data.quantity }  : {})
+      ...(data.tickers   ? { tickers: data.tickers }  : {}),
+      ...(data.quantity  ? { quantity: data.quantity }  : {}),
+      ...(data.minConfidence ? { minConfidence: data.minConfidence } : {})
     }
 
     return prisma.$transaction(async (tx) => {
@@ -39,195 +40,280 @@ export default {
           id:          generateId(ID_PREFIXES.BOT),
           userId:      data.userId || STUB_USER_ID,
           portfolioId: data.portfolioId,
-          strategyId:  data.strategyId ?? null,
-          templateId:  template.id,
-          botType:     template.botType,
+          strategyId:  template.type === 'STRATEGY_BASED' ? template.id : null,
+          templateId: template.type === 'RULE_BASED' ? template.id : null,
+          type:        template.type,
           name:        data.name ?? template.name,
           enabled:     data.enabled ?? true,
+          status:      'draft',
           config
         }
       })
 
-      // Copy template rules into BotRule rows owned by this bot
-      const ruleRows = template.rules.map(rule => ({
-        id:      generateId(ID_PREFIXES.RULE),
-        botId:   bot.id,
-        name:    rule.name,
-        type:    rule.type,
-        config:  rule.config,
-        enabled: true
-      }))
-
-      await tx.botRule.createMany({ data: ruleRows })
-
-      return tx.bot.findUnique({
-        where: { id: bot.id },
-        include: { rules: true }
-      })
-    })
-  },
-
-  // ─── Catalog ─────────────────────────────────────────────────────────────────
-
-  async getCatalog(query = {}) {
-    const where = {}
-    if (query.botType) where.botType = query.botType
-
-    const templates = await prisma.botTemplate.findMany({
-      where,
-      orderBy: { name: 'asc' }
-    })
-    return templates
-  },
-
-  async getCatalogTemplate(id) {
-    return prisma.botTemplate.findUnique({ where: { id } })
-  },
-
-  async getBots(query) {
-    const { userId = STUB_USER_ID, portfolioId, enabled, offset = 0, limit = 50 } = query
-    const take = Math.min(parseInt(limit), 100)
-    const skip = Math.max(parseInt(offset), 0)
-
-    const where = { userId, deletedAt: null }
-    if (portfolioId) where.portfolioId = portfolioId
-    if (enabled !== undefined) where.enabled = enabled === 'true'
-
-    const bots = await prisma.bot.findMany({
-      where,
-      include: {
-        portfolio: {
-          select: { id: true, name: true }
-        },
-        strategy: {
-          select: { id: true, name: true, type: true }
-        },
-        _count: {
-          select: {
-            executions: true,
-            events: true,
-            rules: true
+      // Create initial bot event
+      await tx.botEvent.create({
+        data: {
+          id: generateId(ID_PREFIXES.BOT_EVENT),
+          botId: bot.id,
+          type: 'bot_created',
+          detail: `Bot created from template: ${template.name}`,
+          metadata: {
+            templateId: template.id,
+            templateName: template.name,
+            config
           }
         }
-      },
-      orderBy: { createdAt: 'desc' },
-      take,
-      skip
-    })
+      })
 
-    const total = await prisma.bot.count({ where })
+      return bot
+    })
+  },
+
+  async getBots(filters = {}) {
+    const where = {
+      userId: filters.userId || STUB_USER_ID
+    }
+
+    if (filters.portfolioId) {
+      where.portfolioId = filters.portfolioId
+    }
+
+    if (filters.enabled !== undefined) {
+      where.enabled = filters.enabled
+    }
+
+    if (filters.type) {
+      where.type = filters.type
+    }
+
+    if (filters.status) {
+      where.status = filters.status
+    }
+
+    const orderBy = [
+      { createdAt: 'desc' }
+    ]
+
+    const skip = filters.offset || 0
+    const take = filters.limit || 25
+
+    const [bots, total] = await Promise.all([
+      prisma.bot.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        include: {
+          portfolio: true,
+          template: true,
+          strategy: true,
+          rules: {
+            orderBy: { order: 'asc' }
+          }
+        }
+      }),
+      prisma.bot.count({ where })
+    ])
 
     return {
-      data: bots,
-      pagination: {
-        total,
-        hasMore: skip + take < total,
-        nextOffset: skip + take < total ? skip + take : null
-      }
+      items: bots,
+      total,
+      limit: take,
+      offset: skip
     }
   },
 
   async getBot(id) {
-    return prisma.bot.findFirst({
-      where: { id, deletedAt: null },
+    return prisma.bot.findUnique({
+      where: { id },
       include: {
         portfolio: true,
+        template: true,
         strategy: true,
         rules: {
-          orderBy: { createdAt: 'desc' }
+          orderBy: { order: 'asc' }
         },
         events: {
           orderBy: { createdAt: 'desc' },
-          take: 50
+          take: 10
         },
         executions: {
           orderBy: { createdAt: 'desc' },
-          take: 20
-        },
-        _count: {
-          select: {
-            executions: true,
-            events: true,
-            rules: true
-          }
+          take: 10
         }
       }
     })
   },
 
   async updateBot(id, data) {
-    return prisma.bot.update({
+    const updateData = {}
+    
+    if (data.name !== undefined) {
+      updateData.name = data.name
+    }
+
+    if (data.enabled !== undefined) {
+      updateData.enabled = data.enabled
+    }
+
+    if (data.status !== undefined) {
+      updateData.status = data.status
+    }
+
+    if (data.config !== undefined) {
+      updateData.config = data.config
+    }
+
+    const bot = await prisma.bot.update({
       where: { id },
-      data: {
-        ...data,
-        updatedAt: new Date()
+      data: updateData
+    })
+
+    // Create status change event if status changed
+    if (data.status) {
+      await prisma.botEvent.create({
+        data: {
+          id: generateId(ID_PREFIXES.BOT_EVENT),
+          botId: id,
+          type: 'config_updated',
+          detail: `Bot status changed to ${data.status}`,
+          metadata: {
+            oldStatus: bot.status,
+            newStatus: data.status
+          }
+        }
+      })
+    }
+
+    return bot
+  },
+
+  async enableBot(id) {
+    const bot = await prisma.bot.update({
+      where: { id },
+      data: { 
+        enabled: true,
+        status: 'running'
       }
     })
+
+    await prisma.botEvent.create({
+      data: {
+        id: generateId(ID_PREFIXES.BOT_EVENT),
+        botId: id,
+        type: 'bot_enabled',
+        detail: 'Bot enabled for execution',
+        metadata: {
+          enabled: true,
+          status: 'running'
+        }
+      }
+    })
+
+    return bot
+  },
+
+  async disableBot(id) {
+    const bot = await prisma.bot.update({
+      where: { id },
+      data: { 
+        enabled: false,
+        status: 'paused'
+      }
+    })
+
+    await prisma.botEvent.create({
+      data: {
+        id: generateId(ID_PREFIXES.BOT_EVENT),
+        botId: id,
+        type: 'bot_disabled',
+        detail: 'Bot disabled by user',
+        metadata: {
+          enabled: false,
+          status: 'paused'
+        }
+      }
+    })
+
+    return bot
   },
 
   async deleteBot(id) {
-    // Soft delete
-    return prisma.bot.update({
+    // Soft delete - update status to disabled
+    const bot = await prisma.bot.update({
       where: { id },
-      data: {
-        deletedAt: new Date(),
-        enabled: false
+      data: { 
+        enabled: false,
+        status: 'offline'
       }
     })
-  },
 
-  async createBotEvent(data) {
-    validateEventMetadata(data.type, data.metadata)
-    
-    const event = await prisma.botEvent.create({
+    await prisma.botEvent.create({
       data: {
-        id: generateId(ID_PREFIXES.EVENT),
-        botId: data.botId,
-        portfolioId: data.portfolioId,
-        ruleId: data.ruleId,
-        executionId: data.executionId,
-        type: data.type,
-        detail: data.detail,
-        metadata: data.metadata
-      }
-    })
-    return event
-  },
-
-  async getBotEvents(query) {
-    const { botId, portfolioId, type, offset = 0, limit = 50 } = query
-    const take = Math.min(parseInt(limit), 100)
-    const skip = Math.max(parseInt(offset), 0)
-
-    const where = {}
-    if (botId) where.botId = botId
-    if (portfolioId) where.portfolioId = portfolioId
-    if (type) where.type = type
-
-    const events = await prisma.botEvent.findMany({
-      where,
-      include: {
-        bot: {
-          select: { id: true, name: true }
-        },
-        execution: {
-          select: { id: true, ticker, direction, quantity, price }
+        id: generateId(ID_PREFIXES.BOT_EVENT),
+        botId: id,
+        type: 'bot_disabled',
+        detail: 'Bot deleted (soft delete)',
+        metadata: {
+          enabled: false,
+          status: 'offline'
         }
-      },
-      orderBy: { createdAt: 'desc' },
-      take,
-      skip
+      }
     })
 
-    const total = await prisma.botEvent.count({ where })
+    return bot
+  },
+
+  async getBotCatalog() {
+    const [ruleBased, strategyBased] = await Promise.all([
+      prisma.botTemplate.findMany({
+        where: { type: 'RULE_BASED' },
+        orderBy: { name: 'asc' }
+      }),
+      prisma.botTemplate.findMany({
+        where: { type: 'STRATEGY_BASED' },
+        orderBy: { name: 'asc' }
+      })
+    ])
 
     return {
-      data: events,
-      pagination: {
-        total,
-        hasMore: skip + take < total,
-        nextOffset: skip + take < total ? skip + take : null
-      }
+      ruleBased: ruleBased.map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        type: t.type
+      })),
+      strategyBased: strategyBased.map(s => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        type: s.type
+      }))
     }
+  },
+
+  async updateBotActivity(id, activityData) {
+    const updateData = {}
+
+    if (activityData.lastRunAt) {
+      updateData.lastRunAt = activityData.lastRunAt
+    }
+
+    if (activityData.lastEventAt) {
+      updateData.lastEventAt = activityData.lastEventAt
+    }
+
+    if (activityData.lastExecutionAt) {
+      updateData.lastExecutionAt = activityData.lastExecutionAt
+    }
+
+    if (activityData.status) {
+      updateData.status = activityData.status
+    }
+
+    return prisma.bot.update({
+      where: { id },
+      data: updateData
+    })
   }
 }

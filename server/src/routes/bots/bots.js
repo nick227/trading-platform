@@ -40,7 +40,6 @@ export default async function botsRoutes(app, opts) {
     return reply.code(201).send({ data: bot })
   })
 
-  // PUT /api/bots/:id
   app.put('/:id', {
     schema: {
       body: {
@@ -65,7 +64,6 @@ export default async function botsRoutes(app, opts) {
     }
   })
 
-  // DELETE /api/bots/:id
   app.delete('/:id', async (request, reply) => {
     const { id } = request.params
     try {

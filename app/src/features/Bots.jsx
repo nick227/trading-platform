@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useApp } from '../app/AppProvider'
 import { getBotCatalog } from '../api/services/botCatalogService.js'
+import { useAlphaSignals } from '../hooks/useAlphaEngine.js'
 
 export default function Bots() {
   const navigate = useNavigate()
@@ -9,6 +10,7 @@ export default function Bots() {
   const [catalog, setCatalog] = useState({ ruleBased: [], strategyBased: [] })
   const [loading, setLoading] = useState(true)
   const [successMessage, setSuccessMessage] = useState(null)
+  const { signals: alphaSignals, loading: signalsLoading } = useAlphaSignals({ refreshInterval: 60000 })
   
   const runningCount = state.bots.filter((bot) => bot.status === 'running').length
 
@@ -88,6 +90,77 @@ export default function Bots() {
           <div style={{ marginTop: '0.45rem', opacity: 0.88 }}>Win rate: 64%</div>
           <div style={{ opacity: 0.88 }}>Avg hold: 1.8 sessions</div>
           <div style={{ marginTop: '0.7rem', color: '#6effb6', fontWeight: 700 }}>Best actor: Momentum Swing</div>
+        </article>
+
+        {/* Alpha Engine Signals Panel */}
+        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+            <strong>Alpha Engine Signals</strong>
+            <span style={{ 
+              background: alphaSignals.length > 0 ? '#f0fdf4' : '#f9fafb',
+              color: alphaSignals.length > 0 ? '#1f8a4c' : '#666',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontWeight: 600
+            }}>
+              {signalsLoading ? 'Loading...' : `${alphaSignals.length} active`}
+            </span>
+          </div>
+          
+          {signalsLoading ? (
+            <div style={{ textAlign: 'center', padding: '1rem', color: '#666', fontSize: '12px' }}>
+              Loading signals...
+            </div>
+          ) : alphaSignals.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '1rem', color: '#666', fontSize: '12px' }}>
+              No active signals
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '0.5rem' }}>
+              {alphaSignals.slice(0, 3).map((signal, index) => (
+                <div key={index} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.5rem',
+                  background: signal.type === 'ENTRY' ? '#f0fdf4' : '#fef2f2',
+                  borderRadius: '6px',
+                  fontSize: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      backgroundColor: signal.type === 'ENTRY' ? '#1f8a4c' : '#c0392b'
+                    }} />
+                    <strong>{signal.symbol}</strong>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <span style={{ color: '#666' }}>
+                      {(signal.confidence * 100).toFixed(0)}%
+                    </span>
+                    <span style={{
+                      background: signal.type === 'ENTRY' ? '#1f8a4c' : '#c0392b',
+                      color: 'white',
+                      padding: '1px 4px',
+                      borderRadius: '2px',
+                      fontSize: '10px',
+                      fontWeight: 600
+                    }}>
+                      {signal.type}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {alphaSignals.length > 3 && (
+                <div style={{ textAlign: 'center', fontSize: '11px', color: '#666', marginTop: '0.25rem' }}>
+                  +{alphaSignals.length - 3} more signals
+                </div>
+              )}
+            </div>
+          )}
         </article>
       </section>
 

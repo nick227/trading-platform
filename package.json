@@ -14,6 +14,8 @@
   "scripts": {
     "dev": "npm run dev --workspace=app",
     "dev:worker": "npm run dev --workspace=worker",
+    "dev:start": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-dev.ps1",
+    "dev:stop": "powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-dev.ps1",
     "test": "npm test --workspaces",
     "test:app": "npm test --workspace=app",
     "test:server": "npm test --workspace=server",

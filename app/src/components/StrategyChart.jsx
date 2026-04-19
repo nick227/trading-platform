@@ -11,6 +11,7 @@ import {
   Filler
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
+import { useAlphaSignals } from '../hooks/useAlphaEngine.js'
 
 ChartJS.register(
   CategoryScale,
@@ -23,12 +24,46 @@ ChartJS.register(
   Filler
 )
 
-// Strategy chart will accept real data props
-const defaultData = {
-  dates: [],
-  strategyReturns: [],
-  dowReturns: [],
-  predictions: []
+// Generate mock historical data for demonstration
+function generateMockData(alphaSignals = []) {
+  const dates = []
+  const strategyReturns = []
+  const dowReturns = []
+  const predictions = []
+  
+  // Generate 30 days of historical data
+  const today = new Date()
+  for (let i = 29; i >= 0; i--) {
+    const date = new Date(today)
+    date.setDate(date.getDate() - i)
+    dates.push(date.toLocaleDateString())
+    
+    // Mock strategy returns (starting at 100k)
+    const baseReturn = 100000 + (Math.random() - 0.3) * 5000 + (29 - i) * 200
+    strategyReturns.push(baseReturn)
+    
+    // Mock DOW returns (benchmark)
+    const dowReturn = 100000 + (Math.random() - 0.4) * 3000 + (29 - i) * 150
+    dowReturns.push(dowReturn)
+  }
+  
+  // Add alpha engine signals as predictions
+  alphaSignals.forEach((signal, index) => {
+    if (index < 5) { // Limit to 5 most recent signals
+      const dayIndex = Math.max(0, dates.length - 1 - index * 2)
+      predictions.push({
+        x: dayIndex,
+        y: strategyReturns[dayIndex] || 100000,
+        type: signal.type,
+        symbol: signal.symbol,
+        confidence: signal.confidence,
+        score: signal.score,
+        reasons: signal.reasons
+      })
+    }
+  })
+  
+  return { dates, strategyReturns, dowReturns, predictions }
 }
 
 const chartOptions = {
@@ -92,44 +127,116 @@ const chartOptions = {
   }
 }
 
-const chartData = {
-  labels: defaultData.dates,
-  datasets: [
-    {
-      label: 'Alpha Engine Strategy',
-      data: defaultData.strategyReturns,
-      borderColor: '#1f8a4c',
-      backgroundColor: 'rgba(31, 138, 76, 0.1)',
-      borderWidth: 2,
-      fill: true,
-      tension: 0.1,
-      pointRadius: 0,
-      pointHoverRadius: 4
-    },
-    {
-      label: 'DOW Jones Average',
-      data: defaultData.dowReturns,
-      borderColor: '#7a7a7a',
-      backgroundColor: 'rgba(122, 122, 122, 0.1)',
-      borderWidth: 2,
-      fill: false,
-      tension: 0.1,
-      pointRadius: 0,
-      pointHoverRadius: 4,
-      borderDash: [5, 5]
-    }
-  ]
-}
-
-// Add prediction points as a separate dataset (empty for now)
-const predictionData = []
-
 export default function StrategyChart() {
+  const { signals, loading, error } = useAlphaSignals({ refreshInterval: 30000 })
+  
+  // Generate chart data with alpha engine signals
+  const chartData = React.useMemo(() => {
+    const data = generateMockData(signals)
+    
+    return {
+      labels: data.dates,
+      datasets: [
+        {
+          label: 'Alpha Engine Strategy',
+          data: data.strategyReturns,
+          borderColor: '#1f8a4c',
+          backgroundColor: 'rgba(31, 138, 76, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.1,
+          pointRadius: 0,
+          pointHoverRadius: 4
+        },
+        {
+          label: 'DOW Jones Average',
+          data: data.dowReturns,
+          borderColor: '#7a7a7a',
+          backgroundColor: 'rgba(122, 122, 122, 0.1)',
+          borderWidth: 2,
+          fill: false,
+          tension: 0.1,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          borderDash: [5, 5]
+        }
+      ]
+    }
+  }, [signals])
+  
+  // Update tooltip callback to use current predictions
+  const updatedChartOptions = React.useMemo(() => ({
+    ...chartOptions,
+    plugins: {
+      ...chartOptions.plugins,
+      tooltip: {
+        ...chartOptions.plugins.tooltip,
+        callbacks: {
+          afterLabel: function(context) {
+            const data = generateMockData(signals)
+            const prediction = data.predictions.find(p => p.index === context.dataIndex)
+            if (prediction) {
+              return [
+                `**${prediction.type}**: ${prediction.symbol}`,
+                `Confidence: ${(prediction.confidence * 100).toFixed(0)}%`,
+                `Score: ${prediction.score.toFixed(2)}`,
+                ...prediction.reasons.slice(0, 2)
+              ]
+            }
+            return ''
+          }
+        }
+      }
+    }
+  }), [signals])
+  
+  if (error) {
+    return (
+      <div style={{ 
+        width: '100%', 
+        height: '400px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        background: '#fef2f2',
+        border: '1px solid #fecaca',
+        borderRadius: '8px',
+        color: '#dc2626'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>
+            Alpha Engine Connection Error
+          </div>
+          <div style={{ fontSize: '14px' }}>
+            {error}
+          </div>
+        </div>
+      </div>
+    )
+  }
+  
+  if (loading) {
+    return (
+      <div style={{ 
+        width: '100%', 
+        height: '400px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        color: '#666'
+      }}>
+        Loading Alpha Engine data...
+      </div>
+    )
+  }
+  
+  const currentData = generateMockData(signals)
+  
   return (
     <div style={{ width: '100%', height: '400px', position: 'relative' }}>
-      <Line data={chartData} options={chartOptions} />
+      <Line data={chartData} options={updatedChartOptions} />
       
-      {/* Custom prediction markers */}
+      {/* Alpha Engine Signal Markers */}
       <div style={{ 
         position: 'absolute', 
         top: 0, 
@@ -139,12 +246,12 @@ export default function StrategyChart() {
         pointerEvents: 'none',
         zIndex: 10
       }}>
-        {defaultData.predictions.map((pred, index) => {
-          const xPosition = defaultData.dates.length > 1 
-            ? (pred.x / (defaultData.dates.length - 1)) * 100 
+        {currentData.predictions.map((pred, index) => {
+          const xPosition = currentData.dates.length > 1 
+            ? (pred.x / (currentData.dates.length - 1)) * 100 
             : 50
-          const yPosition = defaultData.strategyReturns.length > 0 
-            ? ((100000 - pred.y) / (Math.max(...defaultData.strategyReturns) - Math.min(...defaultData.strategyReturns))) * 100
+          const yPosition = currentData.strategyReturns.length > 0 
+            ? ((100000 - pred.y) / (Math.max(...currentData.strategyReturns) - Math.min(...currentData.strategyReturns))) * 100
             : 50
           
           return (
@@ -157,7 +264,7 @@ export default function StrategyChart() {
                 transform: 'translate(-50%, -50%)',
                 pointerEvents: 'auto'
               }}
-              title={`${pred.type}: ${pred.symbol} - Confidence: ${(pred.confidence * 100).toFixed(0)}%`}
+              title={`${pred.type}: ${pred.symbol} - Confidence: ${(pred.confidence * 100).toFixed(0)}% - Score: ${pred.score.toFixed(2)}`}
             >
               <div style={{
                 width: '12px',
@@ -181,6 +288,21 @@ export default function StrategyChart() {
         })}
       </div>
       
+      {/* Alpha Engine Status Indicator */}
+      <div style={{
+        position: 'absolute',
+        top: '10px',
+        right: '10px',
+        background: 'rgba(255, 255, 255, 0.9)',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '12px',
+        fontWeight: 600,
+        color: signals.length > 0 ? '#1f8a4c' : '#666',
+        zIndex: 20
+      }}>
+        {signals.length > 0 ? `${signals.length} Active Signals` : 'No Active Signals'}
+      </div>
     </div>
   )
 }

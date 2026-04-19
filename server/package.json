@@ -11,7 +11,9 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "node prisma/seed.js",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "ops:cleanup-workers": "node scripts/cleanupWorkerStatus.js",
+    "ops:soak": "node scripts/openMarketSoak.js"
   },
   "dependencies": {
     "@fastify/swagger": "^8.12.0",

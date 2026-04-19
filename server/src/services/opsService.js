@@ -1,6 +1,7 @@
 import prisma from '../loaders/prisma.js'
 
 const ACTIVE_STATUSES = ['queued', 'processing', 'submitted', 'partially_filled']
+const WORKER_STALE_AFTER_MS = Number(process.env.WORKER_STALE_AFTER_MS ?? 15_000)
 
 export default {
   async getOverview() {
@@ -46,18 +47,24 @@ export default {
       })
     ])
 
-    const queueLagMs = workers.reduce((max, worker) => Math.max(max, worker.queueLagMs ?? 0), 0)
+    const staleBefore = Date.now() - WORKER_STALE_AFTER_MS
+    const liveWorkers = workers.filter((worker) => worker.lastSeen && worker.lastSeen.getTime() >= staleBefore)
+    const staleWorkers = workers.filter((worker) => !worker.lastSeen || worker.lastSeen.getTime() < staleBefore)
+    const queueLagMs = liveWorkers.reduce((max, worker) => Math.max(max, worker.queueLagMs ?? 0), 0)
 
     return {
       summary: {
-        workerCount: workers.length,
+        workerCount: liveWorkers.length,
+        staleWorkerCount: staleWorkers.length,
+        workerFreshnessMs: WORKER_STALE_AFTER_MS,
         queueLagMs,
         activeExecutions,
         queuedExecutions,
         partialFills: partialFills.length,
         rejectedToday
       },
-      workers,
+      workers: liveWorkers,
+      staleWorkers,
       partialFills,
       recentAudits
     }

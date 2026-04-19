@@ -41,6 +41,7 @@ export default function Ops() {
 
   const summary = overview?.summary ?? {}
   const workers = overview?.workers ?? []
+  const staleWorkers = overview?.staleWorkers ?? []
   const partialFills = overview?.partialFills ?? []
   const audits = overview?.recentAudits ?? []
 
@@ -61,9 +62,10 @@ export default function Ops() {
         </p>
       </header>
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '0.9rem', marginBottom: '1.5rem' }}>
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '0.9rem', marginBottom: '1.5rem' }}>
         {[
           ['Workers', summary.workerCount ?? 0, 'live worker heartbeats'],
+          ['Stale', summary.staleWorkerCount ?? 0, 'rows outside freshness window'],
           ['Queue Lag', `${Math.round((summary.queueLagMs ?? 0) / 1000)}s`, 'oldest queued execution'],
           ['Active', summary.activeExecutions ?? 0, 'queued + processing + submitted'],
           ['Partial Fills', summary.partialFills ?? 0, 'orders aging mid-fill'],
@@ -126,6 +128,27 @@ export default function Ops() {
               ))}
             </div>
           </article>
+
+          {staleWorkers.length > 0 ? (
+            <article style={{ background: 'white', borderRadius: '18px', padding: '1rem 1.1rem', boxShadow: '0 10px 24px rgba(15, 23, 42, 0.08)' }}>
+              <h2 style={{ margin: '0 0 0.9rem', fontSize: '1rem' }}>Stale Workers</h2>
+              <div style={{ display: 'grid', gap: '0.65rem' }}>
+                {staleWorkers.map((worker) => (
+                  <div key={worker.id} style={{
+                    padding: '0.75rem 0.85rem',
+                    borderRadius: '14px',
+                    background: '#fff7f0',
+                    border: '1px solid #f0d7bd'
+                  }}>
+                    <strong>{worker.id}</strong>
+                    <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.3rem' }}>
+                      Last seen {formatAge(worker.lastSeen)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ) : null}
 
           <article style={{ background: 'white', borderRadius: '18px', padding: '1rem 1.1rem', boxShadow: '0 10px 24px rgba(15, 23, 42, 0.08)' }}>
             <h2 style={{ margin: '0 0 0.9rem', fontSize: '1rem' }}>Recent Execution Audits</h2>

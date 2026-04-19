@@ -19,9 +19,10 @@ async function start() {
   
   try {
     const port = process.env.PORT || 3001
-    await app.listen({ port })
-    console.log(`Server listening on http://localhost:${port}`)
-    console.log(`API docs available at http://localhost:${port}/docs`)
+    const host = process.env.HOST || '0.0.0.0'
+    await app.listen({ port, host })
+    console.log(`Server listening on http://${host}:${port}`)
+    console.log(`API docs available at http://${host}:${port}/docs`)
   } catch (err) {
     app.log.error(err)
     process.exit(1)

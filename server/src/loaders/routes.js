@@ -1,6 +1,6 @@
 import strategiesRoutes from '../routes/strategies.js'
 import predictionsRoutes from '../routes/predictions.js'
-import botRoutes from '../routes/bots/index.js'
+import botRoutes from '../routes/bots/bots.js'
 import executionRoutes from '../routes/executions.js'
 import portfolioRoutes from '../routes/portfolios.js'
 import brokerRoutes from '../routes/broker.js'
