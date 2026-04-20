@@ -1,5 +1,6 @@
 import { AlpacaClient } from './alpacaClient.js'
 import prisma from '../db/prisma.js'
+import { decrypt } from '../../../server/src/utils/encryption.js'
 
 // Per-user AlpacaClient cache: Map<userId, { client: AlpacaClient, updatedAt: Date }>
 // Shared by the order worker and the bot engine — single source of truth for broker clients.
@@ -16,8 +17,8 @@ export async function getBrokerClient(userId) {
 
   // Build a new client — first use or credentials were rotated
   const client = new AlpacaClient({
-    apiKey:    account.apiKey,
-    apiSecret: account.apiSecret,
+    apiKey:    decrypt(account.apiKey),
+    apiSecret: decrypt(account.apiSecret),
     paper:     account.paper
   })
   cache.set(userId, { client, updatedAt: account.updatedAt })

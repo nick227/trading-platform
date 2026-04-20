@@ -1,56 +1,85 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 import {
-  getProfileState,
-  loginWithName,
-  resetPassword as resetPasswordMock,
-  saveAlpacaApiKey as saveAlpacaApiKeyMock,
-  testAlpacaApiKey as testAlpacaApiKeyMock,
-  updateUsername as updateUsernameMock
+  getSessionUser,
+  loginWithCredentials,
+  registerWithCredentials,
+  logoutFromServer,
+  saveBrokerCredentials,
+  getBrokerStatus,
+  resetPassword as resetPasswordAPI,
 } from '../api/profileClient'
 
 const AuthCtx = createContext()
 
 export function AuthProvider({ children }) {
-  const initialProfile = getProfileState()
-  const [user, setUser] = useState(initialProfile.user)
-  const [alpacaApiKey, setAlpacaApiKey] = useState(initialProfile.alpacaApiKey)
+  const [user,          setUser]          = useState(null)
+  const [brokerStatus,  setBrokerStatus]  = useState(null) // { connected, paper, status }
+  const [sessionLoading, setSessionLoading] = useState(true)
 
-  const login = async (name) => {
-    const nextUser = await loginWithName(name)
-    setUser(nextUser)
+  // Restore session from httpOnly cookie on mount
+  useEffect(() => {
+    getSessionUser()
+      .then(u => {
+        if (u) {
+          setUser(u)
+          getBrokerStatus().then(setBrokerStatus).catch(() => {})
+        }
+      })
+      .finally(() => setSessionLoading(false))
+  }, [])
+
+  const login = async (email, password) => {
+    const u = await loginWithCredentials(email, password)
+    setUser(u)
+    getBrokerStatus().then(setBrokerStatus).catch(() => {})
+    return u
   }
 
-  const updateUsername = async (name) => {
-    const nextUser = await updateUsernameMock(name)
-    setUser(nextUser)
+  const register = async (email, password, fullName) => {
+    const u = await registerWithCredentials(email, password, fullName)
+    setUser(u)
+    return u
+  }
+
+  const logout = async () => {
+    await logoutFromServer().catch(() => {})
+    setUser(null)
+    setBrokerStatus(null)
+  }
+
+  const saveAlpacaKeys = async (apiKey, apiSecret, paper = true) => {
+    const result = await saveBrokerCredentials(apiKey, apiSecret, paper)
+    const status = await getBrokerStatus()
+    setBrokerStatus(status)
+    return result
   }
 
   const resetPassword = async (currentPassword, nextPassword) => {
-    return resetPasswordMock(currentPassword, nextPassword)
+    return resetPasswordAPI(currentPassword, nextPassword)
   }
 
-  const saveAlpacaApiKey = async (key) => {
-    const savedKey = await saveAlpacaApiKeyMock(key)
-    setAlpacaApiKey(savedKey)
+  // Legacy shim — some pages call login(name) with a single string argument.
+  // Those will receive a clear error rather than a silent no-op.
+  const loginLegacy = async (nameOrEmail) => {
+    if (!nameOrEmail.includes('@')) {
+      throw new Error('Please use your email address to log in.')
+    }
+    return login(nameOrEmail, '')
   }
-
-  const testAlpacaApiKey = async (key) => {
-    return testAlpacaApiKeyMock(key)
-  }
-
-  const logout = () => setUser(null)
 
   return (
     <AuthCtx.Provider
       value={{
         user,
-        alpacaApiKey,
+        brokerStatus,
+        sessionLoading,
         login,
+        register,
         logout,
-        updateUsername,
+        saveAlpacaKeys,
         resetPassword,
-        saveAlpacaApiKey,
-        testAlpacaApiKey
+        // kept for any components that still use the old shape
+        alpacaApiKey: brokerStatus?.connected ? '••••••••' : '',
       }}
     >
       {children}

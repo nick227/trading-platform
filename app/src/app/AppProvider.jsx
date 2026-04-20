@@ -3,9 +3,12 @@ import { createContext, useContext, useReducer } from 'react'
 const AppCtx = createContext()
 
 const initial = {
-  selectedAsset: 'NVDA',
-  selectedBotId: null,
-  selectedOrderId: null
+  selectedAsset:   'NVDA',
+  selectedBotId:   null,
+  selectedOrderId: null,
+  // Timestamp set whenever an execution reaches FILLED status.
+  // Subscribers (e.g. Portfolio) watch this to trigger cache invalidation.
+  lastFilledAt: null,
 }
 
 function reducer(state, action){
@@ -16,6 +19,8 @@ function reducer(state, action){
       return { ...state, selectedBotId: action.payload }
     case 'SELECT_ORDER':
       return { ...state, selectedOrderId: action.payload }
+    case 'ORDER_FILLED':
+      return { ...state, lastFilledAt: action.payload ?? Date.now() }
     default:
       return state
   }

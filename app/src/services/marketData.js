@@ -1,8 +1,12 @@
 // Consolidated market data service
-// TODO: Replace with real market data API
+// Now using Alpha Engine API for real market data
 
-// Stock reference data - should come from real market data service
-export const getAvailableStocks = () => [
+import alphaEngineService from '../api/services/alphaEngineService.js'
+
+// Fallback static data for when alpha-engine is unavailable.
+// Exported so callers that need a synchronous stock list can import this directly
+// instead of calling the async getAvailableStocks().
+export const FALLBACK_STOCKS = [
   { symbol: 'NVDA', name: 'NVIDIA Corporation', price: 275.56, change: +2.4, volume: '52.3M', sector: 'Technology', marketCap: '6.8T', pe: '65.2' },
   { symbol: 'AAPL', name: 'Apple Inc.', price: 168.75, change: -1.2, volume: '48.7M', sector: 'Technology', marketCap: '2.6T', pe: '28.4' },
   { symbol: 'TSLA', name: 'Tesla, Inc.', price: 266.67, change: +3.8, volume: '112.4M', sector: 'Automotive', marketCap: '846B', pe: '68.9' },
@@ -13,17 +17,86 @@ export const getAvailableStocks = () => [
   { symbol: 'BRK.B', name: 'Berkshire Hathaway', price: 425.12, change: +0.3, volume: '3.2M', sector: 'Financial', marketCap: '783B', pe: '9.2' }
 ]
 
-// Alpha engine predictions - should come from real predictions service
-export const getAlphaPredictions = () => ({
-  'NVDA': { signal: 'STRONG_BUY', confidence: 85, target: 295.00, timeframe: '30d', reasoning: 'AI demand surge, data center expansion' },
-  'AAPL': { signal: 'HOLD', confidence: 62, target: 175.00, timeframe: '60d', reasoning: 'Stable earnings, moderate growth' },
-  'TSLA': { signal: 'BUY', confidence: 73, target: 285.00, timeframe: '45d', reasoning: 'Production ramp-up, energy segment growth' },
-  'MSFT': { signal: 'STRONG_BUY', confidence: 78, target: 410.00, timeframe: '30d', reasoning: 'Cloud dominance, AI integration' },
-  'GOOGL': { signal: 'HOLD', confidence: 58, target: 150.00, timeframe: '60d', reasoning: 'Search market stability, regulatory concerns' },
-  'AMZN': { signal: 'BUY', confidence: 69, target: 160.00, timeframe: '45d', reasoning: 'AWS growth, retail optimization' },
-  'META': { signal: 'STRONG_BUY', confidence: 81, target: 520.00, timeframe: '30d', reasoning: 'Metaverse investments, ad revenue recovery' },
-  'BRK.B': { signal: 'HOLD', confidence: 65, target: 440.00, timeframe: '90d', reasoning: 'Value investing, insurance stability' }
-})
+// Stock reference data from Alpha Engine
+export const getAvailableStocks = async () => {
+  try {
+    const tickers = await alphaEngineService.getTickers()
+
+    // Normalise shapes: backend may return either an array or an envelope like { tickers: [...] }.
+    const list = Array.isArray(tickers)
+      ? tickers
+      : (Array.isArray(tickers?.tickers) ? tickers.tickers : [])
+
+    if (!Array.isArray(list) || list.length === 0) return FALLBACK_STOCKS
+
+    // Ensure we always return an array of enriched ticker objects.
+    return list.map(ticker => {
+      const symbol = typeof ticker === 'string' ? ticker : ticker.symbol
+      const name = typeof ticker === 'string' ? ticker : (ticker.name || ticker.symbol)
+      return {
+        symbol,
+        name,
+        price:     ticker?.price      || ticker?.c           || 0,
+        change:    ticker?.change     || ticker?.dayChangePct || 0,
+        volume:    ticker?.volume     || 'N/A',
+        sector:    ticker?.sector     || 'Unknown',
+        marketCap: ticker?.marketCap  || 'N/A',
+        pe:        ticker?.pe         || 'N/A',
+      }
+    })
+  } catch (error) {
+    console.warn('Alpha Engine unavailable, using fallback stocks:', error.message)
+    return FALLBACK_STOCKS
+  }
+}
+
+// Alpha engine predictions from Alpha Engine API
+export const getAlphaPredictions = async () => {
+  try {
+    // Get top rankings to have predictions for multiple stocks
+    const rankingsData = await alphaEngineService.getTopRankings(20)
+    const predictions = {}
+    
+    if (rankingsData.rankings && Array.isArray(rankingsData.rankings)) {
+      for (const ranking of rankingsData.rankings) {
+        try {
+          const explainability = await alphaEngineService.getTickerExplainability(ranking.symbol)
+          // Convert explainability to match expected format
+          if (explainability && explainability.explanation) {
+            const confidence = Math.round((explainability.confidence || 0) * 100)
+            const signal = confidence >= 80 ? 'STRONG_BUY' : confidence >= 60 ? 'BUY' : confidence >= 40 ? 'HOLD' : 'SELL'
+            
+            predictions[ranking.symbol] = {
+              signal,
+              confidence,
+              target: null, // Alpha engine may not provide price targets
+              timeframe: '30d',
+              reasoning: explainability.explanation || 'No reasoning available'
+            }
+          }
+        } catch (error) {
+          // Skip if explainability fails for this symbol
+          continue
+        }
+      }
+    }
+    
+    return predictions
+  } catch (error) {
+    console.warn('Alpha Engine predictions unavailable, using fallback:', error.message)
+    // Return fallback predictions
+    return {
+      'NVDA': { signal: 'STRONG_BUY', confidence: 85, target: 295.00, timeframe: '30d', reasoning: 'AI demand surge, data center expansion' },
+      'AAPL': { signal: 'HOLD', confidence: 62, target: 175.00, timeframe: '60d', reasoning: 'Stable earnings, moderate growth' },
+      'TSLA': { signal: 'BUY', confidence: 73, target: 285.00, timeframe: '45d', reasoning: 'Production ramp-up, energy segment growth' },
+      'MSFT': { signal: 'STRONG_BUY', confidence: 78, target: 410.00, timeframe: '30d', reasoning: 'Cloud dominance, AI integration' },
+      'GOOGL': { signal: 'HOLD', confidence: 58, target: 150.00, timeframe: '60d', reasoning: 'Search market stability, regulatory concerns' },
+      'AMZN': { signal: 'BUY', confidence: 69, target: 160.00, timeframe: '45d', reasoning: 'AWS growth, retail optimization' },
+      'META': { signal: 'STRONG_BUY', confidence: 81, target: 520.00, timeframe: '30d', reasoning: 'Metaverse investments, ad revenue recovery' },
+      'BRK.B': { signal: 'HOLD', confidence: 65, target: 440.00, timeframe: '90d', reasoning: 'Value investing, insurance stability' }
+    }
+  }
+}
 
 // Live trading signals - should come from real signal service
 export const getLiveSignals = () => [
@@ -34,29 +107,36 @@ export const getLiveSignals = () => [
   { symbol: 'TSLA', strategy: 'Ownership Vacuum', confidence: 0.68, entry: 238.91, stop: 227.96, target: 267.23, timestamp: '09:47:29' }
 ]
 
-// Price history generation - should come from real market data
-export const generatePriceHistory = (basePrice, volatility = 0.02) => {
-  const cacheKey = `price_history_${basePrice}_${volatility}`
-  
-  let result = GlobalCaches.priceHistory.get(cacheKey)
-  if (!result) {
+// Simple in-memory cache for price history
+const priceHistoryCache = new Map()
+
+// Price history from Alpha Engine API
+export const generatePriceHistory = async (ticker, range = '1Y', interval = '1D') => {
+  try {
+    const history = await alphaEngineService.getHistory(ticker, range, interval)
+    return history
+  } catch (error) {
+    console.warn(`Alpha Engine history unavailable for ${ticker}, using fallback:`, error.message)
+    
+    // Generate fallback price history
     const history = []
+    const basePrice = 275.56 // Default fallback price
+    const volatility = 0.02
     let currentPrice = basePrice * (1 - volatility * 10)
     
-    for (let i = 0; i < 30; i++) {
+    const points = range === '1Y' ? 252 : range === '3M' ? 63 : 30
+    
+    for (let i = 0; i < points; i++) {
       currentPrice = currentPrice * (1 + (Math.random() - 0.5) * volatility)
       history.push({
-        date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        date: new Date(Date.now() - (points - 1 - i) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         price: currentPrice,
         volume: Math.floor(Math.random() * 1000000) + 100000
       })
     }
     
-    result = history
-    GlobalCaches.priceHistory.set(cacheKey, result)
+    return history
   }
-  
-  return result
 }
 
 // Market pulse data - should come from real market analysis

@@ -1,6 +1,6 @@
 // React optimization hooks for re-render management
 
-import { useMemo, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 
 // Optimized component wrapper with memoization
 export function createOptimizedComponent(Component, areEqual = null) {

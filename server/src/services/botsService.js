@@ -116,10 +116,12 @@ export default {
     ])
 
     return {
-      items: bots,
-      total,
-      limit: take,
-      offset: skip
+      data: bots,
+      pagination: {
+        total,
+        hasMore: skip + take < total,
+        nextOffset: skip + take < total ? skip + take : null
+      }
     }
   },
 

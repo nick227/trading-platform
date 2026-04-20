@@ -17,6 +17,19 @@ function navBtnClass(active) {
   return `btn btn-${active ? 'primary' : 'ghost'} ${active ? ' is-active' : ''}`
 }
 
+function LogoutButton() {
+  const { logout } = useAuth()
+  return (
+    <button
+      className="btn btn-ghost"
+      style={{ fontSize: '12px', padding: '0.25rem 0.5rem' }}
+      onClick={async () => { await logout(); window.location.href = '/auth' }}
+    >
+      Logout
+    </button>
+  )
+}
+
 export default function Nav() {
   const { user } = useAuth()
   const { state } = useApp()
@@ -77,8 +90,9 @@ export default function Nav() {
         <div className="nav-right">
           {user ? (
             <div className="nav-user">
-              <img src={user.avatar} alt={user.name} className="avatar-sm" />
-              <span>{user.name}</span>
+              {user.avatar && <img src={user.avatar} alt={user.fullName || user.email} className="avatar-sm" />}
+              <span>{user.fullName || user.email}</span>
+              <LogoutButton />
             </div>
           ) : null}
         </div>

@@ -34,6 +34,9 @@ vi.mock('../src/loaders/prisma.js', () => ({
     },
     bot: {
       count: vi.fn()
+    },
+    user: {
+      findUnique: vi.fn()
     }
   }
 }))
@@ -57,6 +60,7 @@ describe('API contract tests', () => {
     prisma.executionAudit.create.mockReset()
     prisma.executionAudit.findMany.mockReset()
     prisma.workerStatus.findMany.mockReset()
+    prisma.user.findUnique.mockReset()
 
     app = await createApp()
     await registerRoutes(app)
@@ -119,6 +123,9 @@ describe('API contract tests', () => {
   })
 
   it('creates an execution and returns 201', async () => {
+    const user = { id: 'usr_1', email: 't@example.com', fullName: 'Test User', subscription: { status: 'ACTIVE' } }
+    prisma.user.findUnique.mockResolvedValue(user)
+
     const execution = {
       id: 'exec_1',
       userId: 'usr_1',
@@ -134,10 +141,11 @@ describe('API contract tests', () => {
 
     prisma.execution.create.mockResolvedValue(execution)
 
+    const token = app.jwt.sign({ sub: user.id })
+
     const response = await request(app.server)
       .post('/api/executions')
       .send({
-        userId: 'usr_1',
         ticker: 'NVDA',
         direction: 'buy',
         quantity: 1,
@@ -145,6 +153,7 @@ describe('API contract tests', () => {
         portfolioId: 'port_1',
         strategyId: 'str_1'
       })
+      .set('Cookie', [`access_token=${token}`])
       .expect(201)
 
     expect(response.body).toEqual({ data: execution })

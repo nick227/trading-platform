@@ -1,5 +1,5 @@
-import { get, post } from '../client'
-import { SIDE, STUB_USER_ID } from '../constants.js'
+import { get, getPage, post } from '../client'
+import { SIDE } from '../constants.js'
 
 export function mapExecution(e) {
   return {
@@ -10,10 +10,19 @@ export function mapExecution(e) {
 }
 
 export default {
-  async getAll() {
+  // Fetches ALL executions across all cursor pages.
+  // Use this wherever full position/cost-basis accuracy is required.
+  async getAll(filters = {}) {
     try {
-      const executions = await get('/executions')
-      return executions.map(mapExecution)
+      const all = []
+      let after = null
+      do {
+        const params = after ? { ...filters, after } : { ...filters }
+        const page = await getPage('/executions', params)
+        all.push(...(page.data ?? []).map(mapExecution))
+        after = page.pagination?.nextCursor ?? null
+      } while (after)
+      return all
     } catch {
       return []
     }
@@ -58,16 +67,15 @@ export default {
   async create(data) {
     try {
       const execution = {
-        userId:      data.userId ?? STUB_USER_ID,
-        portfolioId: data.portfolioId,
-        strategyId:  data.strategyId,
+        portfolioId:  data.portfolioId,
+        strategyId:   data.strategyId,
         predictionId: data.signalId,
-        ticker:      data.ticker,
-        direction:   data.side.toLowerCase(),  // BUY -> buy
-        quantity:    data.quantity,
-        price:       data.price,
-        commission:  4.95,
-        fees:        data.quantity * data.price * 0.001
+        ticker:       data.ticker,
+        direction:    data.side.toLowerCase(),  // BUY -> buy
+        quantity:     data.quantity,
+        price:        data.price,
+        commission:   4.95,
+        fees:         data.quantity * data.price * 0.001
       }
 
       const result = await post('/executions', execution)

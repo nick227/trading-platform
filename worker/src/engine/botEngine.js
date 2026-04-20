@@ -23,7 +23,7 @@ let reloadTimer     = null
 // Keyed by userId so each user's bot evaluates against their own Alpaca account.
 const positionCacheByUser = new Map()
 
-const RELOAD_INTERVAL_MS         = 3_000
+const RELOAD_INTERVAL_MS         = Number(process.env.BOT_RELOAD_INTERVAL_MS ?? 10_000)
 const POSITION_CACHE_MAX_MS      = 60_000
 const POSITION_CACHE_MAX_USERS   = 500   // LRU eviction threshold
 const ACTIVE_EXECUTION_STATUSES  = ['queued', 'processing', 'submitted', 'partially_filled']
@@ -154,7 +154,9 @@ async function evaluateBot(bot, ticker) {
   }
 
   // Run rule pipeline — first failure short-circuits
-  const positions = await getPositions(bot.userId)
+  // Avoid per-tick broker REST calls unless a rule actually needs positions.
+  const needsPositions = bot.rules.some(r => r.type === 'position_limit')
+  const positions = needsPositions ? await getPositions(bot.userId) : []
   for (const rule of bot.rules) {
     const result = await evaluateRule(rule, bot, ticker, positions)
     if (!result.pass) {

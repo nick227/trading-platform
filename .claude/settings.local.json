@@ -7,7 +7,13 @@
       "Bash(npm install *)",
       "Bash(npm view *)",
       "Bash(node prisma/seed.js)",
-      "Bash(node --input-type=module --eval ' *)"
+      "Bash(node --input-type=module --eval ' *)",
+      "Bash(grep -n \"John Anderson\\\\|holdingsData\\\\|userStats\\\\|recentActivity\\\\s*=\\\\s*\\\\[\" C:/wamp64/www/trading-platform/app/src/features/Portfolio.jsx C:/wamp64/www/trading-platform/app/src/features/portfolio/*.jsx)",
+      "Bash(grep -n \"const.*=.*\\\\[\" C:/wamp64/www/trading-platform/app/src/features/portfolio/*.jsx)",
+      "Bash(node -e \"require\\('C:/wamp64/www/trading-platform/server/node_modules/@fastify/jwt/index.js'\\)\")",
+      "Bash(node -e \"require\\('C:/wamp64/www/trading-platform/server/node_modules/bcryptjs/dist/bcrypt.js'\\)\")",
+      "Bash(npx eslint *)",
+      "Bash(node_modules/.bin/eslint src/hooks/useReactOptimization.js src/hooks/useOptimizedData.js src/services/mutationService.js src/api/services/marketService.js)"
     ]
   }
 }

@@ -59,6 +59,58 @@ export const engineClient = {
     return engineFetch(`/admission/changes?hours=${hours}`)
   },
 
+  // Market data endpoints for Orders.jsx
+  async getTickers(search = '') {
+    const query = search ? `?q=${encodeURIComponent(search)}&tenant_id=default` : '?tenant_id=default'
+    return engineFetch(`/api/tickers${query}`)
+  },
+
+  async getQuote(symbol) {
+    return engineFetch(`/api/quote/${encodeURIComponent(symbol)}?tenant_id=default`)
+  },
+
+  async getHistory(symbol, range = '1Y', interval = '1D') {
+    return engineFetch(`/api/history/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&tenant_id=default`)
+  },
+
+  async getCandles(symbol, range = '1Y', interval = '1D') {
+    return engineFetch(`/api/candles/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&tenant_id=default`)
+  },
+
+  async getStats(symbol) {
+    return engineFetch(`/api/stats/${encodeURIComponent(symbol)}?tenant_id=default`)
+  },
+
+  async getCompany(symbol) {
+    return engineFetch(`/api/company/${encodeURIComponent(symbol)}?tenant_id=default`)
+  },
+
+  // Bootstrap data for Orders page - combines multiple alpha-engine calls
+  async getBootstrapData(symbol, range = '1Y', interval = '1D') {
+    try {
+      const [quote, stats, company, history, explainability, recommendation] = await Promise.all([
+        this.getQuote(symbol).catch(() => null),
+        this.getStats(symbol).catch(() => null),
+        this.getCompany(symbol).catch(() => null),
+        this.getHistory(symbol, range, interval).catch(() => null),
+        this.getTickerExplainability(symbol).catch(() => null),
+        this.getTickerRecommendation(symbol).catch(() => null)
+      ])
+
+      return {
+        quote,
+        stats,
+        company,
+        history,
+        alpha: explainability,
+        recommendation
+      }
+    } catch (error) {
+      console.error(`Failed to load bootstrap data for ${symbol}:`, error)
+      return null
+    }
+  },
+
   // Combined dashboard data
   async getDashboardData() {
     const [health, topRankings, movers, admission] = await Promise.all([
@@ -77,6 +129,28 @@ export const engineClient = {
     }
   },
 
+  // Recommendations endpoints
+  async getRecommendationsLatest(limit = 10, mode = 'balanced', preference = 'absolute') {
+    const query = `?limit=${limit}&mode=${mode}&preference=${preference}&tenant_id=default`
+    return engineFetch(`/api/recommendations/latest${query}`)
+  },
+
+  async getBestRecommendation(mode = 'balanced', preference = 'absolute') {
+    const query = `?mode=${mode}&preference=${preference}&tenant_id=default`
+    return engineFetch(`/api/recommendations/best${query}`)
+  },
+
+  async getTickerRecommendation(symbol, mode = 'balanced') {
+    return engineFetch(`/api/recommendations/${encodeURIComponent(symbol)}?mode=${mode}&tenant_id=default`)
+  },
+
+  async getBatchRecommendations(tickers, mode = 'balanced') {
+    if (!tickers || tickers.length === 0) return {}
+    
+    const tickerList = Array.isArray(tickers) ? tickers.join(',') : tickers
+    return engineFetch(`/api/recommendations/batch?tickers=${encodeURIComponent(tickerList)}&mode=${mode}&tenant_id=default`)
+  },
+
   // Active signals for trading
   async getActiveSignals() {
     const [topRankings, movers] = await Promise.all([
@@ -84,27 +158,26 @@ export const engineClient = {
       this.getRankingMovers(15)
     ])
 
-    // Transform into signal format
-    const signals = [
-      ...topRankings.rankings.slice(0, 3).map(r => ({
-        type: 'ENTRY',
-        symbol: r.symbol,
-        confidence: r.confidence,
-        score: r.score,
-        reasons: r.reasons || [],
-        source: 'top_ranked'
-      })),
-      ...movers.rankings.slice(0, 5).map(r => ({
-        type: r.rank > 0 ? 'ENTRY' : 'EXIT',
-        symbol: r.symbol,
-        confidence: r.confidence,
-        score: r.score,
-        reasons: r.reasons || [],
-        source: 'mover',
-        rankChange: r.rank
-      }))
-    ].sort((a, b) => b.confidence - a.confidence)
+    // Transform into signal format with safe array handling
+    const topSignals = (topRankings?.rankings || []).slice(0, 3).map(r => ({
+      type: 'ENTRY',
+      symbol: r.symbol,
+      confidence: r.confidence,
+      score: r.score,
+      reasons: r.reasons || [],
+      source: 'top_ranked'
+    }))
+    
+    const moverSignals = (movers?.rankings || []).slice(0, 5).map(r => ({
+      type: r.rank > 0 ? 'ENTRY' : 'EXIT',
+      symbol: r.symbol,
+      confidence: r.confidence,
+      score: r.score,
+      reasons: r.reasons || [],
+      source: 'mover',
+      rankChange: r.rank
+    }))
 
-    return signals
+    return [...topSignals, ...moverSignals].sort((a, b) => b.confidence - a.confidence)
   }
 }

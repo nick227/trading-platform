@@ -28,6 +28,7 @@ enum ExecutionAuditEventType {
   claimed
   submit_attempted
   submit_confirmed
+  cancel_requested
   reconciled
   partial_fill
   filled
@@ -177,6 +178,7 @@ model Execution {
   strategyId    String?   // null for rule_based bot executions
   predictionId  String?
   botId         String?
+  botRunId      Int?      // MVP: link to BotRun
   ticker        String
   direction     Direction
   quantity      Float
@@ -198,15 +200,23 @@ model Execution {
   filledPrice    Float?   // truth: actual fill price from Alpaca
   filledQuantity Float?
   cancelReason   String?
+  // Cancellation intent (user requested cancel). Worker attempts broker cancel when applicable.
+  cancelRequestedAt DateTime?
+  cancelRequestedBy String?
+  cancelRequestReason String?
   // Cost fields
   commission    Float
   fees          Float
+  // MVP fields
+  signalScore   Decimal? @db.Decimal(3, 2)
+  pnl           Decimal  @default(0) @db.Decimal(10, 2)
   createdAt     DateTime  @default(now())
 
   portfolio  Portfolio   @relation(fields: [portfolioId], references: [id])
   strategy   Strategy?   @relation(fields: [strategyId], references: [id])
   prediction Prediction? @relation(fields: [predictionId], references: [id])
   bot        Bot?        @relation(fields: [botId], references: [id])
+  botRun     BotRun?     @relation(fields: [botRunId], references: [id])
   events     BotEvent[]
   audits     ExecutionAudit[]
 
@@ -245,10 +255,31 @@ model BrokerAccount {
   apiKey    String
   apiSecret String
   paper     Boolean  @default(true)
+  status    String   @default("active") // active | error | disabled
+  lastVerifiedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([status])
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String
+  fullName     String
+  createdAt    DateTime      @default(now())
+  subscription Subscription?
+}
+
+model Subscription {
+  id     String   @id @default(cuid())
+  userId String   @unique
+  status String   @default("ACTIVE") // ACTIVE | CANCELLED | EXPIRED
+  plan   String   @default("BASIC")
+  endsAt DateTime
+  user   User     @relation(fields: [userId], references: [id])
 }
 
 model WorkerStatus {
@@ -260,4 +291,63 @@ model WorkerStatus {
   lastWsOkAt DateTime?
   lastCalendarRefreshAt DateTime?
   health     Json?
+}
+
+// MVP Tables for Single User Operator Mode
+
+model BotRun {
+  id           Int      @id @default(autoincrement())
+  userId       String
+  startedAt    DateTime @default(now())
+  endedAt      DateTime?
+  status       String   @default("running") // running | completed | failed
+  signalCount  Int      @default(0)
+  executionCount Int    @default(0)
+  totalPnl     Decimal  @default(0) @db.Decimal(10, 2)
+  notes        String?
+  executions   Execution[]
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model DailySnapshot {
+  id            Int      @id @default(autoincrement())
+  snapshotDate  DateTime @unique @db.Date
+  equity        Decimal  @db.Decimal(12, 2)
+  cash          Decimal  @db.Decimal(12, 2)
+  positionsValue Decimal @db.Decimal(12, 2)
+  dayPnl        Decimal  @default(0) @db.Decimal(10, 2)
+  totalTrades   Int      @default(0)
+  winningTrades Int      @default(0)
+  capturedAt    DateTime @default(now())
+
+  @@index([snapshotDate])
+}
+
+// Live quote cache from worker - enables server to access real-time prices
+model LiveQuote {
+  ticker      String   @id
+  bid         Float?
+  ask         Float?
+  last        Float
+  changePct   Float    @default(0)
+  volume      Int      @default(0)
+  updatedAt   DateTime @default(now())
+  source      String   @default("worker") // worker | alpha-engine | manual
+  feed        String   @default("alpaca")  // alpaca | yahoo | polygon
+  ageMs       Int      @default(0)       // Age from source in milliseconds
+
+  @@index([updatedAt])
+  @@index([source])
+}
+
+// Subscription requests for demand-driven quote warmup
+model LiveQuoteSubscription {
+  ticker      String   @id
+  requestedAt DateTime @default(now())
+
+  @@index([requestedAt])
 }

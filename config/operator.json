@@ -1,0 +1,18 @@
+{
+  "mode": "single_user_operator",
+  "paperTrading": true,
+  "defaultTradeSize": 25,
+  "minConfidence": 0.72,
+  "maxDailyTrades": 3,
+  "allowedSymbols": ["SPY", "QQQ", "AAPL", "TSLA", "NVDA"],
+  "riskLimits": {
+    "maxNotionalPerTrade": 100,
+    "maxPositionPct": 0.10,
+    "maxDailyLoss": 50
+  },
+  "botSettings": {
+    "runIntervalMinutes": 15,
+    "cooldownMinutes": 30,
+    "maxFailureCount": 3
+  }
+}

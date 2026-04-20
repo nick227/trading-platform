@@ -94,6 +94,13 @@ async function processExecution(job) {
     }
 
     // Idempotency guard — reconcile previously-submitted work before any new submit
+    // Cancellation intent takes precedence over everything else.
+    // Never submit a new broker order if the user requested cancellation.
+    if (execution.cancelRequestedAt) {
+      await handleCancelRequested(execution, broker)
+      return
+    }
+
     if (execution.brokerOrderId || execution.submittedAt) {
       await syncOrderStatus(execution, broker)
       return
@@ -136,6 +143,16 @@ async function processExecution(job) {
 
     const marketOpen = await assertMarketIsOpen(broker, execution)
     if (!marketOpen) return
+
+    // Last-chance cancellation check before broker submission.
+    const cancelBeforeSubmit = await prisma.execution.findUnique({
+      where: { id: execution.id },
+      select: { cancelRequestedAt: true }
+    })
+    if (cancelBeforeSubmit?.cancelRequestedAt) {
+      await handleCancelRequested(execution, broker)
+      return
+    }
 
     // Submit to Alpaca
     await recordExecutionAudit({
@@ -197,11 +214,93 @@ async function processExecution(job) {
 
 // ─── Fill polling ─────────────────────────────────────────────────────────────
 
+async function handleCancelRequested(execution, broker) {
+  // If we have not submitted to the broker yet, cancel locally immediately.
+  if (!execution.brokerOrderId && !execution.submittedAt) {
+    await terminate(execution, 'cancelled', 'user_cancel_requested_pre_submit')
+    return
+  }
+
+  // Attempt broker-side cancellation and reconcile to the truth.
+  const order = await fetchKnownOrder(execution, broker)
+  if (!order) {
+    await releaseForRetry(execution)
+    return
+  }
+
+  // Too late: already filled.
+  if (order.status === 'filled') {
+    await terminate(execution, 'filled', null, {
+      filledAt:       order.filledAt ?? new Date(),
+      filledPrice:    order.filledAvgPrice,
+      filledQuantity: order.filledQty
+    })
+    return
+  }
+
+  try {
+    await broker.cancelOrder(order.alpacaOrderId)
+  } catch (err) {
+    if (err instanceof BrokerNetworkError) {
+      await releaseForRetry(execution)
+      return
+    }
+    // For non-network errors (already filled/cancelled/etc), fall through to reconcile.
+  }
+
+  // Poll briefly for terminal cancel/fill so the UI updates quickly.
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    const snapshot = await fetchKnownOrder(execution, broker)
+    if (!snapshot) {
+      await releaseForRetry(execution)
+      return
+    }
+
+    await refreshLease(execution.id)
+
+    if (snapshot.status === 'filled') {
+      await terminate(execution, 'filled', null, {
+        filledAt:       snapshot.filledAt ?? new Date(),
+        filledPrice:    snapshot.filledAvgPrice,
+        filledQuantity: snapshot.filledQty
+      })
+      return
+    }
+
+    if (['canceled', 'rejected', 'expired'].includes(snapshot.status)) {
+      await terminate(execution, 'cancelled', 'broker_cancelled_after_user_request', {
+        brokerStatus: snapshot.status,
+        filledPrice: snapshot.filledAvgPrice ?? undefined,
+        filledQuantity: snapshot.filledQty ?? undefined
+      })
+      return
+    }
+
+    // Keep broker snapshot fresh while waiting.
+    await applyBrokerSnapshot(execution.id, snapshot)
+    await sleep(1_000)
+  }
+
+  // Not yet terminal â€” release and retry cancellation on next loop.
+  await releaseForRetry(execution)
+}
+
 async function pollUntilFilled(execution, broker) {
   const deadline = Date.now() + FILL_TIMEOUT_MS
   let lastPartialFillQty = execution.filledQuantity ?? 0
 
   while (Date.now() < deadline) {
+    // Allow cancellation to interrupt fill polling (user requested cancel mid-flight).
+    const cancelFlag = await prisma.execution.findUnique({
+      where: { id: execution.id },
+      select: { cancelRequestedAt: true }
+    })
+    if (cancelFlag?.cancelRequestedAt) {
+      await handleCancelRequested(execution, broker)
+      return
+    }
+
     const order = await fetchKnownOrder(execution, broker)
     if (!order) {
       await releaseForRetry(execution)

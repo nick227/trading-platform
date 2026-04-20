@@ -63,3 +63,4 @@ dist-ssr/
 # Misc
 .prettierignore
 .prettierrc
+/private

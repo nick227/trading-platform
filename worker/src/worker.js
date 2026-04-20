@@ -4,8 +4,18 @@ import prisma from './db/prisma.js'
 import { AlpacaClient } from './broker/alpacaClient.js'
 import { startOrderWorker, stopOrderWorker, setInflightMap } from './queues/orderWorker.js'
 import { initDataStream, onQuote, disconnect, ensureConnected, isConnected } from './market/dataStream.js'
+import { startQuoteSync, checkSubscriptionRequests, expireOldSubscriptions } from './market/quoteSync.js'
 import { initCalendar, refreshCalendar, onMarketOpen, onMarketClose, getLastCalendarRefreshAt } from './market/calendar.js'
 import { startBotEngine, stopBotEngine, onPriceTick, inflightMap } from './engine/botEngine.js'
+
+// Initialize quote sync to server
+startQuoteSync()
+
+// Check for new subscription requests every 10 seconds
+setInterval(checkSubscriptionRequests, 10_000)
+
+// Expire old subscriptions every 5 minutes to reduce write amplification
+setInterval(expireOldSubscriptions, 5 * 60 * 1000)
 
 const WORKER_ID    = `${os.hostname()}-${process.pid}`
 const HEARTBEAT_MS = 5_000

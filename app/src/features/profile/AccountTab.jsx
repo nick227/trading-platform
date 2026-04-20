@@ -2,15 +2,15 @@ import { useState } from 'react'
 import { useAuth } from '../../app/AuthProvider'
 
 export default function AccountTab() {
-  const { user, updateUsername, resetPassword } = useAuth()
-  const [name, setName] = useState(user?.name || '')
+  const { user, resetPassword } = useAuth()
+  const [name, setName] = useState(user?.fullName || user?.name || '')
   const [currentPassword, setCurrentPassword] = useState('')
   const [nextPassword, setNextPassword] = useState('')
   const [status, setStatus] = useState('')
 
   const handleUsernameSave = async () => {
-    await updateUsername(name)
-    setStatus('Username updated.')
+    // TODO: wire up a server PATCH /api/auth/me when the endpoint is added
+    setStatus('Username update not yet implemented.')
   }
 
   const handlePasswordReset = async () => {
@@ -24,7 +24,7 @@ export default function AccountTab() {
     <div className="profile-pane">
       <div className="card profile-card">
         <h3 className="profile-card-title">Account</h3>
-        <img className="avatar-lg" src={user?.avatar} />
+        {user?.avatar && <img className="avatar-lg" src={user.avatar} alt={user.fullName} />}
         <label className="muted" htmlFor="profile-name">
           Username
         </label>

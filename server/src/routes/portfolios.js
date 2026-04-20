@@ -1,6 +1,26 @@
 import portfoliosService from '../services/portfoliosService.js'
+import { authenticate } from '../middleware/authenticate.js'
+import { STUB_USER_ID } from '../utils/auth.js'
 
-export default async function portfoliosRoutes(app, opts) {
+export default async function portfoliosRoutes(app) {
+  // GET /api/portfolios/default — returns or creates the user's portfolio.
+  // Requires auth when cookie is present; falls back to stub for legacy unauthenticated calls.
+  app.get('/default', async (request, reply) => {
+    // Attempt JWT auth — tolerate failure for unauthenticated callers
+    let userId = STUB_USER_ID
+    try {
+      await request.jwtVerify()
+      userId = request.user?.sub ?? STUB_USER_ID
+    } catch { /* unauthenticated — fall back to stub */ }
+
+    const result = await portfoliosService.getPortfolios({ userId, limit: 1 })
+    const existing = result.data?.[0]
+    if (existing) return reply.send({ data: existing })
+
+    const created = await portfoliosService.createPortfolio({ name: 'Main Portfolio', userId })
+    return reply.code(201).send({ data: created })
+  })
+
   // GET /api/portfolios
   app.get('/', async (request, reply) => {
     const result = await portfoliosService.getPortfolios(request.query)

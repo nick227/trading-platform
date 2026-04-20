@@ -51,6 +51,7 @@
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  --radius-main: 16px;
   --radius-pill: 99px;
   
   /* Buttons */
@@ -60,4 +61,5 @@
   /* Shadows */
   --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.12);
   --elevation-2: 0 4px 6px rgba(0, 0, 0, 0.16);
+  --elevation-card: 0 4px 12px rgba(0, 0, 0, 0.08);
 }

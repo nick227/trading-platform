@@ -42,9 +42,10 @@
 }
 
 .card {
-  border-radius: var(--radius-main);
   padding: var(--space-5);
   background: var(--color-surface);
+  border-radius: var(--radius-main);
+  box-shadow: var(--elevation-card);
 
   transition: transform var(--dur-fast) var(--ease-premium);
 }

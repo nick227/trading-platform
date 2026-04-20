@@ -1,0 +1,50 @@
+/* Orders */
+.orders {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.orders-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-1);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.orders-header-left {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.orders-header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.orders-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.orders-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .orders-header-left { gap: 1rem; }
+  .orders-grid { grid-template-columns: 1fr; }
+}
