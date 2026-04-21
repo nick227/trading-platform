@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import executionsService from '../api/services/executionsService.js'
-import { usePolling } from './usePolling.js'
+import { useConditionalPolling } from './usePolling.js'
 
 export function useExecutions({ poll = false } = {}) {
   const [executions, setExecutions] = useState([])
@@ -36,10 +36,7 @@ export function useExecutions({ poll = false } = {}) {
     fetchExecutions()
   }, [])
 
-  // Only poll executions (not strategies/portfolios)
-  if (poll) {
-    usePolling(fetchExecutions, 5000) // 5 second polling for executions only
-  }
+  useConditionalPolling(fetchExecutions, 5000, poll)
 
   return { executions, loading, error, refetch: fetchExecutions, createExecution }
 }

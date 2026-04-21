@@ -137,12 +137,52 @@ export function buildStats(holdings, executions, bots, strategies, performanceSt
 }
 
 export function buildRecentActivity(executions) {
-  return executions.slice(0, 5).map(e => ({
-    event: `${e.side === 'BUY' ? 'Bought' : 'Sold'} ${e.ticker}`,
-    value: `${e.side === 'BUY' ? '+' : '-'}$${(e.price * e.quantity).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
-    time: formatTimeAgo(e.createdAt),
-    type: e.side === 'BUY' ? 'buy' : 'sell'
-  }))
+  // Sort by creation time, newest first, but only include completed, failed, or cancelled orders
+  const sortedExecutions = executions
+    .filter(e => e.createdAt) // Filter out any without timestamps
+    .filter(e => e.status === 'filled' || e.status === 'failed' || e.status === 'cancelled') // Only show completed, failed, or cancelled orders
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  
+  return sortedExecutions.slice(0, 5).map(e => {
+    const isFailed = e.status === 'failed'
+    const isCancelled = e.status === 'cancelled'
+    const isBuy = e.side === 'BUY'
+    
+    if (isFailed) {
+      return {
+        event: `Failed ${isBuy ? 'Buy' : 'Sell'} Order: ${e.ticker}`,
+        value: e.failReason || 'Order failed',
+        time: formatTimeAgo(e.createdAt),
+        type: 'failed',
+        ticker: e.ticker,
+        quantity: e.quantity,
+        price: e.price
+      }
+    }
+    
+    if (isCancelled) {
+      return {
+        event: `Cancelled ${isBuy ? 'Buy' : 'Sell'} Order: ${e.ticker}`,
+        value: e.cancelReason || 'User cancelled',
+        time: formatTimeAgo(e.createdAt),
+        type: 'cancelled',
+        ticker: e.ticker,
+        quantity: e.quantity,
+        price: e.price
+      }
+    }
+    
+    // Only show as "Bought/Sold" if the order was actually filled
+    return {
+      event: `${isBuy ? 'Bought' : 'Sold'} ${e.ticker}`,
+      value: `${isBuy ? '+' : '-'}$${(e.price * e.quantity).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      time: formatTimeAgo(e.createdAt),
+      type: isBuy ? 'buy' : 'sell',
+      ticker: e.ticker,
+      quantity: e.quantity,
+      price: e.price
+    }
+  })
 }
 
 function formatTimeAgo(ts) {

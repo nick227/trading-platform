@@ -49,4 +49,23 @@ export default async function executionsRoutes(app) {
     })
     return reply.code(201).send({ data: execution })
   })
+
+  // POST /api/executions/:id/cancel â€” requires auth; only owner may cancel queued/processing executions
+  app.post('/:id/cancel', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      const updated = await executionsService.cancelExecution(request.params.id, request.user.id)
+      if (!updated) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Execution not found' } })
+      }
+      return reply.send({ data: updated })
+    } catch (err) {
+      if (err?.code === 'FORBIDDEN') {
+        return reply.code(403).send({ error: { code: 'FORBIDDEN', message: 'Not allowed to cancel this execution' } })
+      }
+      if (err?.code === 'NOT_CANCELLABLE') {
+        return reply.code(409).send({ error: { code: 'NOT_CANCELLABLE', message: err.message } })
+      }
+      return reply.code(500).send({ error: { code: 'INTERNAL', message: 'Failed to cancel execution' } })
+    }
+  })
 }

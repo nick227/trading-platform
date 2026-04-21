@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getBotCatalog, createBotFromTemplate, createStrategyBot } from '../api/services/botCatalogService.js'
+import BotTemplateSelector from '../components/BotTemplateSelector.jsx'
 
 export default function BotCreate() {
   const navigate = useNavigate()
@@ -183,7 +184,7 @@ const handleCreateBot = async () => {
   }
 
   const handleAddTicker = () => {
-    const ticker = prompt('Enter ticker symbol (e.g., AAPL):')
+    const ticker = window.prompt('Enter ticker symbol (e.g., AAPL):')
     if (ticker && /^[A-Z]{1,5}$/.test(ticker.toUpperCase())) {
       setBotConfig(prev => ({
         ...prev,

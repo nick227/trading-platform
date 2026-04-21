@@ -94,8 +94,8 @@ export function useOrderBootstrap(symbol, range = '1Y', setSelectedStock = null)
           })
         }
 
-        // Update selected stock with live price from bootstrap quote
-        if (data.quote && setSelectedStock) {
+        // Update selected stock with live price from bootstrap quote (optional callback).
+        if (data.quote && typeof setSelectedStock === 'function') {
           setSelectedStock(prev => {
             if (!prev || prev.symbol !== symbol) return prev
             return {

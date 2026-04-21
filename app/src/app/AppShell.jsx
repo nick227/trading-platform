@@ -16,6 +16,7 @@ import Auth from '../features/Auth'
 import ApiTest from '../test/ApiTest'
 import ExecutionTest from '../test/ExecutionTest'
 import { useAuth } from './AuthProvider'
+import PendingOrdersWidget from '../components/PendingOrdersWidget.jsx'
 
 /** Redirects logged-in users away from auth pages. */
 function AuthScreen() {
@@ -31,9 +32,11 @@ function Protected({ children }) {
 }
 
 export function AppShell() {
+  const { user } = useAuth()
   return (
     <div>
       <Nav />
+      {user && <PendingOrdersWidget />}
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/portfolio"      element={<Protected><Portfolio /></Protected>} />

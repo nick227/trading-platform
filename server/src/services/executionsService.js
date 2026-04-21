@@ -68,6 +68,49 @@ export default {
     return execution
   },
 
+  async cancelExecution(id, userId) {
+    const execution = await prisma.execution.findUnique({ where: { id } })
+    if (!execution) return null
+
+    if (execution.userId !== userId) {
+      const err = new Error('Forbidden')
+      err.code = 'FORBIDDEN'
+      throw err
+    }
+
+    const cancellable = execution.status === 'queued' || execution.status === 'processing'
+    if (!cancellable) {
+      const err = new Error(`Execution not cancellable from status: ${execution.status}`)
+      err.code = 'NOT_CANCELLABLE'
+      throw err
+    }
+
+    const updated = await prisma.execution.update({
+      where: { id },
+      data: { status: 'cancelled' }
+    })
+
+    await prisma.executionAudit.create({
+      data: {
+        id: generateId('aud'),
+        executionId: updated.id,
+        userId: updated.userId,
+        eventType: 'execution_cancelled',
+        detail: `Execution cancelled for ${updated.ticker}`,
+        metadata: {
+          previousStatus: execution.status,
+          origin: updated.origin,
+          clientOrderId: updated.clientOrderId,
+          quantity: updated.quantity,
+          direction: updated.direction,
+          price: updated.price
+        }
+      }
+    })
+
+    return updated
+  },
+
   async getExecutions(query) {
     const where = buildExecutionWhere(query)
     const take = Math.min(parseInt(query.limit || 50), 100)

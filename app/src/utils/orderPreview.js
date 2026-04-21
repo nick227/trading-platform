@@ -6,7 +6,7 @@
  *
  * Returns null when price is missing or zero.
  */
-export function calculateOrderPreview({ orderType, quantity: rawQty, amount: rawAmt, price, bankBalance }) {
+export function calculateOrderPreview({ orderType, quantity: rawQty, amount: rawAmt, price, bankBalance, currentShares = 0, pendingOrders = [] }) {
   if (!price || price <= 0) return null
 
   const amt = parseFloat(rawAmt) || 0
@@ -17,24 +17,37 @@ export function calculateOrderPreview({ orderType, quantity: rawQty, amount: raw
   const resolvedValue = amt  || resolvedQty * price
 
   if (orderType === 'SELL') {
+    // Validate that user owns enough shares to sell
+    const canAfford = resolvedQty > 0 && resolvedQty <= currentShares
     return {
       price,
       quantity:     resolvedQty,
       totalValue:   resolvedQty * price,
       afterBalance: bankBalance + resolvedQty * price,
-      canAfford:    resolvedQty > 0,
-      maxQuantity:  null,
+      canAfford,
+      maxQuantity:  currentShares,
     }
   }
 
-  // BUY
-  const maxQuantity = bankBalance > 0 ? Math.floor(bankBalance / price) : 0
+  // BUY - Calculate pending order commitments
+  const pendingBuyOrders = pendingOrders.filter(o => 
+    o.status === 'queued' && o.side === 'BUY'
+  )
+  const pendingBuyValue = pendingBuyOrders.reduce((sum, o) => 
+    sum + (o.quantity * o.price), 0
+  )
+  
+  const effectiveBalance = bankBalance - pendingBuyValue
+  const maxQuantity = effectiveBalance > 0 ? Math.floor(effectiveBalance / price) : 0
+  
   return {
     price,
     quantity:     resolvedQty,
     totalValue:   resolvedValue,
-    afterBalance: bankBalance - resolvedValue,
-    canAfford:    resolvedValue > 0 && resolvedValue <= bankBalance,
+    afterBalance: effectiveBalance - resolvedValue,
+    canAfford:    resolvedValue > 0 && resolvedValue <= effectiveBalance,
     maxQuantity,
+    pendingBuyValue,
+    effectiveBalance,
   }
 }

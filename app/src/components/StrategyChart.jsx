@@ -91,7 +91,7 @@ const chartOptions = {
       displayColors: true,
       callbacks: {
         afterLabel: function(context) {
-          const prediction = predictions.find(p => p.index === context.dataIndex)
+          const prediction = (context.chart._predictions || []).find(p => p.index === context.dataIndex)
           if (prediction) {
             return [
               `🎯 ${prediction.type}: ${prediction.symbol}`,

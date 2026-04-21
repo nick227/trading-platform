@@ -69,6 +69,20 @@ export default function OrderConfirm() {
   const [auditTimeline,   setAuditTimeline]     = useState([])
   const pollRef = useRef(null)
 
+  // Load current ownership data for sell validation
+  const [currentShares, setCurrentShares] = useState(0)
+  useEffect(() => {
+    if (!order?.asset) return
+    
+    get(`/bootstrap/${order.asset}`)
+      .then(data => {
+        if (data?.userOwnership?.currentShares) {
+          setCurrentShares(data.userOwnership.currentShares)
+        }
+      })
+      .catch(() => {})
+  }, [order?.asset])
+
   // ── Load portfolio ID and live bank balance on mount ─────────────────────────
   useEffect(() => {
     get('/portfolios/default')
@@ -145,6 +159,7 @@ export default function OrderConfirm() {
       amount:    order.amount,
       price,
       bankBalance,
+      currentShares,
     })
     if (!preview) return null
     return {
@@ -152,7 +167,7 @@ export default function OrderConfirm() {
       priceChange:        latestPrice - order.price,
       priceChangePercent: ((latestPrice - order.price) / order.price * 100).toFixed(2),
     }
-  }, [order, latestPrice, bankBalance])
+  }, [order, latestPrice, bankBalance, currentShares])
 
   // ── Order validation ─────────────────────────────────────────────────────────
   const validateOrder = () => {
@@ -160,6 +175,9 @@ export default function OrderConfirm() {
     if (!bankConnected) { setExecutionError('Bank connection required for trading'); return false }
     if (order.type === 'BUY' && orderDetails.totalValue > bankBalance) {
       setExecutionError('Insufficient buying power'); return false
+    }
+    if (order.type === 'SELL' && orderDetails.quantity > currentShares) {
+      setExecutionError(`Insufficient shares. You own ${currentShares} shares but trying to sell ${orderDetails.quantity}`); return false
     }
     return true
   }
@@ -337,7 +355,7 @@ export default function OrderConfirm() {
 
   return (
     <div className="page container" style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem 3rem' }}>
-      <header style={{ marginBottom: '2rem' }}>
+      <header>
         <h1 className="hero" style={{ marginBottom: '0.5rem' }}>Order Confirmation</h1>
         <div className="muted">Review your order details before execution</div>
       </header>
@@ -351,12 +369,15 @@ export default function OrderConfirm() {
           </div>
           <div style={{ display: 'flex', gap: '0.75rem' }}>
             <button className="primary pressable" onClick={handleExecuteOrder} disabled={submitDisabled}
-              style={{ padding: '0.5rem 1rem', fontSize: '12px', opacity: submitDisabled ? 0.5 : 1 }}>
+              style={{ opacity: submitDisabled ? 0.5 : 1 }}>
               Queue for Market Open
             </button>
-            <button className="ghost pressable" onClick={() => navigate(-1)} style={{ padding: '0.5rem 1rem', fontSize: '12px' }}>
-              Wait for Market Open
-            </button>
+          <button className="ghost pressable" onClick={handleCreateBot}
+              style={{ opacity: submitDisabled ? 0.5 : 1 }}>
+            Create Bot Instead
+          </button>
+
+
           </div>
         </article>
       )}
@@ -366,7 +387,7 @@ export default function OrderConfirm() {
         <article style={{
           background: orderDetails.priceChange > 0 ? '#fff5f5' : '#f0f9f4',
           border: `1px solid ${orderDetails.priceChange > 0 ? '#fed7d7' : '#c6f6d5'}`,
-          borderRadius: 8, padding: '1rem', marginBottom: '1.5rem',
+          borderRadius: 8, marginBottom: '1.5rem',
           color: orderDetails.priceChange > 0 ? '#c0392b' : '#0a7a47',
         }}>
           <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Price Updated Since Order Creation</div>
@@ -447,30 +468,15 @@ export default function OrderConfirm() {
 
       {/* Price fetch error */}
       {priceError && (
-        <article style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', color: '#dc2626' }}>
+        <article style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginBottom: '1.5rem', color: '#dc2626' }}>
           <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Price Error</div>
           <div style={{ fontSize: '14px' }}>{priceError}</div>
         </article>
       )}
 
-      {/* Actions */}
-      <section style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ marginBottom: '1rem', fontSize: '18px', fontWeight: 600 }}>Quick Actions</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          <button className="primary pressable" onClick={handleExecuteOrder} disabled={submitDisabled}
-            style={{ padding: '1rem', fontWeight: 600, opacity: submitDisabled ? 0.5 : 1 }}>
-            {submitLabel}
-          </button>
-          <button className="ghost pressable" onClick={handleCreateBot} style={{ padding: '1rem', textAlign: 'left' }}>
-            <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Create Bot Instead</div>
-            <div style={{ fontSize: '14px', opacity: 0.8 }}>Automate trading for {order?.asset}</div>
-          </button>
-        </div>
-      </section>
-
       {/* Status banners with richer states */}
       {executionStatus === STATUS.QUEUED && (
-        <article style={{ background: '#f0f6ff', border: '1px solid #bee3f8', borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', color: '#2b6cb0' }}>
+        <article style={{ background: '#f0f6ff', border: '1px solid #bee3f8', borderRadius: 8, marginBottom: '1.5rem', color: '#2b6cb0' }}>
           <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Order Queued</div>
           <div style={{ fontSize: '14px' }}>Your order is queued and will be submitted to the broker shortly.</div>
           {canCancel && (
@@ -482,7 +488,7 @@ export default function OrderConfirm() {
         </article>
       )}
       {executionStatus === STATUS.PROCESSING && (
-        <article style={{ background: '#fffff0', border: '1px solid #fefcbf', borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', color: '#975a16' }}>
+        <article style={{ background: '#fffff0', border: '1px solid #fefcbf', borderRadius: 8, marginBottom: '1.5rem', color: '#975a16' }}>
           <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Submitted to Broker</div>
           <div style={{ fontSize: '14px' }}>Order submitted and awaiting broker confirmation...</div>
           {canCancel && (
@@ -494,7 +500,7 @@ export default function OrderConfirm() {
         </article>
       )}
       {executionStatus === STATUS.PARTIALLY_FILLED && (
-        <article style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '1rem', marginBottom: '1.5rem', color: '#166534' }}>
+        <article style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, marginBottom: '1.5rem', color: '#166534' }}>
           <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Partially Filled</div>
           <div style={{ fontSize: '14px' }}>Order is partially filled. Remaining shares are still active.</div>
         </article>
@@ -605,7 +611,7 @@ export default function OrderConfirm() {
         <footer style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
           <button className="ghost pressable" onClick={() => navigate(-1)}>Cancel</button>
           <button className="primary pressable" onClick={handleExecuteOrder} disabled={submitDisabled}
-            style={{ padding: '1rem', fontWeight: 600, opacity: submitDisabled ? 0.5 : 1 }}>
+            style={{ fontWeight: 600, opacity: submitDisabled ? 0.5 : 1 }}>
             {submitLabel}
           </button>
         </footer>

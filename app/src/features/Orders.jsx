@@ -4,6 +4,7 @@ import { useApp } from '../app/AppProvider'
 import { get } from '../api/client.js'
 import { getAvailableStocks } from '../services/marketData.js'
 import { useOrderBootstrap } from '../hooks/useOrderBootstrap.js'
+import { useChartHistory } from '../hooks/useChartHistory.js'
 import { formatETNextOpen, isMarketClosed, getQuoteFreshness } from '../utils/market.js'
 
 import SearchableDropdown  from './orders/components/SearchableDropdown.jsx'
@@ -33,8 +34,14 @@ export default function Orders() {
   // ── Bootstrap data (via hook — AbortController-based race protection) ───────
   const {
     bootstrapData, loading: bootstrapLoading, error: bootstrapError,
-    priceHistory, priceRange, alpha, refresh: refreshBootstrap,
-  } = useOrderBootstrap(selectedStock?.symbol, chartRange)
+    alpha, refresh: refreshBootstrap,
+  } = useOrderBootstrap(selectedStock?.symbol, '1Y')
+
+  const {
+    history: priceHistory,
+    priceRange,
+    loading: chartLoading,
+  } = useChartHistory(selectedStock?.symbol, chartRange, '1D')
 
   // ── Live quote auto-refresh (visibility-aware polling with refs) ────────────────────────
   const [liveQuote, setLiveQuote] = useState(null)
@@ -366,7 +373,7 @@ export default function Orders() {
             chartRange={chartRange}
             onRangeChange={setChartRange}
             bootstrapData={bootstrapData}
-            loading={bootstrapLoading}
+            loading={chartLoading}
             nextOpen={nextOpen}
           />
           <AlphaPanel       selectedStock={selectedStock} alpha={alpha} loading={bootstrapLoading} />

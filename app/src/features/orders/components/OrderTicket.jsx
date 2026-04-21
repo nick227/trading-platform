@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
 import { calculateOrderPreview } from '../../../utils/orderPreview.js'
+import DateTimePicker from '../../../components/DateTimePicker.jsx'
+import { usePendingOrders } from '../../../hooks/usePendingOrders.js'
 
 const INPUT_STYLE = {
   width: '100%', padding: '0.75rem',
@@ -23,17 +25,31 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
   const [orderQuantity, setOrderQuantity] = useState('')
   const [limitPrice,    setLimitPrice]    = useState('')
   const [stopPrice,     setStopPrice]     = useState('')
+  const [scheduleForLater, setScheduleForLater] = useState(false)
+  const [scheduledDateTime, setScheduledDateTime] = useState(null)
 
+  // Get pending orders for balance validation
+  const { pendingOrders } = usePendingOrders({ enabled: true, pollIntervalMs: 10000 })
+
+  const quantityNum = Number(orderQuantity)
+  const hasMeaningfulInput = Number.isFinite(quantityNum) && quantityNum > 0
+
+  const currentShares = bootstrapData?.userOwnership?.currentShares ?? 0
+  
   const preview = useMemo(() => calculateOrderPreview({
     orderType,
     quantity:    orderQuantity,
     amount:      orderAmount,
     price:       selectedStock?.price ?? 0,
     bankBalance: bankBalance ?? 0,
-  }), [orderType, orderQuantity, orderAmount, selectedStock?.price, bankBalance])
+    currentShares,
+    pendingOrders,
+  }), [orderType, orderQuantity, orderAmount, selectedStock?.price, bankBalance, currentShares, pendingOrders])
 
   const handleSubmit = () => {
     if (!selectedStock || !preview) return
+    if (scheduleForLater && !scheduledDateTime) return // Require datetime if scheduling
+    
     onSubmit({
       id:        Date.now(),
       type:      orderType,
@@ -46,10 +62,16 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
       limitPrice: fillType === 'LIMIT' ? parseFloat(limitPrice) || null : null,
       stopPrice:  fillType === 'STOP'  ? parseFloat(stopPrice)  || null : null,
       timestamp:  new Date().toISOString(),
+      scheduledFor: scheduleForLater ? scheduledDateTime : null,
     })
   }
 
-  const canSubmit = !!preview?.canAfford && (!!orderAmount || !!orderQuantity)
+  const canSubmit = Boolean(
+    preview?.canAfford && 
+    hasMeaningfulInput && 
+    (!scheduleForLater || scheduledDateTime)
+  )
+  const showInsufficientWarning = Boolean(hasMeaningfulInput && preview?.canAfford === false)
 
   return (
     <article style={{
@@ -126,36 +148,58 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
             </div>
           )}
 
-          {/* Amount / Quantity */}
+          {/* Quantity */}
           <div style={{ marginBottom: '1rem' }}>
             <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>
-              {orderType === 'BUY' ? 'Amount to Invest' : 'Quantity to Sell'}
+              {orderType === 'BUY' ? 'Number of Shares to Buy' : 'Number of Shares to Sell'}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-              {orderType === 'BUY' ? (
-                <input
-                  type="number"
-                  value={orderAmount}
-                  onChange={e => { setOrderAmount(e.target.value); setOrderQuantity('') }}
-                  placeholder="$0.00"
-                  style={INPUT_STYLE}
-                />
-              ) : (
-                <input
-                  type="number"
-                  value={orderQuantity}
-                  onChange={e => { setOrderQuantity(e.target.value); setOrderAmount('') }}
-                  placeholder="0 shares"
-                  min={0}
-                  style={INPUT_STYLE}
-                />
-              )}
+              <input
+                type="number"
+                value={orderQuantity}
+                onChange={e => { setOrderQuantity(e.target.value); setOrderAmount('') }}
+                placeholder="0 shares"
+                min={0}
+                style={INPUT_STYLE}
+              />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: '#7a7a7a' }}>
                 {orderType === 'BUY'
                   ? `Max: ${preview?.maxQuantity ?? '—'} shares`
-                  : 'Validated at broker'}
+                  : `Available: ${preview?.maxQuantity ?? 0} shares`}
               </div>
             </div>
+          </div>
+
+          {/* Scheduling */}
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <input
+                type="checkbox"
+                id="schedule-later"
+                checked={scheduleForLater}
+                onChange={e => setScheduleForLater(e.target.checked)}
+                style={{ margin: 0 }}
+              />
+              <label htmlFor="schedule-later" className="eyebrow" style={{ margin: 0, cursor: 'pointer' }}>
+                Schedule for later
+              </label>
+            </div>
+            {scheduleForLater && (
+              <div>
+                <div className="eyebrow" style={{ marginBottom: '0.5rem', fontSize: '12px' }}>
+                  Execution Time (ET)
+                </div>
+                <DateTimePicker
+                  value={scheduledDateTime}
+                  onChange={setScheduledDateTime}
+                  minDate={new Date()}
+                  disabled={!scheduleForLater}
+                />
+                <div style={{ fontSize: '11px', color: '#666', marginTop: '0.25rem' }}>
+                  Orders will execute during market hours (9:30 AM - 4:00 PM ET)
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Order summary */}
@@ -164,8 +208,21 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
               <span className="muted">Est. {orderType === 'BUY' ? 'Cost' : 'Proceeds'}:</span>
               <span style={{ fontWeight: 600 }}>${(preview?.totalValue ?? 0).toFixed(2)}</span>
             </div>
+            
+            {/* Show pending order commitments for BUY orders */}
+            {orderType === 'BUY' && preview?.pendingBuyValue > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '0.25rem' }}>
+                <span className="muted">Pending Orders:</span>
+                <span style={{ fontWeight: 600, color: '#f39c12' }}>
+                  -${preview.pendingBuyValue.toFixed(2)}
+                </span>
+              </div>
+            )}
+            
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-              <span className="muted">Balance After:</span>
+              <span className="muted">
+                {orderType === 'BUY' && preview?.pendingBuyValue > 0 ? 'Effective Balance After:' : 'Balance After:'}
+              </span>
               <span style={{ fontWeight: 600, color: preview?.canAfford !== false ? '#0a7a47' : '#c0392b' }}>
                 ${(preview?.afterBalance ?? bankBalance).toFixed(2)}
               </span>
@@ -173,7 +230,7 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
           </div>
 
           {/* Insufficient funds warning */}
-          {preview?.canAfford === false && (
+          {showInsufficientWarning && (
             <div style={{
               background: '#fff5f5', border: '1px solid #fed7d7', borderRadius: '8px',
               padding: '0.75rem', marginBottom: '1rem', color: '#c0392b', fontSize: '13px',

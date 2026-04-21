@@ -84,6 +84,15 @@ export default {
       return null
     }
   },
+
+  async cancel(id) {
+    try {
+      const result = await post(`/executions/${id}/cancel`, {})
+      return result ? mapExecution(result) : null
+    } catch {
+      return null
+    }
+  },
   
   async getSummary() {
     try {

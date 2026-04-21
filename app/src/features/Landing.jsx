@@ -4,6 +4,8 @@ import StrategyChart from '../components/StrategyChart'
 import Calendar from '../components/Calendar'
 import { useAlphaDashboard, useAlphaSignals } from '../hooks/useAlphaEngine.js'
 import { getMarketPulse, getFeaturedAssets } from '../services/marketData.js'
+import { useAuth } from '../app/AuthProvider.jsx'
+import { usePendingOrders } from '../hooks/usePendingOrders.js'
 
 
 const performanceMetrics = {
@@ -74,9 +76,15 @@ function transformRankingsToFeaturedAssets(rankings) {
 
 export default function Landing() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [selectedSignal, setSelectedSignal] = useState(null)
   const [marketPulse, setMarketPulse] = useState(getMarketPulse())
+
+  const { pendingOrders, cancelOrder, isCanceling } = usePendingOrders({
+    enabled: Boolean(user),
+    pollIntervalMs: 10000
+  })
   
   // Alpha Engine data
   const { dashboard, loading: dashboardLoading, error: dashboardError } = useAlphaDashboard()
@@ -561,27 +569,69 @@ export default function Landing() {
         <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
           <strong>Recent Trades</strong>
           <div style={{ marginTop: '0.8rem', maxHeight: '300px', overflowY: 'auto' }}>
-            {recentTrades.map((trade, index) => (
-              <div key={index} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <strong>{trade.symbol}</strong>
-                  <span style={{ color: trade.pnl > 0 ? '#1f8a4c' : '#c0392b', fontWeight: 600 }}>
-                    ${trade.pnl.toFixed(2)}
-                  </span>
+            {user ? (
+              pendingOrders.length === 0 ? (
+                <div style={{ fontSize: '12px', color: '#666', textAlign: 'center', padding: '1rem' }}>
+                  No pending orders.
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '12px' }}>
-                  <div>
-                    <span className="muted">${trade.entry} → ${trade.exit}</span>
+              ) : (
+                pendingOrders.slice(0, 10).map((o) => {
+                  const side = (o.side ?? '').toUpperCase()
+                  const qty = o.quantity ?? 0
+                  const price = o.price ?? 0
+                  return (
+                    <div key={o.id} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                        <strong>{o.ticker}</strong>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#856404' }}>
+                            {o.status === 'queued' ? 'Queued' : 'Processing'}
+                          </span>
+                          <button
+                            className="ghost pressable"
+                            onClick={() => cancelOrder(o.id)}
+                            disabled={isCanceling(o.id)}
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '11px' }}
+                          >
+                            {isCanceling(o.id) ? 'Canceling…' : 'Cancel'}
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '12px' }}>
+                        <div>
+                          <span className="muted">{side} {qty} @ ${Number(price).toFixed(2)}</span>
+                        </div>
+                        <div>
+                          <span className="muted">{o.createdAt ? new Date(o.createdAt).toLocaleString() : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )
+            ) : (
+              recentTrades.map((trade, index) => (
+                <div key={index} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <strong>{trade.symbol}</strong>
+                    <span style={{ color: trade.pnl > 0 ? '#1f8a4c' : '#c0392b', fontWeight: 600 }}>
+                      ${trade.pnl.toFixed(2)}
+                    </span>
                   </div>
-                  <div>
-                    <span className="muted">{trade.holdTime}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '12px' }}>
+                    <div>
+                      <span className="muted">${trade.entry} → ${trade.exit}</span>
+                    </div>
+                    <div>
+                      <span className="muted">{trade.holdTime}</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#7a7a7a' }}>
+                    Exit: {trade.exitReason}
                   </div>
                 </div>
-                <div style={{ fontSize: '11px', color: '#7a7a7a' }}>
-                  Exit: {trade.exitReason}
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </article>
       </section>
