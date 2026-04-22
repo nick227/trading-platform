@@ -1,12 +1,11 @@
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
-import { STUB_USER_ID } from '../utils/auth.js'
 
 export default {
   async createRule(botId, data) {
     const rule = await prisma.botRule.create({
       data: {
-        id: generateId(ID_PREFIXES.BOT_RULE),
+        id: generateId(ID_PREFIXES.RULE),
         botId,
         type: data.type,
         order: data.order,
@@ -63,7 +62,7 @@ export default {
         rules.map((rule, index) => 
           tx.botRule.create({
             data: {
-              id: generateId(ID_PREFIXES.BOT_RULE),
+              id: generateId(ID_PREFIXES.RULE),
               botId,
               type: rule.type,
               order: index + 1, // 1-based ordering

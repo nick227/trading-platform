@@ -5,6 +5,8 @@ import brokerService from '../services/brokerService.js'
 import executionsService from '../services/executionsService.js'
 import { fetchAlpacaMarketClock, resolveAlpacaCredentials } from '../services/alpacaClockService.js'
 
+const TERMINAL_STATUSES = new Set(['filled', 'cancelled', 'failed'])
+
 async function getOrCreateDefaultPortfolioId(userId) {
   const existing = await prisma.portfolio.findFirst({
     where: { userId },
@@ -175,7 +177,7 @@ export default async function tradeRoutes(app, opts) {
         return reply.code(403).send({ error: 'Forbidden' })
       }
 
-      if (['filled', 'cancelled', 'failed'].includes(execution.status)) {
+      if (TERMINAL_STATUSES.has(execution.status)) {
         return reply.code(409).send({ error: 'Order is already terminal', status: execution.status })
       }
 
@@ -191,7 +193,7 @@ export default async function tradeRoutes(app, opts) {
 
       await prisma.executionAudit.create({
         data: {
-          id: generateId('aud'),
+          id: generateId(ID_PREFIXES.AUDIT),
           executionId: execution.id,
           userId: execution.userId,
           eventType: 'cancel_requested',

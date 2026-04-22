@@ -1,6 +1,71 @@
 import { engineClient } from '../clients/engine.js'
 import { oldEngineClient } from '../clients/oldEngine.js'
 
+const QUOTE_ENRICH_TTL_MS = 30_000
+const quoteEnrichCache = new Map()
+
+function getRowTicker(row) {
+  return String(row?.ticker ?? row?.symbol ?? row?.tkr ?? '').toUpperCase()
+}
+
+function coerceNumber(value) {
+  const num = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+async function getCachedQuote(symbol) {
+  const key = String(symbol).toUpperCase()
+  const now = Date.now()
+  const cached = quoteEnrichCache.get(key)
+  if (cached && cached.expiresAt > now) return cached.quote
+
+  const quote = await engineClient.getQuote(key)
+  quoteEnrichCache.set(key, { quote, expiresAt: now + QUOTE_ENRICH_TTL_MS })
+  return quote
+}
+
+async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
+  if (!data || typeof data !== 'object') return data
+  const rows = Array.isArray(data.rankings) ? data.rankings : []
+  if (rows.length === 0) return data
+
+  const uniqueTickers = Array.from(new Set(rows.map(getRowTicker).filter(Boolean)))
+  const quoteByTicker = new Map()
+
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(limitConcurrency, uniqueTickers.length) }, async () => {
+    while (cursor < uniqueTickers.length) {
+      const i = cursor++
+      const tkr = uniqueTickers[i]
+      try {
+        const quote = await getCachedQuote(tkr)
+        quoteByTicker.set(tkr, quote)
+      } catch (error) {
+        quoteByTicker.set(tkr, null)
+      }
+    }
+  })
+
+  await Promise.all(workers)
+
+  const enrichedRows = rows.map((row) => {
+    const tkr = getRowTicker(row)
+    const quote = tkr ? quoteByTicker.get(tkr) : null
+
+    const price = row?.price ?? quote?.price ?? quote?.last ?? quote?.close
+    const dailyChangePct = row?.dailyChangePct ?? quote?.dailyChangePct ?? quote?.changePct ?? quote?.change
+
+    return {
+      ...row,
+      ticker: row?.ticker ?? (tkr || undefined),
+      price: coerceNumber(price),
+      dailyChangePct: coerceNumber(dailyChangePct)
+    }
+  })
+
+  return { ...data, rankings: enrichedRows, _enrichedAt: new Date().toISOString() }
+}
+
 export default async function engineRoutes(fastify, opts) {
   
   // Health check endpoint
@@ -77,11 +142,69 @@ export default async function engineRoutes(fastify, opts) {
     }
   })
 
+  fastify.get('/api/regime/:symbol', async (request, reply) => {
+    try {
+      const { symbol } = request.params
+      const data = await engineClient.getRegime(symbol)
+      return { success: true, data }
+    } catch (error) {
+      fastify.log.error('Get regime failed:', error)
+      reply.code(500)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // Research endpoints
+  fastify.get('/api/ticker/:symbol/accuracy', async (request, reply) => {
+    try {
+      const { symbol } = request.params
+      const data = await engineClient.getTickerAccuracy(symbol)
+      return { success: true, data }
+    } catch (error) {
+      fastify.log.error('Get ticker accuracy failed:', error)
+      reply.code(500)
+      return { success: false, error: error.message }
+    }
+  })
+
+  fastify.get('/api/ticker/:symbol/attribution', async (request, reply) => {
+    try {
+      const { symbol } = request.params
+      const data = await engineClient.getTickerAttribution(symbol)
+      return { success: true, data }
+    } catch (error) {
+      fastify.log.error('Get ticker attribution failed:', error)
+      reply.code(500)
+      return { success: false, error: error.message }
+    }
+  })
+
+  fastify.get('/api/consensus/signals', async (request, reply) => {
+    try {
+      const { ticker } = request.query
+      if (!ticker) {
+        reply.code(400)
+        return { success: false, error: 'ticker query param is required' }
+      }
+      const data = await engineClient.getConsensusSignals(String(ticker))
+      return { success: true, data }
+    } catch (error) {
+      fastify.log.error('Get consensus signals failed:', error)
+      reply.code(500)
+      return { success: false, error: error.message }
+    }
+  })
+
   // Rankings endpoints
   fastify.get('/rankings/top', async (request, reply) => {
     try {
-      const { limit = 20 } = request.query
-      const data = await engineClient.getTopRankings(parseInt(limit))
+      const { limit = 20, maxFragility = null } = request.query
+      const maxFragilityNum = maxFragility === null || maxFragility === undefined || maxFragility === ''
+        ? null
+        : Number(maxFragility)
+
+      const raw = await engineClient.getTopRankings(parseInt(limit), maxFragilityNum)
+      const data = await enrichRankingsPayload(raw)
       return { success: true, data }
     } catch (error) {
       fastify.log.error('Get top rankings failed:', error)
@@ -93,7 +216,8 @@ export default async function engineRoutes(fastify, opts) {
   fastify.get('/rankings/movers', async (request, reply) => {
     try {
       const { limit = 50 } = request.query
-      const data = await engineClient.getRankingMovers(parseInt(limit))
+      const raw = await engineClient.getRankingMovers(parseInt(limit))
+      const data = await enrichRankingsPayload(raw)
       return { success: true, data }
     } catch (error) {
       fastify.log.error('Get ranking movers failed:', error)
@@ -203,18 +327,14 @@ export default async function engineRoutes(fastify, opts) {
     }
   })
 
-  // Bootstrap endpoint for Orders page
-  fastify.get('/api/orders/bootstrap', async (request, reply) => {
+  fastify.get('/recommendations/under/:cap', async (request, reply) => {
     try {
-      const { ticker, range = '1Y', interval = '1D' } = request.query
-      if (!ticker) {
-        return reply.code(400).send({ success: false, error: 'ticker parameter required' })
-      }
-
-      const data = await engineClient.getBootstrapData(ticker, range, interval)
+      const { cap } = request.params
+      const { mode = 'balanced', limit = 25, preference = null } = request.query
+      const data = await engineClient.getRecommendationsUnder(cap, mode, parseInt(limit), preference)
       return { success: true, data }
     } catch (error) {
-      fastify.log.error('Get bootstrap data failed:', error)
+      fastify.log.error('Get price-capped recommendations failed:', error)
       reply.code(500)
       return { success: false, error: error.message }
     }

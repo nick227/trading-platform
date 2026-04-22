@@ -23,34 +23,9 @@ export default {
       }
     })
     
-    // Create bot event if automated
-    if (data.botId) {
-      const eventType = 'execution_created'
-      const metadata = {
-        executionId: execution.id,
-        quantity: data.quantity,
-        price: data.price,
-        direction
-      }
-      
-      validateEventMetadata(eventType, metadata)
-      
-      await prisma.botEvent.create({
-        data: {
-          id: generateId(ID_PREFIXES.EVENT),
-          botId: data.botId,
-          portfolioId: data.portfolioId,
-          executionId: execution.id,
-          type: eventType,
-          detail: `Created ${direction} order for ${data.ticker}`,
-          metadata
-        }
-      })
-    }
-
-    await prisma.executionAudit.create({
+    const auditCreate = prisma.executionAudit.create({
       data: {
-        id: generateId('aud'),
+        id: generateId(ID_PREFIXES.AUDIT),
         executionId: execution.id,
         userId: execution.userId,
         eventType: 'execution_created',
@@ -64,6 +39,33 @@ export default {
         }
       }
     })
+
+    if (data.botId) {
+      const eventType = 'execution_created'
+      const metadata = {
+        executionId: execution.id,
+        quantity: data.quantity,
+        price: data.price,
+        direction
+      }
+      validateEventMetadata(eventType, metadata)
+      await Promise.all([
+        auditCreate,
+        prisma.botEvent.create({
+          data: {
+            id: generateId(ID_PREFIXES.EVENT),
+            botId: data.botId,
+            portfolioId: data.portfolioId,
+            executionId: execution.id,
+            type: eventType,
+            detail: `Created ${direction} order for ${data.ticker}`,
+            metadata
+          }
+        })
+      ])
+    } else {
+      await auditCreate
+    }
     
     return execution
   },

@@ -37,12 +37,22 @@ export const engineClient = {
   },
 
   // Rankings endpoints
-  async getTopRankings(limit = 20) {
-    return engineFetch(`/ranking/top?limit=${limit}`)
+  async getTopRankings(limit = 20, maxFragility = null) {
+    const params = new URLSearchParams()
+    params.set('limit', String(limit))
+    if (maxFragility !== null && maxFragility !== undefined && Number.isFinite(Number(maxFragility))) {
+      params.set('maxFragility', String(maxFragility))
+    }
+    return engineFetch(`/ranking/top?${params.toString()}`)
   },
 
   async getRankingMovers(limit = 50) {
     return engineFetch(`/ranking/movers?limit=${limit}`)
+  },
+
+  // Regime endpoint
+  async getRegime(symbol) {
+    return engineFetch(`/api/regime/${encodeURIComponent(symbol)}?tenant_id=default`)
   },
 
   // Ticker-specific endpoints
@@ -83,6 +93,19 @@ export const engineClient = {
 
   async getCompany(symbol) {
     return engineFetch(`/api/company/${encodeURIComponent(symbol)}?tenant_id=default`)
+  },
+
+  // Research endpoints (direct proxy to engine)
+  async getTickerAccuracy(symbol) {
+    return engineFetch(`/api/ticker/${encodeURIComponent(symbol)}/accuracy?tenant_id=default`)
+  },
+
+  async getTickerAttribution(symbol) {
+    return engineFetch(`/api/ticker/${encodeURIComponent(symbol)}/attribution?tenant_id=default`)
+  },
+
+  async getConsensusSignals(symbol) {
+    return engineFetch(`/api/consensus/signals?ticker=${encodeURIComponent(symbol)}&tenant_id=default`)
   },
 
   // Bootstrap data for Orders page - combines multiple alpha-engine calls
@@ -149,6 +172,17 @@ export const engineClient = {
     
     const tickerList = Array.isArray(tickers) ? tickers.join(',') : tickers
     return engineFetch(`/api/recommendations/batch?tickers=${encodeURIComponent(tickerList)}&mode=${mode}&tenant_id=default`)
+  },
+
+  // Price-capped recommendations (direct proxy to engine)
+  async getRecommendationsUnder(priceCap, mode = 'balanced', limit = 25, preference = null) {
+    const params = new URLSearchParams()
+    params.set('mode', mode)
+    params.set('limit', String(limit))
+    if (preference) params.set('preference', preference)
+    params.set('tenant_id', 'default')
+
+    return engineFetch(`/api/recommendations/under/${encodeURIComponent(String(priceCap))}?${params.toString()}`)
   },
 
   // Active signals for trading

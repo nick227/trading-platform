@@ -99,22 +99,15 @@ export default async function accountRoutes(fastify) {
   fastify.post('/broker-credentials', { 
     preHandler: isDev ? [] : [authenticate]  // Development bypass
   }, async (request, reply) => {
-    console.log('Broker credentials POST - request received')
-    console.log('Request body keys:', Object.keys(request.body || {}))
-    
     const { apiKey, apiSecret, paper = true } = request.body ?? {}
     if (!apiKey || !apiSecret) {
       return reply.code(400).send({ error: 'apiKey and apiSecret are required' })
     }
 
-    // Development bypass - use a stub user ID if not authenticated
     const userId = request.user?.id || (isDev ? '1' : null)
-    
     if (!userId) {
       return reply.code(401).send({ error: 'User authentication required' })
     }
-    
-    console.log('Processing broker credentials for user:', userId)
 
     // Verify credentials against Alpaca before saving
     const base = paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
@@ -132,26 +125,21 @@ export default async function accountRoutes(fastify) {
     const encryptedKey    = encrypt(apiKey)
     const encryptedSecret = encrypt(apiSecret)
 
-    const existing = await prisma.brokerAccount.findUnique({ where: { userId } })
-    if (existing) {
-      await prisma.brokerAccount.update({
-        where: { userId },
-        data:  { apiKey: encryptedKey, apiSecret: encryptedSecret, paper, status: 'active', lastVerifiedAt: new Date() }
-      })
-    } else {
-      await prisma.brokerAccount.create({
-        data: {
-          id:            generateId(ID_PREFIXES.BROKER),
-          userId,
-          broker:        'alpaca',
-          apiKey:        encryptedKey,
-          apiSecret:     encryptedSecret,
-          paper,
-          status:        'active',
-          lastVerifiedAt: new Date()
-        }
-      })
-    }
+    const now = new Date()
+    await prisma.brokerAccount.upsert({
+      where:  { userId },
+      update: { apiKey: encryptedKey, apiSecret: encryptedSecret, paper, status: 'active', lastVerifiedAt: now },
+      create: {
+        id:            generateId(ID_PREFIXES.BROKER),
+        userId,
+        broker:        'alpaca',
+        apiKey:        encryptedKey,
+        apiSecret:     encryptedSecret,
+        paper,
+        status:        'active',
+        lastVerifiedAt: now
+      }
+    })
 
     return reply.send({ ok: true, paper })
   })
@@ -160,17 +148,11 @@ export default async function accountRoutes(fastify) {
   fastify.get('/broker-credentials', { 
     preHandler: isDev ? [] : [authenticate]  // Development bypass
   }, async (request, reply) => {
-    console.log('Broker credentials GET - request received')
-    
-    // Development bypass - use a stub user ID if not authenticated
     const userId = request.user?.id || (isDev ? '1' : null)
-    
     if (!userId) {
       return reply.code(401).send({ error: 'User authentication required' })
     }
-    
-    console.log('Checking broker credentials for user:', userId)
-    
+
     const broker = await prisma.brokerAccount.findUnique({ where: { userId: String(userId) } })
     if (!broker) return reply.send({ connected: false })
     return reply.send({ connected: true, paper: broker.paper, status: broker.status, lastVerifiedAt: broker.lastVerifiedAt })

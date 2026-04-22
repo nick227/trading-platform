@@ -25,5 +25,6 @@ export const ID_PREFIXES = {
   EVENT: 'evt',
   RULE: 'rul',
   BROKER: 'bkr',
-  TEMPLATE: 'tmpl'
+  TEMPLATE: 'tmpl',
+  AUDIT: 'aud'
 }

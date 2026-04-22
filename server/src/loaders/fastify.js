@@ -4,6 +4,8 @@ import swaggerUi from '@fastify/swagger-ui'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import cookie from '@fastify/cookie'
+import compression from '../middleware/compression.js'
+import caching from '../middleware/caching.js'
 
 export default async function createApp() {
   const app = fastify({
@@ -41,6 +43,9 @@ export default async function createApp() {
   await app.register(swaggerUi, {
     routePrefix: '/docs'
   })
+
+  await app.register(compression)
+  await app.register(caching)
 
   return app
 }

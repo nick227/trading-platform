@@ -4,8 +4,10 @@
 import alphaEngineService from '../services/alphaEngineService.js'
 import executionsService from '../services/executionsService.js'
 
-// Cache with TTL policies (in-memory)
+// Cache with TTL policies (in-memory). Capped at MAX_CACHE_ENTRIES to prevent
+// unbounded growth across many tickers and user IDs.
 const cache = new Map()
+const MAX_CACHE_ENTRIES = 500
 const TTL_MS = {
   bootstrap:       2 * 60 * 1000,           // 2 minutes
   tickers:         24 * 60 * 60 * 1000,     // 1 day
@@ -33,6 +35,12 @@ function getCachedData(type, ticker, params = '') {
 
 function setCachedData(type, ticker, data, params = '') {
   const key = getCacheKey(type, ticker, params)
+  if (cache.size >= MAX_CACHE_ENTRIES && !cache.has(key)) {
+    // Evict the oldest 20% of entries (Map preserves insertion order)
+    const evictCount = Math.ceil(MAX_CACHE_ENTRIES * 0.2)
+    const iter = cache.keys()
+    for (let i = 0; i < evictCount; i++) cache.delete(iter.next().value)
+  }
   cache.set(key, { data, timestamp: Date.now() })
 }
 
@@ -83,9 +91,9 @@ async function getUserOwnershipData(ticker, userId = 'default') {
   }
 
   const avgCost = currentShares > 0 ? totalCost / currentShares : 0
-  const lastTrade = tickerExecutions.reduce((latest, exec) => (
-    (!latest || new Date(exec.createdAt) > new Date(latest.createdAt)) ? exec : latest
-  ), null)
+  // ISO strings are lexicographically sortable — no Date allocation needed
+  const lastTrade = tickerExecutions.reduce((latest, exec) =>
+    (!latest || exec.createdAt > latest.createdAt) ? exec : latest, null)
 
   return {
     currentShares,

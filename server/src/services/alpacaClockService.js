@@ -4,11 +4,14 @@ import { decrypt } from '../utils/encryption.js'
 const PAPER_BASE_URL = 'https://paper-api.alpaca.markets'
 const LIVE_BASE_URL = 'https://api.alpaca.markets'
 
+const BOOL_TRUE_VALUES = new Set(['1', 'true', 'yes', 'y', 'on'])
+const BOOL_FALSE_VALUES = new Set(['0', 'false', 'no', 'n', 'off'])
+
 function parseEnvBool(value, defaultValue) {
   if (value == null) return defaultValue
   const normalized = String(value).trim().toLowerCase()
-  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true
-  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false
+  if (BOOL_TRUE_VALUES.has(normalized)) return true
+  if (BOOL_FALSE_VALUES.has(normalized)) return false
   return defaultValue
 }
 

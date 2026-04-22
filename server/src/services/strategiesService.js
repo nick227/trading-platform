@@ -22,22 +22,23 @@ export default {
     const where = {}
     if (type) where.type = type
 
-    const strategies = await prisma.strategy.findMany({
-      where,
-      include: {
-        _count: {
-          select: {
-            predictions: true,
-            bots: true
+    const [strategies, total] = await Promise.all([
+      prisma.strategy.findMany({
+        where,
+        include: {
+          _count: {
+            select: {
+              predictions: true,
+              bots: true
+            }
           }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take,
-      skip
-    })
-
-    const total = await prisma.strategy.count({ where })
+        },
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip
+      }),
+      prisma.strategy.count({ where })
+    ])
 
     return {
       data: strategies,

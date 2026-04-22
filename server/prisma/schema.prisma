@@ -83,16 +83,22 @@ model Prediction {
 }
 
 model Portfolio {
-  id        String      @id
-  userId    String      // Using STUB_USER_ID for now
-  name      String
-  createdAt DateTime    @default(now())
+  id          String      @id
+  userId      String      // Using STUB_USER_ID for now
+  name        String
+  cashBalance Decimal     @default(0) @db.Decimal(12, 2)
+  totalValue  Decimal     @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   executions Execution[]
   bots       Bot[]
+  equityPeak EquityPeak?
 
   @@index([createdAt])
   @@index([userId])
+  @@index([updatedAt])
+  @@index([totalValue])
 }
 
 model BotTemplate {
@@ -272,6 +278,7 @@ model User {
   email        String        @unique
   passwordHash String
   fullName     String
+  riskSettings Json?         // User-specific risk limits and preferences
   createdAt    DateTime      @default(now())
   subscription Subscription?
 }
@@ -371,4 +378,81 @@ model LiveQuoteSubscription {
   requestedAt DateTime @default(now())
 
   @@index([requestedAt])
+}
+
+// Execution reservations for atomic risk management
+model ExecutionReservation {
+  id          String   @id
+  portfolioId String
+  status      String   @default("active") // active | released | expired
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  releasedAt  DateTime?
+
+  @@index([portfolioId, status])
+  @@index([expiresAt])
+  @@index([status])
+}
+
+// Equity peaks for proper drawdown calculation
+model EquityPeak {
+  portfolioId String   @id
+  peakEquity  Decimal  @db.Decimal(12, 2)
+  peakDate    DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id])
+
+  @@index([peakDate])
+  @@index([updatedAt])
+}
+
+// Cached correlation matrix for performance
+model CorrelationCache {
+  id             String   @id @default(cuid())
+  ticker1        String
+  ticker2        String
+  correlation    Decimal  @db.Decimal(10, 6)
+  calculatedAt   DateTime
+  dataPoints     Int
+  periodDays     Int      @default(30)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([ticker1, ticker2, periodDays])
+  @@index([ticker1])
+  @@index([ticker2])
+  @@index([calculatedAt])
+  @@index([periodDays])
+}
+
+// Sector exposure limits
+model SectorExposureLimit {
+  id                    String   @id @default(cuid())
+  portfolioId           String
+  sector                String
+  maxExposurePercent    Decimal  @db.Decimal(5, 2)
+  currentExposurePercent Decimal  @db.Decimal(5, 2) @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([portfolioId, sector])
+  @@index([portfolioId])
+  @@index([sector])
+}
+
+// Ticker concentration limits
+model TickerConcentrationLimit {
+  id                    String   @id @default(cuid())
+  portfolioId           String
+  ticker                String
+  maxExposurePercent    Decimal  @db.Decimal(5, 2)
+  currentExposurePercent Decimal  @db.Decimal(5, 2) @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([portfolioId, ticker])
+  @@index([portfolioId])
+  @@index([ticker])
 }

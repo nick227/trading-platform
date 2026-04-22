@@ -2,6 +2,7 @@
 // Bridges worker's real-time price cache to Orders.jsx
 
 import prisma from '../loaders/prisma.js'
+import alphaEngineService from '../services/alphaEngineService.js'
 
 const QUOTE_TTL_MS = 30_000 // 30 seconds for UI freshness
 
@@ -16,9 +17,9 @@ export default async function marketRoutes(app) {
         where: { ticker: ticker.toUpperCase() }
       })
       
-      if (liveQuote && (Date.now() - liveQuote.updatedAt.getTime() < QUOTE_TTL_MS)) {
+      if (liveQuote) {
         const ageMs = Date.now() - liveQuote.updatedAt.getTime()
-        return reply.send({
+        if (ageMs < QUOTE_TTL_MS) return reply.send({
           symbol: ticker,
           price: liveQuote.last,
           bid: liveQuote.bid,
@@ -31,9 +32,8 @@ export default async function marketRoutes(app) {
           freshness: ageMs < 5000 ? 'live' : ageMs < 15000 ? 'fresh' : 'stale'
         })
       }
-      
+
       // Fallback to alpha-engine if worker quote unavailable/stale
-      const alphaEngineService = (await import('../services/alphaEngineService.js')).default
       const alphaQuote = await alphaEngineService.getQuote(ticker)
       
       if (alphaQuote) {
@@ -67,8 +67,6 @@ export default async function marketRoutes(app) {
         where: { ticker: ticker.toUpperCase() }
       })
       
-      // Get reference data from alpha-engine (parallel)
-      const alphaEngineService = (await import('../services/alphaEngineService.js')).default
       const [stats, company, history, explainability, recommendation] = await Promise.allSettled([
         alphaEngineService.getStats(ticker),
         alphaEngineService.getCompany(ticker),
@@ -79,18 +77,21 @@ export default async function marketRoutes(app) {
 
       const bootstrapData = {
         ticker,
-        quote: liveQuote ? {
-          symbol: ticker,
-          price: liveQuote.last,
-          bid: liveQuote.bid,
-          ask: liveQuote.ask,
-          change: liveQuote.changePct,
-          volume: liveQuote.volume,
-          updatedAt: liveQuote.updatedAt.toISOString(),
-          ageMs: Date.now() - liveQuote.updatedAt.getTime(),
-          source: 'worker',
-          freshness: Date.now() - liveQuote.updatedAt.getTime() < 5000 ? 'live' : 'fresh'
-        } : null,
+        quote: liveQuote ? (() => {
+          const ageMs = Date.now() - liveQuote.updatedAt.getTime()
+          return {
+            symbol: ticker,
+            price: liveQuote.last,
+            bid: liveQuote.bid,
+            ask: liveQuote.ask,
+            change: liveQuote.changePct,
+            volume: liveQuote.volume,
+            updatedAt: liveQuote.updatedAt.toISOString(),
+            ageMs,
+            source: 'worker',
+            freshness: ageMs < 5000 ? 'live' : 'fresh'
+          }
+        })() : null,
         stats: stats.status === 'fulfilled' ? stats.value : null,
         company: company.status === 'fulfilled' ? company.value : null,
         history: history.status === 'fulfilled' ? history.value : null,
@@ -123,16 +124,14 @@ export default async function marketRoutes(app) {
       
       // For MVP: trigger worker subscription via DB flag
       // Worker checks this table periodically for new subscriptions
-      await Promise.all(tickers.map(async (ticker) => {
-        await prisma.liveQuoteSubscription.upsert({
-          where: { ticker: ticker.toUpperCase() },
-          update: { requestedAt: new Date() },
-          create: {
-            ticker: ticker.toUpperCase(),
-            requestedAt: new Date()
-          }
+      const now = new Date()
+      await prisma.$transaction(tickers.map(ticker =>
+        prisma.liveQuoteSubscription.upsert({
+          where:  { ticker: ticker.toUpperCase() },
+          update: { requestedAt: now },
+          create: { ticker: ticker.toUpperCase(), requestedAt: now }
         })
-      }))
+      ))
       
       return reply.send({ 
         message: 'Subscription requests queued',

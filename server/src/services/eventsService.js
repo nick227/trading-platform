@@ -1,12 +1,11 @@
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
-import { STUB_USER_ID } from '../utils/auth.js'
 
 export default {
   async createEvent(botId, data) {
     const event = await prisma.botEvent.create({
       data: {
-        id: generateId(ID_PREFIXES.BOT_EVENT),
+        id: generateId(ID_PREFIXES.EVENT),
         botId,
         type: data.type,
         detail: data.detail,
@@ -93,7 +92,7 @@ export default {
   async createRuleTriggeredEvent(botId, ruleId, metadata) {
     return prisma.botEvent.create({
       data: {
-        id: generateId(ID_PREFIXES.BOT_EVENT),
+        id: generateId(ID_PREFIXES.EVENT),
         botId,
         type: 'rule_triggered',
         detail: `Rule triggered for bot`,
@@ -108,7 +107,7 @@ export default {
   async createStrategyExecutedEvent(botId, metadata) {
     return prisma.botEvent.create({
       data: {
-        id: generateId(ID_PREFIXES.BOT_EVENT),
+        id: generateId(ID_PREFIXES.EVENT),
         botId,
         type: 'strategy_executed',
         detail: `Strategy executed for bot`,
@@ -120,7 +119,7 @@ export default {
   async createErrorEvent(botId, error, metadata = {}) {
     return prisma.botEvent.create({
       data: {
-        id: generateId(ID_PREFIXES.BOT_EVENT),
+        id: generateId(ID_PREFIXES.EVENT),
         botId,
         type: 'error_occurred',
         detail: `Error: ${error.message || error}`,
@@ -136,7 +135,7 @@ export default {
   async createConfigUpdatedEvent(botId, oldConfig, newConfig) {
     return prisma.botEvent.create({
       data: {
-        id: generateId(ID_PREFIXES.BOT_EVENT),
+        id: generateId(ID_PREFIXES.EVENT),
         botId,
         type: 'config_updated',
         detail: 'Bot configuration updated',
