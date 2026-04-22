@@ -46,10 +46,10 @@ export default function Asset() {
   const asset = state.assets.find((item) => item.symbol === symbol)
   if (!asset) {
     return (
-      <div className="page container" style={{ maxWidth: 640, margin: '0 auto', padding: '2rem 1rem' }}>
+      <div className="l-page l-container-sm">
         <h1 className="hero">No data for {symbol}</h1>
         <p className="muted">No positions found for this ticker.</p>
-        <Link className="primary pressable" to="/assets/NVDA" style={{ display: 'inline-block', marginTop: '1rem' }}>
+        <Link className="btn btn-sm btn-primary inline-block mt-3" to="/assets/NVDA">
           Open NVDA
         </Link>
       </div>
@@ -69,123 +69,135 @@ export default function Asset() {
   const alpha = assetPerformance - marketPerformance
 
   return (
-    <div className="page container" style={{ maxWidth: 1040, margin: '0 auto', padding: '2rem 1rem 3rem' }}>
-      <header style={{ marginBottom: '2rem' }}>
-        <h1 className="hero" style={{ marginBottom: '0.5rem' }}>{asset.symbol} · {asset.name}</h1>
-        <div style={{ fontSize: '1.7rem', fontWeight: 700 }}>${currentPrice.toFixed(2)}</div>
-        <div style={{ color: dailyChange >= 0 ? '#0a7a47' : '#b21f3d', fontWeight: 600 }}>
+    <div className="l-page l-container-content">
+      <header className="stack-sm mb-6">
+        <h1 className="hero mb-1">{asset.symbol} · {asset.name}</h1>
+        <div className="text-xl font-700">${currentPrice.toFixed(2)}</div>
+        <div className={`${dailyChange >= 0 ? 'text-positive' : 'text-negative'} font-600`}>
           {dailyChange >= 0 ? '+' : ''}{dailyChange.toFixed(2)}% today
         </div>
       </header>
 
-      <section style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1.7fr 1fr', marginBottom: '1rem' }}>
-        <article style={{ background: 'white', borderRadius: 24, padding: '1.2rem', boxShadow: '0 8px 26px rgba(0,0,0,0.06)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.7rem' }}>
+      <section className="l-grid-hero mb-3">
+        <article className="card card-lg card-pad-md">
+          <div className="l-row mb-3">
             <strong>Hero Chart</strong>
             <span className="muted">1W price action</span>
           </div>
-          <svg viewBox="0 0 100 100" style={{ width: '100%', height: 170 }}>
+          <svg viewBox="0 0 100 100" className="chart-170">
             <polyline fill="none" stroke="#111" strokeWidth="2.7" points={chartPath(asset.series)} />
           </svg>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.7rem', marginTop: '0.2rem' }}>
+          <div className="l-grid-3cols mt-2">
             <div><div className="muted">Sector</div><strong>Semiconductors</strong></div>
             <div><div className="muted">Market cap</div><strong>$3.76T</strong></div>
             <div><div className="muted">Volume</div><strong>49.2M</strong></div>
           </div>
         </article>
 
-        <article style={{ background: 'linear-gradient(140deg, #111, #2a2a2a)', color: '#fff', borderRadius: 24, padding: '1.2rem' }}>
-          <div className="eyebrow" style={{ color: '#d9d9d9' }}>Position Summary</div>
-          <div style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.4rem' }}>{holdings} shares</div>
-          <div style={{ opacity: 0.84 }}>Entry ${entry.toFixed(2)}</div>
-          <div style={{ marginTop: '1rem', fontSize: '1.5rem', fontWeight: 700, color: pnl >= 0 ? '#6effb6' : '#ff9aa8' }}>
+        <article className="card card-lg card-inverse card-pad-md">
+          <div className="eyebrow text-muted-inverse mb-1">Position Summary</div>
+          <div className="text-xl font-700 mb-1">{holdings} shares</div>
+          <div className="opacity-84">Entry ${entry.toFixed(2)}</div>
+          <div className={`mt-3 text-lg font-700 ${pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
             {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </div>
-          <div style={{ opacity: 0.8 }}>Unrealized P&L</div>
+          <div className="opacity-80">Unrealized P&L</div>
         </article>
       </section>
 
-      <section style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1.2fr 1fr 1fr', marginBottom: '1rem' }}>
-        <article style={{ background: 'white', borderRadius: 20, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+      <section className="l-grid-3lead mb-3">
+        <article className="card card-pad-sm">
           <strong>Quick Actions</strong>
-          <div style={{ display: 'grid', gap: '0.6rem', marginTop: '0.8rem' }}>
-            <button className="primary pressable">Buy {asset.symbol}</button>
-            <button className="ghost pressable">Sell {asset.symbol}</button>
-            <button className="ghost pressable" onClick={handleRunBot}>Run Bot</button>
+          <div className="stack-sm mt-3">
+            <button className="btn btn-primary btn-block">Buy {asset.symbol}</button>
+            <button className="btn btn-ghost btn-block">Sell {asset.symbol}</button>
+            <button className="btn btn-ghost btn-block" onClick={handleRunBot}>Run Bot</button>
           </div>
         </article>
 
-        <article style={{ background: 'white', borderRadius: 20, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+        <article className="card card-pad-sm">
           <strong>Prediction Summary</strong>
-          <div style={{ marginTop: '0.7rem' }}><span className="eyebrow" style={{ marginBottom: 0 }}>Direction</span><div style={{ fontWeight: 700 }}>Bullish continuation</div></div>
-          <div style={{ marginTop: '0.7rem' }}><span className="eyebrow" style={{ marginBottom: 0 }}>Confidence</span><div style={{ fontWeight: 700 }}>78%</div></div>
+          <div className="stack-sm mt-3">
+            <div>
+              <span className="eyebrow mb-0">Direction</span>
+              <div className="font-700">Bullish continuation</div>
+            </div>
+            <div>
+              <span className="eyebrow mb-0">Confidence</span>
+              <div className="font-700">78%</div>
+            </div>
+          </div>
         </article>
 
-        <article style={{ background: 'white', borderRadius: 20, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+        <article className="card card-pad-sm">
           <strong>Risk Metrics</strong>
-          <div style={{ marginTop: '0.7rem' }} className="muted">Drawdown: <strong style={{ color: '#111' }}>-5.4%</strong></div>
-          <div className="muted">Volatility (30d): <strong style={{ color: '#111' }}>31.2%</strong></div>
-          <div className="muted">Expected range: <strong style={{ color: '#111' }}>$147.00 - $159.50</strong></div>
+          <div className="stack-sm mt-3">
+            <div className="muted">Drawdown: <strong className="text-primary">-5.4%</strong></div>
+            <div className="muted">Volatility (30d): <strong className="text-primary">31.2%</strong></div>
+            <div className="muted">Expected range: <strong className="text-primary">$147.00 - $159.50</strong></div>
+          </div>
         </article>
       </section>
 
-      <section style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1.2fr 1fr', marginBottom: '1rem' }}>
-        <article style={{ background: 'white', borderRadius: 20, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+      <section className="l-grid-2lead mb-3">
+        <article className="card card-pad-sm">
           <strong>Trade History</strong>
-          <div style={{ marginTop: '0.65rem', display: 'grid', gap: '0.5rem' }}>
+          <div className="data-rows">
             {trades.map((trade) => (
-              <div key={trade.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', paddingBottom: '0.45rem', borderBottom: '1px solid #eee' }}>
+              <div key={trade.id} className="data-row-3 data-row-divider">
                 <strong>{trade.side}</strong>
                 <span>{trade.amount}</span>
-                <span className="muted" style={{ textAlign: 'right' }}>{trade.time}</span>
+                <span className="muted text-right">{trade.time}</span>
               </div>
             ))}
             {orders.map((order) => (
-              <div key={order.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', color: '#666' }}>
+              <div key={order.id} className="data-row-3 muted">
                 <strong>{order.type}</strong>
                 <span>${order.amount.toLocaleString()}</span>
-                <span style={{ textAlign: 'right' }}>Order</span>
+                <span className="text-right">Order</span>
               </div>
             ))}
           </div>
         </article>
 
-        <article style={{ background: 'white', borderRadius: 20, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+        <article className="card card-pad-sm">
           <strong>Bot Status</strong>
-          <div style={{ marginTop: '0.7rem', display: 'grid', gap: '0.55rem' }}>
+          <div className="data-rows">
             {bots.map((bot) => (
-              <div key={bot.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div key={bot.id} className="l-row">
                 <span>{bot.name}</span>
-                <span style={{ color: bot.status === 'running' ? '#0a7a47' : '#aa7a00' }}>{bot.status}</span>
+                <span className={bot.status === 'running' ? 'text-positive' : 'text-muted'}>{bot.status}</span>
               </div>
             ))}
           </div>
         </article>
       </section>
 
-      <section style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1fr 1fr 1fr' }}>
-        <article style={{ background: 'white', borderRadius: 20, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+      <section className="l-grid-3">
+        <article className="card card-pad-sm">
           <strong>Strategy Comparison</strong>
-          <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.55rem' }}>
+          <div className="data-rows">
             {strategyRows.map((row) => (
-              <div key={row.name} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.45rem' }}>
-                <div style={{ fontWeight: 600 }}>{row.name}</div>
+              <div key={row.name} className="data-row-divider">
+                <div className="font-600">{row.name}</div>
                 <div className="muted">{row.horizon} · Win {row.winRate} · Edge {row.edge}</div>
               </div>
             ))}
           </div>
         </article>
 
-        <article style={{ background: 'white', borderRadius: 20, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+        <article className="card card-pad-sm">
           <strong>Performance vs Market</strong>
-          <div style={{ marginTop: '0.75rem' }} className="muted">Asset return: <strong style={{ color: '#111' }}>+{assetPerformance}%</strong></div>
-          <div className="muted">Market baseline: <strong style={{ color: '#111' }}>+{marketPerformance}%</strong></div>
-          <div style={{ marginTop: '0.5rem', fontWeight: 700, color: '#0a7a47' }}>Alpha: +{alpha.toFixed(1)}%</div>
+          <div className="stack-sm mt-3">
+            <div className="muted">Asset return: <strong className="text-primary">+{assetPerformance}%</strong></div>
+            <div className="muted">Market baseline: <strong className="text-primary">+{marketPerformance}%</strong></div>
+            <div className="font-700 text-positive">Alpha: +{alpha.toFixed(1)}%</div>
+          </div>
         </article>
 
-        <article style={{ background: 'white', borderRadius: 20, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
+        <article className="card card-pad-sm">
           <strong>Signal Explanation</strong>
-          <ul style={{ margin: '0.75rem 0 0', paddingLeft: '1rem', color: '#555', lineHeight: 1.5 }}>
+          <ul className="list mt-3">
             {predictionNotes.map((note) => <li key={note}>{note}</li>)}
           </ul>
         </article>

@@ -1,4 +1,4 @@
-import React from 'react'
+import { useMemo } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -131,7 +131,7 @@ export default function StrategyChart() {
   const { signals, loading, error } = useAlphaSignals({ refreshInterval: 30000 })
   
   // Generate chart data with alpha engine signals
-  const chartData = React.useMemo(() => {
+  const chartData = useMemo(() => {
     const data = generateMockData(signals)
     
     return {
@@ -165,7 +165,7 @@ export default function StrategyChart() {
   }, [signals])
   
   // Update tooltip callback to use current predictions
-  const updatedChartOptions = React.useMemo(() => ({
+  const updatedChartOptions = useMemo(() => ({
     ...chartOptions,
     plugins: {
       ...chartOptions.plugins,

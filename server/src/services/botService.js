@@ -3,6 +3,7 @@ import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { engineClient } from '../clients/engine.js'
 import executionsService from './executionsService.js'
 import { STUB_USER_ID } from '../utils/auth.js'
+import operatorConfig from '../../../config/operator.json' with { type: 'json' }
 
 // Resolve (or create) the operator's default portfolio once per process.
 let _defaultPortfolioId = null
@@ -61,8 +62,7 @@ class BotService {
     this.currentRun = botRun
     this.isRunning  = true
 
-    const operatorConfig = await import('../../config/operator.json', { assert: { type: 'json' } })
-    const intervalMinutes = operatorConfig.default?.botSettings?.runIntervalMinutes ?? 15
+    const intervalMinutes = operatorConfig?.botSettings?.runIntervalMinutes ?? 15
 
     this.runInterval = setInterval(() => {
       this.executeNextSignal().catch(err =>
@@ -99,8 +99,7 @@ class BotService {
   async executeSignal(signal) {
     const portfolioId = await getDefaultPortfolioId()
 
-    const operatorConfig = await import('../../config/operator.json', { assert: { type: 'json' } })
-    const tradeSize = operatorConfig.default?.defaultTradeSize ?? 25
+    const tradeSize = operatorConfig?.defaultTradeSize ?? 25
     const price     = signal.target > 0 ? signal.target : 1
     const quantity  = Math.max(1, Math.floor(tradeSize / price))
 
@@ -131,8 +130,7 @@ class BotService {
 
   // Called by the periodic interval and by run-once.
   async executeNextSignal() {
-    const operatorConfig = await import('../../config/operator.json', { assert: { type: 'json' } })
-    const minConfidence  = operatorConfig.default?.minConfidence ?? 0.72
+    const minConfidence  = operatorConfig?.minConfidence ?? 0.72
 
     const rankings = await engineClient.getTopRankings(1)
     const top = rankings?.rankings?.[0]

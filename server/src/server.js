@@ -2,11 +2,13 @@ import 'dotenv/config'
 import createApp from './loaders/fastify.js'
 import registerRoutes from './loaders/routes.js'
 import prisma from './loaders/prisma.js'
+import { startSchedulers } from './jobs/scheduler.js'
 
 async function start() {
   const app = await createApp()
   
   await registerRoutes(app)
+  await startSchedulers()
   
   const signals = ['SIGINT', 'SIGTERM']
   signals.forEach(signal => {

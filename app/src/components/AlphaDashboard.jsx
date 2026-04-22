@@ -1,4 +1,4 @@
-import React from 'react'
+// React auto-imported via JSX transform
 import { useAlphaDashboard, useAlphaSignals } from '../hooks/useAlphaEngine.js'
 
 function SignalCard({ signal }) {

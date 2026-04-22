@@ -2,12 +2,10 @@ import { getMarketHours } from '../../market/calendar.js'
 
 // config: { allowPremarket?: boolean, allowAfterHours?: boolean }
 export function evaluateMarketHours(config) {
-  const { isOpen } = getMarketHours()
+  const { isOpen, marketOpen, marketClose } = getMarketHours()
   if (isOpen) return { pass: true }
 
-  // Market is closed. Check if pre/after-hours are allowed by this bot.
   const now = new Date()
-  const { marketOpen, marketClose } = getMarketHours()
 
   const isPremarket   = marketOpen  && now < marketOpen
   const isAfterHours  = marketClose && now > marketClose

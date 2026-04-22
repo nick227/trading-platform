@@ -1,5 +1,6 @@
 import executionsService from '../services/executionsService.js'
 import { authenticate } from '../middleware/authenticate.js'
+import { fetchAlpacaMarketClock, resolveAlpacaCredentials } from '../services/alpacaClockService.js'
 
 export default async function executionsRoutes(app) {
   // GET /api/executions/summary — must precede /:id
@@ -31,18 +32,37 @@ export default async function executionsRoutes(app) {
         type: 'object',
         required: ['ticker', 'direction', 'quantity', 'price', 'portfolioId'],
         properties: {
-          ticker:      { type: 'string' },
-          direction:   { enum: ['buy', 'sell'] },
-          quantity:    { type: 'number', minimum: 0 },
-          price:       { type: 'number', minimum: 0 },
+          ticker: { type: 'string' },
+          direction: { enum: ['buy', 'sell'] },
+          quantity: { type: 'number', minimum: 0 },
+          price: { type: 'number', minimum: 0 },
           portfolioId: { type: 'string' },
-          strategyId:  { type: 'string' },
+          strategyId: { type: 'string' },
           predictionId: { type: 'string' },
-          botId:       { type: 'string' }
+          botId: { type: 'string' }
         }
       }
     }
   }, async (request, reply) => {
+    let creds
+    try {
+      creds = await resolveAlpacaCredentials(request.user.id)
+    } catch (err) {
+      if (err?.code === 'LIVE_TRADING_DISABLED') {
+        return reply.code(403).send({ error: { code: 'LIVE_TRADING_DISABLED', message: err.message } })
+      }
+      throw err
+    }
+
+    if (!creds) {
+      return reply.code(503).send({ error: { code: 'BROKER_NOT_CONFIGURED', message: 'Alpaca credentials not configured' } })
+    }
+
+    const clock = await fetchAlpacaMarketClock(creds)
+    if (!clock.isOpen) {
+      return reply.code(409).send({ error: { code: 'MARKET_CLOSED', message: 'Market is closed', clock } })
+    }
+
     const execution = await executionsService.createExecution({
       ...request.body,
       userId: request.user.id
@@ -50,7 +70,7 @@ export default async function executionsRoutes(app) {
     return reply.code(201).send({ data: execution })
   })
 
-  // POST /api/executions/:id/cancel â€” requires auth; only owner may cancel queued/processing executions
+  // POST /api/executions/:id/cancel — requires auth; only owner may cancel queued/processing executions
   app.post('/:id/cancel', { preHandler: [authenticate] }, async (request, reply) => {
     try {
       const updated = await executionsService.cancelExecution(request.params.id, request.user.id)
@@ -69,3 +89,4 @@ export default async function executionsRoutes(app) {
     }
   })
 }
+

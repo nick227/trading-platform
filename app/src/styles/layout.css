@@ -1,9 +1,8 @@
-/* Layout System */
-:root {
-  --max-width: 720px;
-}
+/* Layout primitives
+   Convention: layout classes are `l-*` (legacy aliases remain for now). */
 
-.page {
+.page,
+.l-page {
   display: flex;
   flex-direction: column;
   gap: var(--section-gap);
@@ -11,43 +10,162 @@
   min-height: 100vh;
 }
 
-.section {
+.section,
+.l-section {
   display: flex;
   flex-direction: column;
   gap: var(--block-gap);
   margin-bottom: 80px;
 }
 
-.container {
+.container,
+.l-container {
   width: 100%;
   max-width: var(--container-lg);
   margin: 0 auto;
 }
 
-.container-sm {
+.container-sm,
+.l-container-sm {
   max-width: var(--container-sm);
 }
 
-.container-md {
+.container-md,
+.l-container-md {
   max-width: var(--container-md);
 }
 
-.centered {
+.container-content,
+.l-container-content {
+  width: 100%;
+  margin: 0 auto;
+  max-width: var(--container-content);
+}
+
+.centered,
+.l-centered {
   text-align: center;
   margin-inline: auto;
 }
 
-.stack-sm { gap: var(--space-2); }
-.stack-md { gap: var(--space-4); }
-.stack-lg { gap: var(--space-6); }
+.stack,
+.l-stack {
+  display: flex;
+  flex-direction: column;
+}
 
-.row {
+.stack-sm,
+.l-stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stack-md,
+.l-stack-md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.stack-lg,
+.l-stack-lg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.row,
+.l-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
 }
 
-.muted {
-  max-width: 34rem;
+.l-grid {
+  display: grid;
+}
+
+.l-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.l-grid-3fixed {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.l-grid-3cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.l-grid-hero {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+.l-grid-3lead {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+.l-grid-2lead {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+.l-grid-3 {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+.l-grid-auto-250 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--space-3);
+}
+
+.l-grid-auto-200 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+
+/* Wider main + aside */
+.l-grid-2wide {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .l-grid-hero {
+    grid-template-columns: 1.7fr 1fr;
+  }
+
+  .l-grid-3lead {
+    grid-template-columns: 1.2fr 1fr 1fr;
+  }
+
+  .l-grid-2lead {
+    grid-template-columns: 1.2fr 1fr;
+  }
+
+  .l-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .l-grid-2wide {
+    grid-template-columns: 2fr 1fr;
+  }
 }

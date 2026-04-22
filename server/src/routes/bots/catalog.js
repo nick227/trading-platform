@@ -1,4 +1,5 @@
 import botsService from '../../services/botsService.js'
+import prisma from '../../loaders/prisma.js'
 
 export default async function catalogRoutes(app, opts) {
   // GET /api/bots/catalog
@@ -38,7 +39,12 @@ export default async function catalogRoutes(app, opts) {
       }
     }
   }, async (request, reply) => {
-    const bot = await botsService.createBotFromTemplate(request.body)
+    const portfolio = await prisma.portfolio.findUnique({ where: { id: request.body.portfolioId } })
+    if (!portfolio || portfolio.userId !== request.user.id) {
+      return reply.code(400).send({ error: { code: 'INVALID_PORTFOLIO', message: 'Invalid portfolioId' } })
+    }
+
+    const bot = await botsService.createBotFromTemplate({ ...request.body, userId: request.user.id })
     if (!bot) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Template not found' } })
     }

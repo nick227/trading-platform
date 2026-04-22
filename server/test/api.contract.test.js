@@ -37,6 +37,9 @@ vi.mock('../src/loaders/prisma.js', () => ({
     },
     user: {
       findUnique: vi.fn()
+    },
+    brokerAccount: {
+      findUnique: vi.fn()
     }
   }
 }))
@@ -61,6 +64,29 @@ describe('API contract tests', () => {
     prisma.executionAudit.findMany.mockReset()
     prisma.workerStatus.findMany.mockReset()
     prisma.user.findUnique.mockReset()
+    prisma.brokerAccount.findUnique.mockReset()
+
+    process.env.ALPACA_API_KEY = 'test_key'
+    process.env.ALPACA_API_SECRET = 'test_secret'
+    process.env.ALPACA_PAPER = 'true'
+
+    prisma.brokerAccount.findUnique.mockResolvedValue(null)
+
+    global.fetch = vi.fn(async (url, options) => {
+      if (String(url).includes('/v2/clock')) {
+        return {
+          ok: true,
+          json: async () => ({
+            is_open: true,
+            next_open: '2026-04-21T13:30:00Z',
+            next_close: '2026-04-21T20:00:00Z',
+            timestamp: '2026-04-21T16:00:00Z'
+          })
+        }
+      }
+
+      throw new Error(`Unexpected fetch in test: ${url}`)
+    })
 
     app = await createApp()
     await registerRoutes(app)
@@ -68,6 +94,7 @@ describe('API contract tests', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     await app.close()
   })
 
@@ -169,5 +196,93 @@ describe('API contract tests', () => {
         clientOrderId: expect.stringMatching(/^tp_exe_/)
       })
     }))
+  })
+
+  it('rejects creating an execution when market is closed', async () => {
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).includes('/v2/clock')) {
+        return {
+          ok: true,
+          json: async () => ({
+            is_open: false,
+            next_open: '2026-04-22T13:30:00Z',
+            next_close: '2026-04-22T20:00:00Z',
+            timestamp: '2026-04-21T23:00:00Z'
+          })
+        }
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`)
+    })
+
+    const user = { id: 'usr_1', email: 't@example.com', fullName: 'Test User', subscription: { status: 'ACTIVE' } }
+    prisma.user.findUnique.mockResolvedValue(user)
+
+    const token = app.jwt.sign({ sub: user.id })
+
+    const response = await request(app.server)
+      .post('/api/executions')
+      .send({
+        ticker: 'NVDA',
+        direction: 'buy',
+        quantity: 1,
+        price: 500,
+        portfolioId: 'port_1',
+        strategyId: 'str_1'
+      })
+      .set('Cookie', [`access_token=${token}`])
+      .expect(409)
+
+    expect(response.body).toEqual({
+      error: {
+        code: 'MARKET_CLOSED',
+        message: 'Market is closed',
+        clock: {
+          isOpen: false,
+          nextOpen: '2026-04-22T13:30:00Z',
+          nextClose: '2026-04-22T20:00:00Z',
+          timestamp: '2026-04-21T23:00:00Z'
+        }
+      }
+    })
+    expect(prisma.execution.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects direct Alpaca order submission when market is closed', async () => {
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).includes('/v2/clock')) {
+        return {
+          ok: true,
+          json: async () => ({
+            is_open: false,
+            next_open: '2026-04-22T13:30:00Z',
+            next_close: '2026-04-22T20:00:00Z',
+            timestamp: '2026-04-21T23:00:00Z'
+          })
+        }
+      }
+      throw new Error(`Unexpected fetch in test: ${url}`)
+    })
+
+    const user = { id: 'usr_1', email: 't@example.com', fullName: 'Test User', subscription: { status: 'ACTIVE' } }
+    prisma.user.findUnique.mockResolvedValue(user)
+
+    const token = app.jwt.sign({ sub: user.id })
+
+    const response = await request(app.server)
+      .post('/api/alpaca/order')
+      .send({ symbol: 'AAPL', side: 'buy', quantity: 1, type: 'market' })
+      .set('Cookie', [`access_token=${token}`])
+      .expect(409)
+
+    expect(response.body).toEqual({
+      error: 'Market is closed',
+      code: 'MARKET_CLOSED',
+      clock: {
+        isOpen: false,
+        nextOpen: '2026-04-22T13:30:00Z',
+        nextClose: '2026-04-22T20:00:00Z',
+        timestamp: '2026-04-21T23:00:00Z'
+      }
+    })
   })
 })

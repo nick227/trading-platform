@@ -243,7 +243,7 @@ export default function AlphaShowcase() {
           {/* Movers */}
           <WidgetCard title="Market Movers" grade={grades['movers']} gradeColor={getGradeColor(grades['movers'])}>
             <div style={{ fontSize: '12px', marginBottom: '1rem' }}>
-              {data.movers?.rankings?.slice(0, 5).map((stock, i) => (
+              {data.movers?.rankings?.slice(0, 5).map((stock, _i) => (
                 <div key={stock.symbol} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
                   <span>{stock.symbol}</span>
                   <span style={{ color: stock.rank > 0 ? '#0a7a47' : '#c0392b' }}>
@@ -327,7 +327,7 @@ export default function AlphaShowcase() {
           {/* Recent Admissions */}
           <WidgetCard title="Recent Admissions" grade={grades['recent-admissions']} gradeColor={getGradeColor(grades['recent-admissions'])}>
             <div style={{ fontSize: '12px', marginBottom: '1rem' }}>
-              {data.admission?.changes?.slice(0, 3).map((change, i) => (
+              {data.admission?.changes?.slice(0, 3).map((change, _i) => (
                 <div key={change.symbol} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
                   <span>{change.symbol}</span>
                   <span style={{ 

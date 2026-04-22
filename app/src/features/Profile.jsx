@@ -18,19 +18,17 @@ export default function Profile(){
   }
 
   return (
-    <div className="page">
-      <div className="container profile">
-        <header className="profile-head">
-          <h1 className="hero profile-title">{user?.name} Profile</h1>
+    <div className="l-page">
+      <div className="container l-stack-md">
+        <header className="l-stack-sm">
+          <h1 className="hero m-0">{user?.name} Profile</h1>
         </header>
 
-        <div className="profile-nav-shell">
+        <section className="card card-pad-sm">
           <ProfileTabs value={tab} onChange={setTab}/>
-        </div>
+        </section>
 
-        <div className="profile-content-shell">
-          {views[tab]}
-        </div>
+        {views[tab]}
       </div>
     </div>
   )

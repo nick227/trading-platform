@@ -1,4 +1,4 @@
-import React from 'react'
+// React auto-imported via JSX transform
 
 export function DataFallback({ error, loading, children }) {
   if (loading) {

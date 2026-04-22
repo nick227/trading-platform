@@ -7,6 +7,47 @@
   animation: enter var(--dur-med) var(--ease-premium);
 }
 
+.loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading .indicator {
+  top: 49%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  position: absolute;
+  animation: pulse 2.5s infinite;
+}
+
+.loading .indicator::after {
+  content: '';
+  width: 25px;
+  height: 2px;
+  border-bottom: 2px dotted gray;
+  position: absolute;
+  top: 16px;
+  left: 125px;
+  animation: grow 2.5s infinite;
+}
+
+@keyframes grow {
+  0%, 100% { width: 5px; }
+  50% { width: 25px; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -26,6 +67,22 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--color-text);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: draw 800ms linear forwards;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
   }
 }
 

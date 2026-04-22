@@ -5,6 +5,12 @@ import Portfolio from '../features/Portfolio'
 import Asset from '../features/Asset'
 import Bots from '../features/Bots'
 import BotCreate from '../features/BotCreate'
+import RuleBasedBotSetup from '../features/RuleBasedBotSetup'
+import StrategyBasedBotSetup from '../features/StrategyBasedBotSetup'
+import BotDetails from '../features/BotDetails'
+import BotHistory from '../features/BotHistory'
+import Templates from '../features/Templates'
+import TemplateDetails from '../features/TemplateDetails'
 import Orders from '../features/Orders'
 import AlphaShowcase from '../features/AlphaShowcase'
 import Opportunities from '../features/Opportunities'
@@ -16,7 +22,6 @@ import Auth from '../features/Auth'
 import ApiTest from '../test/ApiTest'
 import ExecutionTest from '../test/ExecutionTest'
 import { useAuth } from './AuthProvider'
-import PendingOrdersWidget from '../components/PendingOrdersWidget.jsx'
 
 /** Redirects logged-in users away from auth pages. */
 function AuthScreen() {
@@ -32,11 +37,9 @@ function Protected({ children }) {
 }
 
 export function AppShell() {
-  const { user } = useAuth()
   return (
-    <div>
+    <div className="frame">
       <Nav />
-      {user && <PendingOrdersWidget />}
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/portfolio"      element={<Protected><Portfolio /></Protected>} />
@@ -44,7 +47,13 @@ export function AppShell() {
         <Route path="/assets/:ticker" element={<Protected><Asset /></Protected>} />
         <Route path="/bots"           element={<Protected><Bots /></Protected>} />
         <Route path="/bots/create"    element={<Protected><BotCreate /></Protected>} />
+        <Route path="/bots/create/rule-based"    element={<Protected><RuleBasedBotSetup /></Protected>} />
+        <Route path="/bots/create/strategy-based" element={<Protected><StrategyBasedBotSetup /></Protected>} />
         <Route path="/bots/confirm"   element={<Protected><BotConfirm /></Protected>} />
+        <Route path="/bots/:botId"    element={<Protected><BotDetails /></Protected>} />
+        <Route path="/bots/:botId/history" element={<Protected><BotHistory /></Protected>} />
+        <Route path="/templates"      element={<Protected><Templates /></Protected>} />
+        <Route path="/templates/:templateSlug" element={<Protected><TemplateDetails /></Protected>} />
         <Route path="/orders"         element={<Protected><Orders /></Protected>} />
         <Route path="/orders/confirm" element={<Protected><OrderConfirm /></Protected>} />
         <Route path="/showcase"       element={<Protected><AlphaShowcase /></Protected>} />

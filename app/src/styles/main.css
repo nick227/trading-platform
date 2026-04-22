@@ -8,7 +8,6 @@
 @import './landing.css';
 @import './forms.css';
 @import './orders.css';
-@import './portfolio.css';
 @import './profile.css';
 @import './animations.css';
 @import './utilities.css';
@@ -255,4 +254,10 @@ button {
   .skeleton-button {
     width: 100%;
   }
+}
+
+
+.large-button {
+  height: auto;
+  border-radius: 0;
 }

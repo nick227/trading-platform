@@ -1,15 +1,12 @@
 import { getSignalColor } from '../../../utils/signal.js'
 
 export default function AlphaPanel({ alpha, loading, selectedStock, compact = false }) {
+  const shellClass = `card ${compact ? 'card-pad-sm' : 'card-pad-md'}`
+
   if (!selectedStock) {
     return (
-      <article style={{
-        background: 'white', borderRadius: '8px',
-        padding: compact ? '1rem' : '1.5rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        textAlign: 'center', color: '#666',
-      }}>
-        <div style={{ fontSize: '14px' }}>Select a stock to view AI analysis</div>
+      <article className={shellClass}>
+        <div className="panel-empty">Select a stock to view AI analysis</div>
       </article>
     )
   }
@@ -17,78 +14,55 @@ export default function AlphaPanel({ alpha, loading, selectedStock, compact = fa
   const sigColor = getSignalColor(alpha?.signal)
 
   return (
-    <article style={{
-      background: 'white', borderRadius: '8px',
-      padding: '1rem', boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-    }}>
-      <h3 style={{ margin: `0 0 ${compact ? '0.75rem' : '1rem'}`, fontSize: '14px', fontWeight: 600 }}>
-        Alpha Engine Analysis
-      </h3>
+    <article className={shellClass}>
+      <div className="panel-header">
+        <h3 className="panel-title">Alpha Engine Analysis</h3>
+      </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#666', fontSize: '12px' }}>
-          Loading analysis...
-        </div>
+        <div className="panel-empty">Loading analysis…</div>
       ) : alpha ? (
-        <div>
-          {/* Signal + confidence header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div style={{
-                padding: '0.2rem 0.6rem', borderRadius: '4px',
-                fontSize: '11px', fontWeight: 700,
-                background: sigColor, color: 'white',
-              }}>
+        <div className="stack-sm">
+          <div className="l-row">
+            <div className="hstack">
+              <span className="badge badge-xs" style={{ background: sigColor, color: 'white' }}>
                 {alpha.signal.replace(/_/g, ' ')}
-              </div>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#444' }}>
-                {alpha.confidence}% confidence
               </span>
+              <span className="text-xs font-600">{alpha.confidence}% confidence</span>
             </div>
-            <span style={{ fontSize: '11px', color: '#888' }}>
-              {alpha.risk ?? ''}{alpha.risk && alpha.timeframe ? ' · ' : ''}{alpha.timeframe ?? ''}
+            <span className="text-xs muted">
+              {[alpha.risk, alpha.timeframe].filter(Boolean).join(' · ')}
             </span>
           </div>
 
-          {/* Confidence bar */}
-          <div style={{ height: '5px', background: '#e9ecef', borderRadius: '4px', overflow: 'hidden', marginBottom: '0.75rem' }}>
-            <div style={{
-              height: '100%', width: `${alpha.confidence}%`,
-              background: sigColor, borderRadius: '4px',
-              transition: 'width 0.3s ease',
-            }} />
+          <div className="progress mb-3">
+            <div className="progress-bar" style={{ '--progress': `${alpha.confidence}%`, '--progress-bg': sigColor }} />
           </div>
 
-          {/* Thesis bullets — real engine data */}
           {alpha.thesis?.length > 0 ? (
-            <ul style={{ margin: '0 0 0.75rem', paddingLeft: '1.1rem', fontSize: '11px', color: '#555', lineHeight: '1.6' }}>
+            <ul className="list text-xs mb-3">
               {alpha.thesis.map((point, i) => <li key={i}>{point}</li>)}
             </ul>
           ) : alpha.reasoning ? (
-            <div style={{ fontSize: '11px', color: '#555', lineHeight: '1.5', marginBottom: '0.75rem' }}>
-              {alpha.reasoning}
-            </div>
+            <div className="text-xs mb-3">{alpha.reasoning}</div>
           ) : null}
 
-          {/* Entry zone + avoid-if — full only */}
           {!compact && (
             <>
               {alpha.entryZone && (
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  fontSize: '11px', color: '#555',
-                  padding: '0.5rem 0.75rem', background: '#f8f9fa',
-                  borderRadius: '4px', marginBottom: '0.5rem',
-                }}>
-                  <span className="muted">Entry zone</span>
-                  <span style={{ fontWeight: 600 }}>
-                    ${alpha.entryZone[0].toFixed(2)} – ${alpha.entryZone[1].toFixed(2)}
-                  </span>
+                <div className="subcard subcard-sm mb-2">
+                  <div className="l-row text-xs">
+                    <span className="muted">Entry zone</span>
+                    <span className="font-600">
+                      ${alpha.entryZone[0].toFixed(2)} – ${alpha.entryZone[1].toFixed(2)}
+                    </span>
+                  </div>
                 </div>
               )}
+
               {alpha.avoidIf?.length > 0 && (
-                <div style={{ fontSize: '10px', color: '#888', lineHeight: '1.5' }}>
-                  <span style={{ fontWeight: 600, color: '#c0392b' }}>Avoid if: </span>
+                <div className="text-xs muted">
+                  <span className="text-negative font-600">Avoid if: </span>
                   {alpha.avoidIf.join(' · ')}
                 </div>
               )}
@@ -96,10 +70,9 @@ export default function AlphaPanel({ alpha, loading, selectedStock, compact = fa
           )}
         </div>
       ) : (
-        <div style={{ textAlign: 'center', padding: '1.5rem', color: '#999', fontSize: '12px' }}>
-          Analysis unavailable
-        </div>
+        <div className="panel-empty">Analysis unavailable</div>
       )}
     </article>
   )
 }
+

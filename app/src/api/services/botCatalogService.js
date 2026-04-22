@@ -1,4 +1,4 @@
-import { get, post } from '../client'
+import { get, post, put, del } from '../client'
 
 export async function getBotCatalog() {
   try {
@@ -10,11 +10,75 @@ export async function getBotCatalog() {
   }
 }
 
-export async function createBotFromTemplate(templateId, config) {
+export async function getBots() {
   try {
-    const response = await post('/bots/from-template', {
+    const response = await get('/bots')
+    return response
+  } catch (error) {
+    console.error('Failed to fetch bots:', error)
+    throw error
+  }
+}
+
+export async function getBotById(botId) {
+  try {
+    const response = await get(`/bots/${botId}`)
+    return response
+  } catch (error) {
+    console.error('Failed to fetch bot:', error)
+    throw error
+  }
+}
+
+export async function updateBot(botId, data) {
+  try {
+    const response = await put(`/bots/${botId}`, data)
+    return response
+  } catch (error) {
+    console.error('Failed to update bot:', error)
+    throw error
+  }
+}
+
+export async function deleteBot(botId) {
+  try {
+    const response = await del(`/bots/${botId}`)
+    return response
+  } catch (error) {
+    console.error('Failed to delete bot:', error)
+    throw error
+  }
+}
+
+export async function getBotEvents(botId) {
+  try {
+    const response = await get(`/bots/${botId}/events`)
+    return response
+  } catch (error) {
+    console.error('Failed to fetch bot events:', error)
+    return []
+  }
+}
+
+export async function getBotRules(botId) {
+  try {
+    const response = await get(`/bots/${botId}/rules`)
+    return response
+  } catch (error) {
+    console.error('Failed to fetch bot rules:', error)
+    return []
+  }
+}
+
+export async function createBotFromTemplate(templateId, config) {
+  if (!config.portfolioId) {
+    throw new Error('Portfolio ID is required. Please select a valid portfolio.')
+  }
+  
+  try {
+    const response = await post('/bots/catalog/from-template', {
       templateId,
-      portfolioId: config.portfolioId || 'prt_stub_demo',
+      portfolioId: config.portfolioId,
       name: config.name,
       config: config.botConfig
     })
@@ -26,10 +90,14 @@ export async function createBotFromTemplate(templateId, config) {
 }
 
 export async function createStrategyBot(strategyId, config) {
+  if (!config.portfolioId) {
+    throw new Error('Portfolio ID is required. Please select a valid portfolio.')
+  }
+  
   try {
     const response = await post('/bots/strategy-based', {
       strategyId,
-      portfolioId: config.portfolioId || 'prt_stub_demo',
+      portfolioId: config.portfolioId,
       name: config.name,
       config: config.botConfig
     })

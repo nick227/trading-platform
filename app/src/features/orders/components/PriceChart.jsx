@@ -101,7 +101,7 @@ function formatChartDate(ts, dateStr, range, hasIntraday) {
   return dateStr
 }
 
-function getTooltipStyle(hover) {
+function getTooltipPosition(hover) {
   const left = Math.max(
     TOOLTIP_EDGE_PAD,
     Math.min(
@@ -117,20 +117,7 @@ function getTooltipStyle(hover) {
     )
   )
 
-  return {
-    position: 'absolute',
-    left,
-    top,
-    width: `${TOOLTIP_WIDTH}px`,
-    background: 'rgba(255,255,255,0.95)',
-    border: '1px solid rgba(0,0,0,0.08)',
-    borderRadius: '10px',
-    padding: '8px 10px',
-    boxShadow: '0 10px 28px rgba(0,0,0,0.10)',
-    color: '#111',
-    fontSize: '11px',
-    lineHeight: 1.3,
-  }
+  return { left, top }
 }
 
 /**
@@ -215,16 +202,12 @@ export default function PriceChart({
 
   if (!selectedStock) {
     return (
-      <article style={{
-        background: 'white', borderRadius: '8px', padding: compact ? '1rem' : '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        ...(compact ? { height: '180px' } : { height: '100%' }),
-        color: '#666',
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: compact ? '13px' : '16px', marginBottom: '0.5rem' }}>Select a stock to view chart</div>
-          {!compact && <div style={{ fontSize: '12px' }}>Choose from the search dropdown above</div>}
+      <article className={`card ${compact ? 'card-pad-sm' : 'card-pad-md'}`}>
+        <div className="panel-empty">
+          <div className={`${compact ? 'text-sm' : 'text-md'} font-600 mb-2`}>
+            Select a stock to view chart
+          </div>
+          {!compact && <div className="text-sm muted">Choose from the search dropdown above</div>}
         </div>
       </article>
     )
@@ -303,106 +286,51 @@ export default function PriceChart({
   }
 
   return (
-    <article style={{
-      background: 'white', borderRadius: '8px', padding: '1rem',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-      ...(compact ? {} : { display: 'flex', flexDirection: 'column', height: '100%' }),
-    }}>
+    <article className="card card-pad-sm">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+      <div className="l-row mb-3">
+        <div className="hstack">
           <select
             aria-label="Chart range"
             value={chartRange}
             onChange={(e) => onRangeChange(e.target.value)}
-            style={{
-              height: '28px',
-              padding: '0 10px',
-              minWidth: '180px',
-              borderRadius: '6px',
-              border: '1px solid #e9ecef',
-              background: '#f8f9fa',
-              fontSize: '11px',
-              color: '#333',
-              fontWeight: 600,
-            }}
+            className="select-xs"
           >
             {RANGES.map(range => (
               <option key={range} value={range}>{range}</option>
             ))}
           </select>
           {!compact && limitedForRange && (
-            <div style={{
-              fontSize: '10px',
-              fontWeight: 700,
-              color: '#856404',
-              background: '#fff3cd',
-              borderRadius: '999px',
-              padding: '3px 8px',
-              border: '1px solid rgba(133, 100, 4, 0.25)',
-            }}>
-              Limited data
-            </div>
+            <span className="badge badge-warning badge-xs">Limited data</span>
           )}
-          {loading && <div style={{ fontSize: '10px', color: '#666' }}>Loading...</div>}
+          {loading && <span className="text-xs muted">Loading…</span>}
         </div>
       </div>
 
       {/* Chart area */}
-      <div style={{
-        background: '#f8f9fa', borderRadius: '4px', padding: compact ? '0.75rem' : '1rem',
-        position: 'relative',
-        // Keep height stable across range changes/loading to avoid layout collapse.
-        ...(compact ? { height: '180px' } : { height: '320px', minHeight: '320px' }),
-      }}>
+      <div className={`chart-shell ${compact ? 'chart-shell-compact' : 'chart-shell-full'}`}>
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666', fontSize: '12px' }}>
-            Loading chart data...
-          </div>
+          <div className="panel-empty">Loading chart data…</div>
         ) : chartBars.length > 0 ? (
           <>
             {/* Price */}
             <div
               ref={pricePanelRef}
-              style={{ height: '100%', position: 'relative' }}
+              className="chart-panel"
+              style={{
+                '--plot-top': `${plotInset.top}px`,
+                '--plot-right': `${plotInset.right}px`,
+                '--plot-bottom': `${plotInset.bottom}px`,
+                '--plot-left': `${plotInset.left}px`,
+              }}
             >
               {/* Start/End dates */}
               {!compact && (
                 <>
-                  <div style={{
-                    position: 'absolute',
-                    left: plotInset.left,
-                    top: 0,
-                    padding: '2px 6px',
-                    borderRadius: '6px',
-                    fontSize: '10px',
-                    color: '#666',
-                    background: 'rgba(248,249,250,0.92)',
-                    maxWidth: '45%',
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    textOverflow: 'ellipsis',
-                    zIndex: 30,
-                  }}>
+                  <div className="chart-tag chart-tag-left">
                     {startDateLabel}
                   </div>
-                  <div style={{
-                    position: 'absolute',
-                    right: plotInset.right,
-                    top: 0,
-                    padding: '2px 6px',
-                    borderRadius: '6px',
-                    fontSize: '10px',
-                    color: '#666',
-                    background: 'rgba(248,249,250,0.92)',
-                    maxWidth: '45%',
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    textOverflow: 'ellipsis',
-                    textAlign: 'right',
-                    zIndex: 30,
-                  }}>
+                  <div className="chart-tag chart-tag-right">
                     {endDateLabel}
                   </div>
                 </>
@@ -411,29 +339,13 @@ export default function PriceChart({
               {/* Y axis labels (minimal) */}
               {!compact && priceRange?.range > 0 && (
                 <>
-                  <div style={{
-                    position: 'absolute', left: 0, top: `${plotInset.top}px`,
-                    fontSize: '10px', color: '#666',
-                    background: 'rgba(248,249,250,0.9)',
-                    padding: '2px 6px', borderRadius: '6px',
-                  }}>
+                  <div className="chart-axis-label chart-axis-top">
                     ${formatCompactNumber(yMax, 2)}
                   </div>
-                  <div style={{
-                    position: 'absolute', left: 0, top: '50%',
-                    transform: 'translateY(-50%)',
-                    fontSize: '10px', color: '#666',
-                    background: 'rgba(248,249,250,0.9)',
-                    padding: '2px 6px', borderRadius: '6px',
-                  }}>
+                  <div className="chart-axis-label chart-axis-mid">
                     ${formatCompactNumber(yMid, 2)}
                   </div>
-                  <div style={{
-                    position: 'absolute', left: 0, bottom: `${plotInset.bottom}px`,
-                    fontSize: '10px', color: '#666',
-                    background: 'rgba(248,249,250,0.9)',
-                    padding: '2px 6px', borderRadius: '6px',
-                  }}>
+                  <div className="chart-axis-label chart-axis-bot">
                     ${formatCompactNumber(yMin, 2)}
                   </div>
                 </>
@@ -441,52 +353,28 @@ export default function PriceChart({
 
               {/* Last-price pill */}
               {!compact && priceRange?.range > 0 && (
-                <div style={{
-                  position: 'absolute',
-                  right: -8,
-                  bottom: `${currentPricePct}%`,
-                  transform: 'translateY(50%)',
-                  background: lastPriceColor,
-                  color: 'white',
-                  padding: '2px 8px',
-                  borderRadius: '999px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                  zIndex: 20,
-                }}>
+                <div
+                  className="chart-price-pill"
+                  style={{ '--pill-bg': lastPriceColor, '--pill-bottom': `${currentPricePct}%` }}
+                >
                   {formatCompactNumber(currentPrice, 2)}
                 </div>
               )}
 
               {/* Hover crosshair + tooltip */}
               {!compact && hover && (
-                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 25 }}>
-                  <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    left: `${hover.x}px`,
-                    width: '1px',
-                    background: 'rgba(0,0,0,0.12)',
-                  }} />
+                <div className="chart-crosshair-layer">
+                  <div className="chart-crosshair-v" style={{ left: hover.x }} />
                   {hoverPricePct != null && (
-                    <div style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      bottom: `${hoverPricePct}%`,
-                      height: '1px',
-                      background: 'rgba(0,0,0,0.10)',
-                    }} />
+                    <div className="chart-crosshair-h" style={{ bottom: `${hoverPricePct}%` }} />
                   )}
 
                   {hoveredPoint && (
-                    <div style={getTooltipStyle(hover)}>
-                      <div style={{ fontWeight: 800, marginBottom: '6px' }}>{hoveredPoint.date ?? '—'}</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-                        <div style={{ fontWeight: 700 }}>Close</div>
-                        <div style={{ fontWeight: 800 }}>${formatCompactNumber(hoveredPoint.close ?? hoveredPoint.price, 2)}</div>
+                    <div className="chart-tooltip" style={getTooltipPosition(hover)}>
+                      <div className="text-xs font-700 mb-2">{hoveredPoint.date ?? '—'}</div>
+                      <div className="l-row text-xs">
+                        <div className="font-600">Close</div>
+                        <div className="font-700">${formatCompactNumber(hoveredPoint.close ?? hoveredPoint.price, 2)}</div>
                       </div>
                     </div>
                   )}
@@ -511,20 +399,13 @@ export default function PriceChart({
                   scheduleHoverUpdate({ index: idx, x: xCenterInPanel, y: yInPanel, w: panelRect.width, h: panelRect.height })
                 }}
                 onMouseLeave={clearHover}
-                style={{
-                  position: 'absolute',
-                  left: plotInset.left,
-                  right: plotInset.right,
-                  top: plotInset.top,
-                  bottom: plotInset.bottom,
-                  cursor: compact ? 'default' : 'crosshair',
-                }}
+                className={`chart-plot ${compact ? 'chart-plot-compact' : ''}`}
               >
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="chart-svg">
                   {priceLinePath && (
                     <>
-                      <path d={priceLinePath} fill="none" stroke="#0a7a47" strokeWidth={PRICE_LINE_STROKE_WIDTH} strokeLinejoin="round" strokeLinecap="round" />
-                      <path d={`${priceLinePath} L 100 100 L 0 100 Z`} fill="rgba(10, 122, 71, 0.08)" stroke="none" />
+                      <path d={priceLinePath} fill="none" stroke="var(--color-positive)" strokeWidth={PRICE_LINE_STROKE_WIDTH} strokeLinejoin="round" strokeLinecap="round" />
+                      <path d={`${priceLinePath} L 100 100 L 0 100 Z`} fill="rgba(31, 138, 76, 0.10)" stroke="none" />
                     </>
                   )}
 
@@ -556,23 +437,20 @@ export default function PriceChart({
 
               {/* Current-price reference line — full only */}
               {!compact && priceRange?.range > 0 && (
-                <div style={{
-                  position: 'absolute', left: 0, right: 0,
-                  bottom: `${currentPricePct}%`,
-                  height: '1px', background: '#0a7a47', zIndex: 10,
-                }} />
+                <div
+                  className="chart-ref-line"
+                  style={{ bottom: `${currentPricePct}%`, '--ref-bg': lastPriceColor }}
+                />
               )}
             </div>
           </>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666', fontSize: '12px' }}>
-            No chart data available
-          </div>
+          <div className="panel-empty">No chart data available</div>
         )}
       </div>
 
       {/* Footer */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '10px', color: '#7a7a7a' }}>
+      <div className="chart-footer">
         {compact ? (
           <>
             <span>{chartBars.length} bar history</span>
@@ -585,7 +463,7 @@ export default function PriceChart({
                 <span>{safePriceHistory[0]?.date} – {safePriceHistory[safePriceHistory.length - 1]?.date}</span>
               )}
             </div>
-            <div style={{ display: 'flex', gap: '1rem' }}>
+            <div className="chart-footer-kpis">
               {hasDistinctOHLC ? (
                 <>
                   <span>O: ${Number(lastO).toFixed(2)}</span>

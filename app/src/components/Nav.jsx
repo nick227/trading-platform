@@ -14,15 +14,14 @@ const routes = [
 ]
 
 function navBtnClass(active) {
-  return `btn btn-${active ? 'primary' : 'ghost'} ${active ? ' is-active' : ''}`
+  return `nav-btn btn btn-sm btn-${active ? 'primary' : 'ghost'} ${active ? 'is-active' : ''}`.trim()
 }
 
 function LogoutButton() {
   const { logout } = useAuth()
   return (
     <button
-      className="btn btn-ghost"
-      style={{ fontSize: '12px', padding: '0.25rem 0.5rem' }}
+      className="btn btn-xs btn-ghost"
       onClick={async () => { await logout(); window.location.href = '/auth' }}
     >
       Logout

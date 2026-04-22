@@ -44,6 +44,8 @@ enum BotRuleType {
   daily_loss
   market_hours
   cooldown
+  trend_filter
+  time_window
 }
 
 model Strategy {
@@ -186,6 +188,7 @@ model Execution {
   origin        String    @default("manual") // 'manual' | 'bot'
   // Queue fields
   status        String    @default("queued") // queued | processing | partially_filled | filled | cancelled | failed
+  scheduledFor  DateTime? // when this order should execute (UTC)
   lockedAt      DateTime? // = processingStartedAt: when worker claimed this row
   lockedBy      String?   // worker instance ID
   attempts      Int       @default(0)
@@ -291,6 +294,24 @@ model WorkerStatus {
   lastWsOkAt DateTime?
   lastCalendarRefreshAt DateTime?
   health     Json?
+}
+
+// Daily market regime snapshots used by trend/regime bots.
+// Written by the API server (Alpha Engine integration) and read by the worker.
+model MarketRegime {
+  id        String   @id @default(cuid())
+  symbol    String
+  asOf      DateTime // market day this snapshot represents (daily bar date)
+  regime    String   // "risk_on" | "risk_off"
+  score     Float?
+  priceClose Float?
+  sma20     Float?
+  sma200    Float?
+  inputsJson Json?
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, asOf])
+  @@index([symbol, asOf(sort: Desc)])
 }
 
 // MVP Tables for Single User Operator Mode

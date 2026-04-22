@@ -153,5 +153,49 @@
         "config": { "maxLoss": 1000 }
       }
     ]
+  },
+  {
+    "id": "tmpl_spy_trend_filter",
+    "name": "SPY Trend Filter",
+    "description": "Participates in SPY uptrends, steps aside in weak markets. Daily regime confirmation, full allocation model.",
+    "botType": "rule_based",
+    "tags": ["spy", "trend", "regime"],
+    "config": {
+      "tickers": ["SPY"],
+      "capitalMode": "allocated",
+      "allocatedAmount": 10000,
+      "riskOnExposure": 1.0,
+      "riskOffExposure": 0.0,
+      "maxOrderNotional": 25000,
+      "executionStyle": "market_open",
+      "maxTradesPerDay": 1
+    },
+    "rules": [
+      {
+        "name": "Open Window",
+        "type": "time_window",
+        "config": { "start": "09:35", "end": "09:55", "timezone": "America/New_York" }
+      },
+      {
+        "name": "Cooldown",
+        "type": "cooldown",
+        "config": { "cooldownHours": 24 }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxPositions": 1 }
+      },
+      {
+        "name": "Daily Loss",
+        "type": "daily_loss",
+        "config": { "maxDailyLossPct": 3 }
+      },
+      {
+        "name": "Trend Filter",
+        "type": "trend_filter",
+        "config": { "symbol": "SPY", "confirmationBars": 2, "maxSnapshotAgeHours": 90 }
+      }
+    ]
   }
 ]

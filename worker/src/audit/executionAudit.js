@@ -1,7 +1,8 @@
 import prisma from '../db/prisma.js'
+import { randomUUID } from 'crypto'
 
 function buildAuditId() {
-  return `aud_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  return `aud_${randomUUID()}`
 }
 
 export async function recordExecutionAudit({

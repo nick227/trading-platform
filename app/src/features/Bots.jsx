@@ -1,32 +1,58 @@
 import { useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import { useApp } from '../app/AppProvider'
-import { getBotCatalog } from '../api/services/botCatalogService.js'
-import { useAlphaSignals } from '../hooks/useAlphaEngine.js'
+import { useEffect, useState, useMemo, useCallback } from 'react'
+import { getBotCatalog, getBots, deleteBot, updateBot } from '../api/services/botCatalogService.js'
+import VirtualList from '../components/VirtualList.jsx'
+import '../styles/virtual-list.css'
 
 export default function Bots() {
   const navigate = useNavigate()
-  const { state, dispatch } = useApp()
   const [catalog, setCatalog] = useState({ ruleBased: [], strategyBased: [] })
+  const [bots, setBots] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [successMessage, setSuccessMessage] = useState(null)
-  const { signals: alphaSignals, loading: signalsLoading } = useAlphaSignals({ refreshInterval: 60000 })
   
-  const runningCount = state.bots.filter((bot) => bot.status === 'running').length
+  const [filter, setFilter] = useState('all')
+  
+  // Calculate bot counts
+  const runningCount = bots.filter((bot) => bot.enabled).length
+  const stoppedCount = bots.filter((bot) => !bot.enabled && !bot.deletedAt).length
+  const archivedCount = bots.filter((bot) => bot.deletedAt).length
+  const pausedCount = bots.filter((bot) => !bot.enabled).length
 
-  // Load catalog on mount
+  // Filter bots based on selected filter
+  const filteredBots = filter === 'all' 
+    ? bots 
+    : filter === 'archived' 
+    ? bots.filter(bot => bot.deletedAt)
+    : filter === 'running'
+    ? bots.filter(bot => bot.enabled)
+    : filter === 'stopped' || filter === 'paused'
+    ? bots.filter(bot => !bot.enabled && !bot.deletedAt)
+    : bots
+
+  // Load data on mount
   useEffect(() => {
-    const loadCatalog = async () => {
+    const loadData = async () => {
       try {
-        const data = await getBotCatalog()
-        setCatalog(data)
+        setLoading(true)
+        setError(null)
+        
+        const [catalogData, botsData] = await Promise.all([
+          getBotCatalog(),
+          getBots()
+        ])
+        
+        setCatalog(catalogData)
+        setBots(Array.isArray(botsData) ? botsData : [])
       } catch (error) {
-        console.error('Failed to load bot catalog:', error)
+        console.error('Failed to load data:', error)
+        setError('Failed to load bots. Please try again.')
       } finally {
         setLoading(false)
       }
     }
-    loadCatalog()
+    loadData()
   }, [])
 
   // Check for success message from navigation
@@ -35,223 +61,253 @@ export default function Bots() {
       setSuccessMessage(`Bot "${window.history.state.botName}" created successfully!`)
       // Clear the state after showing message
       setTimeout(() => setSuccessMessage(null), 5000)
+      // Reload bots to show the new bot
+      const loadBots = async () => {
+        try {
+          const botsData = await getBots()
+          setBots(Array.isArray(botsData) ? botsData : [])
+        } catch (error) {
+          console.error('Failed to reload bots:', error)
+        }
+      }
+      loadBots()
     }
   }, [])
 
-  // Unified catalog items
-  const catalogItems = [
-    ...catalog.ruleBased.map(item => ({ ...item, type: 'RULE_BASED' })),
-    ...catalog.strategyBased.map(item => ({ ...item, type: 'STRATEGY_BASED' }))
-  ]
+  // Handle bot status toggle
+  const handleStatusToggle = async (bot) => {
+    try {
+      await updateBot(bot.id, { enabled: !bot.enabled })
+      // Refresh bots list
+      const botsData = await getBots()
+      setBots(Array.isArray(botsData) ? botsData : [])
+    } catch (error) {
+      console.error('Failed to update bot status:', error)
+      setError('Failed to update bot status. Please try again.')
+    }
+  }
+
+  // Handle bot deletion
+  const handleDeleteBot = async (bot) => {
+    if (window.confirm(`Delete bot "${bot.name}"? This will soft delete the bot but preserve all historical data.`)) {
+      try {
+        await deleteBot(bot.id)
+        // Refresh bots list
+        const botsData = await getBots()
+        setBots(Array.isArray(botsData) ? botsData : [])
+      } catch (error) {
+        console.error('Failed to delete bot:', error)
+        setError('Failed to delete bot. Please try again.')
+      }
+    }
+  }
+
+  // Map service layer status to UI display
+  const getBotStatus = (bot) => {
+    if (bot.deletedAt) return 'archived'
+    if (bot.enabled) return 'running'
+    return 'paused'
+  }
 
   return (
-    <div className="page container" style={{ maxWidth: 1040, margin: '0 auto', padding: '2rem 1rem 3rem' }}>
-      <header style={{ marginBottom: '1rem' }}>
-        <h1 className="hero" style={{ marginBottom: '0.5rem' }}>Bots</h1>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <div style={{ color: '#0a7a47', fontWeight: 700 }}>{runningCount} running</div>
-          <div className="muted">{state.bots.length - runningCount} paused</div>
-          <div className="muted">Execution health normal</div>
-        </div>
-      </header>
+    <div className="l-page">
+      <div className="container">
+        <header className="stack-sm mb-6">
+          <h1 className="hero mb-2">Bots</h1>
+          <p className="muted measure-md text-md mb-4">
+            Manage your automated trading bots and view performance history
+          </p>
+          
+          {/* Error Display */}
+        {error && (
+          <section className="alert alert-error mb-5">
+            <div className="alert-title">Error</div>
+            <div className="text-sm">{error}</div>
+          </section>
+        )}
 
-      <section style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1.4fr 1fr', marginBottom: '1rem' }}>
-        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
-          <strong>Active Bot Queue</strong>
-          <div style={{ marginTop: '0.8rem', display: 'grid', gap: '0.7rem' }}>
-            {state.bots.map((bot) => (
-              <div key={bot.id} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.6rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                  <div>
-                    <strong>{bot.name}</strong>
-                    <div className="muted">Asset: {bot.asset}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ color: bot.status === 'running' ? '#0a7a47' : '#aa7a00', fontWeight: 600 }}>{bot.status}</div>
-                    <button
-                      className="primary pressable"
-                      onClick={() => {
-                        dispatch({ type: 'SELECT_BOT', payload: bot.id })
-                        navigate('/bots/confirm')
-                      }}
-                    >
-                      Review
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article style={{ background: 'linear-gradient(140deg, #111, #2a2a2a)', color: '#fff', borderRadius: 24, padding: '1rem' }}>
-          <div className="eyebrow" style={{ color: '#d9d9d9' }}>Bot Performance</div>
-          <div style={{ fontSize: '1.7rem', fontWeight: 700 }}>+6.8% this month</div>
-          <div style={{ marginTop: '0.45rem', opacity: 0.88 }}>Win rate: 64%</div>
-          <div style={{ opacity: 0.88 }}>Avg hold: 1.8 sessions</div>
-          <div style={{ marginTop: '0.7rem', color: '#6effb6', fontWeight: 700 }}>Best actor: Momentum Swing</div>
-        </article>
-
-        {/* Alpha Engine Signals Panel */}
-        <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-            <strong>Alpha Engine Signals</strong>
-            <span style={{ 
-              background: alphaSignals.length > 0 ? '#f0fdf4' : '#f9fafb',
-              color: alphaSignals.length > 0 ? '#1f8a4c' : '#666',
-              padding: '2px 8px',
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontWeight: 600
-            }}>
-              {signalsLoading ? 'Loading...' : `${alphaSignals.length} active`}
-            </span>
+          {/* Status Summary */}
+          <div className="row text-sm mb-4">
+            <span className="text-positive font-600">{runningCount} running</span>
+            <span className="text-muted">{pausedCount} paused</span>
+            <span className="text-negative font-600">{stoppedCount} stopped</span>
+            <span className="text-muted">{archivedCount} archived</span>
+            <span className="text-muted">· Total: {bots.length}</span>
           </div>
           
-          {signalsLoading ? (
-            <div style={{ textAlign: 'center', padding: '1rem', color: '#666', fontSize: '12px' }}>
-              Loading signals...
-            </div>
-          ) : alphaSignals.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '1rem', color: '#666', fontSize: '12px' }}>
-              No active signals
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gap: '0.5rem' }}>
-              {alphaSignals.slice(0, 3).map((signal, index) => (
-                <div key={index} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.5rem',
-                  background: signal.type === 'ENTRY' ? '#f0fdf4' : '#fef2f2',
-                  borderRadius: '6px',
-                  fontSize: '12px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      backgroundColor: signal.type === 'ENTRY' ? '#1f8a4c' : '#c0392b'
-                    }} />
-                    <strong>{signal.symbol}</strong>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <span style={{ color: '#666' }}>
-                      {(signal.confidence * 100).toFixed(0)}%
-                    </span>
-                    <span style={{
-                      background: signal.type === 'ENTRY' ? '#1f8a4c' : '#c0392b',
-                      color: 'white',
-                      padding: '1px 4px',
-                      borderRadius: '2px',
-                      fontSize: '10px',
-                      fontWeight: 600
-                    }}>
-                      {signal.type}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {alphaSignals.length > 3 && (
-                <div style={{ textAlign: 'center', fontSize: '11px', color: '#666', marginTop: '0.25rem' }}>
-                  +{alphaSignals.length - 3} more signals
-                </div>
-              )}
-            </div>
-          )}
-        </article>
-      </section>
-
-      {successMessage && (
-        <article style={{ 
-          background: '#f0f9f4', 
-          border: '1px solid #c6f6d5', 
-          borderRadius: 8, 
-          padding: '1rem', 
-          marginBottom: '1.5rem',
-          color: '#0a7a47'
-        }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Success!</div>
-          <div style={{ fontSize: '14px' }}>{successMessage}</div>
-        </article>
-      )}
-
-      <section style={{ background: 'white', borderRadius: 22, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <strong>Available Templates & Strategies</strong>
-          <button 
-            className="primary pressable"
-            onClick={() => navigate('/bots/create')}
-            style={{ fontSize: '14px', padding: '0.5rem 1rem' }}
-          >
-            Create New Bot
-          </button>
-        </div>
-        
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-            Loading catalog...
+          {/* Filter Controls */}
+          <div className="wrap">
+            <button
+              className={filter === 'all' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
+              onClick={() => setFilter('all')}
+            >
+              All Bots
+            </button>
+            <button
+              className={filter === 'running' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
+              onClick={() => setFilter('running')}
+            >
+              Running
+            </button>
+            <button
+              className={filter === 'paused' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
+              onClick={() => setFilter('paused')}
+            >
+              Paused
+            </button>
+            <button
+              className={filter === 'stopped' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
+              onClick={() => setFilter('stopped')}
+            >
+              Stopped
+            </button>
+            <button
+              className={filter === 'archived' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
+              onClick={() => setFilter('archived')}
+            >
+              Archived
+            </button>
           </div>
-        ) : catalogItems.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-            No templates or strategies available
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gap: '0.55rem' }}>
-            {catalogItems.map((item) => (
-              <div 
-                key={item.id} 
-                style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: '1fr auto auto', 
-                  borderBottom: '1px solid #eee', 
-                  paddingBottom: '0.45rem',
-                  alignItems: 'center'
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {item.name}
-                    <span style={{
-                      background: item.type === 'RULE_BASED' ? '#f0fdf4' : '#eff6ff',
-                      color: item.type === 'RULE_BASED' ? '#0a7a47' : '#1e40af',
-                      padding: '0.125rem 0.375rem',
-                      borderRadius: 4,
-                      fontSize: '11px',
-                      fontWeight: 600
-                    }}>
-                      {item.type === 'RULE_BASED' ? 'Rules' : 'Strategy'}
-                    </span>
-                  </div>
-                  <div className="muted" style={{ fontSize: '13px' }}>
-                    {item.category === 'alpha_engine' ? 'Alpha Engine' : item.category}
-                    {item.metadata?.cadence && ` · ${item.metadata.cadence}`}
-                  </div>
-                </div>
-                {item.metadata?.edge && (
-                  <div style={{ color: '#0a7a47', fontWeight: 700, fontSize: '14px' }}>
-                    {item.metadata.edge}
-                  </div>
-                )}
-                <button
-                  className="ghost pressable"
-                  onClick={() => navigate('/bots/create', { 
-                    state: { 
-                      defaultTemplate: item,
-                      defaultConfig: { tickers: ['SPY'] }
-                    } 
-                  })}
-                  style={{ fontSize: '13px', padding: '0.25rem 0.5rem' }}
-                >
-                  Use
-                </button>
+        </header>
+
+        <section className="mb-6">
+          <article className="card card-pad-md">
+            <div className="panel-header">
+              <h2 className="panel-title">
+                {filter === 'all' ? 'All Bots' : `${filter.charAt(0).toUpperCase() + filter.slice(1)} Bots`}
+                <span className="text-sm text-muted"> ({filteredBots.length})</span>
+              </h2>
+            </div>
+            
+            {loading ? (
+              <div className="centered p-8 text-muted">
+                <div className="text-lg mb-2">Loading bots...</div>
               </div>
-            ))}
-          </div>
+            ) : filteredBots.length === 0 ? (
+              <div className="centered p-8 text-muted">
+                <div className="text-lg mb-2">No bots found</div>
+                <div>No bots match the selected filter.</div>
+              </div>
+            ) : (
+              <VirtualList
+                items={filteredBots}
+                itemHeight={120}
+                containerHeight={Math.min(600, filteredBots.length * 120)}
+                renderItem={(bot, index) => {
+                  const status = getBotStatus(bot)
+                  const badgeClass =
+                    status === 'running'
+                      ? 'badge badge-positive'
+                      : status === 'archived'
+                        ? 'badge badge-neutral'
+                        : 'badge badge-warning'
+
+                  const badgeLabel =
+                    status === 'running'
+                      ? 'Running'
+                      : status === 'archived'
+                        ? 'Archived'
+                        : 'Paused'
+                  return (
+                    <div className="virtual-list-item">
+                      <div className="l-row">
+                        <div className="stack-sm flex-1">
+                          <div className="hstack">
+                            <h3 className="m-0 text-lg font-600">{bot.name}</h3>
+                            <span className={badgeClass}>{badgeLabel}</span>
+                          </div>
+                          <div className="meta-row">
+                            <span>Type: {bot.botType || 'rule_based'}</span>
+                            <span>Portfolio: {bot.portfolioId}</span>
+                            {bot.templateId && <span>Template: {bot.templateId}</span>}
+                          </div>
+                          <div className="text-sm text-muted">
+                            {bot.asset} | {bot.strategy}
+                          </div>
+                        </div>
+                        <div className="stack-sm">
+                          <button
+                            className="btn btn-xs btn-primary"
+                            onClick={() => navigate(`/bots/${bot.id}`)}
+                          >
+                            View Details
+                          </button>
+                          <button
+                            className="btn btn-xs btn-ghost"
+                            onClick={() => handleStatusToggle(bot)}
+                          >
+                            {status === 'running' ? 'Pause' : 'Start'}
+                          </button>
+                          <button
+                            className="btn btn-xs btn-ghost text-negative"
+                            onClick={() => handleDeleteBot(bot)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }}
+              />
+            )}
+          </article>
+        </section>
+
+        {/* Success Message */}
+        {successMessage && (
+          <section className="alert alert-success mb-5">
+            <div className="alert-title">Success!</div>
+            <div className="text-sm">{successMessage}</div>
+          </section>
         )}
-      </section>
+
+        {/* Quick Actions */}
+        <section className="section">
+          <div className="panel-header">
+            <h2 className="panel-title">Quick Actions</h2>
+            <button 
+              className="btn btn-sm btn-primary"
+              onClick={() => navigate('/templates')}
+            >
+              Browse Templates
+            </button>
+          </div>
+          
+          <div className="l-grid-auto-200">
+            <article className="card card-pad-sm text-center">
+              <div className="text-xl mb-2">Create Bot</div>
+              <div className="muted text-sm mb-3">
+                Start with a template or custom configuration
+              </div>
+              <button 
+                className="btn btn-sm btn-primary"
+                onClick={() => navigate('/bots/create')}
+              >
+                Create New Bot
+              </button>
+            </article>
+            
+            <article className="card card-pad-sm text-center">
+              <div className="text-xl mb-2">View History</div>
+              <div className="muted text-sm mb-3">
+                Access complete trading records for all bots
+              </div>
+              <button 
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  // Navigate to history of first available bot
+                  const firstBot = bots[0]
+                  if (firstBot) navigate(`/bots/${firstBot.id}/history`)
+                }}
+                disabled={!bots.length}
+              >
+                View Bot History
+              </button>
+            </article>
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

@@ -1,76 +1,14 @@
-/* Layout System */
+/* Layout tokens (no classes here) */
 :root {
   --max-width: 720px;
-  
+
   /* Container sizes */
   --container-sm: 640px;
   --container-md: 768px;
+  --container-content: 1040px;
   --container-lg: 1200px;
-  
+
   /* Layout gaps */
   --section-gap: 64px;
   --block-gap: 32px;
-}
-
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--section-gap);
-  padding: var(--space-6) var(--space-5);
-  min-height: 100vh;
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--block-gap);
-  margin-bottom: 80px;
-}
-
-.container {
-  width: 100%;
-  max-width: var(--container-lg);
-  margin: 0 auto;
-}
-
-.container-sm {
-  max-width: var(--container-sm);
-}
-
-.container-md {
-  max-width: var(--container-md);
-}
-
-.centered {
-  text-align: center;
-  margin-inline: auto;
-}
-
-.stack-sm { gap: var(--space-2); }
-.stack-md { gap: var(--space-4); }
-.stack-lg { gap: var(--space-6); }
-
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.grid {
-  display: grid;
-}
-
-.grid-cols-1 {
-  grid-template-columns: 1fr;
-}
-
-.gap-6 {
-  gap: 24px; /* 6 * 4px scale */
-}
-
-@media (min-width: 768px) {
-  .md\:grid-cols-2 {
-    grid-template-columns: 1fr 1fr;
-  }
 }

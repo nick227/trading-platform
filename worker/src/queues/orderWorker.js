@@ -12,6 +12,10 @@ const STUCK_AFTER_MS = 120_000 // 2 minutes — locked row is considered stuck
 const FILL_POLL_INTERVAL_MS = 2_000  // how often to poll Alpaca for fill status
 const FILL_TIMEOUT_MS       = 30_000 // give up waiting for fill after 30s
 
+// Hoisted outside polling loops to avoid per-iteration array allocation
+const TERMINAL_BROKER_STATUSES  = new Set(['canceled', 'rejected', 'expired'])
+const PENDING_BROKER_STATUSES   = new Set(['new', 'accepted', 'pending_new', 'accepted_for_bidding', 'pending_replace', 'replaced', 'calculated'])
+
 let running = false
 
 // Called by the bot engine to clear the inflight guard when an order finishes
@@ -257,8 +261,6 @@ async function handleCancelRequested(execution, broker) {
       return
     }
 
-    await refreshLease(execution.id)
-
     if (snapshot.status === 'filled') {
       await terminate(execution, 'filled', null, {
         filledAt:       snapshot.filledAt ?? new Date(),
@@ -268,7 +270,7 @@ async function handleCancelRequested(execution, broker) {
       return
     }
 
-    if (['canceled', 'rejected', 'expired'].includes(snapshot.status)) {
+    if (TERMINAL_BROKER_STATUSES.has(snapshot.status)) {
       await terminate(execution, 'cancelled', 'broker_cancelled_after_user_request', {
         brokerStatus: snapshot.status,
         filledPrice: snapshot.filledAvgPrice ?? undefined,
@@ -291,12 +293,13 @@ async function pollUntilFilled(execution, broker) {
   let lastPartialFillQty = execution.filledQuantity ?? 0
 
   while (Date.now() < deadline) {
-    // Allow cancellation to interrupt fill polling (user requested cancel mid-flight).
-    const cancelFlag = await prisma.execution.findUnique({
+    // Renew the lease and check for cancel in one DB write instead of two.
+    const refreshed = await prisma.execution.update({
       where: { id: execution.id },
+      data:  { lockedAt: new Date() },
       select: { cancelRequestedAt: true }
     })
-    if (cancelFlag?.cancelRequestedAt) {
+    if (refreshed.cancelRequestedAt) {
       await handleCancelRequested(execution, broker)
       return
     }
@@ -306,8 +309,6 @@ async function pollUntilFilled(execution, broker) {
       await releaseForRetry(execution)
       return
     }
-
-    await refreshLease(execution.id)
 
     if (order.status === 'filled') {
       await terminate(execution, 'filled', null, {
@@ -319,7 +320,7 @@ async function pollUntilFilled(execution, broker) {
     }
 
     if (order.status === 'partially_filled') {
-      // Update progress but keep polling
+      // applyBrokerSnapshot already writes lockedAt — no separate refreshLease needed
       await applyBrokerSnapshot(execution.id, order)
       if ((order.filledQty ?? 0) !== lastPartialFillQty) {
         lastPartialFillQty = order.filledQty ?? 0
@@ -338,21 +339,20 @@ async function pollUntilFilled(execution, broker) {
       }
     }
 
-    if (['canceled', 'rejected', 'expired'].includes(order.status)) {
+    if (TERMINAL_BROKER_STATUSES.has(order.status)) {
       await terminate(execution, 'cancelled', `broker_status:${order.status}`, {
         brokerStatus: order.status
       })
       return
     }
 
-    if (['new', 'accepted', 'pending_new', 'accepted_for_bidding', 'pending_replace', 'replaced', 'calculated'].includes(order.status)) {
+    if (PENDING_BROKER_STATUSES.has(order.status)) {
       await applyBrokerSnapshot(execution.id, order)
     }
 
     await sleep(FILL_POLL_INTERVAL_MS)
   }
 
-  // Timeout — release the lock so it retries on the next poll cycle
   await releaseForRetry(execution)
 }
 
@@ -493,17 +493,10 @@ async function applyBrokerSnapshot(executionId, order) {
 }
 
 function mapBrokerStatusToExecutionStatus(brokerStatus) {
+  if (brokerStatus === 'filled')           return 'filled'
   if (brokerStatus === 'partially_filled') return 'partially_filled'
-  if (brokerStatus === 'filled') return 'filled'
-  if (['canceled', 'rejected', 'expired'].includes(brokerStatus)) return 'cancelled'
+  if (TERMINAL_BROKER_STATUSES.has(brokerStatus)) return 'cancelled'
   return 'submitted'
-}
-
-async function refreshLease(executionId) {
-  await prisma.execution.update({
-    where: { id: executionId },
-    data: { lockedAt: new Date() }
-  })
 }
 
 async function assertMarketIsOpen(broker, execution) {

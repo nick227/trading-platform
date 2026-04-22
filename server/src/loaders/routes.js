@@ -13,6 +13,8 @@ import accountRoutes from '../routes/account.js'
 import tradeRoutes from '../routes/trade.js'
 import marketRoutes from '../routes/market.js'
 import ordersRoutes from '../routes/orders.js'
+import botRoutes from '../routes/bots/index.js'
+import { authenticate } from '../middleware/authenticate.js'
 
 export default async function registerRoutes(app) {
   await app.register(authRoutes,        { prefix: '/api/auth' })
@@ -21,6 +23,13 @@ export default async function registerRoutes(app) {
   // /api/bots disabled until schema/service alignment is complete.
   // The worker bot engine is the source of truth; this HTTP surface is currently unsafe to expose.
   await app.register(operatorBotRoutes, { prefix: '/api/bot' })
+
+  // Bot CRUD (rule bots) — requires auth.
+  // The worker is still the runtime engine; these routes manage configuration only.
+  await app.register(async (secured) => {
+    secured.addHook('preHandler', authenticate)
+    await secured.register(botRoutes, { prefix: '/api/bots' })
+  })
   await app.register(executionRoutes,   { prefix: '/api/executions' })
   await app.register(portfolioRoutes,   { prefix: '/api/portfolios' })
   await app.register(brokerRoutes,      { prefix: '/api/broker' })

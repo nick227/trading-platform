@@ -1,432 +1,275 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { getBotCatalog, createBotFromTemplate, createStrategyBot } from '../api/services/botCatalogService.js'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import BotTemplateSelector from '../components/BotTemplateSelector.jsx'
+import TickerSelector from '../components/TickerSelector.jsx'
+
+const normalizeTickers = (tickers) =>
+  (Array.isArray(tickers) ? tickers : [])
+    .map((t) => {
+      if (typeof t === 'string') {
+        const symbol = t.trim().toUpperCase()
+        return symbol ? { symbol, name: symbol } : null
+      }
+      const symbol = t?.symbol?.trim?.().toUpperCase?.() ?? ''
+      return symbol ? { symbol, name: t?.name ?? symbol } : null
+    })
+    .filter(Boolean)
 
 export default function BotCreate() {
   const navigate = useNavigate()
-  const [catalog, setCatalog] = useState({ ruleBased: [], strategyBased: [] })
-  const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
-  const [selectedType, setSelectedType] = useState('rule-based')
+  const location = useLocation()
+
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [botName, setBotName] = useState('')
   const [botConfig, setBotConfig] = useState({
     tickers: [],
     quantity: 10,
     direction: 'buy',
-    minConfidence: 0.7
+    minConfidence: 0.7,
   })
-  const [minConfidenceInput, setMinConfidenceInput] = useState("0.7")
-  const [quantityInput, setQuantityInput] = useState("10")
   const [error, setError] = useState(null)
 
-  // Load catalog on mount
   useEffect(() => {
-    const loadCatalog = async () => {
-      try {
-        const data = await getBotCatalog()
-        setCatalog(data)
-      } catch (err) {
-        setError('Failed to load bot catalog')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadCatalog()
-  }, [])
+    const incomingTemplate = location.state?.defaultTemplate ?? null
+    const incomingConfig = location.state?.defaultConfig ?? null
 
-  // Get initial config from URL state or location
-  useEffect(() => {
-    const state = window.history.state
-    if (state?.defaultConfig) {
-      setBotConfig(prev => ({
+    if (incomingTemplate) {
+      setSelectedTemplate(incomingTemplate)
+      setBotName(`${incomingTemplate.name} - ${new Date().toLocaleDateString()}`)
+    }
+
+    if (incomingConfig?.tickers) {
+      setBotConfig((prev) => ({
         ...prev,
-        ...state.defaultConfig
+        ...incomingConfig,
+        tickers: normalizeTickers(incomingConfig.tickers),
       }))
     }
-  }, [])
+  }, [location.state])
 
   const handleTemplateSelect = (template) => {
     setSelectedTemplate(template)
     setBotName(`${template.name} - ${new Date().toLocaleDateString()}`)
-    
-    // Use template default config
-    if (template.config?.defaultBotConfig) {
-      setBotConfig(prev => ({
+
+    const defaults = template?.config?.defaultBotConfig ?? null
+    if (defaults) {
+      setBotConfig((prev) => ({
         ...prev,
-        ...template.config.defaultBotConfig,
-        // Preserve any tickers from URL state
-        tickers: window.history.state?.defaultConfig?.tickers || template.config.defaultBotConfig.tickers
+        ...defaults,
+        tickers: prev.tickers.length ? prev.tickers : normalizeTickers(defaults.tickers),
       }))
     }
   }
 
-  const handleStrategySelect = (strategy) => {
-    setSelectedTemplate(strategy)
-    setBotName(`${strategy.name} - ${new Date().toLocaleDateString()}`)
-    
-    // Default strategy config with confidence threshold
-    setBotConfig(prev => ({
-      ...prev,
-      tickers: window.history.state?.defaultConfig?.tickers || ['SPY'],
-      quantity: 10,
-      direction: 'buy',
-      minConfidence: 0.7
-    }))
-  }
+  const handleCreateBot = () => {
+    setError(null)
 
-  const handleQuantityChange = (e) => {
-  const raw = e.target.value
-  setQuantityInput(raw)
-
-  const val = parseInt(raw, 10)
-  if (Number.isFinite(val)) {
-    setBotConfig(prev => ({
-      ...prev,
-      quantity: Math.max(1, val)
-    }))
-  }
-}
-
-const handleQuantityBlur = () => {
-  setQuantityInput(botConfig.quantity.toString())
-}
-
-const handleConfidenceChange = (e) => {
-  const raw = e.target.value
-  setMinConfidenceInput(raw)
-
-  const val = parseFloat(raw)
-  if (Number.isFinite(val)) {
-    setBotConfig(prev => ({
-      ...prev,
-      minConfidence: Math.min(1, Math.max(0, val))
-    }))
-  }
-}
-
-const handleConfidenceBlur = () => {
-  setMinConfidenceInput(botConfig.minConfidence.toString())
-}
-
-const handleCreateBot = async () => {
-    if (creating) return // Prevent double submit
-    
-    setError(null) // Clear previous errors
-    
     if (!selectedTemplate || !botName) {
       setError('Please select a template and enter a bot name')
       return
     }
 
-    if (!botConfig.tickers.length) {
+    if (!botConfig.tickers?.length) {
       setError('Please add at least one ticker')
       return
     }
 
-    setCreating(true)
-
-    try {
-      // Single normalization point
-      const tickers = Array.from(
-        new Set(
-          botConfig.tickers
-            .map(t => t.trim().toUpperCase())
-            .filter(Boolean)
-        )
+    const tickers = Array.from(
+      new Set(
+        botConfig.tickers
+          .map((t) => (typeof t === 'string' ? t : t?.symbol))
+          .map((t) => (t ? t.trim().toUpperCase() : ''))
+          .filter(Boolean)
       )
-
-      const payload = {
-        type: selectedTemplate.type,
-        templateId: selectedTemplate.type === 'RULE_BASED' ? selectedTemplate.id : null,
-        strategyId: selectedTemplate.type === 'STRATEGY_BASED' ? selectedTemplate.id : null,
-        portfolioId: 'prt_stub_demo',
-        name: botName,
-        config: {
-          tickers,
-          quantity: botConfig.quantity,
-          direction: botConfig.direction,
-          ...(selectedTemplate.type === 'STRATEGY_BASED' && {
-            minConfidence: botConfig.minConfidence
-          })
-        }
-      }
-
-      let bot
-      if (selectedTemplate.type === 'RULE_BASED') {
-        bot = await createBotFromTemplate(payload.templateId, {
-          portfolioId: payload.portfolioId,
-          name: payload.name,
-          botConfig: payload.config
-        })
-      } else {
-        bot = await createStrategyBot(payload.strategyId, {
-          portfolioId: payload.portfolioId,
-          name: payload.name,
-          botConfig: payload.config
-        })
-      }
-
-      // Navigate to bots page with success
-      navigate('/bots', { 
-        state: { 
-          success: true,
-          botName: bot.name,
-          botId: bot.id
-        }
-      })
-    } catch (err) {
-      setError(err.message || 'Failed to create bot')
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  const handleAddTicker = () => {
-    const ticker = window.prompt('Enter ticker symbol (e.g., AAPL):')
-    if (ticker && /^[A-Z]{1,5}$/.test(ticker.toUpperCase())) {
-      setBotConfig(prev => ({
-        ...prev,
-        tickers: [...prev.tickers, ticker.toUpperCase()]
-      }))
-    }
-  }
-
-  const handleRemoveTicker = (index) => {
-    setBotConfig(prev => ({
-      ...prev,
-      tickers: prev.tickers.filter((_, i) => i !== index)
-    }))
-  }
-
-  if (loading) {
-    return (
-      <div className="page container" style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
-        <div style={{ textAlign: 'center', padding: '2rem' }}>
-          <div>Loading bot catalog...</div>
-        </div>
-      </div>
     )
+
+    const botForConfirmation = {
+      name: botName,
+      type: selectedTemplate.type,
+      templateId: selectedTemplate.type === 'RULE_BASED' ? selectedTemplate.id : null,
+      strategyId: selectedTemplate.type === 'STRATEGY_BASED' ? selectedTemplate.id : null,
+      portfolioId: 'prt_test_demo',
+      asset: tickers.join(', '),
+      strategy: selectedTemplate.name,
+      riskLevel: 'Medium',
+      config: {
+        tickers,
+        quantity: botConfig.quantity,
+        direction: botConfig.direction,
+        ...(selectedTemplate.type === 'STRATEGY_BASED' && { minConfidence: botConfig.minConfidence }),
+      },
+    }
+
+    navigate('/bots/confirm', {
+      state: {
+        bot: botForConfirmation,
+      },
+    })
   }
 
   return (
-    <div className="page container" style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
-      <header style={{ marginBottom: '2rem' }}>
-        <h1 className="hero" style={{ marginBottom: '0.5rem' }}>Create New Bot</h1>
-        <div className="muted">Choose a template or strategy to create your automated trading bot</div>
-      </header>
+    <div className="l-page">
+      <div className="container container-md l-stack-lg">
+        <header className="stack-sm">
+          <h1 className="hero m-0">Create New Bot</h1>
+          <p className="muted text-md m-0">Choose a guided setup or start from a template in the catalog.</p>
+        </header>
 
-      {error && (
-        <article style={{ 
-          background: '#fef2f2', 
-          border: '1px solid #fecaca', 
-          borderRadius: 8, 
-          padding: '1rem', 
-          marginBottom: '1.5rem',
-          color: '#dc2626'
-        }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Error</div>
-          <div style={{ fontSize: '14px' }}>{error}</div>
-        </article>
-      )}
+        {error && (
+          <section className="alert alert-error">
+            <div className="alert-title">Error</div>
+            <div className="text-sm">{error}</div>
+          </section>
+        )}
 
-      {/* Bot Type Selection */}
-      <section style={{ marginBottom: '2rem' }}>
-        <h2 style={{ marginBottom: '1rem' }}>Bot Type</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          <button
-            className={`pressable ${selectedType === 'rule-based' ? 'primary' : 'ghost'}`}
-            onClick={() => setSelectedType('rule-based')}
-            style={{ padding: '1rem', textAlign: 'left' }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Rule-Based Bot</div>
-            <div style={{ fontSize: '14px', opacity: 0.8 }}>
-              Uses configurable rules for entry and risk management
-            </div>
-          </button>
-          <button
-            className={`pressable ${selectedType === 'strategy-based' ? 'primary' : 'ghost'}`}
-            onClick={() => setSelectedType('strategy-based')}
-            style={{ padding: '1rem', textAlign: 'left' }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Strategy-Based Bot</div>
-            <div style={{ fontSize: '14px', opacity: 0.8 }}>
-              Uses alpha-engine predictions for trading signals
-            </div>
-          </button>
-        </div>
-      </section>
+        <section className="card card-pad-md">
+          <div className="panel-header">
+            <h2 className="panel-title">Guided Setup</h2>
+          </div>
 
-      {/* Template Selection */}
-      <section style={{ marginBottom: '2rem' }}>
-        <h2 style={{ marginBottom: '1rem' }}>Choose Template or Strategy</h2>
-        <BotTemplateSelector
-          onSelect={handleTemplateSelect}
-          ticker={botConfig.tickers?.[0] ?? null}
-          selectedTemplate={selectedTemplate}
-        />
-      </section>
-
-      {/* Bot Configuration */}
-      {selectedTemplate && (
-        <section style={{ marginBottom: '2rem' }}>
-          <h2 style={{ marginBottom: '1rem' }}>Bot Configuration</h2>
-          
-          <div style={{ display: 'grid', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
-                Bot Name
-              </label>
-              <input
-                type="text"
-                value={botName}
-                onChange={(e) => setBotName(e.target.value)}
-                style={{ 
-                  width: '100%', 
-                  padding: '0.75rem', 
-                  border: '1px solid #d1d5db', 
-                  borderRadius: 6,
-                  fontSize: '16px'
-                }}
-                placeholder="Enter bot name"
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
-                Tickers
-              </label>
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-                {botConfig.tickers.map((ticker, index) => (
-                  <span
-                    key={index}
-                    style={{
-                      background: '#f3f4f6',
-                      padding: '0.25rem 0.5rem',
-                      borderRadius: 4,
-                      fontSize: '14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.25rem'
-                    }}
-                  >
-                    {ticker}
-                    <button
-                      onClick={() => handleRemoveTicker(index)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#666',
-                        cursor: 'pointer',
-                        padding: 0,
-                        fontSize: '16px'
-                      }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-                <button
-                  className="ghost pressable"
-                  onClick={handleAddTicker}
-                  style={{ fontSize: '14px', padding: '0.25rem 0.5rem' }}
-                >
-                  + Add Ticker
-                </button>
+          <div className="l-grid-2">
+            <button
+              className="card card-pad-sm card-outline text-left pressable"
+              type="button"
+              onClick={() => navigate('/bots/create/rule-based')}
+            >
+              <div className="stack-sm">
+                <div className="text-md font-700">Rule-Based Bot</div>
+                <div className="muted text-sm">Configure rules for entry and risk management.</div>
               </div>
-            </div>
+            </button>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
-                  Quantity
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={quantityInput}
-                  onChange={handleQuantityChange}
-onBlur={handleQuantityBlur}
-                  style={{ 
-                    width: '100%', 
-                    padding: '0.75rem', 
-                    border: '1px solid #d1d5db', 
-                    borderRadius: 6,
-                    fontSize: '16px'
-                  }}
-                />
+            <button
+              className="card card-pad-sm card-outline text-left pressable"
+              type="button"
+              onClick={() => navigate('/bots/create/strategy-based')}
+            >
+              <div className="stack-sm">
+                <div className="text-md font-700">Strategy-Based Bot</div>
+                <div className="muted text-sm">Deploy a catalog strategy with confidence controls.</div>
               </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
-                  Direction
-                </label>
-                <select
-                  value={botConfig.direction}
-                  onChange={(e) => setBotConfig(prev => ({ ...prev, direction: e.target.value }))}
-                  style={{ 
-                    width: '100%', 
-                    padding: '0.75rem', 
-                    border: '1px solid #d1d5db', 
-                    borderRadius: 6,
-                    fontSize: '16px'
-                  }}
-                >
-                  <option value="buy">Buy</option>
-                  <option value="sell">Sell</option>
-                </select>
-              </div>
-            </div>
-
-            {selectedType === 'strategy-based' && (
-              <div style={{ marginTop: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
-                  Min Confidence Threshold
-                </label>
-                <input
-                  type="number"
-                  min="0.1"
-                  max="1.0"
-                  step="0.1"
-                  value={minConfidenceInput}
-                  onChange={handleConfidenceChange}
-onBlur={handleConfidenceBlur}
-                  style={{ 
-                    width: '100%', 
-                    padding: '0.75rem', 
-                    border: '1px solid #d1d5db', 
-                    borderRadius: 6,
-                    fontSize: '16px'
-                  }}
-                />
-                <div style={{ fontSize: '13px', color: '#666', marginTop: '0.25rem' }}>
-                  Only execute trades when prediction confidence is above this threshold
-                </div>
-              </div>
-            )}
+            </button>
           </div>
         </section>
-      )}
 
-      {/* Create Button */}
-      {selectedTemplate && (
-        <section>
-          <button
-            className="primary pressable"
-            onClick={handleCreateBot}
-            disabled={!selectedTemplate || !botName || botConfig.tickers.length === 0 || creating}
-            style={{ 
-              padding: '1rem 2rem',
-              fontSize: '16px',
-              fontWeight: 600,
-              opacity: (!selectedTemplate || !botName || botConfig.tickers.length === 0 || creating) ? 0.5 : 1
-            }}
-          >
-            {creating ? 'Creating Bot...' : 'Create Bot'}
-          </button>
+        <section className="card card-pad-md">
+          <div className="panel-header">
+            <h2 className="panel-title">Start from Catalog</h2>
+            <button className="btn btn-xs btn-ghost" type="button" onClick={() => navigate('/templates')}>
+              Browse templates
+            </button>
+          </div>
+
+          <BotTemplateSelector onSelect={handleTemplateSelect} selectedTemplate={selectedTemplate} />
         </section>
-      )}
+
+        {selectedTemplate && (
+          <section className="card card-pad-md">
+            <div className="panel-header">
+              <h2 className="panel-title">Configuration</h2>
+              <span
+                className={
+                  selectedTemplate.type === 'RULE_BASED'
+                    ? 'badge badge-positive badge-xs'
+                    : 'badge badge-soft badge-xs'
+                }
+              >
+                {selectedTemplate.type === 'RULE_BASED' ? 'Rules' : 'Strategy'}
+              </span>
+            </div>
+
+            <div className="stack-lg">
+              <div className="field">
+                <label className="field-label">Bot Name</label>
+                <input
+                  type="text"
+                  className="field-input"
+                  value={botName}
+                  onChange={(e) => setBotName(e.target.value)}
+                  placeholder="My Trading Bot"
+                />
+              </div>
+
+              <div className="field">
+                <label className="field-label">Trading Tickers</label>
+                <TickerSelector
+                  selectedTickers={botConfig.tickers}
+                  onChange={(tickers) => setBotConfig((prev) => ({ ...prev, tickers }))}
+                  maxTickers={5}
+                />
+              </div>
+
+              <div className="l-grid-2">
+                <div className="field">
+                  <label className="field-label">Quantity</label>
+                  <input
+                    type="number"
+                    className="field-input"
+                    min="1"
+                    value={botConfig.quantity}
+                    onChange={(e) =>
+                      setBotConfig((prev) => ({
+                        ...prev,
+                        quantity: Math.max(1, parseInt(e.target.value, 10) || 1),
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="field-label">Direction</label>
+                  <select
+                    className="field-select"
+                    value={botConfig.direction}
+                    onChange={(e) => setBotConfig((prev) => ({ ...prev, direction: e.target.value }))}
+                  >
+                    <option value="buy">Buy</option>
+                    <option value="sell">Sell</option>
+                  </select>
+                </div>
+              </div>
+
+              {selectedTemplate.type === 'STRATEGY_BASED' && (
+                <div className="field">
+                  <label className="field-label">Min Confidence Threshold</label>
+                  <input
+                    type="number"
+                    className="field-input"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={botConfig.minConfidence}
+                    onChange={(e) =>
+                      setBotConfig((prev) => ({
+                        ...prev,
+                        minConfidence: Math.min(1, Math.max(0, parseFloat(e.target.value) || 0)),
+                      }))
+                    }
+                  />
+                  <div className="field-help">Only execute trades when prediction confidence clears this threshold.</div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {selectedTemplate && (
+          <div className="l-row">
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('/bots')}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-sm btn-primary"
+              type="button"
+              onClick={handleCreateBot}
+              disabled={!selectedTemplate || !botName || botConfig.tickers.length === 0}
+            >
+              Continue to Confirmation
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
+

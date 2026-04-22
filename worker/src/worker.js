@@ -112,25 +112,29 @@ async function handleMarketClose() {
 function startHeartbeat() {
   const tick = async () => {
     try {
+      const now = new Date()
+      const queueLagMs = await getQueueLagMs()
+      const connected = isConnected()
+      const health = { ...healthState, alpacaWs: connected ? 'up' : healthState.alpacaWs }
       await prisma.workerStatus.upsert({
         where:  { id: WORKER_ID },
         update: {
-          lastSeen: new Date(),
-          queueLagMs: await getQueueLagMs(),
-          lastRestOkAt: healthState.alpacaRest === 'up' ? new Date() : undefined,
-          lastWsOkAt: isConnected() ? new Date() : undefined,
+          lastSeen: now,
+          queueLagMs,
+          lastRestOkAt: healthState.alpacaRest === 'up' ? now : undefined,
+          lastWsOkAt: connected ? now : undefined,
           lastCalendarRefreshAt: getLastCalendarRefreshAt() ?? undefined,
-          health: { ...healthState, alpacaWs: isConnected() ? 'up' : healthState.alpacaWs }
+          health
         },
         create: {
           id: WORKER_ID,
-          lastSeen: new Date(),
-          startedAt: new Date(),
-          queueLagMs: await getQueueLagMs(),
-          lastRestOkAt: healthState.alpacaRest === 'up' ? new Date() : undefined,
-          lastWsOkAt: isConnected() ? new Date() : undefined,
+          lastSeen: now,
+          startedAt: now,
+          queueLagMs,
+          lastRestOkAt: healthState.alpacaRest === 'up' ? now : undefined,
+          lastWsOkAt: connected ? now : undefined,
           lastCalendarRefreshAt: getLastCalendarRefreshAt() ?? undefined,
-          health: { ...healthState, alpacaWs: isConnected() ? 'up' : healthState.alpacaWs }
+          health
         }
       })
     } catch (err) {

@@ -74,6 +74,7 @@ export default {
         direction:    data.side.toLowerCase(),  // BUY -> buy
         quantity:     data.quantity,
         price:        data.price,
+        scheduledFor: data.scheduledFor || null, // UTC timestamp for scheduled execution
         commission:   4.95,
         fees:         data.quantity * data.price * 0.001
       }

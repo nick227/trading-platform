@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import LazyLoad from '../components/LazyLoad.jsx'
 
 export default function Performance() {
   const [stats, setStats] = useState(null)
@@ -102,9 +103,25 @@ export default function Performance() {
       )}
       
       {/* Daily Performance */}
-      <section>
-        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-          <h2 style={{ margin: '0 0 1.5rem', fontSize: '20px', fontWeight: 600 }}>Daily Performance</h2>
+      <LazyLoad
+        fallback={
+          <div style={{ 
+            height: '300px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            background: 'white',
+            borderRadius: '16px',
+            marginBottom: '1rem'
+          }}>
+            <div style={{ color: '#666' }}>Loading daily performance...</div>
+          </div>
+        }
+        rootMargin="100px"
+      >
+        <section>
+          <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+            <h2 style={{ margin: '0 0 1.5rem', fontSize: '20px', fontWeight: 600 }}>Daily Performance</h2>
           
           {dailySnapshots.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
@@ -147,8 +164,9 @@ export default function Performance() {
               ))}
             </div>
           )}
-        </article>
-      </section>
+          </article>
+        </section>
+      </LazyLoad>
     </div>
   )
 }

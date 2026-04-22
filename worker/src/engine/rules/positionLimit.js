@@ -1,8 +1,11 @@
 // config: { maxQuantity: number }
 // positions: array from AlpacaClient.getPositions()
 export function evaluatePositionLimit(config, ticker, positions) {
-  const position = positions.find(p => p.symbol === ticker)
-  const currentQty = position ? Math.abs(parseFloat(position.qty)) : 0
+  const symbol = String(ticker).toUpperCase()
+  const position = positions.find(p =>
+    String(p?.symbol ?? p?.ticker ?? '').toUpperCase() === symbol
+  )
+  const currentQty = position ? Math.abs(parseFloat(position.qty ?? position.quantity ?? 0)) : 0
 
   if (currentQty >= config.maxQuantity) {
     return {

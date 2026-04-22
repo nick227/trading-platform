@@ -1,5 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+
+const statusBadge = (status) => {
+  if (status === 'completed') return 'badge badge-positive badge-xs'
+  if (status === 'failed') return 'badge badge-negative badge-xs'
+  return 'badge badge-soft badge-xs'
+}
+
+const actionAlert = (text) => {
+  if (!text) return ''
+  if (text.startsWith('Error')) return 'alert alert-error'
+  if (text.startsWith('No trade')) return 'alert alert-warn'
+  return 'alert alert-success'
+}
 
 export default function BotConsole() {
   const navigate = useNavigate()
@@ -8,7 +21,29 @@ export default function BotConsole() {
   const [lastAction, setLastAction] = useState(null)
   const [botRuns, setBotRuns] = useState([])
   const [performance, setPerformance] = useState(null)
-  
+
+  const refreshData = async () => {
+    try {
+      const [runsRes, perfRes, signalRes] = await Promise.all([
+        fetch('/api/bot/runs'),
+        fetch('/api/performance/stats'),
+        fetch('/api/bot/current-signal'),
+      ])
+      setBotRuns(await runsRes.json())
+      setPerformance(await perfRes.json())
+      const signalBody = await signalRes.json()
+      setCurrentSignal(signalBody.signal ?? null)
+    } catch (error) {
+      console.error('Failed to refresh bot data:', error)
+    }
+  }
+
+  useEffect(() => {
+    refreshData()
+    const interval = setInterval(refreshData, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
   const startBot = async () => {
     setIsRunning(true)
     try {
@@ -33,7 +68,7 @@ export default function BotConsole() {
         return
       }
       const { execution } = body
-      setLastAction(`Queued: ${execution.ticker} ${execution.direction} × ${execution.quantity}`)
+      setLastAction(`Queued: ${execution.ticker} ${execution.direction} x ${execution.quantity}`)
       refreshData()
     } catch (error) {
       setLastAction(`Error: ${error.message}`)
@@ -41,7 +76,7 @@ export default function BotConsole() {
       setIsRunning(false)
     }
   }
-  
+
   const stopBot = async () => {
     try {
       await fetch('/api/bot/stop', { method: 'POST' })
@@ -51,178 +86,159 @@ export default function BotConsole() {
       setLastAction(`Error: ${error.message}`)
     }
   }
-  
-  const refreshData = async () => {
-    try {
-      const [runsRes, perfRes, signalRes] = await Promise.all([
-        fetch('/api/bot/runs'),
-        fetch('/api/performance/stats'),
-        fetch('/api/bot/current-signal')
-      ])
-      setBotRuns(await runsRes.json())
-      setPerformance(await perfRes.json())
-      const signalBody = await signalRes.json()
-      setCurrentSignal(signalBody.signal ?? null)  // unwrap { signal: {...} }
-    } catch (error) {
-      console.error('Failed to refresh bot data:', error)
+
+  const summary = useMemo(() => {
+    if (!performance) return null
+
+    const winTone = performance.win_rate >= 50 ? 'text-positive' : 'text-negative'
+    const pnlTone = performance.total_pnl >= 0 ? 'text-positive' : 'text-negative'
+    const runBadge = isRunning ? 'badge badge-positive badge-xs' : 'badge badge-neutral badge-xs'
+
+    return {
+      winTone,
+      pnlTone,
+      runBadge,
     }
-  }
-  
-  useEffect(() => {
-    refreshData()
-    const interval = setInterval(refreshData, 10000)
-    return () => clearInterval(interval)
-  }, [])
-  
+  }, [performance, isRunning])
+
   return (
-    <div className="page container" style={{ maxWidth: 1200, margin: '0 auto', padding: '1rem' }}>
-      <header style={{ marginBottom: '2rem' }}>
-        <h1 style={{ margin: '0 0 0.5rem', fontSize: '28px', fontWeight: 700 }}>Bot Console</h1>
-        <p className="muted">Automated trading with Alpha Engine signals</p>
-      </header>
-      
-      {/* Performance Summary */}
-      {performance && (
-        <section style={{ marginBottom: '2rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
-            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div className="muted" style={{ fontSize: '12px', marginBottom: '0.5rem' }}>Total Trades</div>
-              <div style={{ fontSize: '24px', fontWeight: 700 }}>{performance.total_trades}</div>
-            </div>
-            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div className="muted" style={{ fontSize: '12px', marginBottom: '0.5rem' }}>Win Rate</div>
-              <div style={{ fontSize: '24px', fontWeight: 700, color: performance.win_rate >= 50 ? '#0a7a47' : '#c0392b' }}>
-                {performance.win_rate?.toFixed(1)}%
+    <div className="l-page">
+      <div className="container l-stack-lg">
+        <header className="stack-sm">
+          <button className="btn btn-xs btn-ghost" type="button" onClick={() => navigate('/bots')}>
+            ← Back to Bots
+          </button>
+          <h1 className="hero m-0">Bot Console</h1>
+          <p className="muted text-md m-0">Automated trading with Alpha Engine signals</p>
+        </header>
+
+        {summary && (
+          <section className="kpi-grid-4">
+            <article className="card card-pad-md">
+              <div className="kpi">
+                <div className="kpi-label">Total Trades</div>
+                <div className="kpi-value">{performance.total_trades}</div>
               </div>
-            </div>
-            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div className="muted" style={{ fontSize: '12px', marginBottom: '0.5rem' }}>Total P&L</div>
-              <div style={{ fontSize: '24px', fontWeight: 700, color: performance.total_pnl >= 0 ? '#0a7a47' : '#c0392b' }}>
-                ${performance.total_pnl?.toFixed(2)}
+            </article>
+
+            <article className="card card-pad-md">
+              <div className="kpi">
+                <div className="kpi-label">Win Rate</div>
+                <div className={`kpi-value ${summary.winTone}`}>{performance.win_rate?.toFixed(1)}%</div>
               </div>
-            </div>
-            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div className="muted" style={{ fontSize: '12px', marginBottom: '0.5rem' }}>Status</div>
-              <div style={{ fontSize: '24px', fontWeight: 700, color: isRunning ? '#0a7a47' : '#666' }}>
-                {isRunning ? 'Running' : 'Stopped'}
+            </article>
+
+            <article className="card card-pad-md">
+              <div className="kpi">
+                <div className="kpi-label">Total P&amp;L</div>
+                <div className={`kpi-value ${summary.pnlTone}`}>${performance.total_pnl?.toFixed(2)}</div>
               </div>
+            </article>
+
+            <article className="card card-pad-md">
+              <div className="kpi">
+                <div className="kpi-label">Status</div>
+                <div className="kpi-value">
+                  <span className={summary.runBadge}>{isRunning ? 'Running' : 'Stopped'}</span>
+                </div>
+              </div>
+            </article>
+          </section>
+        )}
+
+        <section className="card card-pad-md">
+          <div className="panel-header">
+            <h2 className="panel-title">Bot Controls</h2>
+          </div>
+
+          <div className="stack-lg">
+            <div className="l-grid-3">
+              <button className="btn btn-sm btn-primary" type="button" onClick={startBot} disabled={isRunning}>
+                {isRunning ? 'Starting…' : 'Start Bot'}
+              </button>
+              <button className="btn btn-sm btn-ghost" type="button" onClick={runOnce} disabled={isRunning}>
+                {isRunning ? 'Running…' : 'Run Once'}
+              </button>
+              <button className="btn btn-sm btn-ghost text-negative" type="button" onClick={stopBot}>
+                Stop Bot
+              </button>
             </div>
+
+            {currentSignal && (
+              <div className="subcard">
+                <div className="panel-header">
+                  <h3 className="panel-title">Current Signal</h3>
+                  <span className={currentSignal.direction === 'buy' ? 'badge badge-positive badge-xs' : 'badge badge-negative badge-xs'}>
+                    {currentSignal.direction}
+                  </span>
+                </div>
+
+                <div className="kpi-grid-4">
+                  <div className="kpi">
+                    <div className="kpi-label">Symbol</div>
+                    <div className="kpi-value">{currentSignal.symbol}</div>
+                  </div>
+                  <div className="kpi">
+                    <div className="kpi-label">Confidence</div>
+                    <div className="kpi-value">{currentSignal.confidence}%</div>
+                  </div>
+                  <div className="kpi">
+                    <div className="kpi-label">Score</div>
+                    <div className="kpi-value">{currentSignal.score?.toFixed(2)}</div>
+                  </div>
+                  <div className="kpi">
+                    <div className="kpi-label">Updated</div>
+                    <div className="kpi-value">{new Date().toLocaleTimeString()}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {lastAction && (
+              <div className={actionAlert(lastAction)}>
+                <div className="alert-title">Last Action</div>
+                <div className="text-sm">{lastAction}</div>
+              </div>
+            )}
           </div>
         </section>
-      )}
-      
-      {/* Bot Controls */}
-      <section style={{ marginBottom: '2rem' }}>
-        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-          <h2 style={{ margin: '0 0 1.5rem', fontSize: '20px', fontWeight: 600 }}>Bot Controls</h2>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-            <button 
-              onClick={startBot}
-              disabled={isRunning}
-              className="primary pressable"
-              style={{ padding: '1rem', fontWeight: 600 }}
-            >
-              {isRunning ? 'Starting...' : 'Start Bot'}
-            </button>
-            <button 
-              onClick={runOnce}
-              disabled={isRunning}
-              className="pressable"
-              style={{ padding: '1rem', fontWeight: 600, backgroundColor: '#17a2b8', color: 'white' }}
-            >
-              {isRunning ? 'Running...' : 'Run Once'}
-            </button>
-            <button 
-              onClick={stopBot}
-              className="ghost pressable"
-              style={{ padding: '1rem', fontWeight: 600, backgroundColor: '#dc3545', color: 'white' }}
-            >
-              Stop Bot
-            </button>
+
+        <section className="card card-pad-md">
+          <div className="panel-header">
+            <h2 className="panel-title">Recent Bot Runs</h2>
           </div>
-          
-          {currentSignal && (
-            <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px' }}>
-              <h4 style={{ margin: '0 0 0.5rem' }}>Current Signal</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', fontSize: '14px' }}>
-                <div>
-                  <div className="muted">Symbol</div>
-                  <div style={{ fontWeight: 600 }}>{currentSignal.symbol}</div>
-                </div>
-                <div>
-                  <div className="muted">Direction</div>
-                  <div style={{ fontWeight: 600, color: currentSignal.direction === 'buy' ? '#0a7a47' : '#c0392b' }}>
-                    {currentSignal.direction}
-                  </div>
-                </div>
-                <div>
-                  <div className="muted">Confidence</div>
-                  <div style={{ fontWeight: 600 }}>{currentSignal.confidence}%</div>
-                </div>
-                <div>
-                  <div className="muted">Score</div>
-                  <div style={{ fontWeight: 600 }}>{currentSignal.score?.toFixed(2)}</div>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {lastAction && (
-            <div style={{ background: '#e7f5ff', padding: '1rem', borderRadius: '8px', marginTop: '1rem' }}>
-              <h4 style={{ margin: '0 0 0.5rem' }}>Last Action</h4>
-              <p style={{ margin: 0 }}>{lastAction}</p>
-            </div>
-          )}
-        </article>
-      </section>
-      
-      {/* Bot Runs History */}
-      <section>
-        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-          <h2 style={{ margin: '0 0 1.5rem', fontSize: '20px', fontWeight: 600 }}>Recent Bot Runs</h2>
-          
+
           {botRuns.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-              <div style={{ fontSize: '48px', marginBottom: '1rem' }}>🤖</div>
-              <p>No bot runs yet. Start bot to begin automated trading.</p>
+            <div className="panel-empty">
+              <div className="text-xl mb-2">🤖</div>
+              <div className="text-sm">No bot runs yet. Start the bot to begin automated trading.</div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: '0.5rem' }}>
-              {botRuns.slice(0, 20).map(run => (
-                <div key={run.id} style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center',
-                  padding: '1rem',
-                  background: '#f8f9fa',
-                  borderRadius: '8px',
-                  border: '1px solid #e9ecef'
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>Run #{run.id}</div>
-                    <div className="muted" style={{ fontSize: '12px' }}>
-                      {new Date(run.startedAt).toLocaleString()}
+            <div className="stack-sm">
+              {botRuns.slice(0, 20).map((run) => (
+                <div key={run.id} className="subcard subcard-sm">
+                  <div className="l-row">
+                    <div className="stack-sm">
+                      <div className="hstack">
+                        <div className="text-sm font-600">Run #{run.id}</div>
+                        <span className={statusBadge(run.status)}>{run.status}</span>
+                      </div>
+                      <div className="text-xs muted">{new Date(run.startedAt).toLocaleString()}</div>
                     </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{
-                      fontWeight: 600,
-                      color: run.status === 'completed' ? '#0a7a47' :
-                             run.status === 'failed'    ? '#c0392b' : '#17a2b8'
-                    }}>
-                      {run.status}
-                    </div>
-                    <div className="muted" style={{ fontSize: '12px' }}>
-                      {run.executionCount} trades | P&L: ${Number(run.totalPnl ?? 0).toFixed(2)}
+                    <div className="text-right">
+                      <div className="text-sm font-600">
+                        {run.executionCount} trades · P&amp;L: ${Number(run.totalPnl ?? 0).toFixed(2)}
+                      </div>
+                      <div className="text-xs muted">Run details coming soon</div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </article>
-      </section>
+        </section>
+      </div>
     </div>
   )
 }
+

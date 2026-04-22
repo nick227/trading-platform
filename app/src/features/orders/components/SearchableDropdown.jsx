@@ -35,50 +35,36 @@ export default function SearchableDropdown({ stocks, selectedStock, onSelect, pl
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="dropdown">
       <input
         type="text"
         value={isOpen ? searchTerm : displayValue}
         onChange={e => { setSearchTerm(e.target.value); if (!isOpen) setIsOpen(true) }}
         onFocus={() => setIsOpen(true)}
         placeholder={placeholder}
-        style={{
-          width: '100%', padding: '0.75rem',
-          border: '1px solid #e9ecef', borderRadius: '8px',
-          fontSize: '14px', background: 'white',
-        }}
+        className="field-input"
       />
 
       {isOpen && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0,
-          background: 'white', border: '1px solid #e9ecef', borderRadius: '8px',
-          marginTop: '0.25rem', maxHeight: '200px', overflowY: 'auto',
-          zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-        }}>
+        <div className="menu">
           {filteredStocks.map(stock => (
-            <div
+            <button
+              type="button"
               key={stock.symbol}
               onClick={() => handleSelect(stock)}
-              style={{
-                padding: '0.75rem', cursor: 'pointer',
-                borderBottom: '1px solid #f0f0f0',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
-              onMouseLeave={e => e.currentTarget.style.background = 'white'}
+              className="menu-item"
             >
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '14px' }}>{stock.symbol}</div>
-                <div className="muted" style={{ fontSize: '12px' }}>{stock.name}</div>
+              <div className="stack-sm">
+                <div className="text-sm font-600">{stock.symbol}</div>
+                <div className="muted text-xs">{stock.name}</div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 600, fontSize: '14px' }}>${stock.price?.toFixed(2)}</div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: (stock.change ?? 0) >= 0 ? '#0a7a47' : '#c0392b' }}>
+              <div className="text-right">
+                <div className="text-sm font-600">${stock.price?.toFixed(2)}</div>
+                <div className={`text-xs font-600 ${(stock.change ?? 0) >= 0 ? 'text-positive' : 'text-negative'}`}>
                   {(stock.change ?? 0) >= 0 ? '+' : ''}{stock.change}%
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}

@@ -1,0 +1,89 @@
+.virtual-list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.virtual-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.virtual-list::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+
+.virtual-list::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+.virtual-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+.virtual-list-item {
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+  transition: background-color 0.15s ease;
+}
+
+.virtual-list-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.virtual-list-item:last-child {
+  border-bottom: none;
+}
+
+.virtual-list-spacer {
+  pointer-events: none;
+}
+
+/* Loading skeleton for virtual list */
+.virtual-list-skeleton {
+  height: 50px;
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.virtual-list-skeleton::before {
+  content: '';
+  width: 40px;
+  height: 40px;
+  background: var(--color-muted);
+  border-radius: var(--radius-md);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.virtual-list-skeleton::after {
+  content: '';
+  flex: 1;
+  height: 16px;
+  background: var(--color-muted);
+  border-radius: var(--radius-sm);
+  animation: pulse 1.5s ease-in-out infinite;
+  animation-delay: 0.2s;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.4; }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .virtual-list {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  
+  .virtual-list-item {
+    padding: var(--space-3);
+  }
+}

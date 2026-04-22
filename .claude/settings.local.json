@@ -13,7 +13,11 @@
       "Bash(node -e \"require\\('C:/wamp64/www/trading-platform/server/node_modules/@fastify/jwt/index.js'\\)\")",
       "Bash(node -e \"require\\('C:/wamp64/www/trading-platform/server/node_modules/bcryptjs/dist/bcrypt.js'\\)\")",
       "Bash(npx eslint *)",
-      "Bash(node_modules/.bin/eslint src/hooks/useReactOptimization.js src/hooks/useOptimizedData.js src/services/mutationService.js src/api/services/marketService.js)"
+      "Bash(node_modules/.bin/eslint src/hooks/useReactOptimization.js src/hooks/useOptimizedData.js src/services/mutationService.js src/api/services/marketService.js)",
+      "Bash(sed -n '244,248p' C:/wamp64/www/trading-platform/app/src/features/AlphaShowcase.jsx)",
+      "Bash(sed -n '328,332p' C:/wamp64/www/trading-platform/app/src/features/AlphaShowcase.jsx)",
+      "Bash(sed -i '214s/\\(stock, _i\\) =>/\\(stock, i\\) =>/' C:/wamp64/www/trading-platform/app/src/features/AlphaShowcase.jsx)",
+      "Bash(node_modules/.bin/eslint src *)"
     ]
   }
 }

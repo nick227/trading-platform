@@ -22,21 +22,14 @@ export async function evaluateRiskCaps(execution) {
   dayStart.setHours(0, 0, 0, 0)
 
   const [
-    dailyExecutionAggregate,
+    dailyRows,
     activeCount,
-    symbolExecutions,
     dailyFilledExecutions
   ] = await Promise.all([
-    prisma.execution.aggregate({
-      where: {
-        userId: execution.userId,
-        createdAt: { gte: dayStart }
-      },
-      _count: true,
-      _sum: {
-        quantity: true,
-        price: true
-      }
+    // Fetch raw daily rows so we can compute both count and notional in one query.
+    prisma.execution.findMany({
+      where: { userId: execution.userId, createdAt: { gte: dayStart } },
+      select: { quantity: true, price: true }
     }),
     prisma.execution.count({
       where: {
@@ -47,24 +40,11 @@ export async function evaluateRiskCaps(execution) {
     prisma.execution.findMany({
       where: {
         userId: execution.userId,
-        ticker: execution.ticker,
-        status: 'filled'
-      },
-      select: {
-        direction: true,
-        filledPrice: true,
-        filledQuantity: true,
-        price: true,
-        quantity: true
-      }
-    }),
-    prisma.execution.findMany({
-      where: {
-        userId: execution.userId,
         status: 'filled',
         filledAt: { gte: dayStart }
       },
       select: {
+        ticker: true,
         direction: true,
         filledPrice: true,
         filledQuantity: true,
@@ -74,8 +54,12 @@ export async function evaluateRiskCaps(execution) {
     })
   ])
 
+  // symbolExecutions is a strict subset of dailyFilledExecutions — filter in memory
+  // rather than making a separate DB round-trip.
+  const symbolExecutions = dailyFilledExecutions.filter(r => r.ticker === execution.ticker)
+
   const pendingNotional = execution.quantity * execution.price
-  const dailyNotional = await getDailyNotional(execution.userId, dayStart)
+  const dailyNotional = dailyRows.reduce((sum, r) => sum + (r.quantity ?? 0) * (r.price ?? 0), 0)
   if (dailyNotional + pendingNotional > caps.maxDailyNotional) {
     return block('max_daily_notional', {
       cap: caps.maxDailyNotional,
@@ -84,10 +68,10 @@ export async function evaluateRiskCaps(execution) {
     })
   }
 
-  if ((dailyExecutionAggregate._count ?? 0) >= caps.maxDailyExecutions) {
+  if (dailyRows.length >= caps.maxDailyExecutions) {
     return block('max_daily_executions', {
       cap: caps.maxDailyExecutions,
-      current: dailyExecutionAggregate._count ?? 0
+      current: dailyRows.length
     })
   }
 
@@ -111,35 +95,23 @@ export async function evaluateRiskCaps(execution) {
     })
   }
 
-  const dailyPnl = dailyFilledExecutions.reduce((sum, row) => {
+  // Net cash flow proxy: sell proceeds minus buy cost. Negative means more cash
+  // spent buying than received from selling today. This is not realized P&L (no
+  // cost-basis matching), but is a conservative risk signal: if it reaches
+  // -maxDailyLoss the user has deployed at least that much capital net.
+  const dailyNetCashFlow = dailyFilledExecutions.reduce((sum, row) => {
     const quantity = row.filledQuantity ?? row.quantity ?? 0
     const fillPrice = row.filledPrice ?? row.price ?? 0
-    const signedNotional = quantity * fillPrice * (row.direction === 'sell' ? 1 : -1)
-    return sum + signedNotional
+    return sum + quantity * fillPrice * (row.direction === 'sell' ? 1 : -1)
   }, 0)
-  if (dailyPnl <= (-1 * caps.maxDailyLoss)) {
+  if (dailyNetCashFlow <= (-1 * caps.maxDailyLoss)) {
     return block('max_daily_loss', {
       cap: caps.maxDailyLoss,
-      current: Math.abs(dailyPnl)
+      current: Math.abs(dailyNetCashFlow)
     })
   }
 
   return { allowed: true }
-}
-
-async function getDailyNotional(userId, dayStart) {
-  const rows = await prisma.execution.findMany({
-    where: {
-      userId,
-      createdAt: { gte: dayStart }
-    },
-    select: {
-      quantity: true,
-      price: true
-    }
-  })
-
-  return rows.reduce((sum, row) => sum + ((row.quantity ?? 0) * (row.price ?? 0)), 0)
 }
 
 function block(reason, metrics) {

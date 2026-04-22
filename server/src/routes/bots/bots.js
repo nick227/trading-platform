@@ -1,9 +1,10 @@
 import botsService from '../../services/botsService.js'
+import prisma from '../../loaders/prisma.js'
 
 export default async function botsRoutes(app, opts) {
   // GET /api/bots
   app.get('/', async (request, reply) => {
-    const result = await botsService.getBots(request.query)
+    const result = await botsService.getBots({ ...request.query, userId: request.user.id })
     return reply.send(result)
   })
 
@@ -11,7 +12,7 @@ export default async function botsRoutes(app, opts) {
   app.get('/:id', async (request, reply) => {
     const { id } = request.params
     const bot = await botsService.getBot(id)
-    if (!bot) {
+    if (!bot || bot.userId !== request.user.id) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
     }
     return { data: bot }
@@ -36,7 +37,12 @@ export default async function botsRoutes(app, opts) {
       }
     }
   }, async (request, reply) => {
-    const bot = await botsService.createBot(request.body)
+    const portfolio = await prisma.portfolio.findUnique({ where: { id: request.body.portfolioId } })
+    if (!portfolio || portfolio.userId !== request.user.id) {
+      return reply.code(400).send({ error: { code: 'INVALID_PORTFOLIO', message: 'Invalid portfolioId' } })
+    }
+
+    const bot = await botsService.createBot({ ...request.body, userId: request.user.id })
     return reply.code(201).send({ data: bot })
   })
 
@@ -54,6 +60,11 @@ export default async function botsRoutes(app, opts) {
   }, async (request, reply) => {
     const { id } = request.params
     try {
+      const existing = await botsService.getBot(id)
+      if (!existing || existing.userId !== request.user.id) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
+      }
+
       const bot = await botsService.updateBot(id, request.body)
       return { data: bot }
     } catch (error) {
@@ -67,6 +78,10 @@ export default async function botsRoutes(app, opts) {
   app.delete('/:id', async (request, reply) => {
     const { id } = request.params
     try {
+      const existing = await botsService.getBot(id)
+      if (!existing || existing.userId !== request.user.id) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
+      }
       await botsService.deleteBot(id)
       return reply.code(204).send()
     } catch (error) {

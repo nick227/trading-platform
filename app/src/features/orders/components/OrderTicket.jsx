@@ -2,11 +2,7 @@ import { useState, useMemo } from 'react'
 import { calculateOrderPreview } from '../../../utils/orderPreview.js'
 import DateTimePicker from '../../../components/DateTimePicker.jsx'
 import { usePendingOrders } from '../../../hooks/usePendingOrders.js'
-
-const INPUT_STYLE = {
-  width: '100%', padding: '0.75rem',
-  border: '1px solid #e9ecef', borderRadius: '8px', fontSize: '14px',
-}
+import { isMarketClosed } from '../../../utils/market.js'
 
 /**
  * OrderTicket — self-contained order entry form.
@@ -19,83 +15,84 @@ const INPUT_STYLE = {
  *   bootstrapData  — optional bootstrap payload (currently unused; available for extensions)
  */
 export default function OrderTicket({ selectedStock, bankBalance, onSubmit, bootstrapData }) {
-  const [orderType,     setOrderType]     = useState('BUY')
-  const [fillType,      setFillType]      = useState('MARKET')
-  const [orderAmount,   setOrderAmount]   = useState('')
+  const [orderType, setOrderType] = useState('BUY')
+  const [fillType, setFillType] = useState('MARKET')
+  const [orderAmount, setOrderAmount] = useState('')
   const [orderQuantity, setOrderQuantity] = useState('')
-  const [limitPrice,    setLimitPrice]    = useState('')
-  const [stopPrice,     setStopPrice]     = useState('')
+  const [limitPrice, setLimitPrice] = useState('')
+  const [stopPrice, setStopPrice] = useState('')
   const [scheduleForLater, setScheduleForLater] = useState(false)
   const [scheduledDateTime, setScheduledDateTime] = useState(null)
 
-  // Get pending orders for balance validation
   const { pendingOrders } = usePendingOrders({ enabled: true, pollIntervalMs: 10000 })
 
   const quantityNum = Number(orderQuantity)
   const hasMeaningfulInput = Number.isFinite(quantityNum) && quantityNum > 0
 
   const currentShares = bootstrapData?.userOwnership?.currentShares ?? 0
-  
-  const preview = useMemo(() => calculateOrderPreview({
-    orderType,
-    quantity:    orderQuantity,
-    amount:      orderAmount,
-    price:       selectedStock?.price ?? 0,
-    bankBalance: bankBalance ?? 0,
-    currentShares,
-    pendingOrders,
-  }), [orderType, orderQuantity, orderAmount, selectedStock?.price, bankBalance, currentShares, pendingOrders])
+
+  const preview = useMemo(
+    () =>
+      calculateOrderPreview({
+        orderType,
+        quantity: orderQuantity,
+        amount: orderAmount,
+        price: selectedStock?.price ?? 0,
+        bankBalance: bankBalance ?? 0,
+        currentShares,
+        pendingOrders,
+      }),
+    [orderType, orderQuantity, orderAmount, selectedStock?.price, bankBalance, currentShares, pendingOrders]
+  )
 
   const handleSubmit = () => {
     if (!selectedStock || !preview) return
-    if (scheduleForLater && !scheduledDateTime) return // Require datetime if scheduling
-    
+    if (scheduleForLater && !scheduledDateTime) return
+
     onSubmit({
-      id:        Date.now(),
-      type:      orderType,
-      asset:     selectedStock.symbol,
+      id: Date.now(),
+      type: orderType,
+      asset: selectedStock.symbol,
       assetName: selectedStock.name,
-      quantity:  preview.quantity,
-      amount:    preview.totalValue,
-      price:     selectedStock.price,
+      quantity: preview.quantity,
+      amount: preview.totalValue,
+      price: selectedStock.price,
       fillType,
       limitPrice: fillType === 'LIMIT' ? parseFloat(limitPrice) || null : null,
-      stopPrice:  fillType === 'STOP'  ? parseFloat(stopPrice)  || null : null,
-      timestamp:  new Date().toISOString(),
+      stopPrice: fillType === 'STOP' ? parseFloat(stopPrice) || null : null,
+      timestamp: new Date().toISOString(),
       scheduledFor: scheduleForLater ? scheduledDateTime : null,
     })
   }
 
+  const marketIsClosed = isMarketClosed()
   const canSubmit = Boolean(
-    preview?.canAfford && 
-    hasMeaningfulInput && 
-    (!scheduleForLater || scheduledDateTime)
+    preview?.canAfford &&
+      hasMeaningfulInput &&
+      (!scheduleForLater || scheduledDateTime) &&
+      !marketIsClosed
   )
   const showInsufficientWarning = Boolean(hasMeaningfulInput && preview?.canAfford === false)
 
   return (
-    <article style={{
-      background: 'white', borderRadius: '8px', padding: '1rem',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-    }}>
-      <h3 style={{ margin: '0 0 1rem', fontSize: '16px', fontWeight: 600 }}>Place Order</h3>
+    <article className="card card-pad-sm">
+      <div className="panel-header">
+        <h3 className="panel-title">Place Order</h3>
+      </div>
 
       {!selectedStock ? (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#666', fontSize: '13px' }}>
-          Select a stock to place an order
-        </div>
+        <div className="panel-empty">Select a stock to place an order</div>
       ) : (
-        <>
-          {/* Buy / Sell toggle */}
-          <div style={{ marginBottom: '1rem' }}>
-            <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Order Type</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-              {['BUY', 'SELL'].map(side => (
+        <div className="stack-md">
+          <div className="stack-sm">
+            <div className="text-xs font-600 muted">Order Type</div>
+            <div className="l-grid-2">
+              {['BUY', 'SELL'].map((side) => (
                 <button
                   key={side}
-                  className={`pressable ${orderType === side ? 'primary' : 'ghost'}`}
+                  className={`btn btn-sm btn-block ${orderType === side ? 'btn-primary' : 'btn-ghost'}`}
                   onClick={() => setOrderType(side)}
-                  style={{ padding: '0.75rem', fontWeight: 600 }}
+                  type="button"
                 >
                   {side === 'BUY' ? 'Buy' : 'Sell'}
                 </button>
@@ -103,16 +100,15 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
             </div>
           </div>
 
-          {/* Fill type */}
-          <div style={{ marginBottom: '1rem' }}>
-            <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Fill Type</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
-              {['MARKET', 'LIMIT', 'STOP'].map(type => (
+          <div className="stack-sm">
+            <div className="text-xs font-600 muted">Fill Type</div>
+            <div className="l-grid-3fixed">
+              {['MARKET', 'LIMIT', 'STOP'].map((type) => (
                 <button
                   key={type}
-                  className={`pressable ${fillType === type ? 'primary' : 'ghost'}`}
+                  className={`btn btn-xs btn-block ${fillType === type ? 'btn-primary' : 'btn-ghost'}`}
                   onClick={() => setFillType(type)}
-                  style={{ padding: '0.5rem', fontSize: '12px', fontWeight: 600 }}
+                  type="button"
                 >
                   {type}
                 </button>
@@ -120,49 +116,55 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
             </div>
           </div>
 
-          {/* Limit price input */}
           {fillType === 'LIMIT' && (
-            <div style={{ marginBottom: '1rem' }}>
-              <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Limit Price</div>
+            <div className="field">
+              <label className="field-label" htmlFor="limit-price">
+                Limit Price
+              </label>
               <input
+                id="limit-price"
+                className="field-input"
                 type="number"
                 value={limitPrice}
-                onChange={e => setLimitPrice(e.target.value)}
+                onChange={(e) => setLimitPrice(e.target.value)}
                 placeholder={`$${selectedStock.price?.toFixed(2) ?? '0.00'}`}
-                style={INPUT_STYLE}
               />
             </div>
           )}
 
-          {/* Stop price input */}
           {fillType === 'STOP' && (
-            <div style={{ marginBottom: '1rem' }}>
-              <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Stop Price</div>
+            <div className="field">
+              <label className="field-label" htmlFor="stop-price">
+                Stop Price
+              </label>
               <input
+                id="stop-price"
+                className="field-input"
                 type="number"
                 value={stopPrice}
-                onChange={e => setStopPrice(e.target.value)}
+                onChange={(e) => setStopPrice(e.target.value)}
                 placeholder={`$${selectedStock.price?.toFixed(2) ?? '0.00'}`}
-                style={INPUT_STYLE}
               />
             </div>
           )}
 
-          {/* Quantity */}
-          <div style={{ marginBottom: '1rem' }}>
-            <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>
+          <div className="stack-sm">
+            <div className="text-xs font-600 muted">
               {orderType === 'BUY' ? 'Number of Shares to Buy' : 'Number of Shares to Sell'}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+            <div className="l-grid-2">
               <input
+                className="field-input"
                 type="number"
                 value={orderQuantity}
-                onChange={e => { setOrderQuantity(e.target.value); setOrderAmount('') }}
+                onChange={(e) => {
+                  setOrderQuantity(e.target.value)
+                  setOrderAmount('')
+                }}
                 placeholder="0 shares"
                 min={0}
-                style={INPUT_STYLE}
               />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: '#7a7a7a' }}>
+              <div className="subcard subcard-sm text-center text-xs muted">
                 {orderType === 'BUY'
                   ? `Max: ${preview?.maxQuantity ?? '—'} shares`
                   : `Available: ${preview?.maxQuantity ?? 0} shares`}
@@ -170,86 +172,79 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
             </div>
           </div>
 
-          {/* Scheduling */}
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+          <div className="stack-sm">
+            <div className="hstack">
               <input
                 type="checkbox"
                 id="schedule-later"
                 checked={scheduleForLater}
-                onChange={e => setScheduleForLater(e.target.checked)}
-                style={{ margin: 0 }}
+                onChange={(e) => setScheduleForLater(e.target.checked)}
               />
-              <label htmlFor="schedule-later" className="eyebrow" style={{ margin: 0, cursor: 'pointer' }}>
+              <label className="text-xs font-600 muted" htmlFor="schedule-later">
                 Schedule for later
               </label>
             </div>
             {scheduleForLater && (
-              <div>
-                <div className="eyebrow" style={{ marginBottom: '0.5rem', fontSize: '12px' }}>
-                  Execution Time (ET)
-                </div>
+              <div className="stack-sm">
+                <div className="text-xs muted">Execution Time (ET)</div>
                 <DateTimePicker
                   value={scheduledDateTime}
                   onChange={setScheduledDateTime}
                   minDate={new Date()}
                   disabled={!scheduleForLater}
                 />
-                <div style={{ fontSize: '11px', color: '#666', marginTop: '0.25rem' }}>
-                  Orders will execute during market hours (9:30 AM - 4:00 PM ET)
-                </div>
+                <div className="text-xs muted">Orders execute during market hours (9:30 AM – 4:00 PM ET)</div>
               </div>
             )}
           </div>
 
-          {/* Order summary */}
-          <div style={{ background: '#f8f9fa', borderRadius: '8px', padding: '0.75rem', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '13px' }}>
-              <span className="muted">Est. {orderType === 'BUY' ? 'Cost' : 'Proceeds'}:</span>
-              <span style={{ fontWeight: 600 }}>${(preview?.totalValue ?? 0).toFixed(2)}</span>
-            </div>
-            
-            {/* Show pending order commitments for BUY orders */}
-            {orderType === 'BUY' && preview?.pendingBuyValue > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '0.25rem' }}>
-                <span className="muted">Pending Orders:</span>
-                <span style={{ fontWeight: 600, color: '#f39c12' }}>
-                  -${preview.pendingBuyValue.toFixed(2)}
+          <div className="subcard">
+            <div className="stack-sm">
+              <div className="l-row text-sm">
+                <span className="muted">Est. {orderType === 'BUY' ? 'Cost' : 'Proceeds'}:</span>
+                <span className="font-600">${(preview?.totalValue ?? 0).toFixed(2)}</span>
+              </div>
+
+              {orderType === 'BUY' && preview?.pendingBuyValue > 0 && (
+                <div className="l-row text-xs">
+                  <span className="muted">Pending Orders:</span>
+                  <span className="text-warning font-600">-${preview.pendingBuyValue.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div className="l-row text-sm">
+                <span className="muted">
+                  {orderType === 'BUY' && preview?.pendingBuyValue > 0 ? 'Effective Balance After:' : 'Balance After:'}
+                </span>
+                <span className={`${preview?.canAfford !== false ? 'text-positive' : 'text-negative'} font-600`}>
+                  ${(preview?.afterBalance ?? bankBalance).toFixed(2)}
                 </span>
               </div>
-            )}
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-              <span className="muted">
-                {orderType === 'BUY' && preview?.pendingBuyValue > 0 ? 'Effective Balance After:' : 'Balance After:'}
-              </span>
-              <span style={{ fontWeight: 600, color: preview?.canAfford !== false ? '#0a7a47' : '#c0392b' }}>
-                ${(preview?.afterBalance ?? bankBalance).toFixed(2)}
-              </span>
             </div>
           </div>
 
-          {/* Insufficient funds warning */}
           {showInsufficientWarning && (
-            <div style={{
-              background: '#fff5f5', border: '1px solid #fed7d7', borderRadius: '8px',
-              padding: '0.75rem', marginBottom: '1rem', color: '#c0392b', fontSize: '13px',
-            }}>
+            <div className="alert alert-error">
               {orderType === 'BUY' ? 'Insufficient funds for this order' : 'Insufficient shares for this sale'}
             </div>
           )}
 
-          {/* Actions */}
-          <button
-            className="primary pressable"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            style={{ width: '100%', padding: '0.875rem', fontWeight: 600, opacity: canSubmit ? 1 : 0.5 }}
-          >
+          {marketIsClosed && (
+            <div className="alert alert-warn">
+              <div className="alert-title">Market currently closed</div>
+              <div className="text-sm">
+                Immediate orders are only available during market hours (9:30 AM – 4:00 PM ET). Use the “Trading
+                Options” panel below to schedule this order for later.
+              </div>
+            </div>
+          )}
+
+          <button className="btn btn-sm btn-primary btn-block" onClick={handleSubmit} disabled={!canSubmit} type="button">
             Review {orderType === 'BUY' ? 'Buy' : 'Sell'} Order
           </button>
-        </>
+        </div>
       )}
     </article>
   )
 }
+

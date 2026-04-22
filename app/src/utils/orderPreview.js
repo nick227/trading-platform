@@ -45,7 +45,7 @@ export function calculateOrderPreview({ orderType, quantity: rawQty, amount: raw
     quantity:     resolvedQty,
     totalValue:   resolvedValue,
     afterBalance: effectiveBalance - resolvedValue,
-    canAfford:    resolvedValue > 0 && resolvedValue <= effectiveBalance,
+    canAfford:    resolvedValue >= 0 && resolvedValue <= effectiveBalance,
     maxQuantity,
     pendingBuyValue,
     effectiveBalance,

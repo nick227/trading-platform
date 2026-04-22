@@ -1,22 +1,37 @@
 // Reusable stat card: icon bubble + label + big value + subtitle
-export default function StatCard({ iconBg, icon, label, value, subtitle }) {
+export default function StatCard({
+  icon,
+  label,
+  value,
+  subtitle,
+  iconTone = 'soft',
+  valueTone,
+  className = '',
+}) {
+  const iconToneClass =
+    iconTone === 'positive'
+      ? 'icon-bubble-positive'
+      : iconTone === 'accent'
+        ? 'icon-bubble-accent'
+        : 'icon-bubble-soft'
+
+  const valueToneClass =
+    valueTone === 'positive'
+      ? 'text-positive'
+      : valueTone === 'negative'
+        ? 'text-negative'
+        : ''
+
   return (
-    <article className="card">
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
-        <div style={{
-          width: '40px', height: '40px', borderRadius: '50%',
-          background: iconBg,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          marginRight: '1rem', flexShrink: 0
-        }}>
-          <span style={{ fontSize: '20px' }}>{icon}</span>
-        </div>
-        <div>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>{label}</h3>
-          <div style={{ fontSize: '24px', fontWeight: 700 }}>{value}</div>
-        </div>
+    <article className={`card stat-card ${className}`.trim()}>
+      <div className={`icon-bubble ${iconToneClass}`}>
+        <span className="stat-card-icon">{icon}</span>
       </div>
-      <div className="muted" style={{ fontSize: '12px' }}>{subtitle}</div>
+      <div>
+        <h3 className="stat-card-title">{label}</h3>
+        <div className={`stat-card-value ${valueToneClass}`.trim()}>{value}</div>
+        <div className="stat-card-subtitle">{subtitle}</div>
+      </div>
     </article>
   )
 }

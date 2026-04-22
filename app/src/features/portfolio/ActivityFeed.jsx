@@ -1,12 +1,12 @@
 export default function ActivityFeed({ activities }) {
   if (activities.length === 0) {
-    return <div className="muted" style={{ textAlign: 'center', padding: '2rem' }}>No recent activity.</div>
+    return <div className="muted text-center p-6">No recent activity.</div>
   }
 
   return (
-    <div style={{ display: 'grid', gap: '1rem' }}>
+    <div className="data-rows">
       {activities.map((activity, index) => (
-        <ActivityItem key={index} activity={activity} />
+        <ActivityItem key={activity?.id ?? index} activity={activity} />
       ))}
     </div>
   )
@@ -16,59 +16,46 @@ function ActivityItem({ activity }) {
   const isBuy = activity.type === 'buy'
   const isFailed = activity.type === 'failed'
   const isCancelled = activity.type === 'cancelled'
-  
+
+  const toneClass = isFailed ? 'text-negative' : isCancelled ? 'text-accent' : ''
+  const valueToneClass = isFailed ? 'text-negative' : isCancelled ? 'text-accent' : isBuy ? 'text-positive' : ''
+  const cardToneClass = isFailed ? 'card-tint-negative' : isCancelled ? 'card-tint-accent' : ''
+  const bubbleToneClass = isFailed
+    ? 'icon-bubble-negative'
+    : isCancelled
+      ? 'icon-bubble-accent'
+      : isBuy
+        ? 'icon-bubble-positive'
+        : 'icon-bubble-soft'
+
+  const badge = isFailed ? '!' : isCancelled ? '—' : (isBuy ? 'B' : 'S')
+
   return (
-    <div style={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      padding: '1rem', 
-      background: isFailed ? '#fff5f5' : isCancelled ? '#f0f6ff' : '#f8f9fa', 
-      borderRadius: '8px',
-      border: isFailed ? '1px solid #fed7d7' : isCancelled ? '1px solid #bee3f8' : 'none'
-    }}>
-      <div style={{
-        width: '32px', height: '32px', borderRadius: '50%',
-        background: isFailed ? '#fee2e2' : isCancelled ? '#e6f3ff' : isBuy ? '#e8f5e8' : '#ffeaea',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginRight: '1rem', flexShrink: 0
-      }}>
-        <span style={{ 
-          fontSize: '14px', 
-          fontWeight: 600, 
-          color: isFailed ? '#c0392b' : isCancelled ? '#2563eb' : 'inherit'
-        }}>
-          {isFailed ? '!' : isCancelled ? 'â\u20AC" ' : (isBuy ? 'B' : 'S')}
-        </span>
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ 
-          fontWeight: 600, 
-          fontSize: '14px',
-          color: isFailed ? '#c0392b' : isCancelled ? '#2563eb' : 'inherit'
-        }}>
-          {activity.event}
+    <div className={`subcard ${cardToneClass}`}>
+      <div className="l-row">
+        <div className="hstack flex-1">
+          <div className={`icon-bubble ${bubbleToneClass}`}>
+            <span className={`text-sm font-700 ${toneClass}`}>{badge}</span>
+          </div>
+
+          <div className="stack-sm flex-1">
+            <div className={`text-sm font-600 ${toneClass}`}>{activity.event}</div>
+            <div className="muted text-xs">
+              {activity.time}
+              {(isFailed || isCancelled) && activity.quantity && activity.price && (
+                <span>{` • ${activity.quantity} @ $${activity.price.toFixed(2)}`}</span>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="muted" style={{ fontSize: '12px' }}>
-          {activity.time}
-          {(isFailed || isCancelled) && activity.quantity && activity.price && (
-            <span> â\u20AC¢ {activity.quantity} @ ${activity.price.toFixed(2)}</span>
+
+        <div className={`text-right font-700 ${valueToneClass}`}>
+          {(isFailed || isCancelled) ? (
+            <div className="text-xs font-600">{activity.value}</div>
+          ) : (
+            activity.value
           )}
         </div>
-      </div>
-      <div style={{ 
-        fontWeight: 700, 
-        fontSize: '16px', 
-        color: isFailed ? '#c0392b' : isCancelled ? '#2563eb' : (isBuy ? '#0a7a47' : '#c0392b'),
-        textAlign: 'right',
-        maxWidth: '200px'
-      }}>
-        {(isFailed || isCancelled) ? (
-          <div style={{ fontSize: '12px', lineHeight: '1.3' }}>
-            {activity.value}
-          </div>
-        ) : (
-          activity.value
-        )}
       </div>
     </div>
   )

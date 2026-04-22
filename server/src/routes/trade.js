@@ -3,6 +3,7 @@ import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { authenticate } from '../middleware/authenticate.js'
 import brokerService from '../services/brokerService.js'
 import executionsService from '../services/executionsService.js'
+import { fetchAlpacaMarketClock, resolveAlpacaCredentials } from '../services/alpacaClockService.js'
 
 async function getOrCreateDefaultPortfolioId(userId) {
   const existing = await prisma.portfolio.findFirst({
@@ -57,6 +58,20 @@ export default async function tradeRoutes(app, opts) {
         return reply.code(400).send({ error: 'No broker account configured' })
       }
 
+      let creds
+      try {
+        creds = await resolveAlpacaCredentials(userId)
+      } catch (err) {
+        if (err?.code === 'LIVE_TRADING_DISABLED') return reply.code(403).send({ error: err.message })
+        throw err
+      }
+      if (!creds) return reply.code(503).send({ error: 'Alpaca credentials not configured' })
+
+      const clock = await fetchAlpacaMarketClock(creds)
+      if (!clock.isOpen) {
+        return reply.code(409).send({ error: 'Market is closed', code: 'MARKET_CLOSED', clock })
+      }
+
       const portfolioId = await getOrCreateDefaultPortfolioId(userId)
 
       const normalizedDirection = direction.toLowerCase() === 'buy' ? 'buy' : 'sell'
@@ -86,12 +101,11 @@ export default async function tradeRoutes(app, opts) {
           direction: execution.direction.toUpperCase(),
           quantity: execution.quantity,
           price: execution.price,
-          status: execution.status,      // queued
+          status: execution.status, // queued
           alpacaOrderId: execution.brokerOrderId ?? null,
           submittedAt: execution.submittedAt ?? null
         }
       })
-
     } catch (error) {
       console.error('Trade execution error:', error)
       return reply.code(500).send({ error: error.message })
@@ -134,7 +148,6 @@ export default async function tradeRoutes(app, opts) {
         },
         alpacaStatus: null
       })
-
     } catch (error) {
       console.error('Get execution status error:', error)
       return reply.code(500).send({ error: error.message })
@@ -196,10 +209,10 @@ export default async function tradeRoutes(app, opts) {
         status: 'cancel_requested',
         message: 'Cancel requested. Pending broker confirmation.'
       })
-
     } catch (error) {
       console.error('Cancel order error:', error)
       return reply.code(500).send({ error: error.message })
     }
   })
 }
+

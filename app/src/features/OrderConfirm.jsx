@@ -253,11 +253,19 @@ export default function OrderConfirm() {
     }
 
     try {
-      // Add queued entry
+      // Only execute immediately if market is open and order is not scheduled
+      if (order.scheduledFor) {
+        setExecutionError('This order is scheduled for later execution. Use the scheduling controls on the Orders page to manage scheduled orders.')
+        setIsExecuting(false)
+        setSubmitAttempted(false)
+        return
+      }
+      
+      // Add executing entry (not queued)
       setAuditTimeline(prev => [...prev, {
         timestamp: new Date().toISOString(),
-        status: STATUS.QUEUED,
-        label: 'Queued'
+        status: STATUS.PROCESSING,
+        label: 'Executing Order'
       }])
       
       const execution = await executionsService.create({
@@ -327,6 +335,7 @@ export default function OrderConfirm() {
     executionStatus === STATUS.PARTIALLY_FILLED ? 'Partially Filled...' :
     executionStatus === STATUS.FILLED     ? 'Order Filled'      :
     isExecuting                           ? 'Submitting...'     :
+    order?.scheduledFor                  ? 'Order Scheduled' :
     `Confirm ${order?.type ?? ''} Order`
 
   const isTerminal = !!(executionStatus
@@ -335,7 +344,7 @@ export default function OrderConfirm() {
   const canCancel = !!(executionStatus
     && [STATUS.QUEUED, STATUS.PROCESSING].includes(executionStatus))
 
-  const submitDisabled = priceLoading || isExecuting || executionStatus === STATUS.FILLED || !orderDetails || submitAttempted
+  const submitDisabled = priceLoading || isExecuting || executionStatus === STATUS.FILLED || !orderDetails || submitAttempted || order?.scheduledFor
 
   if (!order) {
     return (
@@ -367,19 +376,7 @@ export default function OrderConfirm() {
           <div style={{ fontSize: '14px', marginBottom: '1rem' }}>
             Orders placed now will be queued and executed when the market opens at 9:30 AM ET.
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button className="primary pressable" onClick={handleExecuteOrder} disabled={submitDisabled}
-              style={{ opacity: submitDisabled ? 0.5 : 1 }}>
-              Queue for Market Open
-            </button>
-          <button className="ghost pressable" onClick={handleCreateBot}
-              style={{ opacity: submitDisabled ? 0.5 : 1 }}>
-            Create Bot Instead
-          </button>
-
-
-          </div>
-        </article>
+                  </article>
       )}
 
       {/* Price movement alert */}
@@ -443,6 +440,37 @@ export default function OrderConfirm() {
           </div>
         </div>
       </article>
+
+      {/* Scheduling information */}
+      {order.scheduledFor && (
+        <article style={{ background: '#fff3cd', border: '1px solid #f39c12', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
+          <h3 style={{ margin: '0 0 1rem', fontSize: '18px', fontWeight: 600, color: '#856404' }}>Scheduled Order</h3>
+          <div style={{ display: 'grid', gap: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="muted" style={{ color: '#856404' }}>Your Local Time:</span>
+              <span style={{ fontWeight: 600, color: '#856404' }}>
+                {order.scheduledForLocal ? new Date(order.scheduledForLocal).toLocaleString() : new Date(order.scheduledFor).toLocaleString()}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="muted" style={{ color: '#856404' }}>UTC Time:</span>
+              <span style={{ fontWeight: 600, color: '#856404' }}>
+                {new Date(order.scheduledFor).toLocaleString('en-US', { timeZone: 'UTC' })}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="muted" style={{ color: '#856404' }}>ET Time:</span>
+              <span style={{ fontWeight: 600, color: '#856404' }}>
+                {new Date(order.scheduledFor).toLocaleString('en-US', { timeZone: 'America/New_York' })}
+              </span>
+            </div>
+            <div style={{ fontSize: '13px', color: '#856404', lineHeight: '1.4', marginTop: '0.5rem' }}>
+              This order is scheduled for future execution and will be processed during market hours (9:30 AM - 4:00 PM ET). 
+              Use the scheduling controls on the Orders page to modify or cancel scheduled orders.
+            </div>
+          </div>
+        </article>
+      )}
 
       {/* Account impact */}
       <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>

@@ -1,19 +1,17 @@
-import prisma from '../loaders/prisma.js'
 import { authenticate } from '../middleware/authenticate.js'
-import { decrypt } from '../utils/encryption.js'
+import { fetchAlpacaMarketClock, resolveAlpacaCredentials } from '../services/alpacaClockService.js'
 
-const ALPACA_BASE = 'https://paper-api.alpaca.markets'
-
-async function alpacaFetch(path, apiKey, apiSecret, options = {}) {
-  const res = await fetch(`${ALPACA_BASE}${path}`, {
+async function alpacaFetch(baseUrl, path, apiKey, apiSecret, options = {}) {
+  const res = await fetch(`${baseUrl}${path}`, {
     headers: {
-      'APCA-API-KEY-ID':     apiKey,
+      'APCA-API-KEY-ID': apiKey,
       'APCA-API-SECRET-KEY': apiSecret,
       ...options.headers
     },
     method: options.method || 'GET',
-    body:   options.body
+    body: options.body
   })
+
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`Alpaca ${res.status}: ${text}`)
@@ -21,26 +19,21 @@ async function alpacaFetch(path, apiKey, apiSecret, options = {}) {
   return res.json()
 }
 
-/**
- * Resolves Alpaca credentials for a request.
- * Priority: per-user BrokerAccount (decrypted) → process.env fallback.
- * Returns { apiKey, apiSecret } or null if neither is available.
- */
-async function resolveCredentials(userId) {
-  if (userId) {
-    const broker = await prisma.brokerAccount.findUnique({ where: { userId } })
-    if (broker?.apiKey && broker?.apiSecret) {
-      try {
-        return { apiKey: decrypt(broker.apiKey), apiSecret: decrypt(broker.apiSecret) }
-      } catch {
-        // Decryption failed (key mismatch) — fall through to env
-      }
+async function resolveCredsOrReply(userId, reply) {
+  try {
+    const creds = await resolveAlpacaCredentials(userId)
+    if (!creds) {
+      reply.code(503).send({ error: 'Alpaca credentials not configured' })
+      return null
     }
+    return creds
+  } catch (err) {
+    if (err?.code === 'LIVE_TRADING_DISABLED') {
+      reply.code(403).send({ error: err.message })
+      return null
+    }
+    throw err
   }
-  const apiKey    = process.env.ALPACA_API_KEY
-  const apiSecret = process.env.ALPACA_API_SECRET
-  if (apiKey && apiSecret) return { apiKey, apiSecret }
-  return null
 }
 
 export default async function alpacaRoutes(fastify) {
@@ -55,24 +48,33 @@ export default async function alpacaRoutes(fastify) {
         type: 'object',
         required: ['symbol', 'side', 'quantity', 'type'],
         properties: {
-          symbol:        { type: 'string' },
-          side:          { type: 'string', enum: ['buy', 'sell'] },
-          quantity:      { type: 'number', minimum: 1 },
-          type:          { type: 'string', enum: ['market', 'limit'] },
-          price:         { type: 'number' },
+          symbol: { type: 'string' },
+          side: { type: 'string', enum: ['buy', 'sell'] },
+          quantity: { type: 'number', minimum: 1 },
+          type: { type: 'string', enum: ['market', 'limit'] },
+          price: { type: 'number' },
           time_in_force: { type: 'string', enum: ['day', 'gtc', 'ioc', 'fok'] }
         }
       }
     }
   }, async (request, reply) => {
-    const creds = await resolveCredentials(request.user.id)
-    if (!creds) return reply.code(503).send({ error: 'Alpaca credentials not configured' })
+    const creds = await resolveCredsOrReply(request.user.id, reply)
+    if (!creds) return
 
     try {
-      const order = await alpacaFetch('/v2/orders', creds.apiKey, creds.apiSecret, {
-        method:  'POST',
+      const clock = await fetchAlpacaMarketClock(creds)
+      if (!clock.isOpen) {
+        return reply.code(409).send({
+          error: 'Market is closed',
+          code: 'MARKET_CLOSED',
+          clock
+        })
+      }
+
+      const order = await alpacaFetch(creds.baseUrl, '/v2/orders', creds.apiKey, creds.apiSecret, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ ...request.body, symbol: request.body.symbol.toUpperCase() })
+        body: JSON.stringify({ ...request.body, symbol: request.body.symbol.toUpperCase() })
       })
       return reply.send(order)
     } catch (error) {
@@ -82,11 +84,11 @@ export default async function alpacaRoutes(fastify) {
 
   // GET /api/alpaca/order/:id
   fastify.get('/order/:id', { preHandler }, async (request, reply) => {
-    const creds = await resolveCredentials(request.user.id)
-    if (!creds) return reply.code(503).send({ error: 'Alpaca credentials not configured' })
+    const creds = await resolveCredsOrReply(request.user.id, reply)
+    if (!creds) return
 
     try {
-      const order = await alpacaFetch(`/v2/orders/${request.params.id}`, creds.apiKey, creds.apiSecret)
+      const order = await alpacaFetch(creds.baseUrl, `/v2/orders/${request.params.id}`, creds.apiKey, creds.apiSecret)
       return reply.send(order)
     } catch (error) {
       return reply.code(500).send({ error: error.message })
@@ -95,11 +97,11 @@ export default async function alpacaRoutes(fastify) {
 
   // DELETE /api/alpaca/order/:id
   fastify.delete('/order/:id', { preHandler }, async (request, reply) => {
-    const creds = await resolveCredentials(request.user.id)
-    if (!creds) return reply.code(503).send({ error: 'Alpaca credentials not configured' })
+    const creds = await resolveCredsOrReply(request.user.id, reply)
+    if (!creds) return
 
     try {
-      await alpacaFetch(`/v2/orders/${request.params.id}`, creds.apiKey, creds.apiSecret, { method: 'DELETE' })
+      await alpacaFetch(creds.baseUrl, `/v2/orders/${request.params.id}`, creds.apiKey, creds.apiSecret, { method: 'DELETE' })
       return reply.send({ success: true, message: 'Order cancelled' })
     } catch (error) {
       return reply.code(500).send({ error: error.message })
@@ -108,18 +110,18 @@ export default async function alpacaRoutes(fastify) {
 
   // GET /api/alpaca/account
   fastify.get('/account', { preHandler }, async (request, reply) => {
-    const creds = await resolveCredentials(request.user.id)
-    if (!creds) return reply.code(503).send({ error: 'Alpaca credentials not configured' })
+    const creds = await resolveCredsOrReply(request.user.id, reply)
+    if (!creds) return
 
     try {
-      const data = await alpacaFetch('/v2/account', creds.apiKey, creds.apiSecret)
+      const data = await alpacaFetch(creds.baseUrl, '/v2/account', creds.apiKey, creds.apiSecret)
       return {
-        equity:           parseFloat(data.equity),
-        cash:             parseFloat(data.cash),
-        buyingPower:      parseFloat(data.buying_power),
-        dayTradeCount:    parseInt(data.daytrade_count ?? 0),
+        equity: parseFloat(data.equity),
+        cash: parseFloat(data.cash),
+        buyingPower: parseFloat(data.buying_power),
+        dayTradeCount: parseInt(data.daytrade_count ?? 0),
         patternDayTrader: data.pattern_day_trader ?? false,
-        accountNumber:    data.account_number ?? null
+        accountNumber: data.account_number ?? null
       }
     } catch (err) {
       fastify.log.error('Alpaca account fetch failed:', err.message)
@@ -129,20 +131,16 @@ export default async function alpacaRoutes(fastify) {
 
   // GET /api/alpaca/market-clock
   fastify.get('/market-clock', { preHandler }, async (request, reply) => {
-    const creds = await resolveCredentials(request.user.id)
-    if (!creds) return reply.code(503).send({ error: 'Alpaca credentials not configured' })
+    const creds = await resolveCredsOrReply(request.user.id, reply)
+    if (!creds) return
 
     try {
-      const data = await alpacaFetch('/v2/clock', creds.apiKey, creds.apiSecret)
-      return {
-        isOpen:    data.is_open,
-        nextOpen:  data.next_open,
-        nextClose: data.next_close,
-        timestamp: data.timestamp
-      }
+      const clock = await fetchAlpacaMarketClock(creds)
+      return clock
     } catch (err) {
       fastify.log.error('Alpaca clock fetch failed:', err.message)
       return reply.code(502).send({ error: err.message })
     }
   })
 }
+
