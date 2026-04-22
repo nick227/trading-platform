@@ -1,84 +1,211 @@
-/* Landing Page Components */
-.nav-wrap {
-  width: 100%;
+/* Navigation - Modern Minimal Design */
+.nav {
   position: sticky;
   top: 0;
-  z-index: 10;
-  background: color-mix(in srgb, var(--bg), transparent 10%);
-  backdrop-filter: blur(8px);
+  z-index: 100;
+  background: color-mix(in srgb, var(--bg), transparent 5%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border), transparent 50%);
 }
 
-.nav {
+.nav-inner {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 32px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 0;
-  border-radius: 18px;
+  gap: 32px;
 }
 
-.nav-left,
-.nav-right {
+/* Logo */
+.nav-logo {
   display: flex;
   align-items: center;
-}
-
-.nav-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
-  background: color-mix(in srgb, var(--color-surface), var(--color-surface-soft) 30%);
-  padding: 6px;
-  border-radius: 16px;
-}
-
-.nav-links .btn {
-  box-shadow: none;
-  transition:
-    transform var(--dur-fast) var(--ease-premium),
-    background-color var(--dur-fast) var(--ease-premium);
-}
-
-.nav-links .nav-btn.btn-ghost {
-  background: transparent;
-  border-color: transparent;
-  color: color-mix(in srgb, var(--color-text), white 28%);
-}
-
-.nav-links .nav-btn.btn-ghost:hover {
-  background: color-mix(in srgb, var(--color-surface-soft), white 30%);
-  border-color: transparent;
-}
-
-.nav-links .nav-btn.is-active,
-.nav-links .nav-btn.btn-primary {
-  background: color-mix(in srgb, var(--color-surface), blueviolet 18%);
-  border-color: transparent;
+  text-decoration: none;
   color: var(--color-text);
-  box-shadow: none;
+  transition: opacity var(--dur-fast) var(--ease-fast);
 }
 
-.nav-links .nav-btn.is-active:hover {
-  transform: translateY(-0.5px);
+.nav-logo:hover {
+  opacity: 0.8;
 }
 
-.nav-links .btn:active {
-  transform: scale(0.98);
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.avatar-sm {
-  width: 28px;
-  height: 28px;
+.logo-mark {
+  width: 40px;
+  height: 40px;
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-text {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+/* Mobile Toggle */
+.nav-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.nav-toggle span {
+  width: 100%;
+  height: 3px;
+  background: var(--color-text);
+  border-radius: 2px;
+  transition: all var(--dur-fast) var(--ease-premium);
+}
+
+.nav-toggle--open span:nth-child(1) {
+  transform: rotate(45deg) translate(4px, 4px);
+}
+
+.nav-toggle--open span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav-toggle--open span:nth-child(3) {
+  transform: rotate(-45deg) translate(4px, -4px);
+}
+
+/* Navigation Menu */
+.nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  justify-content: flex-end;
+  padding-left: 32px;
+  border-left: 1px solid color-mix(in srgb, var(--color-border), transparent 50%);
+}
+
+.nav-link {
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--color-text), white 30%);
+  text-decoration: none;
+  border-radius: 10px;
+  transition: all var(--dur-fast) var(--ease-premium);
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-link:hover {
+  background: color-mix(in srgb, var(--color-surface-soft), white 25%);
+  color: var(--color-text);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.nav-link--active {
+  background: color-mix(in srgb, var(--color-accent), white 88%);
+  color: color-mix(in srgb, var(--color-accent), #000 15%);
+  font-weight: 600;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent), transparent 60%);
+}
+
+/* User Section - Pill Button */
+.nav-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: color-mix(in srgb, var(--color-surface-soft), white 20%);
+  border: 1px solid color-mix(in srgb, var(--color-border), transparent 50%);
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--color-text);
+  transition: all var(--dur-fast) var(--ease-premium);
+}
+
+.nav-user-pill:hover {
+  background: color-mix(in srgb, var(--color-surface-soft), white 35%);
+  border-color: color-mix(in srgb, var(--color-border), transparent 70%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.nav-avatar {
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   object-fit: cover;
+  border: 2px solid color-mix(in srgb, var(--color-border), transparent 30%);
+}
+
+.nav-username {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .nav-toggle {
+    display: flex;
+  }
+
+  .nav-menu {
+    position: fixed;
+    top: 72px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 16px;
+    gap: 2px;
+    background: var(--bg);
+    transform: translateX(100%);
+    transition: transform var(--dur-med) var(--ease-premium);
+    overflow-y: auto;
+  }
+
+  .nav-menu--open {
+    transform: translateX(0);
+  }
+
+  .nav-link {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 15px;
+    border-radius: 8px;
+  }
+
+  .nav-user-pill {
+    width: 100%;
+    padding: 12px 14px;
+    margin-top: 12px;
+  }
+}
+
+@media (min-width: 769px) {
+  .nav-toggle {
+    display: none;
+  }
 }
 
 .hero-balance {

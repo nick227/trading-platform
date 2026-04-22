@@ -3,6 +3,8 @@ export default function PortfolioHeader({ user, stats, onRefresh }) {
   const totalReturnPct = stats?.totalReturnPct ?? 0
   const positive = totalReturn >= 0
 
+  const displayName = user?.fullName || user?.name || user?.email
+
   const totalValue = Number.isFinite(stats?.totalValue)
     ? `$${stats.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
     : '—'
@@ -15,7 +17,7 @@ export default function PortfolioHeader({ user, stats, onRefresh }) {
 
           <div className="stack-sm">
             <div className="eyebrow">Welcome back</div>
-            <h2 className="m-0 text-lg font-700">{user?.name ?? '—'}</h2>
+            <h2 className="m-0 text-lg font-700">{displayName ?? '—'}</h2>
             <div className="muted text-sm">
               {positive ? 'Portfolio performing well today' : 'Market taking a breather'}
             </div>
@@ -49,4 +51,3 @@ export default function PortfolioHeader({ user, stats, onRefresh }) {
     </div>
   )
 }
-

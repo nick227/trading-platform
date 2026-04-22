@@ -25,6 +25,14 @@ export const priceCache = {
     return Date.now() - entry.updatedAt > maxAgeMs
   },
 
+  // Returns the cached quote if fresh, null if stale or missing.
+  // Avoids the double Map.get() of calling isStale() then get() separately.
+  getIfFresh(ticker, maxAgeMs = STALE_AFTER_MS) {
+    const entry = cache.get(ticker)
+    if (!entry || Date.now() - entry.updatedAt > maxAgeMs) return null
+    return entry
+  },
+
   // Mutate last price in-place (used by bar handler — avoids spread allocation)
   updateLast(ticker, last) {
     const entry = cache.get(ticker)

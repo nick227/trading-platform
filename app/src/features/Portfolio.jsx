@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { usePortfolio } from '../hooks/usePortfolio.js'
-import { useBotConsole } from '../hooks/useBotConsole.js'
 import { useApp } from '../app/AppProvider.jsx'
 import { useAuth } from '../app/AuthProvider.jsx'
 import StatCard from '../components/StatCard.jsx'
@@ -14,7 +13,6 @@ export default function Portfolio() {
   const navigate = useNavigate()
   const { state } = useApp()
   const { holdings, stats, recentActivity, loading, error, refetch } = usePortfolio()
-  const { botStatus, todayPNL, runOnce, toggleBot } = useBotConsole({ onAction: refetch })
 
   useEffect(() => {
     if (state.lastFilledAt) refetch()
@@ -47,42 +45,6 @@ export default function Portfolio() {
         <header className="mb-0">
           <PortfolioHeader user={user} stats={stats} onRefresh={refetch} />
         </header>
-
-        <article className="card">
-          <div className="panel-header">
-            <h3 className="panel-title">Bot Console</h3>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('/bot')}>
-              Full Console
-            </button>
-          </div>
-
-          <div className="kpi-grid-4 mb-4">
-            <div className="kpi">
-              <div className={`kpi-value text-xl ${botStatus === 'running' ? 'text-positive' : 'text-muted'}`}>
-                {botStatus === 'running' ? '🤖' : '⏸️'}
-              </div>
-              <div className="kpi-label">Status</div>
-            </div>
-            <div className="kpi">
-              <div className={`kpi-value text-lg ${todayPNL >= 0 ? 'text-positive' : 'text-negative'}`}>
-                ${todayPNL.toFixed(2)}
-              </div>
-              <div className="kpi-label">Today P&amp;L</div>
-            </div>
-            <div className="kpi">
-              <button className="btn btn-xs btn-primary" type="button" onClick={runOnce}>
-                Run Once
-              </button>
-              <div className="kpi-label">Manual Trade</div>
-            </div>
-            <div className="kpi">
-              <button className="btn btn-xs btn-ghost" type="button" onClick={toggleBot}>
-                {botStatus === 'running' ? 'Stop' : 'Start'}
-              </button>
-              <div className="kpi-label">Auto Bot</div>
-            </div>
-          </div>
-        </article>
 
         <section>
           <div className="l-grid-auto-250">
@@ -122,8 +84,8 @@ export default function Portfolio() {
           <article className="card">
             <div className="panel-header">
               <h3 className="panel-title">Holdings</h3>
-              <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('/assets')}>
-                View All
+              <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('/orders')}>
+                Place Order
               </button>
             </div>
             <HoldingsTable holdings={holdings} />
@@ -134,9 +96,6 @@ export default function Portfolio() {
           <article className="card">
             <div className="panel-header">
               <h3 className="panel-title">Recent Activity</h3>
-              <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('/orders')}>
-                View All
-              </button>
             </div>
             <ActivityFeed activities={recentActivity} />
           </article>

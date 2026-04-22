@@ -2,11 +2,11 @@ import { priceCache } from '../../market/priceCache.js'
 
 // config: { operator: 'above' | 'below', price: number }
 export function evaluatePriceThreshold(config, ticker) {
-  if (priceCache.isStale(ticker)) {
+  const quote = priceCache.getIfFresh(ticker)
+  if (!quote) {
     return { pass: false, reason: 'stale_price_data', stale: true }
   }
 
-  const quote = priceCache.get(ticker)
   const current = quote.last ?? quote.ask
 
   if (current == null) {

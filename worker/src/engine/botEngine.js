@@ -11,6 +11,8 @@ import { evaluateDailyLoss }      from './rules/dailyLoss.js'
 import { evaluateTrendFilter }   from './rules/trendFilter.js'
 import { evaluateTimeWindow }    from './rules/timeWindow.js'
 import { recordExecutionAudit }   from '../audit/executionAudit.js'
+import { executeRuleBasedStrategy, executeStrategyBasedAlgorithm } from './predefinedStrategies.js'
+import { riskManager } from '../risk/riskManagement.js'
 
 // In-memory state
 const botRegistry  = new Map()  // botId → bot (with rules)
@@ -34,6 +36,17 @@ const POSITION_CACHE_MAX_MS      = 60_000
 const POSITION_CACHE_MAX_USERS   = 500   // LRU eviction threshold
 const ACTIVE_EXECUTION_STATUSES  = ['queued', 'processing', 'submitted', 'partially_filled']
 const SKIP_EVENT_WINDOW_MS       = 60_000
+
+// Rules sorted cheapest-first so fast in-memory checks short-circuit before any DB/broker call.
+const RULE_COST_ORDER = {
+  market_hours:    0,  // in-memory
+  time_window:     1,  // in-memory
+  price_threshold: 2,  // Map lookup
+  cooldown:        3,  // DB (30s cache)
+  daily_loss:      4,  // DB (30s cache)
+  trend_filter:    5,  // DB (5min cache)
+  position_limit:  6,  // broker REST (60s cache)
+}
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
@@ -92,6 +105,8 @@ async function reloadBots() {
     tickerIndex.clear()
 
     for (const bot of bots) {
+      // Sort rules cheapest-first to maximize short-circuit (in-memory before DB/broker)
+      bot.rules.sort((a, b) => (RULE_COST_ORDER[a.type] ?? 99) - (RULE_COST_ORDER[b.type] ?? 99))
       // Pre-compute derived flags so per-tick evaluateBot never re-scans rules
       bot._hasTrendFilter = bot.rules.some(r => r.type === 'trend_filter')
       botRegistry.set(bot.id, bot)
@@ -161,62 +176,117 @@ async function evaluateBot(bot, ticker) {
     }
   }
 
-  // Run rule pipeline — first failure short-circuits
-  // Avoid per-tick broker REST calls unless a rule actually needs positions.
-  const hasTrendFilter = bot._hasTrendFilter
+  // Get current tick data
+  const tick = priceCache.get(ticker)
+  if (!tick) {
+    return // No price data available
+  }
 
+  // Prepare context for strategy evaluation
   let positions = null
   let currentQty = null
-  let side = hasTrendFilter ? null : deriveDirection(bot)
+  let side = null
 
   async function ensurePositionsLoaded() {
     if (positions) return
     positions = await getPositions(bot.userId)
     currentQty = getPositionQty(positions, ticker)
-    if (side == null) {
-      side = currentQty > 0 ? 'sell' : 'buy'
-    }
+    side = currentQty > 0 ? 'sell' : 'buy'
   }
 
-  // Note on position staleness:
-  // `getPositions()` is cached (60s) and may lag immediately after a broker-side fill/cancel.
-  // Correctness for duplicate-prevention relies primarily on the inflight guards above:
-  // - in-memory inflightMap
-  // - DB fallback: active Execution rows (queued/processing/submitted/partially_filled)
-  // Do not clear those guards prematurely; the positions cache alone is not a safe dedupe signal.
+  const context = {
+    positions: positions ?? [],
+    currentQty,
+    side,
+    ensurePositionsLoaded
+  }
 
-  for (const rule of bot.rules) {
-    if (rule.type === 'position_limit' || rule.type === 'trend_filter') {
-      await ensurePositionsLoaded()
-    }
+  // Handle different bot types
+  let evaluationResult
 
-    const result = await evaluateRule(rule, bot, ticker, positions ?? [], { side })
-    if (!result.pass) {
-      await maybeLogRuleBlock(bot, ticker, side ?? 'buy', rule, result)
+  if (bot.botType === 'rule_based' && bot.templateId) {
+    // Execute predefined rule-based strategy
+    try {
+      evaluationResult = await executeRuleBasedStrategy(bot, tick, context)
+    } catch (error) {
+      console.error(`Rule-based strategy execution failed for bot ${bot.id}:`, error)
+      await logBotEvent(bot, 'strategy_error', `Rule-based strategy failed: ${error.message}`, ticker)
       return
     }
+  } else if (bot.botType === 'strategy_based' && bot.strategyId) {
+    // Execute predefined strategy-based algorithm
+    try {
+      evaluationResult = await executeStrategyBasedAlgorithm(bot, tick, context)
+    } catch (error) {
+      console.error(`Strategy-based algorithm execution failed for bot ${bot.id}:`, error)
+      await logBotEvent(bot, 'strategy_error', `Strategy-based algorithm failed: ${error.message}`, ticker)
+      return
+    }
+  } else {
+    // Fall back to traditional rule evaluation for custom bots
+    const hasTrendFilter = bot._hasTrendFilter
+    side = hasTrendFilter ? null : deriveDirection(bot)
+    context.side = side
+
+    // Run rule pipeline - first failure short-circuits
+    for (const rule of bot.rules) {
+      if (rule.type === 'position_limit' || rule.type === 'trend_filter') {
+        await ensurePositionsLoaded()
+      }
+
+      const result = await evaluateRule(rule, bot, ticker, positions ?? [], { side })
+      if (!result.pass) {
+        await maybeLogRuleBlock(bot, ticker, side ?? 'buy', rule, result)
+        return
+      }
+    }
+
+    // If we get here, all rules passed - continue with execution
+    evaluationResult = { signal: side || 'buy', confidence: 0.8, reason: 'All custom rules passed' }
   }
 
-  if (positions == null) {
-    currentQty = 0
-  }
-
-  // All rules passed — create execution (enters order pipeline)
-  const quote = priceCache.get(ticker)
-  const executionId = `exe_${Date.now()}_${randomUUID().slice(0, 8)}`
-  const direction = side
-  const activeIntentKey = buildActiveIntentKey(bot.id, ticker, direction)
-
-  if (direction === 'sell' && currentQty <= 0) {
-    await logBotEvent(bot, 'execution_skipped', `No position to sell for ${ticker}`, ticker, {
-      reason: 'no_position',
-      side: direction
+  // Process evaluation result
+  if (evaluationResult.signal === 'hold') {
+    await logBotEvent(bot, 'signal_hold', evaluationResult.reason || 'No trading signal', ticker, {
+      confidence: evaluationResult.confidence || 0,
+      metadata: evaluationResult.metadata
     })
     return
   }
 
+  // Ensure positions are loaded for execution
+  await ensurePositionsLoaded()
+  // Sync context so createExecution sees the loaded values (context was created before load)
+  context.positions = positions ?? []
+  context.currentQty = currentQty
+  context.side = side
+
+  // Validate signal against current position
+  if (evaluationResult.signal === 'sell' && currentQty <= 0) {
+    await logBotEvent(bot, 'execution_skipped', `No position to sell for ${ticker}`, ticker, {
+      reason: 'no_position',
+      side: 'sell',
+      signal: evaluationResult.signal
+    })
+    return
+  }
+
+  // Create execution if signal is valid
+  await createExecution(bot, ticker, evaluationResult, tick, context)
+}
+
+// Helper function to create execution
+async function createExecution(bot, ticker, evaluationResult, tick, context) {
+  const { signal, confidence, reason, metadata } = evaluationResult
+  const { currentQty } = context
+
+  const executionId = `exe_${Date.now()}_${randomUUID().slice(0, 8)}`
+  const direction = signal
+  const inflightKey = `${bot.id}:${ticker}`
+  const activeIntentKey = buildActiveIntentKey(bot.id, ticker, direction)
+
   const quantity = direction === 'buy'
-    ? computeBuyQuantity({ bot, quote })
+    ? computeBuyQuantity({ bot, quote: tick })
     : currentQty
 
   if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -224,66 +294,119 @@ async function evaluateBot(bot, ticker) {
       reason: 'invalid_quantity',
       quantity,
       side: direction,
-      price: quote?.last ?? null
+      price: tick?.last ?? null,
+      signal,
+      confidence
     })
     return
   }
 
+  // Evaluate risk before creating execution
+  const executionRequest = {
+    portfolioId: bot.portfolioId,
+    ticker,
+    direction,
+    quantity,
+    price: tick.last
+  }
+
+  let riskEvaluation
+  try {
+    riskEvaluation = await riskManager.evaluateExecutionRisk(executionRequest)
+  } catch (error) {
+    console.error('Risk evaluation failed:', error)
+    await logBotEvent(bot, 'risk_evaluation_failed', `Risk evaluation failed for ${ticker}: ${error.message}`, ticker, {
+      error: error.message,
+      signal,
+      confidence
+    })
+    return
+  }
+
+  if (!riskEvaluation.approved) {
+    await logBotEvent(bot, 'execution_blocked_by_risk', `Risk management blocked execution for ${ticker}`, ticker, {
+      signal,
+      confidence,
+      reason,
+      riskScore: riskEvaluation.riskScore,
+      failedChecks: riskEvaluation.failedChecks,
+      recommendations: riskEvaluation.recommendations
+    })
+    await recordExecutionAudit(executionId, 'risk_blocked', {
+      botId: bot.id,
+      botType: bot.botType,
+      signal,
+      confidence,
+      riskEvaluation
+    })
+    return
+  }
+
+  // Risk approved — create the execution record
   let execution
   try {
     execution = await prisma.execution.create({
       data: {
-        id:              executionId,
-        userId:          bot.userId,
-        portfolioId:     bot.portfolioId,
-        strategyId:      bot.strategyId ?? null,  // null for rule_based bots
-        botId:           bot.id,
+        id:            executionId,
+        userId:        bot.userId,
+        portfolioId:   bot.portfolioId,
+        strategyId:    bot.strategyId ?? null,
+        botId:         bot.id,
         ticker,
         direction,
         quantity,
-        price:           quote?.last ?? 0,  // intent price — filledPrice is the truth
-        origin:          'bot',
-        status:          'queued',
-        clientOrderId:   `tp_${executionId}`,
+        price:         tick.last,
+        origin:        'bot',
+        status:        'queued',
+        clientOrderId: `tp_${executionId}`,
         activeIntentKey,
-        commission:      0,
-        fees:            0
+        signalScore:   confidence,
+        pnl:           0
       }
     })
   } catch (err) {
     if (isActiveIntentConflict(err)) {
+      // DB unique constraint fired — a concurrent tick snuck in; restore in-memory guard
       inflightMap.set(inflightKey, true)
       dbCheckedKeys.delete(inflightKey)
       await maybeLogInflightSkip(bot, ticker, inflightKey)
       return
     }
-    throw err
+    console.error('Failed to create execution:', err)
+    await logBotEvent(bot, 'execution_failed', `Failed to create execution: ${err.message}`, ticker, {
+      error: err.message,
+      signal,
+      confidence
+    })
+    return
   }
 
-  // Set inflight guard and remove from clean-set so it re-checks DB after this order resolves
+  // Mark as inflight to prevent duplicates on subsequent ticks
   inflightMap.set(inflightKey, true)
   dbCheckedKeys.delete(inflightKey)
 
-  await logBotEvent(bot, 'execution_created', `Order queued for ${ticker}`, ticker, {
+  await logBotEvent(bot, 'execution_created', `Created ${direction} execution for ${ticker}`, ticker, {
     executionId: execution.id,
-    price:       execution.price,
-    quantity:    execution.quantity,
-    direction:   execution.direction
+    direction,
+    quantity,
+    price: tick.last,
+    signal,
+    confidence,
+    reason,
+    metadata,
+    riskScore: riskEvaluation.riskScore
   })
-  await recordExecutionAudit({
-    executionId: execution.id,
-    userId: execution.userId,
-    eventType: 'execution_created',
-    detail: `Bot execution queued for ${ticker}`,
-    metadata: {
-      origin: 'bot',
-      botId: bot.id,
-      clientOrderId: execution.clientOrderId,
-      activeIntentKey,
-      quantity: execution.quantity,
-      direction: execution.direction,
-      price: execution.price
-    }
+
+  await recordExecutionAudit(executionId, 'created', {
+    botId:      bot.id,
+    botType:    bot.botType,
+    strategyId: bot.strategyId,
+    templateId: bot.templateId,
+    signal,
+    confidence,
+    reason,
+    metadata,
+    riskEvaluation
   })
 }
 

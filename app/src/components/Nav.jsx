@@ -1,101 +1,64 @@
+import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../app/AuthProvider'
-import { useApp } from '../app/AppProvider'
+import Logo from './Logo'
 
 const routes = [
-  { path: '/', label: 'Landing', end: true },
   { path: '/portfolio', label: 'Portfolio' },
-  { asset: true, label: 'Asset' },
-  { path: '/bots', label: 'Add Bots', prefix: '/bots' },
-  { path: '/orders', label: 'Add Orders', prefix: '/orders' },
-  { path: '/ops', label: 'Ops' },
-  { path: '/profile', label: 'Profile' },
-  { path: '/auth', label: 'Auth' }
+  { path: '/assets', label: 'Assets', prefix: '/assets' },
+  { path: '/bots', label: 'Bots', prefix: '/bots' },
+  { path: '/orders', label: 'Orders', prefix: '/orders' }
 ]
-
-function navBtnClass(active) {
-  return `nav-btn btn btn-sm btn-${active ? 'primary' : 'ghost'} ${active ? 'is-active' : ''}`.trim()
-}
-
-function LogoutButton() {
-  const { logout } = useAuth()
-  return (
-    <button
-      className="btn btn-xs btn-ghost"
-      onClick={async () => { await logout(); window.location.href = '/auth' }}
-    >
-      Logout
-    </button>
-  )
-}
 
 export default function Nav() {
   const { user } = useAuth()
-  const { state } = useApp()
   const location = useLocation()
-  const assetTabActive = location.pathname.startsWith('/assets/')
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <div className="nav-wrap">
-      <div className="nav container">
-        <div className="nav-left">
-          <NavLink className="btn-reset" to="/">
-            <strong>Lunastic</strong>
-          </NavLink>
-        </div>
+    <nav className="nav">
+      <div className="nav-inner">
+        <NavLink className="nav-logo" to="/" onClick={() => setMobileOpen(false)}>
+          <Logo />
+        </NavLink>
 
-        <div className="nav-links">
+        <button
+          className={`nav-toggle ${mobileOpen ? 'nav-toggle--open' : ''}`}
+          onClick={() => setMobileOpen(!mobileOpen)}
+          aria-label="Toggle menu"
+        >
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+
+        <div className={`nav-menu ${mobileOpen ? 'nav-menu--open' : ''}`}>
           {routes.map((route) => {
-            if (route.asset) {
-              return (
-                <NavLink
-                  key="asset"
-                  to={`/assets/${state.selectedAsset}`}
-                  className={() => navBtnClass(assetTabActive)}
-                  aria-current={assetTabActive ? 'page' : undefined}
-                >
-                  {route.label}
-                </NavLink>
-              )
-            }
-            if (route.prefix) {
-              const active =
-                location.pathname === route.path || location.pathname.startsWith(`${route.prefix}/`)
-              return (
-                <NavLink
-                  key={route.path}
-                  to={route.path}
-                  className={() => navBtnClass(active)}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  {route.label}
-                </NavLink>
-              )
-            }
+            const active = route.prefix
+              ? location.pathname === route.path || location.pathname.startsWith(`${route.prefix}/`)
+              : undefined
+
             return (
               <NavLink
                 key={route.path}
                 to={route.path}
-                end={route.end === true}
-                className={({ isActive }) => navBtnClass(isActive)}
-                aria-current={undefined}
+                end={!route.prefix}
+                className={({ isActive }) => `nav-link ${active !== undefined ? (active ? 'nav-link--active' : '') : (isActive ? 'nav-link--active' : '')}`}
+                onClick={() => setMobileOpen(false)}
               >
                 {route.label}
               </NavLink>
             )
           })}
-        </div>
 
-        <div className="nav-right">
-          {user ? (
-            <div className="nav-user">
-              {user.avatar && <img src={user.avatar} alt={user.fullName || user.email} className="avatar-sm" />}
-              <span>{user.fullName || user.email}</span>
-              <LogoutButton />
-            </div>
-          ) : null}
+          {user && (
+            <NavLink to="/profile" className="nav-user-pill" onClick={() => setMobileOpen(false)}>
+              {user.avatar && <img src={user.avatar} alt={user.fullName || user.email} className="nav-avatar" />}
+              <span className="nav-username">{user.fullName || user.email}</span>
+            </NavLink>
+          )}
         </div>
       </div>
-    </div>
+    </nav>
   )
 }

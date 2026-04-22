@@ -71,8 +71,8 @@ async function alphaFetch(endpoint, options = {}) {
   }
 }
 
-// Export cache utilities for services
-export { getCacheKey, setCacheItem, getCacheItem, deleteCacheItem, invalidateByPattern, invalidationRules, cachedFetch, getCacheMetrics, CACHE_CONFIG }
+// Export fetch + cache utilities for services
+export { alphaFetch, getCacheKey, setCacheItem, getCacheItem, deleteCacheItem, invalidateByPattern, invalidationRules, cachedFetch, getCacheMetrics, CACHE_CONFIG }
 
 // Data transformation utilities
 function transformRankingData(data) {

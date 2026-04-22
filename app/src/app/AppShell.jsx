@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import Nav from '../components/Nav'
 import Landing from '../features/Landing'
 import Portfolio from '../features/Portfolio'
+import AssetsIndex from '../features/AssetsIndex'
 import Asset from '../features/Asset'
 import Bots from '../features/Bots'
 import BotCreate from '../features/BotCreate'
@@ -43,7 +44,7 @@ export function AppShell() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/portfolio"      element={<Protected><Portfolio /></Protected>} />
-        <Route path="/assets"         element={<Navigate to="/assets/NVDA" replace />} />
+        <Route path="/assets"         element={<Protected><AssetsIndex /></Protected>} />
         <Route path="/assets/:ticker" element={<Protected><Asset /></Protected>} />
         <Route path="/bots"           element={<Protected><Bots /></Protected>} />
         <Route path="/bots/create"    element={<Protected><BotCreate /></Protected>} />

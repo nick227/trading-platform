@@ -87,7 +87,7 @@ button {
 
 .eyebrow {
   display: inline-block;
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-0_5);
   color: var(--muted);
   font-size: var(--font-sm);
   letter-spacing: 0.14em;

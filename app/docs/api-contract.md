@@ -4,12 +4,12 @@ This document defines the complete API contract that both frontend and backend w
 
 ## ID Format Convention
 
-**Format**: `{prefix}_{timestamp}_{random4}`  
+**Format**: `{prefix}_{timestamp}_{random4}`
 **Examples**: `prd_1713347535000_a1b2`, `exe_1713347700000_c3d4`, `str_1713347800000_e5f6`, `prt_1713347900000_g7h8`, `bot_1713348000000_i9j0`
 
 **Prefixes**:
 - `prd_` - Prediction
-- `exe_` - Execution  
+- `exe_` - Execution
 - `str_` - Strategy
 - `prt_` - Portfolio
 - `bot_` - Bot
@@ -19,6 +19,18 @@ This document defines the complete API contract that both frontend and backend w
 **Note**: Positions are computed and never stored, so they don't have IDs. Ticker is the natural key within a portfolio.
 
 **Benefits**: Contextual identification without additional lookups.
+
+## Enums
+
+**Market Session**:
+```typescript
+type MarketSession = 'premarket' | 'regular' | 'afterhours' | 'closed' | 'halted'
+```
+- `premarket`: Pre-market trading (4:00 AM - 9:30 AM ET)
+- `regular`: Regular market hours (9:30 AM - 4:00 PM ET)
+- `afterhours`: After-hours trading (4:00 PM - 8:00 PM ET)
+- `closed`: Market closed
+- `halted`: Trading halted (exchange-wide or symbol-specific)
 
 ## Field Naming Convention
 
@@ -65,14 +77,22 @@ interface Execution {
   predictionId: string | null  // prd_*, nullable
   botId: string | null    // bot_*, nullable
   ticker: string
-  direction: 'buy' | 'sell'  // renamed from side
+  direction: 'buy' | 'sell'
   quantity: number
   price: number
   createdAt: number    // epoch ms
-  status: 'filled' | 'proposed' | 'cancelled'
+  submittedAt: number  // epoch ms - when order was submitted to broker
+  updatedAt: number    // epoch ms - last broker update
+  status: 'pending_new' | 'accepted' | 'queued' | 'partially_filled' | 'filled' | 'canceled' | 'rejected' | 'expired' | 'pending_cancel' | 'pending_replace'
+  brokerOrderId?: string  // External broker order ID
+  clientOrderId?: string  // Client-provided order ID for deduplication
+  filledQuantity: number  // Actual quantity filled (may be less than quantity)
+  remainingQuantity: number  // Quantity remaining to be filled
+  avgFillPrice?: number  // Average price across fills (for partial fills)
   commission: number
   fees: number
-  // Note: netValue = (quantity * price) + commission + fees (derived)
+  updatedBy: 'broker_webhook' | 'broker_poll' | 'manual_admin' | 'system_retry' | 'user_action'  // Source of last update
+  // Note: netValue = (filledQuantity * avgFillPrice || price) + commission + fees (derived)
 }
 ```
 
@@ -97,6 +117,15 @@ interface Portfolio {
   id: string           // prt_*
   name: string
   createdAt: number    // epoch ms
+  // Live balances (synced from broker)
+  cash: number
+  buyingPower: number
+  equity: number
+  marketValue: number
+  dayPnL?: number
+  marginUsed?: number
+  dayTradeBuyingPower?: number
+  unsettledCash?: number
 }
 ```
 
@@ -170,6 +199,109 @@ interface PortfolioSummary {
   positions: number
   topPosition: string | null
   topPositionValue: number
+}
+```
+
+### Risk Position Size
+```typescript
+interface RiskPositionSize {
+  ticker: string
+  suggestedSize: number
+  maxSafeSize: number
+  maxQuantity: number
+  confidence: 'good' | 'moderate' | 'weak'
+  executionConfidence: {
+    score: number
+    label: string
+    breakdown: Record<string, any>
+  }
+  reasoning: string
+}
+```
+
+### Risk Dashboard
+```typescript
+interface RiskDashboard {
+  portfolioId: string
+  overallScore: number
+  overallLabel: 'good' | 'moderate' | 'weak'
+  scores: {
+    operational: {
+      score: number
+      label: string
+      status: string
+    }
+    exposure: {
+      score: number
+      label: string
+      topRisks: Array<{
+        ticker: string
+        concentration: string
+        value: number
+      }>
+    }
+    stress: {
+      score: number
+      label: string
+      currentDrawdown: number
+      losingStreak: number
+    }
+  }
+  tradingMode: string
+  recommendedActions: string[]
+  canAutoTrade: boolean
+}
+```
+
+### Risk Decision
+```typescript
+interface RiskDecision {
+  id: string
+  type: string
+  ticker: string
+  decision: 'approved' | 'restricted' | 'blocked'
+  reason: string
+  failedScore: number
+  scores: Record<string, any>
+  whatWouldApprove: string
+  timestamp: Date
+}
+```
+
+### Risk Alert
+```typescript
+interface RiskAlert {
+  type: string
+  severity: 'critical' | 'warning'
+  message: string
+  score?: number
+  details?: Record<string, any>
+}
+```
+
+### Risk History
+```typescript
+interface RiskHistory {
+  portfolioId: string
+  period: string
+  timeSeries: Array<{
+    date: string
+    pnl: number
+    events: Array<{
+      type: string
+      detail: string
+    }>
+  }>
+  currentScores: {
+    operational: number
+    exposure: number
+    stress: number
+  }
+  summary: {
+    totalEvents: number
+    totalTrades: number
+    netPnl: number
+  }
 }
 ```
 
@@ -400,6 +532,9 @@ GET /api/portfolios/:id
 POST /api/portfolios
 GET /api/portfolios/:id/positions
 GET /api/portfolios/:id/summary
+POST /api/portfolios/:id/reconcile
+GET /api/portfolios/:id/reconciliation-status
+GET /api/portfolios/:id/mismatches
 ```
 **Query Parameters (GET /api/portfolios)**:
 - `dateFrom` (number) - Filter from date (epoch ms)
@@ -411,6 +546,11 @@ GET /api/portfolios/:id/summary
 
 **Query Parameters (GET /api/portfolios/:id/summary)**: None
 
+**Query Parameters (GET /api/portfolios/:id/reconciliation-status)**: None
+
+**Query Parameters (GET /api/portfolios/:id/mismatches)**:
+- `type` (string) - Filter by mismatch type (optional)
+
 **Pagination**: Offset-based (portfolios list only)
 **Default Sorting**: `createdAt` descending
 
@@ -418,6 +558,94 @@ GET /api/portfolios/:id/summary
 ```typescript
 {
   name: string
+}
+```
+
+**POST Body (POST /api/portfolios/:id/reconcile)**:
+```typescript
+{
+  force?: boolean  // Force reconciliation even if recently synced
+}
+```
+
+### Risk
+```
+POST /api/risk/size
+GET /api/risk/dashboard
+GET /api/risk/decisions/recent
+GET /api/risk/alerts
+GET /api/risk/history
+POST /api/risk/pause-bots
+POST /api/risk/resume-bots
+POST /api/risk/throttle-bots
+POST /api/risk/kill-switch
+```
+
+**POST Body (POST /api/risk/size)**:
+```typescript
+{
+  portfolioId: string
+  ticker: string
+  signal?: {
+    confidence: number
+    regime: string
+    botId?: string
+  }
+  maxQuantity?: number
+}
+```
+
+**Query Parameters (GET /api/risk/dashboard)**:
+- `portfolioId` (string) - Required
+
+**Query Parameters (GET /api/risk/decisions/recent)**:
+- `portfolioId` (string) - Optional
+- `limit` (number) - Default: 20
+
+**Query Parameters (GET /api/risk/alerts)**:
+- `portfolioId` (string) - Required
+
+**Query Parameters (GET /api/risk/history)**:
+- `portfolioId` (string) - Required
+- `days` (number) - Default: 7
+
+**POST Body (POST /api/risk/pause-bots)**:
+```typescript
+{
+  portfolioId: string
+  reason: string
+  actor?: 'user' | 'admin' | 'system' | 'scheduled'
+  idempotencyKey?: string  // Prevent duplicate requests
+}
+```
+
+**POST Body (POST /api/risk/resume-bots)**:
+```typescript
+{
+  portfolioId: string
+  actor?: 'user' | 'admin' | 'system' | 'scheduled'
+  idempotencyKey?: string  // Prevent duplicate requests
+}
+```
+
+**POST Body (POST /api/risk/throttle-bots)**:
+```typescript
+{
+  portfolioId: string
+  reason: string
+  duration?: number  // minutes
+  actor?: 'user' | 'admin' | 'system' | 'scheduled'
+  idempotencyKey?: string  // Prevent duplicate requests
+}
+```
+
+**POST Body (POST /api/risk/kill-switch)**:
+```typescript
+{
+  portfolioId: string
+  reason: string
+  actor?: 'user' | 'admin' | 'system'
+  idempotencyKey?: string  // Prevent duplicate requests
 }
 ```
 
@@ -493,7 +721,9 @@ GET /api/portfolios/:id/summary
 - `quantity`: > 0
 - `price`: > 0
 - `direction`: 'buy' | 'sell'
-- `status`: 'filled' | 'proposed' | 'cancelled'
+- `status`: 'pending_new' | 'accepted' | 'queued' | 'partially_filled' | 'filled' | 'canceled' | 'rejected' | 'expired' | 'pending_cancel' | 'pending_replace'
+- `filledQuantity`: >= 0, <= quantity
+- `remainingQuantity`: >= 0, <= quantity
 
 **Portfolio**:
 - `name`: non-empty string
@@ -618,6 +848,15 @@ POST   /api/executions
 GET    /api/portfolios
 GET    /api/portfolios/:id
 GET    /api/portfolios/:id/positions
+POST   /api/risk/size
+GET    /api/risk/dashboard
+GET    /api/risk/decisions/recent
+GET    /api/risk/alerts
+GET    /api/risk/history
+POST   /api/risk/pause-bots
+POST   /api/risk/resume-bots
+POST   /api/risk/throttle-bots
+POST   /api/risk/kill-switch
 ```
 
 ## Decision Log

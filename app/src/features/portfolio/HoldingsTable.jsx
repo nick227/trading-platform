@@ -82,9 +82,6 @@ export default function HoldingsTable({ holdings }) {
     return (
       <div className="panel-empty">
         No open positions.{' '}
-        <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('/orders')}>
-          Place a trade
-        </button>
       </div>
     )
   }
