@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getAvailableStocks } from '../services/marketData.js'
 
 export default function TickerSelector({ selectedTickers, onChange, maxTickers = 5 }) {
@@ -143,4 +143,3 @@ export default function TickerSelector({ selectedTickers, onChange, maxTickers =
     </div>
   )
 }
-

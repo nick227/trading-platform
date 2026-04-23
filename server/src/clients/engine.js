@@ -1,5 +1,8 @@
+import prisma from '../loaders/prisma.js'
+
 const ENGINE_URL = process.env.ENGINE_URL ?? 'http://localhost:8090'
 const INTERNAL_READ_KEY = process.env.INTERNAL_READ_KEY
+const MIN_PRICE_CAP_RECOMMENDATIONS = 10
 
 async function engineFetch(endpoint, options = {}) {
   const url = `${ENGINE_URL}${endpoint}`
@@ -24,6 +27,98 @@ async function engineFetch(endpoint, options = {}) {
   }
 
   return response.json()
+}
+
+function normalizeRecommendationsPayload(data) {
+  if (Array.isArray(data)) {
+    return { recommendations: data }
+  }
+  if (!data || typeof data !== 'object') {
+    return { recommendations: [] }
+  }
+  if (Array.isArray(data.recommendations)) {
+    return data
+  }
+
+  const fromItems = Array.isArray(data.items) ? data.items : null
+  const fromResults = Array.isArray(data.results) ? data.results : null
+  const fromCandidates = Array.isArray(data.candidates) ? data.candidates : null
+  const fromSingle = data.recommendation && typeof data.recommendation === 'object' ? [data.recommendation] : null
+
+  const recommendations = fromItems ?? fromResults ?? fromCandidates ?? fromSingle ?? []
+  return { ...data, recommendations }
+}
+
+function toNumber(value) {
+  const num = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+function recommendationSymbol(rec) {
+  return String(rec?.ticker ?? rec?.symbol ?? '').toUpperCase()
+}
+
+function extractTickerValue(row) {
+  return String(row?.ticker ?? row?.symbol ?? row?.tkr ?? '').toUpperCase()
+}
+
+async function getDiscoveryFallbackRows({ capNum, mode, targetCount, seen }) {
+  if (!Number.isFinite(capNum) || targetCount <= 0) return []
+
+  let rows = []
+  try {
+    rows = await prisma.$queryRaw`
+      SELECT
+        ds.symbol,
+        ds.name,
+        ds.marketCap,
+        ds.avgVolume,
+        ds.isTradable,
+        ds.untradableReason,
+        lq.last AS livePrice,
+        lq.changePct AS liveChangePct,
+        lq.updatedAt AS quoteUpdatedAt
+      FROM DiscoverySymbol ds
+      INNER JOIN LiveQuote lq ON lq.ticker = ds.symbol
+      WHERE lq.last IS NOT NULL
+        AND lq.last <= ${capNum}
+      ORDER BY ds.isTradable DESC, ds.avgVolume DESC, ds.marketCap DESC, lq.updatedAt DESC
+      LIMIT ${targetCount * 4}
+    `
+  } catch {
+    return []
+  }
+
+  const fallbackRows = []
+  for (const row of rows) {
+    if (fallbackRows.length >= targetCount) break
+    const ticker = String(row.symbol ?? '').toUpperCase()
+    if (!ticker || seen.has(ticker)) continue
+    const price = toNumber(row.livePrice)
+    if (price === null || price > capNum) continue
+
+    fallbackRows.push({
+      ticker,
+      symbol: ticker,
+      action: 'WATCH',
+      confidence: null,
+      score: null,
+      entryZone: [price, price],
+      priceCap: capNum,
+      mode,
+      asOf: row.quoteUpdatedAt ? new Date(row.quoteUpdatedAt).toISOString() : new Date().toISOString(),
+      source: 'discovery_universe',
+      isTradable: Boolean(row.isTradable),
+      untradableReason: row.untradableReason ?? null,
+      name: row.name ?? null,
+      marketCap: row.marketCap ?? null,
+      avgVolume: row.avgVolume ?? null,
+      dailyChangePct: toNumber(row.liveChangePct)
+    })
+    seen.add(ticker)
+  }
+
+  return fallbackRows
 }
 
 export const engineClient = {
@@ -155,12 +250,14 @@ export const engineClient = {
   // Recommendations endpoints
   async getRecommendationsLatest(limit = 10, mode = 'balanced', preference = 'absolute') {
     const query = `?limit=${limit}&mode=${mode}&preference=${preference}&tenant_id=default`
-    return engineFetch(`/api/recommendations/latest${query}`)
+    const data = await engineFetch(`/api/recommendations/latest${query}`)
+    return normalizeRecommendationsPayload(data)
   },
 
   async getBestRecommendation(mode = 'balanced', preference = 'absolute') {
     const query = `?mode=${mode}&preference=${preference}&tenant_id=default`
-    return engineFetch(`/api/recommendations/best${query}`)
+    const data = await engineFetch(`/api/recommendations/best${query}`)
+    return normalizeRecommendationsPayload(data)
   },
 
   async getTickerRecommendation(symbol, mode = 'balanced') {
@@ -176,13 +273,116 @@ export const engineClient = {
 
   // Price-capped recommendations (direct proxy to engine)
   async getRecommendationsUnder(priceCap, mode = 'balanced', limit = 25, preference = null) {
+    const capNum = toNumber(priceCap)
     const params = new URLSearchParams()
     params.set('mode', mode)
     params.set('limit', String(limit))
     if (preference) params.set('preference', preference)
     params.set('tenant_id', 'default')
 
-    return engineFetch(`/api/recommendations/under/${encodeURIComponent(String(priceCap))}?${params.toString()}`)
+    let normalized = { recommendations: [] }
+    try {
+      const data = await engineFetch(`/api/recommendations/under/${encodeURIComponent(String(priceCap))}?${params.toString()}`)
+      normalized = normalizeRecommendationsPayload(data)
+    } catch {
+      // Keep discovery cards available even if alpha-engine is offline.
+      normalized = { recommendations: [] }
+    }
+    const existing = Array.isArray(normalized.recommendations) ? normalized.recommendations : []
+    const targetCount = Math.min(limit, MIN_PRICE_CAP_RECOMMENDATIONS)
+
+    if (!Number.isFinite(capNum) || existing.length >= targetCount) {
+      return normalized
+    }
+
+    const seen = new Set(existing.map(recommendationSymbol).filter(Boolean))
+    const rankingsPayload = await this.getTopRankings(100)
+    const rankingRows = Array.isArray(rankingsPayload?.rankings) ? rankingsPayload.rankings : []
+    const rankedTickers = rankingRows
+      .map((row) => String(row?.ticker ?? row?.symbol ?? '').toUpperCase())
+      .filter(Boolean)
+      .filter((ticker) => !seen.has(ticker))
+
+    const fallbackRows = []
+    for (const ticker of rankedTickers) {
+      if (existing.length + fallbackRows.length >= targetCount) break
+      try {
+        const quote = await this.getQuote(ticker)
+        const price = toNumber(quote?.price ?? quote?.last)
+        if (price === null || price > capNum) continue
+
+        const ranked = rankingRows.find((row) => String(row?.ticker ?? row?.symbol ?? '').toUpperCase() === ticker)
+        fallbackRows.push({
+          ticker,
+          symbol: ticker,
+          action: 'WATCH',
+          confidence: ranked?.confidence ?? null,
+          score: ranked?.score ?? null,
+          entryZone: [price, price],
+          priceCap: capNum,
+          mode,
+          asOf: new Date().toISOString(),
+          source: 'ranking_fallback'
+        })
+        seen.add(ticker)
+      } catch {
+        // Keep fallback best-effort when quote lookup fails.
+      }
+    }
+
+    if (existing.length + fallbackRows.length < targetCount) {
+      const tickersPayload = await this.getTickers('')
+      const tickersData = tickersPayload?.data ?? tickersPayload
+      const universeTickers = Array.isArray(tickersData?.tickers)
+        ? tickersData.tickers
+        : (Array.isArray(tickersData) ? tickersData : [])
+      const universeSymbols = universeTickers
+        .map(extractTickerValue)
+        .filter(Boolean)
+        .filter((ticker) => !seen.has(ticker))
+
+      for (const ticker of universeSymbols) {
+        if (existing.length + fallbackRows.length >= targetCount) break
+        try {
+          const quote = await this.getQuote(ticker)
+          const price = toNumber(quote?.price ?? quote?.last)
+          if (price === null || price > capNum) continue
+
+          fallbackRows.push({
+            ticker,
+            symbol: ticker,
+            action: 'WATCH',
+            confidence: null,
+            score: null,
+            entryZone: [price, price],
+            priceCap: capNum,
+            mode,
+            asOf: new Date().toISOString(),
+            source: 'universe_fallback'
+          })
+          seen.add(ticker)
+        } catch {
+          // Keep fallback best-effort when quote lookup fails.
+        }
+      }
+    }
+
+    if (existing.length + fallbackRows.length < targetCount) {
+      const needed = targetCount - (existing.length + fallbackRows.length)
+      const discoveryRows = await getDiscoveryFallbackRows({
+        capNum,
+        mode,
+        targetCount: needed,
+        seen
+      })
+      fallbackRows.push(...discoveryRows)
+    }
+
+    if (fallbackRows.length === 0) return normalized
+    return {
+      ...normalized,
+      recommendations: [...existing, ...fallbackRows].slice(0, limit)
+    }
   },
 
   // Active signals for trading

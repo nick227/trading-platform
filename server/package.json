@@ -11,6 +11,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "node prisma/seed.js",
+    "db:seed:discovery": "node scripts/seedDiscoverySymbols.js",
     "db:studio": "prisma studio",
     "ops:cleanup-workers": "node scripts/cleanupWorkerStatus.js",
     "ops:soak": "node scripts/openMarketSoak.js"

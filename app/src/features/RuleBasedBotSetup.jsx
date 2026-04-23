@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { RULE_BASED_TEMPLATES } from '../constants/tradingStrategies.js'
 import TickerSelector from '../components/TickerSelector.jsx'
@@ -15,6 +15,11 @@ export default function RuleBasedBotSetup() {
   })
 
   const [selectedTemplateId, setSelectedTemplateId] = useState(RULE_BASED_TEMPLATES[0]?.id || '')
+
+  const selectedTemplate = useMemo(
+    () => RULE_BASED_TEMPLATES.find((t) => t.id === selectedTemplateId),
+    [selectedTemplateId]
+  )
 
   const [config, setConfig] = useState({
     name: `Rule-Based Bot ${dateTime}`,
@@ -50,11 +55,6 @@ export default function RuleBasedBotSetup() {
         tickers.push(symbol)
       }
     }
-
-    const selectedTemplate = useMemo(() => 
-    RULE_BASED_TEMPLATES.find((t) => t.id === selectedTemplateId),
-    [selectedTemplateId]
-  )
 
     const botForConfirmation = {
       name: config.name,
@@ -306,4 +306,3 @@ export default function RuleBasedBotSetup() {
     </div>
   )
 }
-

@@ -27,6 +27,7 @@ p, h1, h2, h3 {
   padding: 0;
   color: inherit;
   font: inherit;
+  text-decoration: none;
   cursor: pointer;
 }
 

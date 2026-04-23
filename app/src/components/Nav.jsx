@@ -23,7 +23,7 @@ export default function Nav() {
 
   return (
     <nav className="nav">
-      <div className="nav-inner">
+      <div className="nav-inner container">
         <NavLink className="nav-logo" to="/" onClick={() => setMobileOpen(false)}>
           <Logo />
         </NavLink>

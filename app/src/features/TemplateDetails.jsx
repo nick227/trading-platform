@@ -66,7 +66,7 @@ export default function TemplateDetails() {
     <div className="l-page">
       <div className="container">
         <header className="stack-sm mb-6">
-          <button className="btn btn-xs btn-ghost" type="button" onClick={() => navigate('/templates')}>
+          <button className="btn btn-xs btn-ghost mb-2" type="button" onClick={() => navigate('/templates')}>
             ← Back to Templates
           </button>
 

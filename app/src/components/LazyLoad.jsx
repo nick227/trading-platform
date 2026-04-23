@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense, useMemo } from 'react'
 
 // Simple lazy loading component
 export default function LazyLoad({ 

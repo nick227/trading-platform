@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import alphaEngineService from '../api/services/alphaEngineService.js'
 import ConfidenceBadge, { RiskBadge, ConfidenceMeter } from '../components/ConfidenceBadge.jsx'
 
@@ -177,7 +177,12 @@ function OpportunityCard({ recommendation, onTrade, onAsset }) {
       {/* Header */}
       <div style={{ marginBottom: '1rem' }}>
         <div style={{ fontSize: '20px', fontWeight: 700, marginBottom: '0.25rem' }}>
-          {recommendation.ticker}
+          <Link
+            to={`/assets/${encodeURIComponent(recommendation.ticker)}`}
+            style={{ color: 'inherit' }}
+          >
+            {recommendation.ticker}
+          </Link>
         </div>
         <div style={{ fontSize: '12px', color: '#666', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span>Confidence: {Math.round(recommendation.confidence * 100)}%</span>

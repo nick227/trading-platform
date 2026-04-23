@@ -5,6 +5,7 @@ import { getBrokerClient } from '../broker/clientCache.js'
 import { recordExecutionAudit } from '../audit/executionAudit.js'
 import { evaluateRiskCaps } from '../risk/riskCaps.js'
 import { log } from '../logger.js'
+import metricsService from '../../../server/src/services/metricsService.js'
 
 const WORKER_ID      = `${os.hostname()}-${process.pid}`
 const MAX_ATTEMPTS   = 3
@@ -396,7 +397,8 @@ async function syncOrderStatus(execution, broker) {
 // ─── Terminal state helpers ───────────────────────────────────────────────────
 
 async function terminate(execution, status, cancelReason, fillData = {}) {
-  await prisma.execution.update({
+  // Update execution with fill data
+  const updatedExecution = await prisma.execution.update({
     where: { id: execution.id },
     data: {
       status,
@@ -407,6 +409,19 @@ async function terminate(execution, status, cancelReason, fillData = {}) {
       ...fillData
     }
   })
+
+  // Process metrics for filled executions
+  if (status === 'filled') {
+    try {
+      await metricsService.processExecutionFill(updatedExecution)
+    } catch (metricsError) {
+      log.error({ 
+        executionId: execution.id, 
+        error: metricsError.message 
+      }, 'metrics_processing_failed')
+      // Don't fail the execution processing for metrics errors
+    }
+  }
 
   // Clear the bot engine's in-memory inflight guard
   if (execution.botId && inflightMap) {

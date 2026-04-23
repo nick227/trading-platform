@@ -5,28 +5,11 @@ export default function PortfolioHeader({ user, stats, onRefresh }) {
 
   const displayName = user?.fullName || user?.name || user?.email
 
-  const totalValue = Number.isFinite(stats?.totalValue)
-    ? `$${stats.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-    : '—'
-
   return (
     <div className="card card-hero">
-      <div className="l-row">
-        <div className="hstack">
-          {user?.avatar && <img className="avatar avatar-64 avatar-ring" src={user.avatar} alt="User Avatar" />}
+      <div className="container">
 
-          <div className="stack-sm">
-            <div className="eyebrow">Welcome back</div>
-            <h2 className="m-0 text-lg font-700">{displayName ?? '—'}</h2>
-            <div className="muted text-sm">
-              {positive ? 'Portfolio performing well today' : 'Market taking a breather'}
-            </div>
-
-            <div className="meta-row">
-              <span>
-                <span className="muted text-xs">Portfolio Value: </span>
-                <span className="font-600">{totalValue}</span>
-              </span>
+            <div className="meta-row row">
               <span>
                 <span className="muted text-xs">Total Return: </span>
                 <span className={`${positive ? 'text-positive' : 'text-negative'} font-600`}>
@@ -35,17 +18,14 @@ export default function PortfolioHeader({ user, stats, onRefresh }) {
                 </span>
               </span>
             </div>
-          </div>
-        </div>
 
-        <div className="text-right">
-          <div className="muted text-xs mb-1">Last Updated</div>
-          <div className="text-sm font-600">
-            {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+        <div className="hstack">
+          {user?.avatar && <img className="avatar avatar-64 avatar-ring" src={user.avatar} alt="User Avatar" />}
+
+          <div className="stack-sm">
+            <h2 className="m-0 text-xxxl font-700">Hello, {displayName ?? '—'}</h2>
+
           </div>
-          <button className="btn btn-xs btn-ghost mt-2" type="button" onClick={onRefresh}>
-            Refresh
-          </button>
         </div>
       </div>
     </div>

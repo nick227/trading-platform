@@ -109,8 +109,11 @@ export default function BotCreate() {
 
   return (
     <div className="l-page">
-      <div className="container container-md l-stack-lg">
+      <div className="container">
         <header className="stack-sm">
+          <button className="btn btn-xs btn-ghost mb-2" type="button" onClick={() => navigate('/bots')}>
+            &larr; Back to Bots
+          </button>
           <h1 className="hero m-0">Create New Bot</h1>
           <p className="muted text-md m-0">Choose a guided setup or start from a template in the catalog.</p>
         </header>
@@ -135,7 +138,7 @@ export default function BotCreate() {
             >
               <div className="stack-sm">
                 <div className="text-md font-700">Rule-Based Bot</div>
-                <div className="muted text-sm">Configure rules for entry and risk management.</div>
+                <div className="muted text-sm">Configure rules.</div>
               </div>
             </button>
 
@@ -146,7 +149,7 @@ export default function BotCreate() {
             >
               <div className="stack-sm">
                 <div className="text-md font-700">Strategy-Based Bot</div>
-                <div className="muted text-sm">Deploy a catalog strategy with confidence controls.</div>
+                <div className="muted text-sm">Deploy a strategy.</div>
               </div>
             </button>
           </div>
@@ -272,4 +275,3 @@ export default function BotCreate() {
     </div>
   )
 }
-

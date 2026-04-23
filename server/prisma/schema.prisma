@@ -219,6 +219,10 @@ model Execution {
   // MVP fields
   signalScore   Decimal? @db.Decimal(3, 2)
   pnl           Decimal  @default(0) @db.Decimal(10, 2)
+  // Attribution fields for metrics pipeline
+  sourceType    String   @default("UNKNOWN") // 'MANUAL' | 'TEMPLATE' | 'CUSTOM_RULE' | 'ML_SIGNAL' | 'REBALANCE' | 'UNKNOWN'
+  sourceId      String?  // templateId, botId, strategyId, userActionId
+  isManual      Boolean  @default(false) // Legacy flag for backward compatibility
   createdAt     DateTime  @default(now())
 
   portfolio  Portfolio   @relation(fields: [portfolioId], references: [id])
@@ -355,6 +359,116 @@ model DailySnapshot {
   @@index([snapshotDate])
 }
 
+// Metrics Pipeline Tables
+model TradeMetricFact {
+  id                  String   @id @default(cuid())
+  date                DateTime @db.Date
+  userId              String
+  botId               String?
+  templateId          String?
+  sourceExecutionId   String   // Links to original execution
+  eventType           String   // 'fill' | 'deposit' | 'withdrawal' | 'transfer'
+  sourceType          String   // 'MANUAL' | 'TEMPLATE' | 'CUSTOM_RULE' | 'ML_SIGNAL' | 'REBALANCE' | 'UNKNOWN'
+  sourceId            String?  // templateId, botId, strategyId, userActionId
+  pnl                 Decimal  @db.Decimal(12, 2)
+  returnPct           Decimal  @db.Decimal(8, 4)
+  isWin               Boolean  @default(false)
+  capitalUsed         Decimal  @db.Decimal(12, 2)
+  holdingMinutes      Int
+  direction           String   // 'buy' | 'sell'
+  ticker              String
+  quantity            Float
+  entryPrice          Decimal  @db.Decimal(10, 4)
+  exitPrice           Decimal  @db.Decimal(10, 4)
+  dailyEquityReturn   Decimal  @db.Decimal(8, 6) // For proper Sharpe calculation
+  allocatedCapital    Decimal  @db.Decimal(12, 2) // Return denominator
+  cashFlowAmount      Decimal? @db.Decimal(12, 2) // For deposits/withdrawals
+  portfolioValue      Decimal? @db.Decimal(12, 2) // Portfolio value after event
+  processed           Boolean  @default(false) // Watermark replacement
+  createdAt           DateTime @default(now())
+  
+  @@index([processed, createdAt])
+  @@index([date])
+  @@index([userId, date])
+  @@index([templateId, date])
+  @@index([sourceExecutionId])
+  @@index([sourceType, sourceId])
+}
+
+model TemplateMetricDay {
+  id                    String   @id @default(cuid())
+  date                  DateTime @db.Date
+  templateId            String
+  activeUsers           Int      @default(0)
+  activeBots            Int      @default(0)
+  totalTrades           Int      @default(0)
+  winningTrades         Int      @default(0)
+  totalPnl              Decimal  @default(0) @db.Decimal(12, 2)
+  totalReturn           Decimal  @default(0) @db.Decimal(8, 4)
+  avgWinRate            Decimal  @default(0) @db.Decimal(5, 2)
+  dailyEquityReturn     Decimal  @default(0) @db.Decimal(8, 6) // For Sharpe
+  maxDrawdown           Decimal  @default(0) @db.Decimal(5, 2)
+  startingEquity        Decimal  @default(0) @db.Decimal(12, 2) // Return denominator
+  avgDeployedCapital    Decimal  @default(0) @db.Decimal(12, 2)
+  dataQuality           String   @default("sufficient") // Data quality flag
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  @@unique([date, templateId])
+  @@index([templateId, date])
+}
+
+model SiteMetricDay {
+  id                  String   @id @default(cuid())
+  date                DateTime @db.Date @unique
+  usersActive         Int      @default(0)
+  templatesActive     Int      @default(0)
+  botsActive          Int      @default(0)
+  totalTrades         Int      @default(0)
+  grossPnl            Decimal  @default(0) @db.Decimal(12, 2)
+  totalVolume         Decimal  @default(0) @db.Decimal(15, 2)
+  newUsers            Int      @default(0)
+  churnedUsers        Int      @default(0)
+  systemDailyReturn   Decimal  @default(0) @db.Decimal(8, 6)
+  systemSharpe        Decimal  @default(0) @db.Decimal(5, 2)
+  totalDeployedCapital Decimal @default(0) @db.Decimal(15, 2)
+  
+  @@index([date])
+}
+
+// Worker-refreshed current metrics table (MySQL-friendly)
+model TemplateMetricCurrent {
+  id                  String   @id @default(cuid())
+  templateId          String   @unique
+  totalTrades         Int      @default(0)
+  winningTrades       Int      @default(0)
+  totalPnl            Decimal  @default(0) @db.Decimal(12, 2)
+  annualReturn        Decimal  @default(0) @db.Decimal(8, 4) // Based on allocated capital
+  winRate             Decimal  @default(0) @db.Decimal(5, 2)
+  sharpeRatio         Decimal  @default(0) @db.Decimal(5, 2) // From daily equity returns
+  maxDrawdown         Decimal  @default(0) @db.Decimal(5, 2)
+  activeUsers         Int      @default(0)
+  last30dReturn       Decimal  @default(0) @db.Decimal(8, 4)
+  avgDeployedCapital  Decimal  @default(0) @db.Decimal(12, 2)
+  dataQuality         String   @default("insufficient_data") // Truth label
+  lastUpdated         DateTime @default(now())
+  
+  @@index([templateId])
+}
+
+// Worker watermark tracking
+model MetricWatermark {
+  id                  String   @id @default(cuid())
+  metricType          String   // 'template', 'site', 'user'
+  lastProcessedAt     DateTime @default(now())
+  lastProcessedId     String?
+  isDirty             Boolean  @default(false) // For nightly recalculation
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  @@unique([metricType])
+}
+
 // Live quote cache from worker - enables server to access real-time prices
 model LiveQuote {
   ticker      String   @id
@@ -380,6 +494,29 @@ model LiveQuoteSubscription {
   @@index([requestedAt])
 }
 
+// Lightweight discovery universe for low-price and watchlist cards.
+model DiscoverySymbol {
+  symbol               String   @id
+  name                 String?
+  marketCap            Float?
+  avgVolume            Float?
+  lastPrice            Float?
+  sector               String?
+  industry             String?
+  isTradable           Boolean  @default(false)
+  tradableBroker       String?
+  untradableReason     String?
+  source               String   @default("manual")
+  lastProfileRefreshAt DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([lastPrice])
+  @@index([isTradable, lastPrice])
+  @@index([marketCap])
+  @@index([updatedAt])
+}
+
 // Execution reservations for atomic risk management
 model ExecutionReservation {
   id          String   @id
@@ -396,7 +533,8 @@ model ExecutionReservation {
 
 // Equity peaks for proper drawdown calculation
 model EquityPeak {
-  portfolioId String   @id
+  id          String   @id @default(cuid())
+  portfolioId String
   peakEquity  Decimal  @db.Decimal(12, 2)
   peakDate    DateTime
   createdAt   DateTime @default(now())
@@ -404,6 +542,7 @@ model EquityPeak {
 
   portfolio Portfolio @relation(fields: [portfolioId], references: [id])
 
+  @@unique([portfolioId]) // One peak per portfolio
   @@index([peakDate])
   @@index([updatedAt])
 }

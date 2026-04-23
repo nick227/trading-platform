@@ -197,5 +197,373 @@
         "config": { "symbol": "SPY", "confirmationBars": 2, "maxSnapshotAgeHours": 90 }
       }
     ]
+  },
+  {
+    "id": "tmpl_golden_cross",
+    "name": "Golden Cross Hunter",
+    "description": "Automatically detects and trades golden cross patterns (50-day MA above 200-day MA). One of the most trusted technical signals for long-term bullish momentum.",
+    "botType": "rule_based",
+    "tags": ["technical", "ma", "momentum", "long"],
+    "config": {
+      "direction": "buy",
+      "quantity": 10,
+      "tickers": ["SPY", "QQQ", "IWM"],
+      "shortMAPeriod": 50,
+      "longMAPeriod": 200
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Golden Cross Signal",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxShares": 100 }
+      },
+      {
+        "name": "Trade Cooldown",
+        "type": "cooldown",
+        "config": { "windowMs": 86400000 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_rsi_extremes",
+    "name": "RSI Extreme Reversal",
+    "description": "Capitalizes on overbought/oversold conditions using RSI indicator. Buys when RSI drops below 30, sells when it rises above 70 for mean reversion profits.",
+    "botType": "rule_based",
+    "tags": ["rsi", "mean-reversion", "oscillator"],
+    "config": {
+      "direction": "both",
+      "quantity": 5,
+      "tickers": ["AAPL", "MSFT", "GOOGL", "TSLA"],
+      "rsiPeriod": 14,
+      "oversoldLevel": 30,
+      "overboughtLevel": 70
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "RSI Oversold Buy",
+        "type": "price_threshold",
+        "config": { "direction": "below", "price": 0 }
+      },
+      {
+        "name": "RSI Overbought Sell",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxShares": 50 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_volatility_breakout",
+    "name": "Volatility Breakout",
+    "description": "Explosive profit potential from low-volatility consolidation periods. Detects tight price ranges and trades the inevitable breakout with built-in stop losses.",
+    "botType": "rule_based",
+    "tags": ["volatility", "breakout", "momentum"],
+    "config": {
+      "direction": "both",
+      "quantity": 15,
+      "tickers": ["NVDA", "AMD", "META"],
+      "lookbackPeriod": 20,
+      "volatilityThreshold": 0.02
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Low Volatility Filter",
+        "type": "time_window",
+        "config": { "start": "09:45", "end": "15:45", "timezone": "America/New_York" }
+      },
+      {
+        "name": "Breakout Detection",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Daily Loss Guard",
+        "type": "daily_loss",
+        "config": { "maxLoss": 300 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_sector_rotation",
+    "name": "Sector Rotation Pro",
+    "description": "Advanced sector rotation strategy that automatically reallocates capital to the strongest performing sectors. Uses relative strength to stay ahead of market trends.",
+    "botType": "rule_based",
+    "tags": ["sectors", "rotation", "etf", "allocation"],
+    "config": {
+      "direction": "buy",
+      "quantity": 1,
+      "tickers": ["XLK", "XLF", "XLV", "XLE", "XLI", "XLU", "XLP", "XLY", "XLB", "XLRE"],
+      "rebalanceFrequency": "weekly",
+      "topSectors": 3
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Weekly Rebalance",
+        "type": "cooldown",
+        "config": { "windowMs": 604800000 }
+      },
+      {
+        "name": "Sector Strength Filter",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxPositions": 3 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl dividend_capture",
+    "name": "Dividend Capture",
+    "description": "Systematically captures dividend payments from high-yield stocks. Buys before ex-dividend date and sells after, generating consistent income with minimal risk.",
+    "botType": "rule_based",
+    "tags": ["dividend", "income", "value"],
+    "config": {
+      "direction": "buy",
+      "quantity": 100,
+      "tickers": ["JNJ", "KO", "PG", "MCD", "WMT"],
+      "minYield": 0.03,
+      "maxYield": 0.08
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Ex-Dividend Filter",
+        "type": "time_window",
+        "config": { "start": "09:30", "end": "16:00", "timezone": "America/New_York" }
+      },
+      {
+        "name": "Yield Filter",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Quick Exit",
+        "type": "cooldown",
+        "config": { "windowMs": 172800000 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_earnings_momentum",
+    "name": "Earnings Momentum Trader",
+    "description": "Capitalizes on post-earnings price movements. Trades stocks with strong earnings surprises and positive guidance for sustained momentum plays.",
+    "botType": "rule_based",
+    "tags": ["earnings", "momentum", "fundamentals"],
+    "config": {
+      "direction": "buy",
+      "quantity": 20,
+      "tickers": [],
+      "minEpsSurprise": 0.05,
+      "holdingPeriod": 5
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Earnings Surprise Filter",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxShares": 100 }
+      },
+      {
+        "name": "Profit Taking",
+        "type": "cooldown",
+        "config": { "windowMs": 432000000 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_pair_trading",
+    "name": "Statistical Arbitrage",
+    "description": "Sophisticated pair trading strategy that exploits temporary price divergences between correlated assets. Market-neutral approach with consistent returns.",
+    "botType": "rule_based",
+    "tags": ["pairs", "arbitrage", "market-neutral", "statistical"],
+    "config": {
+      "direction": "both",
+      "quantity": 50,
+      "tickers": ["GOOGL", "MSFT", "JPM", "BAC", "XOM", "CVX"],
+      "correlationThreshold": 0.8,
+      "zScoreThreshold": 2.0
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Correlation Filter",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Z-Score Entry",
+        "type": "price_threshold",
+        "config": { "direction": "both", "price": 0 }
+      },
+      {
+        "name": "Mean Reversion Exit",
+        "type": "cooldown",
+        "config": { "windowMs": 3600000 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_crypto_alts",
+    "name": "Crypto Altcoin Hunter",
+    "description": "Diversifies into alternative cryptocurrencies beyond Bitcoin. Targets high-potential altcoins during market uptrends with strict risk management.",
+    "botType": "rule_based",
+    "tags": ["crypto", "altcoins", "blockchain", "high-risk"],
+    "config": {
+      "direction": "buy",
+      "quantity": 10,
+      "tickers": ["ETH", "SOL", "ADA", "AVAX", "DOT"],
+      "btcTrendFilter": true,
+      "maxAltcoinAllocation": 0.3
+    },
+    "rules": [
+      {
+        "name": "24/7 Trading",
+        "type": "market_hours",
+        "config": { "allowPremarket": true, "allowAfterHours": true }
+      },
+      {
+        "name": "BTC Trend Filter",
+        "type": "trend_filter",
+        "config": { "symbol": "BTC", "confirmationBars": 3 }
+      },
+      {
+        "name": "Altcoin Momentum",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Crypto Risk Control",
+        "type": "daily_loss",
+        "config": { "maxLoss": 200 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_etf_rebalancer",
+    "name": "ETF Portfolio Rebalancer",
+    "description": "Maintains optimal asset allocation across major ETF categories. Automatically rebalances monthly to keep your portfolio aligned with your target risk profile.",
+    "botType": "rule_based",
+    "tags": ["etf", "rebalancing", "portfolio", "passive"],
+    "config": {
+      "direction": "both",
+      "quantity": 1,
+      "tickers": ["VTI", "VEA", "VWO", "BND", "VNQ", "GLD"],
+      "targetAllocation": {
+        "VTI": 0.4,
+        "VEA": 0.2,
+        "VWO": 0.1,
+        "BND": 0.2,
+        "VNQ": 0.05,
+        "GLD": 0.05
+      },
+      "rebalanceThreshold": 0.05
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Monthly Rebalance",
+        "type": "cooldown",
+        "config": { "windowMs": 2592000000 }
+      },
+      {
+        "name": "Allocation Drift Check",
+        "type": "price_threshold",
+        "config": { "direction": "both", "price": 0 }
+      },
+      {
+        "name": "Portfolio Limit",
+        "type": "position_limit",
+        "config": { "maxPositions": 6 }
+      }
+    ]
+  },
+  {
+    "id": "tmpl_ai_momentum",
+    "name": "AI & Tech Momentum",
+    "description": "Rides the artificial intelligence revolution by investing in leading tech companies. Focuses on AI, cloud computing, and semiconductor stocks with strong momentum.",
+    "botType": "rule_based",
+    "tags": ["ai", "technology", "semiconductors", "growth"],
+    "config": {
+      "direction": "buy",
+      "quantity": 8,
+      "tickers": ["NVDA", "MSFT", "GOOGL", "AMD", "SMCI", "PLTR", "TSLA", "META"],
+      "momentumLookback": 30,
+      "minRelativeStrength": 70
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "AI Sector Filter",
+        "type": "trend_filter",
+        "config": { "symbol": "SMH", "confirmationBars": 2 }
+      },
+      {
+        "name": "Momentum Screen",
+        "type": "price_threshold",
+        "config": { "direction": "above", "price": 0 }
+      },
+      {
+        "name": "Tech Risk Management",
+        "type": "daily_loss",
+        "config": { "maxLoss": 500 }
+      }
+    ]
   }
 ]

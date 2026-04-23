@@ -7,7 +7,7 @@ export default function Logo() {
           <path d="M11 16L14 19L21 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
-      <span className="logo-text">Lunastic</span>
+      <span className="logo-text">TradeLoom</span>
     </div>
   )
 }

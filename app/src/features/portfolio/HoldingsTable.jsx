@@ -80,9 +80,7 @@ export default function HoldingsTable({ holdings }) {
 
   if (holdings.length === 0) {
     return (
-      <div className="panel-empty">
-        No open positions.{' '}
-      </div>
+      <div className="panel-empty"></div>
     )
   }
 

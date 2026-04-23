@@ -4,27 +4,8 @@ import { alphaFetch } from '../api/services/alphaEngineService.js'
 import { get } from '../api/client.js'
 import PriceChart from './orders/components/PriceChart.jsx'
 import { formatETNextOpen, isMarketClosed } from '../utils/market.js'
-
-const WATCHLIST_KEY = 'watchlist_v1'
+import { loadWatchlist, saveWatchlist, toggleWatchlist } from '../utils/watchlist.js'
 const DEFAULT_MODE = 'balanced'
-
-function loadWatchlist() {
-  try {
-    const raw = localStorage.getItem(WATCHLIST_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : []
-  } catch {
-    return []
-  }
-}
-
-function saveWatchlist(list) {
-  try {
-    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list))
-  } catch {
-    // ignore
-  }
-}
 
 function transformHistory(data) {
   const points = Array.isArray(data?.points) ? data.points : []
@@ -67,7 +48,19 @@ function computeRange(points) {
 function fmtMoney(value) {
   const num = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(num)) return '—'
-  return num.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
+
+  const abs = Math.abs(num)
+  const sign = num < 0 ? '-' : '$'
+
+  if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(1).replace(/\.0$/, '')}t`
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(1).replace(/\.0$/, '')}b`
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(1).replace(/\.0$/, '')}m`
+
+  return num.toLocaleString(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2
+  })
 }
 
 function fmtNumber(value) {
@@ -260,7 +253,7 @@ export default function Asset() {
   const nextOpen = formatETNextOpen(marketClock?.nextOpen)
 
   const toggleWatch = () => {
-    const next = watched ? watchlist.filter((t) => t !== symbol) : [symbol, ...watchlist.filter((t) => t !== symbol)]
+    const next = toggleWatchlist(watchlist, symbol)
     setWatchlist(next)
     saveWatchlist(next)
   }
@@ -318,9 +311,14 @@ export default function Asset() {
   }
 
   return (
-    <div className="l-page l-container-content">
+    <div className="container">
       <header className="l-row mb-3" style={{ alignItems: 'flex-start', gap: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="mb-1">
+            <Link className="btn btn-xs btn-ghost pressable" to="/assets">
+              &larr; Back to Assets
+            </Link>
+          </div>
           <div className="eyebrow mb-1">{marketStatus} · {nextOpen ? `Next open ${nextOpen}` : ''}</div>
           <h1 className="hero mb-1" style={{ fontSize: 44 }}>
             {symbol}
@@ -337,12 +335,12 @@ export default function Asset() {
           </div>
         </div>
 
-        <div className="stack-sm" style={{ minWidth: 220 }}>
+        <div className="row mt-2 mr-2">
           <button className="btn btn-sm btn-primary pressable" onClick={() => navigate(`/orders?ticker=${encodeURIComponent(symbol)}`)}>
             Trade
           </button>
           <button className="btn btn-sm btn-ghost pressable" onClick={toggleWatch}>
-            {watched ? 'Watchlisted' : 'Add to Watchlist'}
+            {watched ? 'Watching' : 'Watchlist'}
           </button>
         </div>
       </header>

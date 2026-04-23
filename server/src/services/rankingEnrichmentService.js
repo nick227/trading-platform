@@ -83,6 +83,41 @@ function coerceNumber(value) {
   return Number.isFinite(num) ? num : null
 }
 
+function normalizeRankingsRows(data) {
+  if (!data || typeof data !== 'object') return []
+  if (Array.isArray(data.rankings)) return data.rankings
+
+  const risers = Array.isArray(data.risers) ? data.risers : []
+  const fallers = Array.isArray(data.fallers) ? data.fallers : []
+  if (risers.length === 0 && fallers.length === 0) return []
+
+  const toRow = (row, direction) => {
+    const ticker = getRowTicker(row)
+    const currentRank = coerceNumber(row?.currentRank ?? row?.current_rank ?? row?.rank_today ?? row?.rank)
+    const priorRank = coerceNumber(row?.priorRank ?? row?.prior_rank ?? row?.rank_yesterday ?? row?.previous_rank)
+    const explicitDelta = coerceNumber(row?.rankChange ?? row?.rank_change ?? row?.rank_delta)
+    const computedDelta =
+      explicitDelta !== null
+        ? explicitDelta
+        : (currentRank !== null && priorRank !== null ? priorRank - currentRank : null)
+
+    return {
+      ...row,
+      ticker: row?.ticker ?? (ticker || undefined),
+      symbol: row?.symbol ?? (ticker || undefined),
+      currentRank,
+      priorRank,
+      rankChange: computedDelta,
+      rank: currentRank,
+      movement: row?.movement ?? direction
+    }
+  }
+
+  const normalizedRisers = risers.map((row) => toRow(row, 'riser'))
+  const normalizedFallers = fallers.map((row) => toRow(row, 'faller'))
+  return [...normalizedRisers, ...normalizedFallers]
+}
+
 async function getCachedQuote(symbol) {
   const key = String(symbol).toUpperCase()
   const cached = quoteCache.get(key)
@@ -95,7 +130,7 @@ async function getCachedQuote(symbol) {
 
 async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
   if (!data || typeof data !== 'object') return data
-  const rows = Array.isArray(data.rankings) ? data.rankings : []
+  const rows = normalizeRankingsRows(data)
   if (rows.length === 0) return data
 
   const uniqueTickers = Array.from(new Set(rows.map(getRowTicker).filter(Boolean)))

@@ -10,9 +10,8 @@
 }
 
 .nav-inner {
-  width: 1000px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0;
   height: 72px;
   display: flex;
   justify-content: flex-start;
@@ -36,20 +35,21 @@
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
 }
 
 .logo-mark {
-  width: 28px;
-  height: 28px;
+  width: 40px;
+  height: 40px;
   color: var(--color-accent);
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-top: 5px;
 }
 
 .logo-text {
-  font-size: 16px;
+  font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--color-text);
@@ -93,9 +93,9 @@
 .nav-menu {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 20px;
   justify-content: center;
-  flex: 1;
+  width: 80%;
 }
 
 .nav-link {

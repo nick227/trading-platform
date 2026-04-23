@@ -4,6 +4,7 @@
 .text-md { font-size: var(--text-md); }
 .text-lg { font-size: var(--text-lg); }
 .text-xl { font-size: var(--text-xl); }
+.text-xxxl { font-size: var(--text-xxxl); line-height: 1; }
 
 .bg-primary { background: var(--color-bg); }
 .bg-surface { background: var(--color-surface); }
@@ -90,3 +91,13 @@
 .p-6 { padding: var(--space-6); }
 .p-7 { padding: var(--space-7); }
 .p-8 { padding: var(--space-8); }
+
+.text-ellipsis-one-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-nowrap {
+  white-space: nowrap;
+}

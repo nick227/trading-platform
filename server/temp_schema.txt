@@ -1,0 +1,568 @@
+﻿generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model bot {
+  id          String       @id
+  userId      String
+  portfolioId String
+  strategyId  String?
+  templateId  String?
+  botType     String       @default("rule_based")
+  name        String
+  enabled     Boolean      @default(true)
+  config      Json
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime
+  deletedAt   DateTime?
+  portfolio   portfolio    @relation(fields: [portfolioId], references: [id], map: "Bot_portfolioId_fkey")
+  strategy    strategy?    @relation(fields: [strategyId], references: [id], map: "Bot_strategyId_fkey")
+  bottemplate bottemplate? @relation(fields: [templateId], references: [id], map: "Bot_templateId_fkey")
+  botevent    botevent[]
+  botrule     botrule[]
+  execution   execution[]
+
+  @@index([enabled], map: "Bot_enabled_idx")
+  @@index([portfolioId], map: "Bot_portfolioId_idx")
+  @@index([strategyId], map: "Bot_strategyId_fkey")
+  @@index([templateId], map: "Bot_templateId_idx")
+  @@index([userId], map: "Bot_userId_idx")
+}
+
+model botevent {
+  id          String        @id
+  botId       String
+  portfolioId String
+  ruleId      String?
+  executionId String?
+  type        botevent_type
+  detail      String
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  bot         bot           @relation(fields: [botId], references: [id], map: "BotEvent_botId_fkey")
+  execution   execution?    @relation(fields: [executionId], references: [id], map: "BotEvent_executionId_fkey")
+
+  @@index([botId, createdAt], map: "BotEvent_botId_createdAt_idx")
+  @@index([executionId], map: "BotEvent_executionId_idx")
+  @@index([portfolioId, createdAt], map: "BotEvent_portfolioId_createdAt_idx")
+  @@index([type], map: "BotEvent_type_idx")
+}
+
+model botrule {
+  id        String       @id
+  botId     String
+  name      String
+  type      botrule_type
+  config    Json
+  enabled   Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime
+  bot       bot          @relation(fields: [botId], references: [id], map: "BotRule_botId_fkey")
+
+  @@index([botId, enabled], map: "BotRule_botId_enabled_idx")
+}
+
+model botrun {
+  id             Int         @id @default(autoincrement())
+  userId         String
+  startedAt      DateTime    @default(now())
+  endedAt        DateTime?
+  status         String      @default("running")
+  signalCount    Int         @default(0)
+  executionCount Int         @default(0)
+  totalPnl       Decimal     @default(0.00) @db.Decimal(10, 2)
+  notes          String?
+  createdAt      DateTime    @default(now())
+  execution      execution[]
+
+  @@index([startedAt], map: "BotRun_startedAt_idx")
+  @@index([status], map: "BotRun_status_idx")
+  @@index([userId], map: "BotRun_userId_idx")
+}
+
+model bottemplate {
+  id          String   @id
+  name        String
+  description String
+  botType     String
+  config      Json
+  rules       Json
+  tags        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  bot         bot[]
+
+  @@index([botType], map: "BotTemplate_botType_idx")
+}
+
+model brokeraccount {
+  id             String    @id
+  userId         String    @unique(map: "BrokerAccount_userId_key")
+  broker         String    @default("alpaca")
+  apiKey         String
+  apiSecret      String
+  paper          Boolean   @default(true)
+  status         String    @default("active")
+  lastVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime
+
+  @@index([status], map: "BrokerAccount_status_idx")
+  @@index([userId], map: "BrokerAccount_userId_idx")
+}
+
+model correlationcache {
+  id           String   @id
+  ticker1      String
+  ticker2      String
+  correlation  Decimal  @db.Decimal(10, 6)
+  calculatedAt DateTime
+  dataPoints   Int
+  periodDays   Int      @default(30)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime
+
+  @@unique([ticker1, ticker2, periodDays], map: "CorrelationCache_ticker1_ticker2_periodDays_key")
+  @@index([calculatedAt], map: "CorrelationCache_calculatedAt_idx")
+  @@index([periodDays], map: "CorrelationCache_periodDays_idx")
+  @@index([ticker1], map: "CorrelationCache_ticker1_idx")
+  @@index([ticker2], map: "CorrelationCache_ticker2_idx")
+}
+
+model dailysnapshot {
+  id             Int      @id @default(autoincrement())
+  snapshotDate   DateTime @unique(map: "DailySnapshot_snapshotDate_key") @db.Date
+  equity         Decimal  @db.Decimal(12, 2)
+  cash           Decimal  @db.Decimal(12, 2)
+  positionsValue Decimal  @db.Decimal(12, 2)
+  dayPnl         Decimal  @default(0.00) @db.Decimal(10, 2)
+  totalTrades    Int      @default(0)
+  winningTrades  Int      @default(0)
+  capturedAt     DateTime @default(now())
+
+  @@index([snapshotDate], map: "DailySnapshot_snapshotDate_idx")
+}
+
+model discoverysymbol {
+  symbol               String   @id
+  name                 String?
+  marketCap            Float?
+  avgVolume            Float?
+  lastPrice            Float?
+  sector               String?
+  industry             String?
+  isTradable           Boolean  @default(false)
+  tradableBroker       String?
+  untradableReason     String?
+  source               String   @default("manual")
+  lastProfileRefreshAt DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime
+
+  @@index([isTradable, lastPrice], map: "DiscoverySymbol_isTradable_lastPrice_idx")
+  @@index([lastPrice], map: "DiscoverySymbol_lastPrice_idx")
+  @@index([marketCap], map: "DiscoverySymbol_marketCap_idx")
+  @@index([updatedAt], map: "DiscoverySymbol_updatedAt_idx")
+}
+
+model equitypeak {
+  portfolioId String   @unique(map: "EquityPeak_portfolioId_key")
+  peakEquity  Decimal  @db.Decimal(12, 2)
+  peakDate    DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  id          String   @id
+
+  @@index([peakDate], map: "idx_peak_date")
+  @@index([updatedAt], map: "idx_updated_at")
+}
+
+model execution {
+  id                  String              @id
+  userId              String
+  portfolioId         String
+  strategyId          String?
+  predictionId        String?
+  botId               String?
+  botRunId            Int?
+  ticker              String
+  direction           execution_direction
+  quantity            Float
+  price               Float
+  origin              String              @default("manual")
+  status              String              @default("queued")
+  lockedAt            DateTime?
+  lockedBy            String?
+  attempts            Int                 @default(0)
+  clientOrderId       String?             @unique(map: "Execution_clientOrderId_key")
+  activeIntentKey     String?             @unique(map: "Execution_activeIntentKey_key")
+  brokerOrderId       String?
+  brokerStatus        String?
+  submittedAt         DateTime?
+  lastBrokerSyncAt    DateTime?
+  filledAt            DateTime?
+  filledPrice         Float?
+  filledQuantity      Float?
+  cancelReason        String?
+  cancelRequestedAt   DateTime?
+  cancelRequestedBy   String?
+  cancelRequestReason String?
+  commission          Float
+  fees                Float
+  signalScore         Decimal?            @db.Decimal(3, 2)
+  pnl                 Decimal             @default(0.00) @db.Decimal(10, 2)
+  createdAt           DateTime            @default(now())
+  scheduledFor        DateTime?
+  isManual            Boolean             @default(false)
+  sourceId            String?
+  sourceType          String              @default("UNKNOWN")
+  botevent            botevent[]
+  bot                 bot?                @relation(fields: [botId], references: [id], map: "Execution_botId_fkey")
+  botrun              botrun?             @relation(fields: [botRunId], references: [id], map: "Execution_botRunId_fkey")
+  portfolio           portfolio           @relation(fields: [portfolioId], references: [id], map: "Execution_portfolioId_fkey")
+  prediction          prediction?         @relation(fields: [predictionId], references: [id], map: "Execution_predictionId_fkey")
+  strategy            strategy?           @relation(fields: [strategyId], references: [id], map: "Execution_strategyId_fkey")
+  executionaudit      executionaudit[]
+
+  @@index([botId, createdAt], map: "Execution_botId_createdAt_idx")
+  @@index([botId, ticker, status], map: "Execution_botId_ticker_status_idx")
+  @@index([botRunId], map: "Execution_botRunId_fkey")
+  @@index([createdAt, id], map: "Execution_createdAt_id_idx")
+  @@index([portfolioId, createdAt], map: "Execution_portfolioId_createdAt_idx")
+  @@index([predictionId], map: "Execution_predictionId_fkey")
+  @@index([status, filledAt], map: "Execution_status_filledAt_idx")
+  @@index([status, lockedAt], map: "Execution_status_lockedAt_idx")
+  @@index([strategyId], map: "Execution_strategyId_idx")
+  @@index([ticker, createdAt], map: "Execution_ticker_createdAt_idx")
+  @@index([userId], map: "Execution_userId_idx")
+}
+
+model executionaudit {
+  id          String                   @id
+  executionId String
+  userId      String
+  workerId    String?
+  eventType   executionaudit_eventType
+  detail      String
+  metadata    Json?
+  createdAt   DateTime                 @default(now())
+  execution   execution                @relation(fields: [executionId], references: [id], map: "ExecutionAudit_executionId_fkey")
+
+  @@index([eventType, createdAt], map: "ExecutionAudit_eventType_createdAt_idx")
+  @@index([executionId, createdAt], map: "ExecutionAudit_executionId_createdAt_idx")
+  @@index([userId, createdAt], map: "ExecutionAudit_userId_createdAt_idx")
+}
+
+model executionreservation {
+  id          String    @id
+  portfolioId String
+  status      String    @default("active")
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  releasedAt  DateTime?
+
+  @@index([expiresAt], map: "idx_expires")
+  @@index([portfolioId, status], map: "idx_portfolio_status")
+  @@index([status], map: "idx_status")
+}
+
+model livequote {
+  ticker    String   @id
+  bid       Float?
+  ask       Float?
+  last      Float
+  changePct Float    @default(0)
+  volume    Int      @default(0)
+  updatedAt DateTime @default(now())
+  ageMs     Int      @default(0)
+  feed      String   @default("alpaca")
+  source    String   @default("worker")
+
+  @@index([source], map: "LiveQuote_source_idx")
+  @@index([updatedAt], map: "LiveQuote_updatedAt_idx")
+}
+
+model livequotesubscription {
+  ticker      String   @id
+  requestedAt DateTime @default(now())
+
+  @@index([requestedAt], map: "LiveQuoteSubscription_requestedAt_idx")
+}
+
+model marketregime {
+  id         String   @id
+  symbol     String
+  asOf       DateTime
+  regime     String
+  score      Float?
+  priceClose Float?
+  sma20      Float?
+  sma200     Float?
+  inputsJson Json?
+  createdAt  DateTime @default(now())
+
+  @@unique([symbol, asOf], map: "MarketRegime_symbol_asOf_key")
+  @@index([symbol, asOf(sort: Desc)], map: "MarketRegime_symbol_asOf_idx")
+}
+
+model metricwatermark {
+  id              String   @id
+  metricType      String   @unique(map: "MetricWatermark_metricType_key")
+  lastProcessedAt DateTime @default(now())
+  lastProcessedId String?
+  isDirty         Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime
+}
+
+model portfolio {
+  id          String      @id
+  userId      String
+  name        String
+  createdAt   DateTime    @default(now())
+  cashBalance Decimal     @default(0.00) @db.Decimal(12, 2)
+  totalValue  Decimal     @default(0.00) @db.Decimal(12, 2)
+  updatedAt   DateTime
+  bot         bot[]
+  execution   execution[]
+
+  @@index([createdAt], map: "Portfolio_createdAt_idx")
+  @@index([totalValue], map: "Portfolio_totalValue_idx")
+  @@index([updatedAt], map: "Portfolio_updatedAt_idx")
+  @@index([userId], map: "Portfolio_userId_idx")
+}
+
+model prediction {
+  id          String               @id
+  strategyId  String
+  ticker      String
+  direction   prediction_direction
+  confidence  Float
+  entryPrice  Float
+  stopPrice   Float
+  targetPrice Float
+  createdAt   DateTime             @default(now())
+  regime      String
+  reasoning   String
+  execution   execution[]
+  strategy    strategy             @relation(fields: [strategyId], references: [id], map: "Prediction_strategyId_fkey")
+
+  @@index([strategyId], map: "Prediction_strategyId_idx")
+  @@index([ticker, createdAt], map: "Prediction_ticker_createdAt_idx")
+}
+
+model sectorexposurelimit {
+  id                     String   @id
+  portfolioId            String
+  sector                 String
+  maxExposurePercent     Decimal  @db.Decimal(5, 2)
+  currentExposurePercent Decimal  @default(0.00) @db.Decimal(5, 2)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime
+
+  @@unique([portfolioId, sector], map: "SectorExposureLimit_portfolioId_sector_key")
+  @@index([portfolioId], map: "SectorExposureLimit_portfolioId_idx")
+  @@index([sector], map: "SectorExposureLimit_sector_idx")
+}
+
+model sitemetricday {
+  id                   String   @id
+  date                 DateTime @unique(map: "SiteMetricDay_date_key") @db.Date
+  usersActive          Int      @default(0)
+  templatesActive      Int      @default(0)
+  botsActive           Int      @default(0)
+  totalTrades          Int      @default(0)
+  grossPnl             Decimal  @default(0.00) @db.Decimal(12, 2)
+  totalVolume          Decimal  @default(0.00) @db.Decimal(15, 2)
+  newUsers             Int      @default(0)
+  churnedUsers         Int      @default(0)
+  systemDailyReturn    Decimal  @default(0.000000) @db.Decimal(8, 6)
+  systemSharpe         Decimal  @default(0.00) @db.Decimal(5, 2)
+  totalDeployedCapital Decimal  @default(0.00) @db.Decimal(15, 2)
+
+  @@index([date], map: "SiteMetricDay_date_idx")
+}
+
+model strategy {
+  id          String       @id
+  name        String
+  description String
+  type        String
+  createdAt   DateTime     @default(now())
+  bot         bot[]
+  execution   execution[]
+  prediction  prediction[]
+
+  @@index([type], map: "Strategy_type_idx")
+}
+
+model subscription {
+  id     String   @id
+  userId String   @unique(map: "Subscription_userId_key")
+  status String   @default("ACTIVE")
+  plan   String   @default("BASIC")
+  endsAt DateTime
+  user   user     @relation(fields: [userId], references: [id], map: "Subscription_userId_fkey")
+}
+
+model templatemetriccurrent {
+  id                 String   @id
+  templateId         String   @unique(map: "TemplateMetricCurrent_templateId_key")
+  totalTrades        Int      @default(0)
+  winningTrades      Int      @default(0)
+  totalPnl           Decimal  @default(0.00) @db.Decimal(12, 2)
+  annualReturn       Decimal  @default(0.0000) @db.Decimal(8, 4)
+  winRate            Decimal  @default(0.00) @db.Decimal(5, 2)
+  sharpeRatio        Decimal  @default(0.00) @db.Decimal(5, 2)
+  maxDrawdown        Decimal  @default(0.00) @db.Decimal(5, 2)
+  activeUsers        Int      @default(0)
+  last30dReturn      Decimal  @default(0.0000) @db.Decimal(8, 4)
+  avgDeployedCapital Decimal  @default(0.00) @db.Decimal(12, 2)
+  dataQuality        String   @default("insufficient_data")
+  lastUpdated        DateTime @default(now())
+
+  @@index([templateId], map: "TemplateMetricCurrent_templateId_idx")
+}
+
+model templatemetricday {
+  id                 String   @id
+  date               DateTime @db.Date
+  templateId         String
+  activeUsers        Int      @default(0)
+  activeBots         Int      @default(0)
+  totalTrades        Int      @default(0)
+  winningTrades      Int      @default(0)
+  totalPnl           Decimal  @default(0.00) @db.Decimal(12, 2)
+  totalReturn        Decimal  @default(0.0000) @db.Decimal(8, 4)
+  avgWinRate         Decimal  @default(0.00) @db.Decimal(5, 2)
+  dailyEquityReturn  Decimal  @default(0.000000) @db.Decimal(8, 6)
+  maxDrawdown        Decimal  @default(0.00) @db.Decimal(5, 2)
+  startingEquity     Decimal  @default(0.00) @db.Decimal(12, 2)
+  avgDeployedCapital Decimal  @default(0.00) @db.Decimal(12, 2)
+  dataQuality        String   @default("sufficient")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime
+
+  @@unique([date, templateId], map: "TemplateMetricDay_date_templateId_key")
+  @@index([templateId, date], map: "TemplateMetricDay_templateId_date_idx")
+}
+
+model tickerconcentrationlimit {
+  id                     String   @id
+  portfolioId            String
+  ticker                 String
+  maxExposurePercent     Decimal  @db.Decimal(5, 2)
+  currentExposurePercent Decimal  @default(0.00) @db.Decimal(5, 2)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime
+
+  @@unique([portfolioId, ticker], map: "TickerConcentrationLimit_portfolioId_ticker_key")
+  @@index([portfolioId], map: "TickerConcentrationLimit_portfolioId_idx")
+  @@index([ticker], map: "TickerConcentrationLimit_ticker_idx")
+}
+
+model trademetricfact {
+  id                String   @id
+  date              DateTime @db.Date
+  userId            String
+  botId             String?
+  templateId        String?
+  sourceExecutionId String
+  eventType         String
+  sourceType        String
+  sourceId          String?
+  pnl               Decimal  @db.Decimal(12, 2)
+  returnPct         Decimal  @db.Decimal(8, 4)
+  isWin             Boolean  @default(false)
+  capitalUsed       Decimal  @db.Decimal(12, 2)
+  holdingMinutes    Int
+  direction         String
+  ticker            String
+  quantity          Float
+  entryPrice        Decimal  @db.Decimal(10, 4)
+  exitPrice         Decimal  @db.Decimal(10, 4)
+  dailyEquityReturn Decimal  @db.Decimal(8, 6)
+  allocatedCapital  Decimal  @db.Decimal(12, 2)
+  cashFlowAmount    Decimal? @db.Decimal(12, 2)
+  portfolioValue    Decimal? @db.Decimal(12, 2)
+  processed         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@index([date], map: "TradeMetricFact_date_idx")
+  @@index([processed, createdAt], map: "TradeMetricFact_processed_createdAt_idx")
+  @@index([sourceExecutionId], map: "TradeMetricFact_sourceExecutionId_idx")
+  @@index([sourceType, sourceId], map: "TradeMetricFact_sourceType_sourceId_idx")
+  @@index([templateId, date], map: "TradeMetricFact_templateId_date_idx")
+  @@index([userId, date], map: "TradeMetricFact_userId_date_idx")
+}
+
+model user {
+  id           String        @id
+  email        String        @unique(map: "User_email_key")
+  passwordHash String
+  fullName     String
+  createdAt    DateTime      @default(now())
+  riskSettings Json?
+  subscription subscription?
+}
+
+model workerstatus {
+  id                    String    @id
+  lastSeen              DateTime
+  startedAt             DateTime  @default(now())
+  queueLagMs            Int?
+  lastRestOkAt          DateTime?
+  lastWsOkAt            DateTime?
+  lastCalendarRefreshAt DateTime?
+  health                Json?
+}
+
+enum botrule_type {
+  price_threshold
+  position_limit
+  daily_loss
+  market_hours
+  cooldown
+  trend_filter
+  time_window
+}
+
+enum prediction_direction {
+  buy
+  sell
+}
+
+enum executionaudit_eventType {
+  execution_created
+  claimed
+  submit_attempted
+  submit_confirmed
+  cancel_requested
+  reconciled
+  partial_fill
+  filled
+  cancelled
+  retry_scheduled
+  failed
+  risk_blocked
+}
+
+enum botevent_type {
+  rule_triggered
+  decision_made
+  execution_created
+  execution_skipped
+  error_occurred
+}
+
+enum execution_direction {
+  buy
+  sell
+}
+
+

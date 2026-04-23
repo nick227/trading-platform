@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { alphaFetch } from '../api/services/alphaEngineService.js'
 
 const RECENT_KEY = 'assets_recent_searches_v1'
@@ -7,6 +7,28 @@ const DEFAULT_MODE = 'balanced'
 
 const TABLE_ROW_H = 44
 const TABLE_HEAD_H = 40
+
+const POPULAR_TICKERS = [
+  { ticker: 'AAPL', name: 'Apple Inc.' },
+  { ticker: 'MSFT', name: 'Microsoft Corp.' },
+  { ticker: 'GOOGL', name: 'Alphabet Inc.' },
+  { ticker: 'AMZN', name: 'Amazon.com Inc.' },
+  { ticker: 'TSLA', name: 'Tesla Inc.' },
+  { ticker: 'NVDA', name: 'NVIDIA Corp.' },
+  { ticker: 'META', name: 'Meta Platforms' },
+  { ticker: 'BRK.B', name: 'Berkshire Hathaway' },
+]
+
+const SITE_PICKS = [
+  { ticker: 'SPY', name: 'SPDR S&P 500 ETF', reason: 'Market Benchmark' },
+  { ticker: 'QQQ', name: 'Invesco QQQ Trust', reason: 'Tech Heavy' },
+  { ticker: 'VTI', name: 'Vanguard Total Stock', reason: 'Total Market' },
+  { ticker: 'BTC-USD', name: 'Bitcoin USD', reason: 'Crypto Leader' },
+  { ticker: 'ETH-USD', name: 'Ethereum USD', reason: 'Smart Contracts' },
+  { ticker: 'GLD', name: 'SPDR Gold Shares', reason: 'Safe Haven' },
+  { ticker: 'VIX', name: 'CBOE Volatility Index', reason: 'Fear Gauge' },
+  { ticker: 'DXY', name: 'US Dollar Index', reason: 'Dollar Strength' },
+]
 
 function loadRecentSearches() {
   try {
@@ -57,6 +79,50 @@ function normalizeConfidence(value) {
   if (!Number.isFinite(num)) return null
   if (num <= 1) return Math.round(num * 100)
   if (num <= 100) return Math.round(num)
+  return null
+}
+
+function parseEntryZone(value) {
+  if (!value) return null
+  if (Array.isArray(value) && value.length >= 2) {
+    const low = Number(value[0])
+    const high = Number(value[1])
+    if (Number.isFinite(low) && Number.isFinite(high)) return { low, high }
+  }
+
+  const text = String(value)
+  const range = text.match(/([-+]?\d*\.?\d+)\s*[–-]\s*([-+]?\d*\.?\d+)/)
+  if (range) {
+    const low = Number(range[1])
+    const high = Number(range[2])
+    if (Number.isFinite(low) && Number.isFinite(high)) return { low, high }
+  }
+
+  const single = text.match(/([-+]?\d*\.?\d+)/)
+  if (single) {
+    const num = Number(single[1])
+    if (Number.isFinite(num)) return { low: num, high: num }
+  }
+
+  return null
+}
+
+function deriveRowPrice(row) {
+  const raw =
+    row?.price ??
+    row?.last ??
+    row?.currentPrice ??
+    row?.current_price ??
+    row?.entry ??
+    row?.entryPrice ??
+    row?.entry_price
+
+  const num = typeof raw === 'number' ? raw : Number(raw)
+  if (Number.isFinite(num)) return num
+
+  const zone = parseEntryZone(row?.entryZone ?? row?.entry_zone ?? row?.entry)
+  if (zone) return (zone.low + zone.high) / 2
+
   return null
 }
 
@@ -123,36 +189,6 @@ function VirtualRows({
   )
 }
 
-function ModelRunPill({ topRankings }) {
-  const runStatus = topRankings?.runStatus ?? topRankings?.run_status ?? null
-  const runQuality = topRankings?.runQuality ?? topRankings?.run_quality ?? null
-  const rankedUnderDegradedRun = topRankings?.rankedUnderDegradedRun ?? topRankings?.ranked_under_degraded_run ?? null
-  const asOf = topRankings?.as_of ?? topRankings?.asOf ?? topRankings?.rankings?.[0]?.timestamp ?? null
-
-  const statusText = runStatus ? String(runStatus) : 'UNKNOWN'
-  const qualityText = typeof runQuality === 'number' ? runQuality.toFixed(2) : '—'
-  const asOfText = fmtAsOf(asOf) ?? '—'
-  const degraded = (statusText && statusText !== 'HEALTHY') || rankedUnderDegradedRun === true
-
-  return (
-    <div
-      className="btn btn-xs btn-ghost"
-      style={{
-        display: 'inline-flex',
-        gap: 8,
-        alignItems: 'center',
-        border: `1px solid ${degraded ? '#c0392b' : '#ddd'}`,
-        background: degraded ? 'rgba(192,57,43,0.06)' : 'white',
-      }}
-      title={`As of ${asOfText}`}
-    >
-      <span style={{ fontWeight: 700 }}>Model</span>
-      <span className={degraded ? 'text-negative' : 'muted'}>{statusText}</span>
-      <span className="muted">Q {qualityText}</span>
-    </div>
-  )
-}
-
 function SkeletonRows({ count = 10, rowHeight = TABLE_ROW_H }) {
   return (
     <div className="data-rows">
@@ -176,6 +212,40 @@ function SectionHeader({ title, right }) {
   )
 }
 
+function TickerRow3({
+  ticker,
+  to,
+  onOpen,
+  price,
+  special,
+  specialClassName = 'muted text-ellipsis-one-line',
+  priceClassName = 'muted text-right text-nowrap',
+  divider = true,
+  className = '',
+  style,
+  ...rest
+}) {
+  const tkr = String(ticker ?? '').toUpperCase()
+  const href = to ?? `/assets/${encodeURIComponent(tkr)}`
+  const dividerClass = divider ? 'data-row-divider' : ''
+
+  return (
+    <Link
+      className={`btn-reset data-row-asset data-row-ticker3 data-row-action pressable ${dividerClass} ${className}`.trim()}
+      to={href}
+      onClick={onOpen}
+      style={style}
+      {...rest}
+    >
+      <strong className="text-nowrap">{tkr || '—'}</strong>
+      <span className={priceClassName}>{price ?? '—'}</span>
+      <span className={specialClassName} style={{ minWidth: 0 }}>
+        {special ?? ' '}
+      </span>
+    </Link>
+  )
+}
+
 export default function AssetsIndex() {
   const navigate = useNavigate()
 
@@ -192,23 +262,30 @@ export default function AssetsIndex() {
   const [movers, setMovers] = useState({ loading: true, error: null, data: null })
   const [recs, setRecs] = useState({ loading: true, error: null, data: {} })
   const [tickers, setTickers] = useState({ loading: false, error: null, data: [] })
+  const [spotQuotes, setSpotQuotes] = useState({})
 
-  const openTicker = (symbol) => {
-    const tkr = String(symbol || '').toUpperCase().trim()
-    if (!tkr) return
-    const nextRecent = [tkr, ...recent.filter((r) => r !== tkr)].slice(0, 8)
-    setRecent(nextRecent)
-    saveRecentSearches(nextRecent)
-    navigate(`/assets/${tkr}`)
+  const normalizeTicker = (symbol) => String(symbol ?? '').toUpperCase().trim()
+  const tickerHref = (symbol) => {
+    const tkr = normalizeTicker(symbol)
+    return tkr ? `/assets/${encodeURIComponent(tkr)}` : '/assets'
   }
 
-  const degraded = useMemo(() => {
-    const d = topRankings.data
-    if (!d) return false
-    const runStatus = d.runStatus ?? d.run_status
-    const rankedUnderDegradedRun = d.rankedUnderDegradedRun ?? d.ranked_under_degraded_run
-    return (runStatus && runStatus !== 'HEALTHY') || rankedUnderDegradedRun === true
-  }, [topRankings.data])
+  const rememberTicker = (symbol) => {
+    const tkr = normalizeTicker(symbol)
+    if (!tkr) return null
+    setRecent((prev) => {
+      const nextRecent = [tkr, ...prev.filter((r) => r !== tkr)].slice(0, 8)
+      saveRecentSearches(nextRecent)
+      return nextRecent
+    })
+    return tkr
+  }
+
+  const openTicker = (symbol) => {
+    const tkr = rememberTicker(symbol) ?? normalizeTicker(symbol)
+    if (!tkr) return
+    navigate(tickerHref(tkr))
+  }
 
   const dataAsOf = useMemo(() => {
     const d = topRankings.data
@@ -273,6 +350,32 @@ export default function AssetsIndex() {
     loadRankings()
     loadMovers()
     loadRecs()
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const tickersToLoad = Array.from(
+      new Set([...POPULAR_TICKERS, ...SITE_PICKS].map((item) => String(item.ticker).toUpperCase().trim()).filter(Boolean))
+    )
+
+    Promise.all(
+      tickersToLoad.map((tkr) =>
+        alphaFetch(`/api/quote/${encodeURIComponent(tkr)}`)
+          .then((quote) => [tkr, quote])
+          .catch(() => [tkr, null])
+      )
+    ).then((pairs) => {
+      if (cancelled) return
+      const next = {}
+      for (const [tkr, quote] of pairs) {
+        if (quote) next[tkr] = quote
+      }
+      setSpotQuotes(next)
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -389,17 +492,85 @@ export default function AssetsIndex() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <ModelRunPill topRankings={topRankings.data} />
-            </div>
           </header>
 
-          {degraded ? (
-            <div className="alert alert-warn" style={{ padding: 14 }}>
-              <div className="alert-title">Degraded run</div>
-              <div>Rankings may be stale or partially covered.</div>
-            </div>
-          ) : null}
+          <section className="l-grid-3">
+            <article className="card card-pad-sm">
+              <SectionHeader title="Popular Tickers" right="" />
+              <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                {POPULAR_TICKERS.map(({ ticker, name }) => (
+                  <TickerRow3
+                    key={ticker}
+                    ticker={ticker}
+                    to={tickerHref(ticker)}
+                    onOpen={() => rememberTicker(ticker)}
+                    price={fmtPrice(spotQuotes?.[ticker]?.price ?? spotQuotes?.[ticker]?.last)}
+                    special={`${name} · Popular`}
+                  />
+                ))}
+              </div>
+            </article>
+
+            <article className="card card-pad-sm">
+              <SectionHeader title="Top Movers" right="" />
+              {movers.loading ? (
+                <div className="mt-2">
+                  <SkeletonRows count={6} />
+                </div>
+              ) : movers.error ? (
+                <div className="mt-2">
+                  <div className="text-negative">{movers.error}</div>
+                  <button className="btn btn-xs btn-ghost mt-2" onClick={loadMovers}>Retry</button>
+                </div>
+              ) : moverRows.length === 0 ? (
+                <div className="muted mt-2">No movers data available.</div>
+              ) : (
+                <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                  {moverRows.slice(0, 8).map((r) => {
+                    const tkr = r.ticker ?? r.symbol
+                    const currentRank = r.currentRank ?? r.current_rank ?? r.rank ?? null
+                    const priorRank = r.priorRank ?? r.prior_rank ?? r.prevRank ?? r.previousRank ?? r.previous_rank ?? null
+                    const rankChange = r.rankChange ?? r.rank_change ?? (currentRank !== null && priorRank !== null ? priorRank - currentRank : null)
+                    const price = r.price ?? r.last
+                    const change = r.dailyChangePct ?? r.changePct ?? r.change
+                    const changeLabel = change == null ? null : fmtPct(change)
+                    const rankLabel =
+                      currentRank !== null
+                        ? `#${currentRank}${typeof rankChange === 'number' ? ` · ${rankChange > 0 ? '+' : ''}${rankChange}` : ''}`
+                        : '—'
+
+                    return (
+                      <TickerRow3
+                        key={tkr}
+                        ticker={tkr}
+                        to={tickerHref(tkr)}
+                        onOpen={() => rememberTicker(tkr)}
+                        price={fmtPrice(price)}
+                        special={`${rankLabel}${changeLabel ? ` · ${changeLabel}` : ''}`}
+                        specialClassName="muted text-right text-nowrap"
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </article>
+
+            <article className="card card-pad-sm">
+              <SectionHeader title="Site Picks" right="" />
+              <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                {SITE_PICKS.map(({ ticker, name, reason }) => (
+                  <TickerRow3
+                    key={ticker}
+                    ticker={ticker}
+                    to={tickerHref(ticker)}
+                    onOpen={() => rememberTicker(ticker)}
+                    price={fmtPrice(spotQuotes?.[ticker]?.price ?? spotQuotes?.[ticker]?.last)}
+                    special={`${name} · ${reason}`}
+                  />
+                ))}
+              </div>
+            </article>
+          </section>
 
           <section className="card card-pad-md">
             <SectionHeader
@@ -417,7 +588,6 @@ export default function AssetsIndex() {
 
             <div className="mt-2 l-row" style={{ alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 280 }}>
-                <div className="eyebrow mb-1">Search</div>
                 <input
                   value={query}
                   placeholder="Ticker or company…"
@@ -441,9 +611,14 @@ export default function AssetsIndex() {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span className="muted" style={{ fontSize: 12 }}>Recent:</span>
                   {recent.map((tkr) => (
-                    <button key={tkr} className="btn btn-xs btn-ghost pressable" onClick={() => openTicker(tkr)}>
+                    <Link
+                      key={tkr}
+                      className="btn btn-xs btn-ghost pressable"
+                      to={tickerHref(tkr)}
+                      onClick={() => rememberTicker(tkr)}
+                    >
                       {tkr}
-                    </button>
+                    </Link>
                   ))}
                 </div>
               ) : (
@@ -478,7 +653,7 @@ export default function AssetsIndex() {
               >
                 {String(debouncedQuery || '').trim() === '' ? (
                   <div style={{ padding: 12 }} className="muted">
-                    Type to search tickers (server-side).
+                    ...
                   </div>
                 ) : tickers.error ? (
                   <div style={{ padding: 12 }} className="text-negative">
@@ -501,7 +676,7 @@ export default function AssetsIndex() {
                     scrollerRef={tableScrollRef}
                     renderHeader={() => (
                       <div
-                        className="data-row-asset"
+                        className="data-row-asset data-row-ticker3"
                         style={{
                           padding: '10px 12px',
                           background: '#fafafa',
@@ -509,17 +684,16 @@ export default function AssetsIndex() {
                           fontSize: 12,
                           fontWeight: 800,
                           height: TABLE_HEAD_H,
-                          gridTemplateColumns: '112px minmax(0, 1fr) 240px'
                         }}
                       >
                         <button className="btn-reset" onClick={() => toggleSort('ticker')} style={{ textAlign: 'left' }}>
                           Ticker{tableSort.key === 'ticker' ? (tableSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
                         </button>
-                        <button className="btn-reset" onClick={() => toggleSort('name')} style={{ textAlign: 'left' }}>
-                          Name{tableSort.key === 'name' ? (tableSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
-                        </button>
                         <button className="btn-reset text-right" onClick={() => toggleSort('price')}>
-                          Price{tableSort.key === 'price' ? (tableSort.dir === 'asc' ? ' ↑' : ' ↓') : ''} · Day
+                          Price{tableSort.key === 'price' ? (tableSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
+                        </button>
+                        <button className="btn-reset" onClick={() => toggleSort('name')} style={{ textAlign: 'left' }}>
+                          Details{tableSort.key === 'name' ? (tableSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
                         </button>
                       </div>
                     )}
@@ -529,29 +703,30 @@ export default function AssetsIndex() {
                       const price = row?.price ?? row?.last
                       const change = row?.dailyChangePct ?? row?.changePct ?? row?.change
                       const selected = idx === tableIndex
+                      const changeClass = (change ?? 0) >= 0 ? 'text-positive' : 'text-negative'
+                      const special = (
+                        <>
+                          <span className={changeClass}>{fmtPct(change)}</span>
+                          <span className="muted"> · {name}</span>
+                        </>
+                      )
                       return (
-                        <button
-                          className={`btn-reset data-row-asset data-row-action pressable ${selected ? 'is-selected' : ''}`}
-                          onClick={() => openTicker(tkr)}
+                        <TickerRow3
+                          ticker={tkr}
+                          to={tickerHref(tkr)}
+                          onOpen={() => rememberTicker(tkr)}
                           onMouseEnter={() => setTableIndex(idx)}
                           aria-selected={selected}
+                          className={selected ? 'is-selected' : ''}
+                          divider={false}
                           style={{
                             height: TABLE_ROW_H,
                             borderBottom: '1px solid #f0f0f0',
-                            gridTemplateColumns: '112px minmax(0, 1fr) 240px'
                           }}
-                        >
-                          <strong>{tkr || '—'}</strong>
-                          <span className="muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {name}
-                          </span>
-                          <span className="text-right">
-                            <span className="muted" style={{ marginRight: 10 }}>{fmtPrice(price)}</span>
-                            <span className={(change ?? 0) >= 0 ? 'text-positive' : 'text-negative'}>
-                              {fmtPct(change)}
-                            </span>
-                          </span>
-                        </button>
+                          price={fmtPrice(price)}
+                          special={special}
+                          specialClassName="text-ellipsis-one-line"
+                        />
                       )
                     }}
                   />
@@ -571,17 +746,21 @@ export default function AssetsIndex() {
                   <button className="btn btn-xs btn-ghost mt-2" onClick={loadMarket}>Retry</button>
                 </div>
               ) : (
-                <div className="data-rows mt-2">
+                <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
                   {[
                     ['SPY', market.data?.spy],
                     ['QQQ', market.data?.qqq],
                     ['IWM', market.data?.iwm]
                   ].map(([label, q]) => (
-                    <div key={label} className="data-row-asset data-row-divider">
-                      <strong>{label}</strong>
-                      <span>{fmtPrice(q?.price ?? q?.last)}</span>
-                      <span className="muted text-right">{fmtPct(q?.dailyChangePct ?? q?.changePct ?? q?.change)}</span>
-                    </div>
+                    <TickerRow3
+                      key={label}
+                      ticker={label}
+                      to={tickerHref(label)}
+                      onOpen={() => rememberTicker(label)}
+                      price={fmtPrice(q?.price ?? q?.last)}
+                      special={fmtPct(q?.dailyChangePct ?? q?.changePct ?? q?.change)}
+                      specialClassName="muted text-right text-nowrap"
+                    />
                   ))}
 
                   <div className="mt-2">
@@ -608,25 +787,25 @@ export default function AssetsIndex() {
               ) : rankedRows.length === 0 ? (
                 <div className="muted mt-2">No ranked opportunities.</div>
               ) : (
-                <div className="data-rows mt-2">
+                <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
                   {rankedRows.slice(0, 12).map((r) => {
                     const tkr = r.ticker ?? r.symbol
                     const conviction = r.conviction ?? r.confidence
+                    const score = Number(r.score)
+                    const conf = Number(conviction)
+                    const edge =
+                      (Number.isFinite(score) ? score : 0) *
+                      (Number.isFinite(conf) ? conf : 1)
                     return (
-                      <button
+                      <TickerRow3
                         key={tkr}
-                        className="btn-reset data-row-asset data-row-divider data-row-action pressable"
-                        onClick={() => openTicker(tkr)}
-                      >
-                        <strong>{tkr}</strong>
-                        <span className="muted">{fmtScore(r.score)} · C {fmtScore(conviction)}</span>
-                        <span className="text-right">
-                          <span className="muted" style={{ marginRight: 10 }}>{fmtPrice(r.price)}</span>
-                          <span className={(r.dailyChangePct ?? 0) >= 0 ? 'text-positive' : 'text-negative'}>
-                            {fmtPct(r.dailyChangePct)}
-                          </span>
-                        </span>
-                      </button>
+                        ticker={tkr}
+                        to={tickerHref(tkr)}
+                        onOpen={() => rememberTicker(tkr)}
+                        price={fmtPrice(r.price)}
+                        special={`Edge ${fmtScore(edge)} · ${fmtPct(r.dailyChangePct)}`}
+                        specialClassName="muted text-right text-nowrap"
+                      />
                     )
                   })}
                 </div>
@@ -647,7 +826,7 @@ export default function AssetsIndex() {
               ) : moverRows.length === 0 ? (
                 <div className="muted mt-2">No movers.</div>
               ) : (
-                <div className="data-rows mt-2">
+                <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
                   {moverRows.slice(0, 12).map((r) => {
                     const tkr = r.ticker ?? r.symbol
                     const currentRank = r.currentRank ?? r.current_rank ?? r.rank ?? null
@@ -655,23 +834,17 @@ export default function AssetsIndex() {
                     const rankChange = r.rankChange ?? r.rank_change ?? (currentRank !== null && priorRank !== null ? priorRank - currentRank : null)
 
                     return (
-                      <button
+                      <TickerRow3
                         key={tkr}
-                        className="btn-reset data-row-asset data-row-divider data-row-action pressable"
-                        onClick={() => openTicker(tkr)}
-                      >
-                        <strong>{tkr}</strong>
-                        <span className="muted">
-                          {currentRank !== null ? `#${currentRank}` : '—'}
-                          {typeof rankChange === 'number' ? ` · ${rankChange > 0 ? '+' : ''}${rankChange}` : ''}
-                        </span>
-                        <span className="text-right">
-                          <span className="muted" style={{ marginRight: 10 }}>{fmtPrice(r.price)}</span>
-                          <span className={(r.dailyChangePct ?? 0) >= 0 ? 'text-positive' : 'text-negative'}>
-                            {fmtPct(r.dailyChangePct)}
-                          </span>
-                        </span>
-                      </button>
+                        ticker={tkr}
+                        to={tickerHref(tkr)}
+                        onOpen={() => rememberTicker(tkr)}
+                        price={fmtPrice(r.price)}
+                        special={`${currentRank !== null ? `#${currentRank}` : '—'}${
+                          typeof rankChange === 'number' ? ` · ${rankChange > 0 ? '+' : ''}${rankChange}` : ''
+                        } · ${fmtPct(r.dailyChangePct)}`}
+                        specialClassName="muted text-right text-nowrap"
+                      />
                     )
                   })}
                 </div>
@@ -707,21 +880,22 @@ export default function AssetsIndex() {
                         <span className="muted" style={{ fontSize: 12 }}>{asOf ? `As of ${asOf}` : ' '}</span>
                       </div>
                       {Array.isArray(rows) && rows.length > 0 ? (
-                        <div className="data-rows mt-2">
+                        <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
                           {rows.slice(0, 10).map((r) => {
                             const tkr = r.ticker ?? r.symbol
                             const conf = normalizeConfidence(r.confidence)
                             const entry = Array.isArray(r.entryZone) ? `${r.entryZone[0]} – ${r.entryZone[1]}` : r.entryZone
+                            const price = deriveRowPrice(r)
                             return (
-                              <button
+                              <TickerRow3
                                 key={tkr}
-                                className="btn-reset data-row-asset data-row-divider data-row-action pressable"
-                                onClick={() => openTicker(tkr)}
-                              >
-                                <strong>{tkr}</strong>
-                                <span className="muted">{r.action ?? '—'}{conf !== null ? ` · ${conf}%` : ''}</span>
-                                <span className="muted text-right">{entry ? `Entry ${entry}` : ' '}</span>
-                              </button>
+                                ticker={tkr}
+                                to={tickerHref(tkr)}
+                                onOpen={() => rememberTicker(tkr)}
+                                price={fmtPrice(price)}
+                                special={`${r.action ?? '—'}${conf !== null ? ` · ${conf}%` : ''}${entry ? ` · Entry ${entry}` : ''}`}
+                                specialClassName="muted text-right text-ellipsis-one-line"
+                              />
                             )
                           })}
                         </div>

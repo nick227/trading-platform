@@ -38,6 +38,7 @@
   --text-md: 16px;
   --text-lg: 20px;
   --text-xl: 28px;
+  --text-xxxl: 128px;
   --font-xs: var(--text-xs);
   --font-sm: var(--text-sm);
   --font-md: var(--text-md);

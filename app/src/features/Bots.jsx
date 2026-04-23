@@ -157,6 +157,52 @@ export default function Bots() {
           </div>
         </header>
 
+        {/* Quick Actions */}
+        <section className="section">
+          <div className="panel-header">
+            <h2 className="panel-title">Quick Actions</h2>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => navigate('/templates')}
+            >
+              Browse Templates
+            </button>
+          </div>
+
+          <div className="l-grid-auto-200">
+            <article className="card card-pad-sm text-center">
+              <div className="text-xl mb-2">Create Bot</div>
+              <div className="muted text-sm mb-3">
+                Start with a template or custom configuration
+              </div>
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => navigate('/bots/create')}
+              >
+                Create New Bot
+              </button>
+            </article>
+
+            <article className="card card-pad-sm text-center">
+              <div className="text-xl mb-2">View History</div>
+              <div className="muted text-sm mb-3">
+                Access complete trading records for all bots
+              </div>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  // Navigate to history of first available bot
+                  const firstBot = bots[0]
+                  if (firstBot) navigate(`/bots/${firstBot.id}/history`)
+                }}
+                disabled={!bots.length}
+              >
+                View Bot History
+              </button>
+            </article>
+          </div>
+        </section>
+
         <section className="mb-6">
           <article className="card card-pad-md">
             <div className="panel-header">
@@ -248,52 +294,6 @@ export default function Bots() {
             <div className="text-sm">{successMessage}</div>
           </section>
         )}
-
-        {/* Quick Actions */}
-        <section className="section">
-          <div className="panel-header">
-            <h2 className="panel-title">Quick Actions</h2>
-            <button
-              className="btn btn-sm btn-primary"
-              onClick={() => navigate('/templates')}
-            >
-              Browse Templates
-            </button>
-          </div>
-
-          <div className="l-grid-auto-200">
-            <article className="card card-pad-sm text-center">
-              <div className="text-xl mb-2">Create Bot</div>
-              <div className="muted text-sm mb-3">
-                Start with a template or custom configuration
-              </div>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={() => navigate('/bots/create')}
-              >
-                Create New Bot
-              </button>
-            </article>
-
-            <article className="card card-pad-sm text-center">
-              <div className="text-xl mb-2">View History</div>
-              <div className="muted text-sm mb-3">
-                Access complete trading records for all bots
-              </div>
-              <button
-                className="btn btn-sm btn-ghost"
-                onClick={() => {
-                  // Navigate to history of first available bot
-                  const firstBot = bots[0]
-                  if (firstBot) navigate(`/bots/${firstBot.id}/history`)
-                }}
-                disabled={!bots.length}
-              >
-                View Bot History
-              </button>
-            </article>
-          </div>
-        </section>
       </div>
     </div>
   )

@@ -36,6 +36,7 @@
 
 .btn-xs {
   height: 28px;
+  max-width: 140px;
   padding: 0 10px;
   font-size: var(--text-xs);
   border-radius: 10px;
@@ -234,9 +235,17 @@
   align-items: center;
 }
 
+.data-row-ticker3 {
+  grid-template-columns: 92px 110px minmax(0, 1fr);
+}
+
 @media (min-width: 768px) {
   .data-row-asset {
     grid-template-columns: 112px minmax(0, 1fr) 220px;
+  }
+
+  .data-row-ticker3 {
+    grid-template-columns: 112px 130px minmax(0, 1fr);
   }
 }
 

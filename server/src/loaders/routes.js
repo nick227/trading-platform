@@ -15,6 +15,7 @@ import marketRoutes from '../routes/market.js'
 import ordersRoutes from '../routes/orders.js'
 import botRoutes from '../routes/bots/index.js'
 import riskRoutes from '../routes/risk.js'
+import metricsRoutes from '../routes/metrics.js'
 import { authenticate } from '../middleware/authenticate.js'
 
 export default async function registerRoutes(app) {
@@ -43,4 +44,5 @@ export default async function registerRoutes(app) {
   await app.register(marketRoutes,     { prefix: '/api/market' })
   await app.register(ordersRoutes,      { prefix: '/api/orders' })
   await app.register(riskRoutes,        { prefix: '/api/risk' })
+  await app.register(metricsRoutes,     { prefix: '/api/metrics' })
 }
