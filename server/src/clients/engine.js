@@ -290,14 +290,34 @@ export const engineClient = {
     }
     const existing = Array.isArray(normalized.recommendations) ? normalized.recommendations : []
     const targetCount = Math.min(limit, MIN_PRICE_CAP_RECOMMENDATIONS)
+    const withMeta = (recommendations) => {
+      const returnedCount = Array.isArray(recommendations) ? recommendations.length : 0
+      const shortfall = Math.max(0, targetCount - returnedCount)
+      return {
+        ...normalized,
+        recommendations,
+        meta: {
+          targetCount,
+          returnedCount,
+          liveOnly: true,
+          complete: shortfall === 0,
+          reason: shortfall > 0 ? 'insufficient_live_quotes' : null
+        }
+      }
+    }
 
     if (!Number.isFinite(capNum) || existing.length >= targetCount) {
-      return normalized
+      return withMeta(existing)
     }
 
     const seen = new Set(existing.map(recommendationSymbol).filter(Boolean))
-    const rankingsPayload = await this.getTopRankings(100)
-    const rankingRows = Array.isArray(rankingsPayload?.rankings) ? rankingsPayload.rankings : []
+    let rankingRows = []
+    try {
+      const rankingsPayload = await this.getTopRankings(100)
+      rankingRows = Array.isArray(rankingsPayload?.rankings) ? rankingsPayload.rankings : []
+    } catch {
+      rankingRows = []
+    }
     const rankedTickers = rankingRows
       .map((row) => String(row?.ticker ?? row?.symbol ?? '').toUpperCase())
       .filter(Boolean)
@@ -331,11 +351,16 @@ export const engineClient = {
     }
 
     if (existing.length + fallbackRows.length < targetCount) {
-      const tickersPayload = await this.getTickers('')
-      const tickersData = tickersPayload?.data ?? tickersPayload
-      const universeTickers = Array.isArray(tickersData?.tickers)
-        ? tickersData.tickers
-        : (Array.isArray(tickersData) ? tickersData : [])
+      let universeTickers = []
+      try {
+        const tickersPayload = await this.getTickers('')
+        const tickersData = tickersPayload?.data ?? tickersPayload
+        universeTickers = Array.isArray(tickersData?.tickers)
+          ? tickersData.tickers
+          : (Array.isArray(tickersData) ? tickersData : [])
+      } catch {
+        universeTickers = []
+      }
       const universeSymbols = universeTickers
         .map(extractTickerValue)
         .filter(Boolean)
@@ -378,11 +403,8 @@ export const engineClient = {
       fallbackRows.push(...discoveryRows)
     }
 
-    if (fallbackRows.length === 0) return normalized
-    return {
-      ...normalized,
-      recommendations: [...existing, ...fallbackRows].slice(0, limit)
-    }
+    const merged = [...existing, ...fallbackRows].slice(0, limit)
+    return withMeta(merged)
   },
 
   // Active signals for trading
