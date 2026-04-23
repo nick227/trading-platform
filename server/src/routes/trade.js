@@ -70,7 +70,7 @@ export default async function tradeRoutes(app, opts) {
       if (!creds) return reply.code(503).send({ error: 'Alpaca credentials not configured' })
 
       const clock = await fetchAlpacaMarketClock(creds)
-      if (!clock.isOpen) {
+      if (!clock.isOpen && process.env.SKIP_MARKET_HOURS_CHECK !== 'true') {
         return reply.code(409).send({ error: 'Market is closed', code: 'MARKET_CLOSED', clock })
       }
 

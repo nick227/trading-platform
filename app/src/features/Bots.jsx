@@ -11,9 +11,9 @@ export default function Bots() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [successMessage, setSuccessMessage] = useState(null)
-  
+
   const [filter, setFilter] = useState('all')
-  
+
   // Calculate bot counts
   const runningCount = bots.filter((bot) => bot.enabled).length
   const stoppedCount = bots.filter((bot) => !bot.enabled && !bot.deletedAt).length
@@ -21,15 +21,15 @@ export default function Bots() {
   const pausedCount = bots.filter((bot) => !bot.enabled).length
 
   // Filter bots based on selected filter
-  const filteredBots = filter === 'all' 
-    ? bots 
-    : filter === 'archived' 
-    ? bots.filter(bot => bot.deletedAt)
-    : filter === 'running'
-    ? bots.filter(bot => bot.enabled)
-    : filter === 'stopped' || filter === 'paused'
-    ? bots.filter(bot => !bot.enabled && !bot.deletedAt)
-    : bots
+  const filteredBots = filter === 'all'
+    ? bots
+    : filter === 'archived'
+      ? bots.filter(bot => bot.deletedAt)
+      : filter === 'running'
+        ? bots.filter(bot => bot.enabled)
+        : filter === 'stopped' || filter === 'paused'
+          ? bots.filter(bot => !bot.enabled && !bot.deletedAt)
+          : bots
 
   // Load data on mount
   useEffect(() => {
@@ -37,12 +37,12 @@ export default function Bots() {
       try {
         setLoading(true)
         setError(null)
-        
+
         const [catalogData, botsData] = await Promise.all([
           getBotCatalog(),
           getBots()
         ])
-        
+
         setCatalog(catalogData)
         setBots(Array.isArray(botsData) ? botsData : [])
       } catch (error) {
@@ -113,59 +113,46 @@ export default function Bots() {
     <div className="l-page">
       <div className="container">
         <header className="stack-sm mb-6">
-          <h1 className="hero mb-2">Bots</h1>
-          <p className="muted measure-md text-md mb-4">
-            Manage your automated trading bots and view performance history
-          </p>
-          
-          {/* Error Display */}
-        {error && (
-          <section className="alert alert-error mb-5">
-            <div className="alert-title">Error</div>
-            <div className="text-sm">{error}</div>
-          </section>
-        )}
 
-          {/* Status Summary */}
-          <div className="row text-sm mb-4">
-            <span className="text-positive font-600">{runningCount} running</span>
-            <span className="text-muted">{pausedCount} paused</span>
-            <span className="text-negative font-600">{stoppedCount} stopped</span>
-            <span className="text-muted">{archivedCount} archived</span>
-            <span className="text-muted">· Total: {bots.length}</span>
-          </div>
-          
+          {/* Error Display */}
+          {error && (
+            <section className="alert alert-error mb-5">
+              <div className="alert-title">Error</div>
+              <div className="text-sm">{error}</div>
+            </section>
+          )}
+
           {/* Filter Controls */}
           <div className="wrap">
             <button
               className={filter === 'all' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
               onClick={() => setFilter('all')}
             >
-              All Bots
+              {bots.length} Bots
             </button>
             <button
               className={filter === 'running' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
               onClick={() => setFilter('running')}
             >
-              Running
+              {runningCount} Running
             </button>
             <button
               className={filter === 'paused' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
               onClick={() => setFilter('paused')}
             >
-              Paused
+              {pausedCount} Paused
             </button>
             <button
               className={filter === 'stopped' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
               onClick={() => setFilter('stopped')}
             >
-              Stopped
+              {stoppedCount} Stopped
             </button>
             <button
               className={filter === 'archived' ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
               onClick={() => setFilter('archived')}
             >
-              Archived
+              {archivedCount} Archived
             </button>
           </div>
         </header>
@@ -178,7 +165,7 @@ export default function Bots() {
                 <span className="text-sm text-muted"> ({filteredBots.length})</span>
               </h2>
             </div>
-            
+
             {loading ? (
               <div className="centered p-8 text-muted">
                 <div className="text-lg mb-2">Loading bots...</div>
@@ -266,34 +253,34 @@ export default function Bots() {
         <section className="section">
           <div className="panel-header">
             <h2 className="panel-title">Quick Actions</h2>
-            <button 
+            <button
               className="btn btn-sm btn-primary"
               onClick={() => navigate('/templates')}
             >
               Browse Templates
             </button>
           </div>
-          
+
           <div className="l-grid-auto-200">
             <article className="card card-pad-sm text-center">
               <div className="text-xl mb-2">Create Bot</div>
               <div className="muted text-sm mb-3">
                 Start with a template or custom configuration
               </div>
-              <button 
+              <button
                 className="btn btn-sm btn-primary"
                 onClick={() => navigate('/bots/create')}
               >
                 Create New Bot
               </button>
             </article>
-            
+
             <article className="card card-pad-sm text-center">
               <div className="text-xl mb-2">View History</div>
               <div className="muted text-sm mb-3">
                 Access complete trading records for all bots
               </div>
-              <button 
+              <button
                 className="btn btn-sm btn-ghost"
                 onClick={() => {
                   // Navigate to history of first available bot

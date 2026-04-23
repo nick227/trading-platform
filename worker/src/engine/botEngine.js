@@ -1,5 +1,6 @@
 import prisma from '../db/prisma.js'
 import { randomUUID } from 'crypto'
+import { log } from '../logger.js'
 import { getBrokerClient } from '../broker/clientCache.js'
 import { priceCache } from '../market/priceCache.js'
 import { subscribe, unsubscribe } from '../market/dataStream.js'
@@ -54,7 +55,7 @@ export async function startBotEngine() {
   if (reloadTimer) {
     return
   }
-  console.log('[botEngine] starting')
+  log.info('bot_engine_start')
   await initInflightMap()
   reloadBots()
   reloadTimer = setInterval(reloadBots, RELOAD_INTERVAL_MS)
@@ -72,10 +73,10 @@ async function initInflightMap() {
       inflightMap.set(`${botId}:${ticker}`, true)
     }
     if (active.length > 0) {
-      console.log(`[botEngine] pre-loaded ${active.length} inflight guard(s) from DB`)
+      log.info({ count: active.length }, 'inflight_guards_preloaded')
     }
   } catch (err) {
-    console.error('[botEngine] initInflightMap error:', err.message)
+    log.error({ err: err.message }, 'inflight_init_error')
   }
 }
 
@@ -89,7 +90,7 @@ export function stopBotEngine() {
     unsubscribe([...previousTickers])
   }
   previousTickers = new Set()
-  console.log('[botEngine] stopped')
+  log.info('bot_engine_stop')
 }
 
 // ─── Bot registry reload ──────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ async function reloadBots() {
 
     previousTickers = newTickers
   } catch (err) {
-    console.error('[botEngine] reloadBots error:', err.message)
+    log.error({ err: err.message }, 'reload_bots_error')
   }
 }
 
@@ -145,7 +146,7 @@ export async function onPriceTick(ticker) {
     const bot = botRegistry.get(botId)
     if (bot) {
       evaluateBot(bot, ticker).catch(err =>
-        console.error(`[botEngine] evaluateBot error (${botId}/${ticker}):`, err.message)
+        log.error({ err: err.message, botId, ticker }, 'evaluate_bot_error')
       )
     }
   }
@@ -209,7 +210,7 @@ async function evaluateBot(bot, ticker) {
     try {
       evaluationResult = await executeRuleBasedStrategy(bot, tick, context)
     } catch (error) {
-      console.error(`Rule-based strategy execution failed for bot ${bot.id}:`, error)
+      log.error({ err: error.message, botId: bot.id, ticker }, 'strategy_error')
       await logBotEvent(bot, 'strategy_error', `Rule-based strategy failed: ${error.message}`, ticker)
       return
     }
@@ -218,7 +219,7 @@ async function evaluateBot(bot, ticker) {
     try {
       evaluationResult = await executeStrategyBasedAlgorithm(bot, tick, context)
     } catch (error) {
-      console.error(`Strategy-based algorithm execution failed for bot ${bot.id}:`, error)
+      log.error({ err: error.message, botId: bot.id, ticker }, 'strategy_error')
       await logBotEvent(bot, 'strategy_error', `Strategy-based algorithm failed: ${error.message}`, ticker)
       return
     }
@@ -314,7 +315,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   try {
     riskEvaluation = await riskManager.evaluateExecutionRisk(executionRequest)
   } catch (error) {
-    console.error('Risk evaluation failed:', error)
+    log.error({ err: error.message, botId: bot.id, ticker }, 'risk_eval_error')
     await logBotEvent(bot, 'risk_evaluation_failed', `Risk evaluation failed for ${ticker}: ${error.message}`, ticker, {
       error: error.message,
       signal,
@@ -372,7 +373,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
       await maybeLogInflightSkip(bot, ticker, inflightKey)
       return
     }
-    console.error('Failed to create execution:', err)
+    log.error({ err: err.message, botId: bot.id, ticker }, 'execution_create_error')
     await logBotEvent(bot, 'execution_failed', `Failed to create execution: ${err.message}`, ticker, {
       error: err.message,
       signal,
@@ -384,6 +385,8 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   // Mark as inflight to prevent duplicates on subsequent ticks
   inflightMap.set(inflightKey, true)
   dbCheckedKeys.delete(inflightKey)
+
+  log.info({ executionId: execution.id, botId: bot.id, ticker, direction, qty: quantity, confidence }, 'execution_queued')
 
   await logBotEvent(bot, 'execution_created', `Created ${direction} execution for ${ticker}`, ticker, {
     executionId: execution.id,
@@ -437,7 +440,7 @@ async function evaluateRule(rule, bot, ticker, positions, ctx = {}) {
       return evaluateTimeWindow(rule.config)
 
     default:
-      console.warn(`[botEngine] unknown rule type: ${rule.type}`)
+      log.warn({ ruleType: rule.type }, 'unknown_rule_type')
       return { pass: true }
   }
 }
@@ -545,7 +548,7 @@ async function logBotEvent(bot, type, detail, ticker, metadata = {}) {
       }
     })
   } catch (err) {
-    console.error('[botEngine] failed to log BotEvent:', err.message)
+    log.error({ err: err.message }, 'bot_event_write_error')
   }
 }
 
@@ -578,6 +581,7 @@ async function maybeLogRuleBlock(bot, ticker, side, rule, result) {
   }
   lastRuleBlockEventAt.set(key, Date.now())
 
+  log.warn({ botId: bot.id, ticker, rule: rule.type, reason }, 'bot_blocked')
   await logBotEvent(bot, 'execution_skipped', `Rule "${rule.name}" blocked: ${reason}`, ticker, {
     ruleId:   rule.id,
     rule:     rule.type,

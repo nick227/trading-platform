@@ -227,6 +227,19 @@
   align-items: center;
 }
 
+.data-row-asset {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 170px;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  .data-row-asset {
+    grid-template-columns: 112px minmax(0, 1fr) 220px;
+  }
+}
+
 .data-row-action {
   width: 100%;
   text-align: left;

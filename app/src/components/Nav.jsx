@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../app/AuthProvider'
 import Logo from './Logo'
@@ -7,13 +7,19 @@ const routes = [
   { path: '/portfolio', label: 'Portfolio' },
   { path: '/assets', label: 'Assets', prefix: '/assets' },
   { path: '/bots', label: 'Bots', prefix: '/bots' },
-  { path: '/orders', label: 'Orders', prefix: '/orders' }
+  { path: '/orders', label: 'Orders', prefix: '/orders' },
+  { path: '/profile', label: 'Profile' }
 ]
 
 export default function Nav() {
   const { user } = useAuth()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [pendingActive, setPendingActive] = useState(null)
+
+  useEffect(() => {
+    setPendingActive(null)
+  }, [location.pathname])
 
   return (
     <nav className="nav">
@@ -34,29 +40,29 @@ export default function Nav() {
 
         <div className={`nav-menu ${mobileOpen ? 'nav-menu--open' : ''}`}>
           {routes.map((route) => {
-            const active = route.prefix
+            const locationActive = route.prefix
               ? location.pathname === route.path || location.pathname.startsWith(`${route.prefix}/`)
               : undefined
+
+            const isActive = pendingActive === route.path || (pendingActive === null && (
+              locationActive !== undefined ? locationActive : location.pathname === route.path
+            ))
 
             return (
               <NavLink
                 key={route.path}
                 to={route.path}
                 end={!route.prefix}
-                className={({ isActive }) => `nav-link ${active !== undefined ? (active ? 'nav-link--active' : '') : (isActive ? 'nav-link--active' : '')}`}
-                onClick={() => setMobileOpen(false)}
+                className={() => `nav-link ${isActive ? 'nav-link--active' : ''}`}
+                onClick={() => {
+                  setPendingActive(route.path)
+                  setMobileOpen(false)
+                }}
               >
                 {route.label}
               </NavLink>
             )
           })}
-
-          {user && (
-            <NavLink to="/profile" className="nav-user-pill" onClick={() => setMobileOpen(false)}>
-              {user.avatar && <img src={user.avatar} alt={user.fullName || user.email} className="nav-avatar" />}
-              <span className="nav-username">{user.fullName || user.email}</span>
-            </NavLink>
-          )}
         </div>
       </div>
     </nav>

@@ -115,6 +115,7 @@ export default function Asset() {
   const [chartRange, setChartRange] = useState('1Y')
   const [watchlist, setWatchlist] = useState(() => loadWatchlist())
   const watched = watchlist.includes(symbol)
+  const [showFullDescription, setShowFullDescription] = useState(false)
 
   const [marketClock, setMarketClock] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -384,6 +385,75 @@ export default function Asset() {
         </article>
       </section>
 
+      <section className="l-grid-2lead mb-3">
+        <article className="card card-pad-md">
+          <div className="l-row mb-2" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <strong>About</strong>
+            {company?.website ? (
+              <a className="btn btn-xs btn-ghost pressable" href={company.website} target="_blank" rel="noreferrer">
+                Website
+              </a>
+            ) : (
+              <span className="muted" style={{ fontSize: 12 }}>—</span>
+            )}
+          </div>
+
+          {company?.description ? (
+            <div className="text-sm" style={{ lineHeight: 1.55, color: '#222' }}>
+              {showFullDescription ? company.description : String(company.description).slice(0, 420)}
+              {!showFullDescription && String(company.description).length > 420 ? '…' : ''}
+            </div>
+          ) : (
+            <div className="muted">No company description available.</div>
+          )}
+
+          {company?.description && String(company.description).length > 420 ? (
+            <button
+              className="btn btn-xs btn-ghost pressable mt-2"
+              onClick={() => setShowFullDescription((v) => !v)}
+            >
+              {showFullDescription ? 'Show less' : 'Show more'}
+            </button>
+          ) : null}
+
+          <div className="l-grid-3cols mt-3">
+            <Stat label="Country" value={company?.country ?? '—'} />
+            <Stat label="Currency" value={company?.currency ?? '—'} />
+            <Stat label="IPO Date" value={stats?.ipoDate ? new Date(stats.ipoDate).toLocaleDateString() : '—'} />
+            <Stat label="Years Listed" value={stats?.yearsListed != null ? fmtNumber(stats.yearsListed) : '—'} />
+            <Stat label="Website" value={company?.website ? company.website.replace(/^https?:\/\//, '') : '—'} />
+            <Stat label="Symbol" value={symbol} />
+          </div>
+        </article>
+
+        <article className="card card-pad-md">
+          <strong>Research</strong>
+          <div className="data-rows mt-2">
+            <div className="data-row-3 data-row-divider">
+              <span className="muted">Recommendation</span>
+              <span style={{ fontWeight: 700 }}>{rec?.action ?? '—'}</span>
+              <span className="muted text-right">{recConfidence != null ? `${recConfidence}%` : ' '}</span>
+            </div>
+            <div className="data-row-3 data-row-divider">
+              <span className="muted">Regime</span>
+              <span style={{ fontWeight: 700 }}>{regime?.regime ?? regime?.state ?? regime?.name ?? '—'}</span>
+              <span className="muted text-right">{regime?.asOf ? fmtAsOf(regime.asOf) : ' '}</span>
+            </div>
+            <div className="data-row-3 data-row-divider">
+              <span className="muted">Attribution</span>
+              <span style={{ fontWeight: 700 }}>{drivers.length ? `${drivers.length} drivers` : '—'}</span>
+              <span className="muted text-right">Latest</span>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <button className="btn btn-sm btn-ghost pressable" onClick={() => navigate('/assets')}>
+              Back to Assets
+            </button>
+          </div>
+        </article>
+      </section>
+
       <section className="l-grid-3lead mb-3">
         <article className="card card-pad-sm">
           <strong>Engine Signals</strong>
@@ -473,18 +543,6 @@ export default function Asset() {
             <div className="muted mt-2">No recommendation available.</div>
           )}
         </article>
-      </section>
-
-      <section className="card card-pad-sm">
-        <strong>Related Links</strong>
-        <div className="data-rows mt-2">
-          <div className="data-row-divider">
-            <a className="btn btn-xs btn-ghost" href={company?.website ?? '#'} target="_blank" rel="noreferrer" style={{ pointerEvents: company?.website ? 'auto' : 'none', opacity: company?.website ? 1 : 0.55 }}>
-              Company Website
-            </a>
-            <button className="btn btn-xs btn-ghost" style={{ marginLeft: 8 }} onClick={() => navigate('/assets')}>Back to Assets</button>
-          </div>
-        </div>
       </section>
     </div>
   )

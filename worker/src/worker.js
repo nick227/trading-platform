@@ -7,6 +7,8 @@ import { initDataStream, onQuote, disconnect, ensureConnected, isConnected } fro
 import { startQuoteSync, checkSubscriptionRequests, expireOldSubscriptions } from './market/quoteSync.js'
 import { initCalendar, refreshCalendar, onMarketOpen, onMarketClose, getLastCalendarRefreshAt } from './market/calendar.js'
 import { startBotEngine, stopBotEngine, onPriceTick, inflightMap } from './engine/botEngine.js'
+import { log } from './logger.js'
+import { decrypt } from './utils/encryption.js'
 
 // Initialize quote sync to server
 startQuoteSync()
@@ -33,7 +35,7 @@ const healthState = {
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`[worker] starting — id=${WORKER_ID}`)
+  log.info({ workerId: WORKER_ID, env: process.env.NODE_ENV ?? 'production' }, 'worker_start')
 
   // Wire the inflight map from the bot engine into the order worker
   // so the worker can clear it when an order reaches a terminal state
@@ -43,7 +45,7 @@ async function main() {
   // Each execution carries userId → worker loads the correct BrokerAccount per order.
   orderWorkerPromise = startOrderWorker().catch((err) => {
     healthState.orderWorker = 'failed'
-    console.error('[worker] order worker crashed:', err)
+    log.error({ err }, 'order_worker_crashed')
     process.exit(1)
   })
 
@@ -57,14 +59,13 @@ async function main() {
   const account = await prisma.brokerAccount.findFirst()
 
   if (!account) {
-    console.warn('[worker] no broker account found — market data and bot engine disabled')
-    console.warn('[worker] add a broker account via POST /api/broker to enable bots')
+    log.warn('no broker account found — market data and bot engine disabled')
     return
   }
 
   streamClient = new AlpacaClient({
-    apiKey:    account.apiKey,
-    apiSecret: account.apiSecret,
+    apiKey:    decrypt(account.apiKey),
+    apiSecret: decrypt(account.apiSecret),
     paper:     account.paper
   })
 
@@ -80,17 +81,17 @@ async function main() {
   healthState.orderWorker = 'up'
 
   if (isOpen) {
-    console.log('[worker] market is open — starting bot engine now')
+    log.info('market_open_at_boot')
     await startBotEngine()
     onMarketClose(msUntilClose, handleMarketClose)
   } else {
-    console.log('[worker] market is closed — bot engine will start at open')
+    log.info('market_closed_at_boot')
     onMarketOpen(msUntilOpen, handleMarketOpen)
   }
 }
 
 async function handleMarketOpen() {
-  console.log('[worker] market opened')
+  log.info('market_open')
   await refreshMarketState()
   ensureConnected()
   await startBotEngine()
@@ -99,7 +100,7 @@ async function handleMarketOpen() {
 }
 
 async function handleMarketClose() {
-  console.log('[worker] market closed')
+  log.info('market_close')
   await refreshMarketState()
   stopBotEngine()
   disconnect()
@@ -138,7 +139,7 @@ function startHeartbeat() {
         }
       })
     } catch (err) {
-      console.warn('[worker] heartbeat failed:', err.message)
+      log.warn({ err: err.message }, 'heartbeat_failed')
     }
   }
   heartbeatTimer = setInterval(tick, HEARTBEAT_MS)
@@ -148,7 +149,7 @@ function startHeartbeat() {
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 
 async function shutdown(signal) {
-  console.log(`[worker] received ${signal} — shutting down`)
+  log.info({ signal }, 'worker_shutdown')
   stopOrderWorker()
   stopBotEngine()
   disconnect()
@@ -161,12 +162,12 @@ async function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT',  () => shutdown('SIGINT'))
 process.on('uncaughtException', (err) => {
-  console.error('[worker] uncaught exception:', err)
+  log.error({ err }, 'uncaught_exception')
   shutdown('uncaughtException')
 })
 
 main().catch(err => {
-  console.error('[worker] fatal startup error:', err)
+  log.fatal({ err }, 'startup_failed')
   process.exit(1)
 })
 
@@ -178,7 +179,7 @@ async function refreshMarketState() {
     healthState.calendar = 'ready'
   } catch (err) {
     healthState.calendar = 'degraded'
-    console.error('[worker] calendar refresh failed:', err)
+    log.error({ err }, 'calendar_refresh_failed')
   }
 }
 

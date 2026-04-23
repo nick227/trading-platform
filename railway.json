@@ -3,6 +3,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "echo 'Monorepo root - services deployed separately'"
+    "startCommand": "echo 'Monorepo root - services deployed separately'",
+    "healthcheckPath": "/health"
   }
 }

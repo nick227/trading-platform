@@ -1,6 +1,8 @@
 // Fetches today's market session from Alpaca and schedules open/close callbacks.
 // Alpaca is the source of truth — never rely on server timezone or hardcoded hours.
 
+import { log } from '../logger.js'
+
 let marketOpen  = null  // Date
 let marketClose = null  // Date
 let isOpen      = false
@@ -23,9 +25,7 @@ export async function refreshCalendar(broker) {
   const msUntilOpen  = marketOpen.getTime()  - now
   const msUntilClose = marketClose.getTime() - now
 
-  console.log(`[calendar] market is ${isOpen ? 'OPEN' : 'CLOSED'}`)
-  console.log(`[calendar] next open:  ${marketOpen.toISOString()}`)
-  console.log(`[calendar] next close: ${marketClose.toISOString()}`)
+  log.info({ isOpen, nextOpen: marketOpen.toISOString(), nextClose: marketClose.toISOString() }, 'calendar_refresh')
 
   return { isOpen, marketOpen, marketClose, msUntilOpen, msUntilClose, lastRefreshedAt }
 }
@@ -36,7 +36,7 @@ export function onMarketOpen(msUntilOpen, callback) {
     callback()
     return
   }
-  console.log(`[calendar] scheduling market open in ${Math.round(msUntilOpen / 60000)}m`)
+  log.info({ inMinutes: Math.round(msUntilOpen / 60000) }, 'market_open_scheduled')
   setTimeout(callback, msUntilOpen)
 }
 
@@ -46,7 +46,7 @@ export function onMarketClose(msUntilClose, callback) {
     callback()
     return
   }
-  console.log(`[calendar] scheduling market close in ${Math.round(msUntilClose / 60000)}m`)
+  log.info({ inMinutes: Math.round(msUntilClose / 60000) }, 'market_close_scheduled')
   setTimeout(callback, msUntilClose)
 }
 

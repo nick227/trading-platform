@@ -4,6 +4,7 @@ import { BrokerNetworkError, BrokerRejectionError } from '../broker/alpacaClient
 import { getBrokerClient } from '../broker/clientCache.js'
 import { recordExecutionAudit } from '../audit/executionAudit.js'
 import { evaluateRiskCaps } from '../risk/riskCaps.js'
+import { log } from '../logger.js'
 
 const WORKER_ID      = `${os.hostname()}-${process.pid}`
 const MAX_ATTEMPTS   = 3
@@ -24,7 +25,7 @@ export function setInflightMap(map) { inflightMap = map }
 
 export async function startOrderWorker() {
   running = true
-  console.log(`[orderWorker] started — workerId=${WORKER_ID}`)
+  log.info({ workerId: WORKER_ID }, 'order_worker_start')
 
   // Run stuck-job recovery in the background every 60s
   const recoveryInterval = setInterval(recoverStuckJobs, 60_000)
@@ -78,6 +79,14 @@ async function claimNextExecution() {
 async function processExecution(job) {
   // Reload to get the updated fields after the claim write
   const execution = await prisma.execution.findUnique({ where: { id: job.id } })
+  log.info({
+    executionId: execution.id,
+    botId: execution.botId,
+    userId: execution.userId,
+    ticker: execution.ticker,
+    direction: execution.direction,
+    qty: execution.quantity
+  }, 'order_claimed')
   await recordExecutionAudit({
     executionId: execution.id,
     userId: execution.userId,
@@ -133,6 +142,7 @@ async function processExecution(job) {
 
     const riskDecision = await evaluateRiskCaps(execution)
     if (!riskDecision.allowed) {
+      log.warn({ executionId: execution.id, ticker: execution.ticker, reason: riskDecision.reason }, 'risk_blocked')
       await recordExecutionAudit({
         executionId: execution.id,
         userId: execution.userId,
@@ -210,7 +220,7 @@ async function processExecution(job) {
     } else if (err instanceof BrokerNetworkError) {
       await releaseForRetry(execution)
     } else {
-      console.error(`[orderWorker] unexpected error for ${execution.id}:`, err)
+      log.error({ err, executionId: execution.id }, 'order_unexpected_error')
       await releaseForRetry(execution)
     }
   }
@@ -418,7 +428,23 @@ async function terminate(execution, status, cancelReason, fillData = {}) {
     })
   }
 
-  console.log(`[orderWorker] ${execution.id} → ${status}${cancelReason ? ` (${cancelReason})` : ''}`)
+  const queuedMs = execution.createdAt ? Date.now() - new Date(execution.createdAt).getTime() : null
+  if (status === 'filled') {
+    log.info({
+      executionId: execution.id,
+      botId: execution.botId,
+      userId: execution.userId,
+      ticker: execution.ticker,
+      direction: execution.direction,
+      qty: execution.quantity,
+      fillPrice: fillData.filledPrice,
+      queuedMs
+    }, 'order_filled')
+  } else if (status === 'failed') {
+    log.error({ executionId: execution.id, ticker: execution.ticker, cancelReason, queuedMs }, 'order_failed')
+  } else {
+    log.warn({ executionId: execution.id, ticker: execution.ticker, cancelReason }, 'order_cancelled')
+  }
 }
 
 async function releaseForRetry(execution) {
@@ -444,7 +470,7 @@ async function releaseForRetry(execution) {
       maxAttempts: MAX_ATTEMPTS
     }
   })
-  console.log(`[orderWorker] ${execution.id} released for retry (attempt ${nextAttempts}/${MAX_ATTEMPTS})`)
+  log.warn({ executionId: execution.id, attempt: nextAttempts, maxAttempts: MAX_ATTEMPTS }, 'order_retry')
 }
 
 // ─── Stuck-job recovery ────────────────────────────────────────────────────────
@@ -456,7 +482,7 @@ async function recoverStuckJobs() {
     data:  { status: 'queued', lockedAt: null, lockedBy: null }
   })
   if (count > 0) {
-    console.log(`[orderWorker] recovered ${count} stuck job(s)`)
+    log.warn({ count }, 'stuck_jobs_recovered')
   }
 }
 

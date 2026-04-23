@@ -1,6 +1,6 @@
 # Trading Platform
 
-A monorepo containing a React frontend (app) and Fastify backend (server) for a trading platform.
+A monorepo containing a React frontend (app), Fastify backend (server), and trading worker for automated bot execution.
 
 ## Project Structure
 
@@ -21,6 +21,12 @@ trading-platform/
 │   ├── package.json
 │   └── README.md
 │
+├── worker/                # Trading bot worker
+│   ├── src/
+│   ├── scripts/           # Verification scripts
+│   ├── package.json
+│   └── README.md
+│
 ├── .gitignore            # Monorepo .gitignore
 ├── package.json          # Root package.json with workspaces
 └── README.md             # This file
@@ -31,7 +37,7 @@ trading-platform/
 Install dependencies for all workspaces:
 
 ```bash
-npm install
+npm run install:all
 ```
 
 Or install specific workspace:
@@ -39,25 +45,37 @@ Or install specific workspace:
 ```bash
 npm install --workspace=app
 npm install --workspace=server
+npm install --workspace=worker
 ```
 
 ## Development
 
-### Frontend
+### Quick Start (All Services)
 
+```bash
+# From project root - starts frontend, backend, and worker
+npm run dev:start
+```
+
+### Individual Services
+
+**Frontend:**
 ```bash
 npm run dev --workspace=app
 ```
-
 Runs at `http://localhost:5173` with Vite dev server.
 
-### Backend
-
+**Backend:**
 ```bash
 npm run dev --workspace=server
 ```
-
 Runs at `http://localhost:3001` with Fastify.
+
+**Worker:**
+```bash
+npm run dev --workspace=worker
+```
+Runs as a background process for bot execution and market data.
 
 ## Testing
 
@@ -93,7 +111,13 @@ npm test --workspaces
 
 ## Scripts at Root
 
+- `npm run dev:start` - Start all services (frontend, backend, worker)
 - `npm run dev` - Start frontend dev server
+- `npm run dev:server` - Start backend only
+- `npm run dev:worker` - Start worker only
+- `npm run start` - Production start (backend + worker)
+- `npm run start:server` - Production backend only
+- `npm run start:worker` - Production worker only
 - `npm run test` - Run all tests (app + server)
 - `npm run test:app` - Frontend unit tests only
 - `npm run test:server` - Backend tests only
@@ -115,18 +139,25 @@ npm test --workspaces
 - MySQL (configured)
 - **Testing**: Vitest + Supertest
 
+### Worker (`worker/`)
+- Node.js with Alpaca Trade API
+- Real-time market data processing
+- Automated bot execution engine
+- Risk management and order processing
+
 ## Deployment
 
 ### Railway (Monorepo)
 
-This monorepo is configured for deployment on Railway with separate services for frontend and backend.
+This monorepo is configured for deployment on Railway with separate services for frontend, backend, and worker.
 
 #### Setup
 
 1. **Connect Repository**: Link this Git repository to Railway
-2. **Create Services**: Railway will automatically detect the monorepo structure and create two services:
+2. **Create Services**: Railway will automatically detect the monorepo structure and create three services:
    - `app/` - Frontend (static site)
    - `server/` - Backend API
+   - `worker/` - Trading bot worker (background process)
 
 #### Database
 
@@ -149,12 +180,14 @@ Each service has its own `railway.json`:
 
 - **Frontend** (`app/railway.json`): Builds with Vite, serves static files
 - **Backend** (`server/railway.json`): Runs Node.js server with Prisma migrations
+- **Worker** (`worker/railway.json`): Runs Node.js worker process
 
 #### Deployment URLs
 
 After deployment:
 - Frontend: `https://your-app-name.up.railway.app`
 - Backend: `https://your-server-name.up.railway.app`
+- Worker: `https://your-worker-name.up.railway.app` (background service)
 - API Docs: `https://your-server-name.up.railway.app/docs`
 
 #### Frontend Proxy Configuration
@@ -201,6 +234,8 @@ npm run db:push --workspace=server
 
 - [Backend API Documentation](./server/docs/)
 - [Frontend Development Guide](./app/README.md)
+- [Worker System Documentation](./worker/README.md)
+- [Worker Technical Reference](./worker/WORKER.md)
 
 ## API Endpoints
 
@@ -212,3 +247,13 @@ See backend routes for full API specification:
 - `/api/bots` - Trading bots
 
 Swagger UI available at `http://localhost:3001/docs`
+
+## Worker System
+
+The worker handles:
+- Real-time market data from Alpaca WebSocket
+- Automated trading bot evaluation and execution
+- Order submission and tracking
+- Risk management and position limits
+
+See [worker/README.md](./worker/README.md) for detailed setup and configuration.
