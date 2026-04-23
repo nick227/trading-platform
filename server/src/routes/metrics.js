@@ -60,6 +60,7 @@ export default async function metricsRoutes(app, opts) {
   app.get('/portfolio/summary', async (request, reply) => {
     try {
       const userId = STUB_USER_ID // TODO: Replace with actual auth
+      console.log('[metrics] Portfolio summary requested for userId:', userId)
 
       // Get user's executions for portfolio KPIs
       const executions = await prisma.execution.findMany({
@@ -70,6 +71,8 @@ export default async function metricsRoutes(app, opts) {
         },
         orderBy: { filledAt: 'desc' }
       })
+      
+      console.log('[metrics] Found executions:', executions.length)
 
       if (executions.length === 0) {
         return reply.send({
@@ -90,6 +93,13 @@ export default async function metricsRoutes(app, opts) {
       const winningTrades = executions.filter(e => Number(e.pnl || 0) > 0).length
       const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0
 
+      console.log('[metrics] Calculated portfolio metrics:', {
+        totalTrades,
+        totalPnl,
+        winningTrades,
+        winRate
+      })
+
       // Simple return calculation (starting vs ending value)
       const portfolioReturn = calculateSimpleReturn(executions)
 
@@ -102,7 +112,7 @@ export default async function metricsRoutes(app, opts) {
         }
       })
 
-      return reply.send({
+      const response = {
         portfolioReturn,
         totalPnl,
         winRate,
@@ -111,7 +121,10 @@ export default async function metricsRoutes(app, opts) {
         totalTrades,
         activeBots,
         lastUpdated: new Date()
-      })
+      }
+      
+      console.log('[metrics] Returning portfolio summary:', response)
+      return reply.send(response)
     } catch (error) {
       console.error('[metrics] Error fetching portfolio summary:', error)
       return reply.code(500).send({ error: error.message })

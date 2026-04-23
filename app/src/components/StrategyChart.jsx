@@ -174,13 +174,13 @@ export default function StrategyChart() {
         callbacks: {
           afterLabel: function(context) {
             const data = generateMockData(signals)
-            const prediction = data.predictions.find(p => p.index === context.dataIndex)
+            const prediction = data.predictions.find(p => p.x === context.dataIndex)
             if (prediction) {
               return [
                 `**${prediction.type}**: ${prediction.symbol}`,
                 `Confidence: ${(prediction.confidence * 100).toFixed(0)}%`,
-                `Score: ${prediction.score.toFixed(2)}`,
-                ...prediction.reasons.slice(0, 2)
+                `Score: ${prediction.score != null ? prediction.score.toFixed(2) : 'N/A'}`,
+                ...(prediction.reasons || []).slice(0, 2)
               ]
             }
             return ''
@@ -264,7 +264,7 @@ export default function StrategyChart() {
                 transform: 'translate(-50%, -50%)',
                 pointerEvents: 'auto'
               }}
-              title={`${pred.type}: ${pred.symbol} - Confidence: ${(pred.confidence * 100).toFixed(0)}% - Score: ${pred.score.toFixed(2)}`}
+              title={`${pred.type}: ${pred.symbol} - Confidence: ${(pred.confidence * 100).toFixed(0)}% - Score: ${pred.score != null ? pred.score.toFixed(2) : 'N/A'}`}
             >
               <div style={{
                 width: '12px',

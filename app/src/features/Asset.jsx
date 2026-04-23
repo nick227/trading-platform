@@ -127,6 +127,11 @@ export default function Asset() {
   const [priceRange, setPriceRange] = useState({ min: 0, max: 0, range: 0 })
   const [chartLoading, setChartLoading] = useState(true)
 
+  const [personalMetrics, setPersonalMetrics] = useState(null)
+  const [metricsLoading, setMetricsLoading] = useState(true)
+  const [templateMetrics, setTemplateMetrics] = useState(null)
+  const [templateLoading, setTemplateLoading] = useState(true)
+
   useEffect(() => {
     setWatchlist(loadWatchlist())
   }, [symbol])
@@ -229,6 +234,80 @@ export default function Asset() {
       cancelled = true
     }
   }, [symbol, chartRange])
+
+  // Fetch personal performance metrics for this asset
+  useEffect(() => {
+    if (!symbol) return
+    let cancelled = false
+    setMetricsLoading(true)
+
+    fetch('/api/metrics/portfolio/attribution')
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return
+        // Filter attribution data for this specific asset
+        const assetData = data.attribution?.find(item => 
+          item.name.toLowerCase().includes(symbol.toLowerCase()) || 
+          item.ticker === symbol
+        )
+        setPersonalMetrics(assetData || null)
+      })
+      .catch(error => {
+        if (cancelled) return
+        console.error('Failed to fetch personal asset metrics:', error)
+        setPersonalMetrics(null)
+      })
+      .finally(() => {
+        if (cancelled) return
+        setMetricsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [symbol])
+
+  // Fetch template performance metrics for this asset
+  useEffect(() => {
+    if (!symbol) return
+    let cancelled = false
+    setTemplateLoading(true)
+
+    // For now, we'll simulate template data since we don't have a specific API endpoint
+    // In a real implementation, this would call a template-specific metrics API
+    const fetchTemplateMetrics = async () => {
+      try {
+        // Simulate API call - replace with actual template metrics API when available
+        // const response = await fetch(`/api/metrics/templates/by-ticker/${symbol}`)
+        // const data = await response.json()
+        
+        // Mock data for demonstration
+        const mockTemplateData = {
+          topTemplates: [
+            { name: 'Momentum Buy', winRate: 85, totalTrades: 12, avgReturn: 3.2 },
+            { name: 'Golden Cross', winRate: 78, totalTrades: 9, avgReturn: 2.8 },
+            { name: 'RSI Extremes', winRate: 72, totalTrades: 18, avgReturn: 1.9 }
+          ]
+        }
+        
+        if (cancelled) return
+        setTemplateMetrics(mockTemplateData)
+      } catch (error) {
+        if (cancelled) return
+        console.error('Failed to fetch template metrics:', error)
+        setTemplateMetrics(null)
+      } finally {
+        if (cancelled) return
+        setTemplateLoading(false)
+      }
+    }
+
+    fetchTemplateMetrics()
+
+    return () => {
+      cancelled = true
+    }
+  }, [symbol])
 
   const currentPrice = useMemo(() => {
     const p = quote?.price ?? quote?.last ?? stats?.price
@@ -358,6 +437,87 @@ export default function Asset() {
             nextOpen={nextOpen}
           />
         </article>
+
+        {personalMetrics && (
+          <article className="card card-lg card-pad-md">
+            <div className="l-row mb-2" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <strong>Your Performance on {symbol}</strong>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {metricsLoading ? 'Loading...' : 'Personal Metrics'}
+              </span>
+            </div>
+
+            <div className="l-grid-3cols mt-2">
+              <div>
+                <div className="muted text-xs">Total PnL</div>
+                <div className={`font-600 ${personalMetrics.pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
+                  ${personalMetrics.pnl?.toLocaleString() ?? 0}
+                </div>
+              </div>
+              <div>
+                <div className="muted text-xs">Win Rate</div>
+                <div className="font-600 text-positive">
+                  {personalMetrics.winRate?.toFixed(1) ?? 0}%
+                </div>
+              </div>
+              <div>
+                <div className="muted text-xs">Trades</div>
+                <div className="font-600">
+                  {personalMetrics.trades ?? 0}
+                </div>
+              </div>
+            </div>
+
+            {personalMetrics.attribution && (
+              <div className="mt-3">
+                <div className="muted text-xs mb-1">Attribution Breakdown</div>
+                <div className="text-sm" style={{ color: '#666' }}>
+                  {personalMetrics.attribution}
+                </div>
+              </div>
+            )}
+          </article>
+        )}
+
+        {templateMetrics && (
+          <article className="card card-lg card-pad-md">
+            <div className="l-row mb-2" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <strong>Top Templates for {symbol}</strong>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {templateLoading ? 'Loading...' : 'Template Performance'}
+              </span>
+            </div>
+
+            <div className="data-rows mt-2">
+              {templateMetrics.topTemplates.map((template, index) => (
+                <div key={template.name} className="data-row-3 data-row-divider">
+                  <span>
+                    <strong>{template.name}</strong>
+                    {index === 0 && <span className="muted text-xs ml-1">· Best Performer</span>}
+                  </span>
+                  <span className="text-positive font-600">{template.winRate}% WR</span>
+                  <span className="muted text-right text-nowrap">
+                    {template.totalTrades} trades · {template.avgReturn}% avg
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3">
+              <div className="muted text-xs mb-1">Performance Insights</div>
+              <div className="text-sm" style={{ color: '#666' }}>
+                {templateMetrics.topTemplates.length > 0 ? (
+                  <>
+                    {templateMetrics.topTemplates[0].name} shows the highest win rate ({templateMetrics.topTemplates[0].winRate}%) 
+                    with {templateMetrics.topTemplates[0].totalTrades} trades on {symbol}.
+                  </>
+                ) : (
+                  'No template performance data available for this asset.'
+                )}
+              </div>
+            </div>
+          </article>
+        )}
 
         <article className="card card-lg card-pad-md">
           <div className="l-row mb-2" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>

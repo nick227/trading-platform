@@ -198,9 +198,9 @@ export default function Landing() {
                 No active signals available
               </div>
             ) : (
-              liveSignals.map((signal) => (
+              liveSignals.map((signal, index) => (
                 <div
-                  key={signal.symbol}
+                  key={`${signal.symbol}-${index}`}
                   style={{
                     borderBottom: '1px solid #eee',
                     paddingBottom: '0.8rem',
@@ -263,8 +263,8 @@ export default function Landing() {
                 No predictions available
               </div>
             ) : (
-              dimensionalPredictions.map((pred) => (
-                <div key={pred.symbol} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+              dimensionalPredictions.map((pred, index) => (
+                <div key={`${pred.symbol}-${index}`} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <strong>{pred.symbol}</strong>
                     <span style={{ color: pred.actual ? '#1f8a4c' : '#7a7a7a' }}>
