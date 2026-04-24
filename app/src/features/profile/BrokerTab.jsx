@@ -40,7 +40,17 @@ export default function BrokerTab() {
   return (
     <div className="profile-pane">
       <div className="card profile-card">
-        <h3 className="profile-card-title">Alpaca Broker</h3>
+        <div className="profile-card-header">
+          <h3 className="profile-card-title">Alpaca Broker</h3>
+          <button
+            className="btn btn-xs btn-ghost"
+            onClick={() => getBrokerStatus().then(setBrokerStatus).catch(() => {})}
+            disabled={saving}
+            title="Refresh status"
+          >
+            {saving ? '...' : '↻'}
+          </button>
+        </div>
 
         <div className="mb-4">
           {connected ? (

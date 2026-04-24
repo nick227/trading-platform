@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Outlet, useParams, Navigate } from 'react-router-dom'
 import { useAuth } from '../app/AuthProvider'
 import ProfileTabs from './profile/ProfileTabs'
 import AccountTab from './profile/AccountTab'
@@ -8,14 +8,16 @@ import BotsTab from './profile/BotsTab'
 
 export default function Profile(){
   const { user } = useAuth()
-  const [tab,setTab] = useState('Account')
+  const { tab = 'account' } = useParams()
 
-  const views = {
-    Account: <AccountTab/>,
-    Broker: <BrokerTab/>,
-    Activity: <ActivityTab/>,
-    Bots: <BotsTab/>
+  const tabMap = {
+    account: 'Account',
+    broker: 'Broker',
+    activity: 'Activity',
+    bots: 'Bots'
   }
+
+  const currentTab = tabMap[tab] || 'Account'
 
   return (
     <div className="l-page">
@@ -25,10 +27,10 @@ export default function Profile(){
         </header>
 
         <section className="card card-pad-sm">
-          <ProfileTabs value={tab} onChange={setTab}/>
+          <ProfileTabs value={currentTab} />
         </section>
 
-        {views[tab]}
+        <Outlet />
       </div>
     </div>
   )

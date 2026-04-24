@@ -6,7 +6,14 @@ export const route = (fn) => async (req, reply) => {
     return await fn(req, reply)
   } catch (error) {
     req.log.error({ err: error }, 'Route handler failed')
-    reply.code(500)
+
+    const candidateStatus =
+      (Number.isInteger(error?.statusCode) && error.statusCode) ||
+      (Number.isInteger(error?.status) && error.status) ||
+      500
+    const status = candidateStatus >= 400 && candidateStatus <= 599 ? candidateStatus : 500
+
+    reply.code(status)
     return { success: false, error: error.message }
   }
 }

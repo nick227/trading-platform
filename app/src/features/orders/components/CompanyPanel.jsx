@@ -10,6 +10,20 @@ export default function CompanyPanel({ selectedStock, bootstrapData, loading }) 
   const company = bootstrapData?.company
   const stats = bootstrapData?.stats
 
+  const formatDateOnly = (value) => {
+    if (!value) return null
+    const raw = String(value)
+    // If the backend sends a YYYY-MM-DD string, format in UTC to avoid off-by-one local TZ shifts.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const d = new Date(`${raw}T00:00:00Z`)
+      if (Number.isNaN(d.getTime())) return raw
+      return d.toLocaleDateString(undefined, { timeZone: 'UTC' })
+    }
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) return raw
+    return d.toLocaleDateString()
+  }
+
   return (
     <article className="card card-pad-sm">
       <div className="panel-header">
@@ -62,8 +76,8 @@ export default function CompanyPanel({ selectedStock, bootstrapData, loading }) 
             )}
             {stats?.ipoDate && (
               <div className="kv">
-                <span className="kv-key">IPO Date</span>
-                <span>{new Date(stats.ipoDate).toLocaleDateString()}</span>
+                <span className="kv-key">Data start</span>
+                <span>{formatDateOnly(stats.ipoDate)}</span>
               </div>
             )}
             {stats?.yearsListed && (
@@ -98,4 +112,3 @@ export default function CompanyPanel({ selectedStock, bootstrapData, loading }) 
     </article>
   )
 }
-

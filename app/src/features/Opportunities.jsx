@@ -34,7 +34,7 @@ export default function Opportunities() {
   }
 
   const handleAssetClick = (ticker) => {
-    navigate(`/assets/${ticker}`)
+    navigate(`/orders?ticker=${encodeURIComponent(ticker)}`)
   }
 
   if (loading) {
@@ -178,7 +178,7 @@ function OpportunityCard({ recommendation, onTrade, onAsset }) {
       <div style={{ marginBottom: '1rem' }}>
         <div style={{ fontSize: '20px', fontWeight: 700, marginBottom: '0.25rem' }}>
           <Link
-            to={`/assets/${encodeURIComponent(recommendation.ticker)}`}
+            to={`/orders?ticker=${encodeURIComponent(recommendation.ticker)}`}
             style={{ color: 'inherit' }}
           >
             {recommendation.ticker}

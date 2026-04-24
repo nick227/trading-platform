@@ -61,14 +61,22 @@ export function useOrderBootstrap(symbol, range = '1Y', setSelectedStock = null)
           setPriceRange({ min, max, range: max - min })
         }
 
-        const rec = data.recommendation
+        const baseRec = data.recommendation ?? null
+        const rec = (baseRec && typeof baseRec === 'object' && baseRec.recommendation && typeof baseRec.recommendation === 'object')
+          ? baseRec.recommendation
+          : baseRec
+
+        // Avoid mixing semantics. If a recommendation exists, use it for direction + confidence.
+        // Explainability (data.alpha) is used only for narrative support ("why").
+        const explainability = data.alpha && typeof data.alpha === 'object' ? data.alpha : null
+        const hasRec = rec && typeof rec === 'object' && (rec.action || rec.confidence != null)
 
         // alpha explainability uses 0–1 confidence; recommendation uses 0–100
-        const alphaSource = data.alpha
-          ? { ...data.alpha, _scale: 'fraction' }
-          : rec
+        const alphaSource = hasRec
           ? { confidence: rec.confidence ?? 0, action: rec.action, explanation: rec.thesis?.join(' '), _scale: 'percent' }
-          : null
+          : explainability
+            ? { ...explainability, _scale: 'fraction' }
+            : null
 
         if (alphaSource) {
           const confidence = alphaSource._scale === 'fraction'
@@ -85,27 +93,29 @@ export function useOrderBootstrap(symbol, range = '1Y', setSelectedStock = null)
           setAlpha({
             signal,
             confidence,
-            timeframe: rec?.horizon   ?? data.alpha?.timeframe ?? '30d',
-            reasoning: alphaSource.explanation ?? 'No reasoning available',
-            thesis:    rec?.thesis    ?? [],
-            avoidIf:   rec?.avoidIf   ?? [],
+            timeframe: rec?.horizon ?? explainability?.timeframe ?? '30d',
+            reasoning: explainability?.explanation ?? alphaSource.explanation ?? 'No reasoning available',
+            thesis:    rec?.thesis ?? [],
+            avoidIf:   rec?.avoidIf ?? [],
             entryZone: rec?.entryZone ?? null,
-            risk:      rec?.risk      ?? null,
+            risk:      rec?.risk ?? null,
           })
+        } else {
+          setAlpha(null)
         }
 
-        // Update selected stock with live price from bootstrap quote (optional callback).
-        if (data.quote && typeof setSelectedStock === 'function') {
+        // Update selected stock with best available price/change (optional callback).
+        if (typeof setSelectedStock === 'function') {
           setSelectedStock(prev => {
             if (!prev || prev.symbol !== symbol) return prev
             return {
               ...prev,
-              price: data.quote.price || 0,
-              change: data.quote.change || 0,
-              volume: data.quote.volume || prev.volume,
-              timestamp: data.quote.timestamp,
-              freshness: data.quote.freshness || 'unknown',
-              ageMs: data.quote.ageMs || 0
+              price: (data.quote?.price ?? data.stats?.price) ?? prev.price,
+              change: (data.quote?.change ?? data.stats?.dayChangePct) ?? prev.change,
+              volume: data.quote?.volume ?? prev.volume,
+              timestamp: data.quote?.updatedAt ?? data.quote?.timestamp ?? prev.timestamp,
+              freshness: data.quote?.freshness || prev.freshness || 'unknown',
+              ageMs: data.quote?.ageMs || prev.ageMs || 0
             }
           })
         }

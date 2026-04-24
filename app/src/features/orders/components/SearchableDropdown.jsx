@@ -61,7 +61,9 @@ export default function SearchableDropdown({ stocks, selectedStock, onSelect, pl
               <div className="text-right">
                 <div className="text-sm font-600">${stock.price?.toFixed(2)}</div>
                 <div className={`text-xs font-600 ${(stock.change ?? 0) >= 0 ? 'text-positive' : 'text-negative'}`}>
-                  {(stock.change ?? 0) >= 0 ? '+' : ''}{stock.change}%
+                  {Number.isFinite(stock.change)
+                    ? `${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%`
+                    : '—'}
                 </div>
               </div>
             </button>

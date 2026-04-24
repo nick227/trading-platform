@@ -4,6 +4,27 @@ const ENGINE_URL = process.env.ENGINE_URL ?? 'http://localhost:8090'
 const INTERNAL_READ_KEY = process.env.INTERNAL_READ_KEY
 const MIN_PRICE_CAP_RECOMMENDATIONS = 10
 
+const ENGINE_SYMBOL_ALIASES = {
+  // Yahoo-style aliases commonly used by the UI.
+  'BRK.B': ['BRK-B'],
+  'BF.B': ['BF-B'],
+  VIX: ['^VIX'],
+  DXY: ['DX-Y.NYB', '^DXY']
+}
+
+const SYMBOL_RETRY_STATUS = new Set([400, 404, 422, 500])
+
+function normalizeSymbol(symbol) {
+  return String(symbol ?? '').toUpperCase().trim()
+}
+
+function symbolCandidates(symbol) {
+  const base = normalizeSymbol(symbol)
+  if (!base) return []
+  const aliases = ENGINE_SYMBOL_ALIASES[base] ?? []
+  return [base, ...aliases].filter((value, idx, arr) => arr.indexOf(value) === idx)
+}
+
 async function engineFetch(endpoint, options = {}) {
   const url = `${ENGINE_URL}${endpoint}`
   const headers = {
@@ -16,19 +37,52 @@ async function engineFetch(endpoint, options = {}) {
     headers['X-Internal-Key'] = INTERNAL_READ_KEY
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers
-  })
+  let response
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers
+    })
+  } catch (error) {
+    const err = new Error('Alpha Engine unreachable')
+    err.statusCode = 502
+    err.cause = error
+    throw err
+  }
 
   if (!response.ok) {
-    const errorText = await response.text()
-    const err = new Error(`Alpha Engine ${response.status}: ${errorText}`)
+    const errorText = await response.text().catch(() => '')
+    const snippet = errorText && errorText.length > 500 ? `${errorText.slice(0, 500)}…` : errorText
+    const err = new Error(`Alpha Engine ${response.status}: ${snippet}`)
     err.statusCode = response.status
     throw err
   }
 
   return response.json()
+}
+
+async function engineFetchWithSymbolFallback(makeEndpoint, symbol, options) {
+  const candidates = symbolCandidates(symbol)
+  if (candidates.length === 0) {
+    const err = new Error('Symbol is required')
+    err.statusCode = 400
+    throw err
+  }
+
+  let lastError = null
+  for (let idx = 0; idx < candidates.length; idx += 1) {
+    const candidate = candidates[idx]
+    try {
+      const data = await engineFetch(makeEndpoint(candidate), options)
+      return { data, requested: candidates[0], resolved: candidate }
+    } catch (error) {
+      lastError = error
+      const canRetry = idx < candidates.length - 1 && SYMBOL_RETRY_STATUS.has(error?.statusCode)
+      if (!canRetry) throw error
+    }
+  }
+
+  throw lastError
 }
 
 function normalizeRecommendationsPayload(data) {
@@ -150,7 +204,16 @@ export const engineClient = {
   // Regime endpoint — returns null when alpha-engine reports insufficient_history (422)
   async getRegime(symbol) {
     try {
-      return await engineFetch(`/api/regime/${encodeURIComponent(symbol)}?tenant_id=default`)
+      const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+        (s) => `/api/regime/${encodeURIComponent(s)}?tenant_id=default`,
+        symbol
+      )
+      if (data && typeof data === 'object') {
+        if ('symbol' in data) data.symbol = requested
+        if ('ticker' in data) data.ticker = requested
+        if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+      }
+      return data
     } catch (err) {
       if (err.statusCode === 422) return null
       throw err
@@ -159,11 +222,29 @@ export const engineClient = {
 
   // Ticker-specific endpoints
   async getTickerExplainability(symbol) {
-    return engineFetch(`/ticker/${encodeURIComponent(symbol)}/why`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/ticker/${encodeURIComponent(s)}/why`,
+      symbol
+    )
+    if (data && typeof data === 'object') {
+      if ('symbol' in data) data.symbol = requested
+      if ('ticker' in data) data.ticker = requested
+      if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    }
+    return data
   },
 
   async getTickerPerformance(symbol, window = '30d') {
-    return engineFetch(`/ticker/${encodeURIComponent(symbol)}/performance?window=${window}`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/ticker/${encodeURIComponent(s)}/performance?window=${window}`,
+      symbol
+    )
+    if (data && typeof data === 'object') {
+      if ('symbol' in data) data.symbol = requested
+      if ('ticker' in data) data.ticker = requested
+      if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    }
+    return data
   },
 
   // Admission monitoring
@@ -178,36 +259,106 @@ export const engineClient = {
   },
 
   async getQuote(symbol) {
-    return engineFetch(`/api/quote/${encodeURIComponent(symbol)}?tenant_id=default`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/api/quote/${encodeURIComponent(s)}?tenant_id=default`,
+      symbol
+    )
+    if (data && typeof data === 'object') {
+      if ('symbol' in data) data.symbol = requested
+      if ('ticker' in data) data.ticker = requested
+      if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    }
+    return data
   },
 
   async getHistory(symbol, range = '1Y', interval = '1D') {
-    return engineFetch(`/api/history/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&tenant_id=default`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/api/history/${encodeURIComponent(s)}?range=${range}&interval=${interval}&tenant_id=default`,
+      symbol
+    )
+    if (data && typeof data === 'object' && resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    return data
   },
 
   async getCandles(symbol, range = '1Y', interval = '1D') {
-    return engineFetch(`/api/candles/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&tenant_id=default`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/api/candles/${encodeURIComponent(s)}?range=${range}&interval=${interval}&tenant_id=default`,
+      symbol
+    )
+    if (data && typeof data === 'object' && resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    return data
   },
 
   async getStats(symbol) {
-    return engineFetch(`/api/stats/${encodeURIComponent(symbol)}?tenant_id=default`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/api/stats/${encodeURIComponent(s)}?tenant_id=default`,
+      symbol
+    )
+    if (data && typeof data === 'object') {
+      if ('symbol' in data) data.symbol = requested
+      if ('ticker' in data) data.ticker = requested
+      if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    }
+    return data
   },
 
   async getCompany(symbol) {
-    return engineFetch(`/api/company/${encodeURIComponent(symbol)}?tenant_id=default`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/api/company/${encodeURIComponent(s)}?tenant_id=default`,
+      symbol
+    )
+    if (data && typeof data === 'object') {
+      if ('symbol' in data) data.symbol = requested
+      if ('ticker' in data) data.ticker = requested
+      if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    }
+    return data
   },
 
   // Research endpoints (direct proxy to engine)
   async getTickerAccuracy(symbol) {
-    return engineFetch(`/api/ticker/${encodeURIComponent(symbol)}/accuracy?tenant_id=default`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/api/ticker/${encodeURIComponent(s)}/accuracy?tenant_id=default`,
+      symbol
+    )
+    if (data && typeof data === 'object') {
+      if ('symbol' in data) data.symbol = requested
+      if ('ticker' in data) data.ticker = requested
+      if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    }
+    return data
   },
 
   async getTickerAttribution(symbol) {
-    return engineFetch(`/api/ticker/${encodeURIComponent(symbol)}/attribution?tenant_id=default`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/api/ticker/${encodeURIComponent(s)}/attribution?tenant_id=default`,
+      symbol
+    )
+    if (data && typeof data === 'object') {
+      if ('symbol' in data) data.symbol = requested
+      if ('ticker' in data) data.ticker = requested
+      if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    }
+    return data
   },
 
   async getConsensusSignals(symbol) {
-    return engineFetch(`/api/consensus/signals?ticker=${encodeURIComponent(symbol)}&tenant_id=default`)
+    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
+      (s) => `/api/consensus/signals?ticker=${encodeURIComponent(s)}&tenant_id=default`,
+      symbol
+    )
+    if (data && typeof data === 'object' && resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
+    return data
+  },
+
+  async getPredictionContext(predictionId) {
+    const id = String(predictionId ?? '').trim()
+    if (!id) {
+      const err = new Error('prediction_id is required')
+      err.statusCode = 400
+      throw err
+    }
+    return engineFetch(`/api/predictions/${encodeURIComponent(id)}/context?tenant_id=default`)
   },
 
   // Bootstrap data for Orders page - combines multiple alpha-engine calls
@@ -442,5 +593,17 @@ export const engineClient = {
     }))
 
     return [...topSignals, ...moverSignals].sort((a, b) => b.confidence - a.confidence)
+  },
+
+  // Calendar events with distribution support
+  async getCalendarEvents(month = null, limit = 50, distribution = 'uniform', minDays = 12) {
+    const params = new URLSearchParams()
+    if (month) params.set('month', month)
+    params.set('limit', String(limit))
+    params.set('distribution', distribution)
+    params.set('min_days', String(minDays))
+    params.set('tenant_id', 'default')
+    
+    return engineFetch(`/api/engine/calendar?${params.toString()}`)
   }
 }

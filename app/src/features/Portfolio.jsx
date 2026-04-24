@@ -159,7 +159,7 @@ export default function Portfolio() {
                         <button
                           className="btn btn-xs btn-ghost"
                           type="button"
-                          onClick={() => navigate(`/assets/${encodeURIComponent(symbol)}`)}
+                          onClick={() => navigate(`/orders?ticker=${encodeURIComponent(symbol)}`)}
                         >
                           View
                         </button>
@@ -188,8 +188,8 @@ export default function Portfolio() {
 
                 {watchlistCount > watchlistView.length ? (
                   <div className="mt-2">
-                    <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('/assets')}>
-                      View all in Assets
+                    <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('/orders')}>
+                      View all in Orders
                     </button>
                   </div>
                 ) : null}

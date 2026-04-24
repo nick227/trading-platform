@@ -96,6 +96,45 @@ export function useAlphaSignals(options = {}) {
   return { signals, loading, error, refetch: fetchSignals }
 }
 
+export function useCalendarEvents(month, limit = 50, distribution = 'uniform', minDays = 12) {
+  const [events, setEvents] = useState([])
+  const [summary, setSummary] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const fetchCalendarEvents = useCallback(async () => {
+    try {
+      setLoading(true)
+      const data = await alphaEngineService.getCalendarEvents(month, limit, distribution, minDays)
+      setEvents(data.events || [])
+      setSummary({
+        eventCount: data.eventCount || 0,
+        minimumExpected: data.minimumExpected || 10,
+        meetsMinimum: data.meetsMinimum || false,
+        countsByType: data.countsByType || {},
+        distinctDays: data.distinctDays || 0,
+        minimumDaysTarget: data.minimumDaysTarget || minDays,
+        meetsDayTarget: data.meetsDayTarget || false,
+        distribution: data.distribution || distribution
+      })
+      setError(null)
+    } catch (err) {
+      setError(err.message)
+      console.error('Failed to fetch calendar events:', err)
+      setEvents([])
+      setSummary(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [month, limit, distribution, minDays])
+
+  useEffect(() => {
+    fetchCalendarEvents()
+  }, [fetchCalendarEvents])
+
+  return { events, summary, loading, error, refetch: fetchCalendarEvents }
+}
+
 export function useAlphaTicker(symbol) {
   const [explainability, setExplainability] = useState(null)
   const [performance, setPerformance] = useState(null)
@@ -130,7 +169,8 @@ export function useAlphaTicker(symbol) {
   return { explainability, performance, loading, error, refetch: fetchTickerData }
 }
 
-export function useAlphaDashboard() {
+export function useAlphaDashboard(options = {}) {
+  const { refreshInterval = 60000 } = options
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -151,9 +191,11 @@ export function useAlphaDashboard() {
 
   useEffect(() => {
     fetchDashboard()
-    const interval = setInterval(fetchDashboard, 60000) // Refresh every minute
-    return () => clearInterval(interval)
-  }, [fetchDashboard])
+    if (refreshInterval > 0) {
+      const interval = setInterval(fetchDashboard, refreshInterval)
+      return () => clearInterval(interval)
+    }
+  }, [fetchDashboard, refreshInterval])
 
   return { dashboard, loading, error, refetch: fetchDashboard }
 }

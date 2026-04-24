@@ -9,6 +9,22 @@ export default function TickerStatsPanel({ selectedStock, bootstrapData, loading
 
   const stats = bootstrapData?.stats
   const quote = bootstrapData?.quote
+  const currentPrice = quote?.price ?? stats?.price ?? null
+  const dayChangePct = quote?.change ?? quote?.dayChangePct ?? stats?.dayChangePct ?? null
+
+  const formatDateOnly = (value) => {
+    if (!value) return null
+    const raw = String(value)
+    // If the backend sends a YYYY-MM-DD string, format in UTC to avoid off-by-one local TZ shifts.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const d = new Date(`${raw}T00:00:00Z`)
+      if (Number.isNaN(d.getTime())) return raw
+      return d.toLocaleDateString(undefined, { timeZone: 'UTC' })
+    }
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) return raw
+    return d.toLocaleDateString()
+  }
 
   return (
     <article className="card card-pad-sm">
@@ -29,12 +45,18 @@ export default function TickerStatsPanel({ selectedStock, bootstrapData, loading
                   <span className="font-600">${quote.price.toFixed(2)}</span>
                 </div>
               )}
-              {quote?.dayChangePct != null && (
+              {!quote?.price && currentPrice != null && (
+                <div className="kv">
+                  <span className="kv-key">Current Price</span>
+                  <span className="font-600">${Number(currentPrice).toFixed(2)}</span>
+                </div>
+              )}
+              {dayChangePct != null && (
                 <div className="kv">
                   <span className="kv-key">Day Change</span>
-                  <span className={`${quote.dayChangePct >= 0 ? 'text-positive' : 'text-negative'} font-600`}>
-                    {quote.dayChangePct >= 0 ? '+' : ''}
-                    {(quote.dayChangePct * 100).toFixed(2)}%
+                  <span className={`${dayChangePct >= 0 ? 'text-positive' : 'text-negative'} font-600`}>
+                    {dayChangePct >= 0 ? '+' : ''}
+                    {Number(dayChangePct).toFixed(2)}%
                   </span>
                 </div>
               )}
@@ -46,10 +68,10 @@ export default function TickerStatsPanel({ selectedStock, bootstrapData, loading
                   </span>
                 </div>
               )}
-              {stats?.ath && quote?.price && (
+              {stats?.ath && currentPrice != null && (
                 <div className="kv">
                   <span className="kv-key">From ATH</span>
-                  <span className="muted">{((quote.price / stats.ath - 1) * 100).toFixed(1)}%</span>
+                  <span className="muted">{(((Number(currentPrice) / stats.ath) - 1) * 100).toFixed(1)}%</span>
                 </div>
               )}
             </div>
@@ -97,8 +119,8 @@ export default function TickerStatsPanel({ selectedStock, bootstrapData, loading
                 )}
                 {stats.ipoDate && (
                   <div className="kv">
-                    <span className="kv-key">IPO Date</span>
-                    <span>{new Date(stats.ipoDate).toLocaleDateString()}</span>
+                    <span className="kv-key">Data start</span>
+                    <span>{formatDateOnly(stats.ipoDate)}</span>
                   </div>
                 )}
                 {stats.yearsListed && (
@@ -115,4 +137,3 @@ export default function TickerStatsPanel({ selectedStock, bootstrapData, loading
     </article>
   )
 }
-

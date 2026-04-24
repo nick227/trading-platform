@@ -16,6 +16,10 @@ import OrderTicket from './orders/components/OrderTicket.jsx'
 import OwnershipPanel from './orders/components/OwnershipPanel.jsx'
 import RecentExecutions from './orders/components/RecentExecutions.jsx'
 import SchedulingAndBotsPanel from './orders/components/SchedulingAndBotsPanel.jsx'
+import TopTemplatesPanel from './orders/components/TopTemplatesPanel.jsx'
+import ResearchPanel from './orders/components/ResearchPanel.jsx'
+import RecommendationPanel from './orders/components/RecommendationPanel.jsx'
+import EngineSignalsPanel from './orders/components/EngineSignalsPanel.jsx'
 import PendingOrdersWidget from '../components/PendingOrdersWidget.jsx'
 import TimezoneClock from '../components/TimezoneClock.jsx'
 import { useAuth } from '../app/AuthProvider'
@@ -38,8 +42,8 @@ export default function Orders() {
   // ── Bootstrap data (via hook — AbortController-based race protection) ───────
   const {
     bootstrapData, loading: bootstrapLoading, error: bootstrapError,
-    alpha, refresh: refreshBootstrap,
-  } = useOrderBootstrap(selectedStock?.symbol, '1Y')
+    refresh: refreshBootstrap,
+  } = useOrderBootstrap(selectedStock?.symbol, '1Y', setSelectedStock)
 
   const {
     history: priceHistory,
@@ -151,12 +155,12 @@ export default function Orders() {
             if (!prev || prev.symbol !== selectedStock.symbol) return prev
             return {
               ...prev,
-              price: quote.price || 0,
-              change: quote.change || 0,
-              volume: quote.volume || prev.volume,
-              timestamp: quote.updatedAt,
-              freshness: quote.freshness || 'unknown',
-              ageMs: quote.ageMs || 0
+              price: Number.isFinite(quote?.price) ? quote.price : prev.price,
+              change: Number.isFinite(quote?.change) ? quote.change : prev.change,
+              volume: Number.isFinite(quote?.volume) ? quote.volume : prev.volume,
+              timestamp: quote?.updatedAt ?? prev.timestamp,
+              freshness: quote?.freshness || prev.freshness || 'unknown',
+              ageMs: Number.isFinite(quote?.ageMs) ? quote.ageMs : (prev.ageMs || 0)
             }
           })
         }
@@ -283,7 +287,9 @@ export default function Orders() {
                       ${displayStock ? displayStock.price.toFixed(2) : '0.00'}
                     </div>
                     <div className={`quote-change ${(displayStock?.change ?? 0) >= 0 ? 'text-positive' : 'text-negative'}`}>
-                      {displayStock ? `${displayStock.change >= 0 ? '+' : ''}${displayStock.change}%` : '0.00%'}
+                      {displayStock && Number.isFinite(displayStock.change)
+                        ? `${displayStock.change >= 0 ? '+' : ''}${displayStock.change.toFixed(2)}%`
+                        : '—'}
                     </div>
                   </div>
                   {(() => {
@@ -356,7 +362,15 @@ export default function Orders() {
               loading={chartLoading}
               nextOpen={nextOpen}
             />
-            <AlphaPanel selectedStock={selectedStock} alpha={alpha} loading={bootstrapLoading} />
+            <AlphaPanel selectedStock={selectedStock} explainability={bootstrapData?.alpha} loading={bootstrapLoading} />
+
+            {/* Ported from Asset.jsx: templates + research + recommendation + engine signals */}
+            <div className="mt-3">
+              <TopTemplatesPanel selectedStock={selectedStock} user={user} />
+            </div>
+            <div className="mt-3">
+              <EngineSignalsPanel selectedStock={selectedStock} />
+            </div>
           </section>
 
           {/* ── Right column: order ticket + ownership + recent trades ── */}
@@ -373,6 +387,13 @@ export default function Orders() {
             />
             {user && <PendingOrdersWidget />}
             <RecentExecutions selectedStock={selectedStock} bootstrapData={bootstrapData} />
+
+            <div className="mt-3">
+              <ResearchPanel selectedStock={selectedStock} />
+            </div>
+            <div className="mt-3">
+              <RecommendationPanel selectedStock={selectedStock} bootstrapData={bootstrapData} loading={bootstrapLoading} />
+            </div>
           </section>
         </div>
       </div>

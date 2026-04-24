@@ -28,9 +28,9 @@ export default function Home() {
 
   const handleActionClick = () => {
     if (housePick?.ticker) {
-      navigate(`/assets/${housePick.ticker}`)
+      navigate(`/orders?ticker=${encodeURIComponent(housePick.ticker)}`)
     } else {
-      navigate('/assets/NVDA') // fallback
+      navigate('/orders?ticker=NVDA') // fallback
     }
   }
 
@@ -54,7 +54,7 @@ export default function Home() {
         <div className="actions">
           <button
             className="primary pressable"
-            onClick={() => navigate('/assets/NVDA')}
+            onClick={() => navigate('/orders?ticker=NVDA')}
           >
             Explore Markets
           </button>

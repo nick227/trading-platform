@@ -226,7 +226,7 @@ function TickerRow3({
   ...rest
 }) {
   const tkr = String(ticker ?? '').toUpperCase()
-  const href = to ?? `/assets/${encodeURIComponent(tkr)}`
+  const href = to ?? `/orders?ticker=${encodeURIComponent(tkr)}`
   const dividerClass = divider ? 'data-row-divider' : ''
 
   return (
@@ -268,7 +268,7 @@ export default function AssetsIndex() {
   const normalizeTicker = (symbol) => String(symbol ?? '').toUpperCase().trim()
   const tickerHref = (symbol) => {
     const tkr = normalizeTicker(symbol)
-    return tkr ? `/assets/${encodeURIComponent(tkr)}` : '/assets'
+    return tkr ? `/orders?ticker=${encodeURIComponent(tkr)}` : '/orders'
   }
 
   const rememberTicker = (symbol) => {

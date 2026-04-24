@@ -96,9 +96,25 @@ function extractSymbol(row) {
 
 function transformRankingData(data) {
   const rows = Array.isArray(data?.rankings) ? data.rankings : []
+  const rankingKind = typeof data?.rankingKind === 'string' ? data.rankingKind : (typeof data?.ranking_kind === 'string' ? data.ranking_kind : null)
+  const notActionable = typeof data?.notActionable === 'boolean' ? data.notActionable : (typeof data?.not_actionable === 'boolean' ? data.not_actionable : null)
+  const peerCount = coerceFiniteNumber(data?.peerCount ?? data?.peer_count ?? data?.pipelineSignals?.universeExpected)
+
   return {
+    rankingKind,
+    notActionable,
+    peerCount,
+    rankedUnderDegradedRun: typeof data?.rankedUnderDegradedRun === 'boolean' ? data.rankedUnderDegradedRun : null,
+    runStatus: typeof data?.runStatus === 'string' ? data.runStatus : null,
+    runQuality: coerceFiniteNumber(data?.runQuality),
+    factorVersion: typeof data?.factorVersion === 'string' ? data.factorVersion : null,
+    scoreBreakdown: data?.scoreBreakdown ?? null,
+    subDrivers: data?.subDrivers ?? null,
+    pipelineSignals: data?.pipelineSignals ?? null,
     rankings: rows.map((r, index) => {
       const symbol = extractSymbol(r) || null
+      const rowRankingKind = typeof r?.rankingKind === 'string' ? r.rankingKind : (typeof r?.ranking_kind === 'string' ? r.ranking_kind : null)
+      const rowNotActionable = typeof r?.notActionable === 'boolean' ? r.notActionable : (typeof r?.not_actionable === 'boolean' ? r.not_actionable : null)
 
       // Keep related-but-distinct measures separate.
       // We still expose a best-effort `confidence` for legacy UI components,
@@ -136,16 +152,29 @@ function transformRankingData(data) {
 
       const rank = currentRank !== null ? currentRank : index + 1
 
+      const rowPeerCount = coerceFiniteNumber(r?.peerCount ?? r?.peer_count)
+
+      const drivers = Array.isArray(r?.drivers) ? r.drivers : []
+      const risks = Array.isArray(r?.risks) ? r.risks : []
+      const changes = Array.isArray(r?.changes) ? r.changes : []
+
+      const rowScoreBreakdown = (r?.scoreBreakdown && typeof r.scoreBreakdown === 'object') ? r.scoreBreakdown : null
+      const rowSubDrivers = (r?.subDrivers && typeof r.subDrivers === 'object') ? r.subDrivers : null
+      const rankContext = (r?.rankContext && typeof r.rankContext === 'object') ? r.rankContext : null
+
       const reasons = Array.isArray(r?.reasons)
         ? r.reasons
         : (Array.isArray(r?.why) ? r.why : [])
 
       return {
         symbol: symbol || '—',
+        rankingKind: rowRankingKind ?? rankingKind ?? null,
+        notActionable: rowNotActionable ?? notActionable ?? null,
         rank,
         currentRank,
         priorRank,
         rankChange,
+        peerCount: rowPeerCount ?? peerCount ?? null,
         score,
         edgeScore,
         fragilityScore,
@@ -156,6 +185,12 @@ function transformRankingData(data) {
         modelConfidence,
         conviction,
         attributionConfidence,
+        drivers,
+        risks,
+        changes,
+        scoreBreakdown: rowScoreBreakdown,
+        subDrivers: rowSubDrivers,
+        rankContext,
         reasons,
         timestamp: r?.timestamp || data?.snapshot_ts_latest || new Date().toISOString()
       }
@@ -406,8 +441,27 @@ export default {
 
       return signals
     } catch (error) {
-      console.error('Failed to fetch active signals:', error)
+      console.error('Failed to get active signals:', error)
       return []
+    }
+  },
+
+  // Calendar events for trading calendar
+  async getCalendarEvents(month, limit = 50, distribution = 'uniform', minDays = 12) {
+    try {
+      const params = new URLSearchParams()
+      if (month) params.append('month', month)
+      if (limit) params.append('limit', limit.toString())
+      if (distribution) params.append('distribution', distribution)
+      if (minDays) params.append('min_days', minDays.toString())
+      
+      const queryString = params.toString()
+      const endpoint = `/calendar${queryString ? `?${queryString}` : ''}`
+      
+      return await alphaFetch(endpoint)
+    } catch (error) {
+      console.error('Failed to get calendar events:', error)
+      return { events: [], eventCount: 0, meetsMinimum: false }
     }
   },
 

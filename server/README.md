@@ -49,7 +49,7 @@ The server will be available at `http://localhost:3000` with API docs at `http:/
 
 ### Core Resources
 - `GET /api/strategies` - List strategies
-- `GET /api/predictions` - List predictions (from alpha-engine)
+- `GET /api/predictions` - List predictions (may be derived from rankings when engine predictions are unavailable)
 - `GET /api/portfolios` - List portfolios
 - `GET /api/bots` - List trading bots
 - `GET /api/executions` - List trade executions

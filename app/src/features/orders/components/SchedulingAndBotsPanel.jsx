@@ -179,14 +179,7 @@ export default function SchedulingAndBotsPanel({ selectedStock }) {
           </div>
         )}
       </div>
-
-      {/* Market Status Info */}
-      {isMarketClosed() && (
-        <div className="alert alert-warn mt-4 text-xs">
-          <div className="alert-title">Market currently closed</div>
-          <div>Orders placed now queue and execute when the market opens at 9:30 AM ET.</div>
-        </div>
-      )}
+      
     </article>
   )
 }

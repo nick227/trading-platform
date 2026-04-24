@@ -1,13 +1,15 @@
 import { engineClient } from '../clients/engine.js'
 
 const QUOTE_ENRICH_TTL_MS = 30_000
+const HISTORY_ENRICH_TTL_MS = 5 * 60_000
 const CACHE_MAX_SIZE = 1000
 const PRUNE_INTERVAL_MS = 60_000
 
 class QuoteCache {
-  constructor(maxSize = CACHE_MAX_SIZE) {
+  constructor({ maxSize = CACHE_MAX_SIZE, ttlMs = QUOTE_ENRICH_TTL_MS } = {}) {
     this.cache = new Map()
     this.maxSize = maxSize
+    this.ttlMs = ttlMs
     this.pruneTimer = null
     this.startPruning()
   }
@@ -27,7 +29,7 @@ class QuoteCache {
 
   set(key, quote) {
     const now = Date.now()
-    this.cache.set(key, { quote, expiresAt: now + QUOTE_ENRICH_TTL_MS })
+    this.cache.set(key, { quote, expiresAt: now + this.ttlMs })
 
     if (this.cache.size > this.maxSize) {
       this.prune()
@@ -58,6 +60,8 @@ class QuoteCache {
 
   startPruning() {
     this.pruneTimer = setInterval(() => this.prune(), PRUNE_INTERVAL_MS)
+    // Don't keep the process alive solely for cache pruning (helps tests/one-off imports).
+    if (typeof this.pruneTimer?.unref === 'function') this.pruneTimer.unref()
   }
 
   stopPruning() {
@@ -72,7 +76,8 @@ class QuoteCache {
   }
 }
 
-const quoteCache = new QuoteCache()
+const quoteCache = new QuoteCache({ ttlMs: QUOTE_ENRICH_TTL_MS })
+const historyCache = new QuoteCache({ ttlMs: HISTORY_ENRICH_TTL_MS })
 
 function getRowTicker(row) {
   return String(row?.ticker ?? row?.symbol ?? row?.tkr ?? '').toUpperCase()
@@ -128,6 +133,65 @@ async function getCachedQuote(symbol) {
   return quote
 }
 
+async function getCachedHistory(symbol) {
+  const key = String(symbol).toUpperCase()
+  const cached = historyCache.get(key)
+  if (cached) return cached
+
+  const history = await engineClient.getHistory(key, '1Y', '1D')
+  historyCache.set(key, history)
+  return history
+}
+
+function computeDailyChangePctFromHistory(history) {
+  const points = Array.isArray(history?.points) ? history.points : []
+  if (points.length < 2) return null
+  const last = points[points.length - 1]
+  const prev = points[points.length - 2]
+  const lastClose = coerceNumber(last?.c ?? last?.close)
+  const prevClose = coerceNumber(prev?.c ?? prev?.close)
+  if (lastClose === null || prevClose === null || prevClose === 0) return null
+  return ((lastClose - prevClose) / prevClose) * 100
+}
+
+function derivePeerCount(data, rows) {
+  const rowCount = Array.isArray(rows) ? rows.length : 0
+  const pipelineExpected = coerceNumber(data?.pipelineSignals?.universeExpected ?? data?.pipelineSignals?.predictionsTotal)
+  const declared = coerceNumber(data?.peerCount ?? data?.peer_count)
+
+  if (pipelineExpected !== null && pipelineExpected > rowCount) return pipelineExpected
+  if (declared !== null && declared >= rowCount) return declared
+  return declared ?? pipelineExpected ?? null
+}
+
+function rewriteInvalidators(row, peerCount) {
+  const rankContext = row?.rankContext && typeof row.rankContext === 'object' ? row.rankContext : null
+  const invalidators = Array.isArray(rankContext?.invalidators) ? rankContext.invalidators : null
+  if (!invalidators || invalidators.length === 0) return row
+
+  const cutoff = coerceNumber(rankContext?.scope?.cutoff) ?? coerceNumber(peerCount ?? row?.peerCount) ?? null
+  const rank = coerceNumber(row?.rank ?? row?.currentRank ?? row?.current_rank)
+  if (cutoff === null || rank === null) return row
+
+  const next = invalidators.map((inv, idx) => {
+    if (idx !== 0) return inv
+    const txt = String(inv ?? '').trim()
+    if (!txt) return inv
+    if (/^rank\s+falls\s+below\b/i.test(txt) || /^rank\s+slips\b/i.test(txt) || /^rank\s+drops\b/i.test(txt)) {
+      return `Current #${rank} rank falls below top ${cutoff}`
+    }
+    return inv
+  })
+
+  return {
+    ...row,
+    rankContext: {
+      ...rankContext,
+      invalidators: next
+    }
+  }
+}
+
 async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
   if (!data || typeof data !== 'object') return data
   const rows = normalizeRankingsRows(data)
@@ -135,6 +199,7 @@ async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
 
   const uniqueTickers = Array.from(new Set(rows.map(getRowTicker).filter(Boolean)))
   const quoteByTicker = new Map()
+  const historyByTicker = new Map()
 
   let cursor = 0
   const workers = Array.from({ length: Math.min(limitConcurrency, uniqueTickers.length) }, async () => {
@@ -152,22 +217,59 @@ async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
 
   await Promise.all(workers)
 
+  // Best-effort momentum enrichment: only when the surface is small (avoid large fan-out).
+  const wantsHistory = rows.length <= 15
+  if (wantsHistory) {
+    let historyCursor = 0
+    const historyWorkers = Array.from({ length: Math.min(4, uniqueTickers.length) }, async () => {
+      while (historyCursor < uniqueTickers.length) {
+        const i = historyCursor++
+        const tkr = uniqueTickers[i]
+        try {
+          const history = await getCachedHistory(tkr)
+          historyByTicker.set(tkr, history)
+        } catch {
+          historyByTicker.set(tkr, null)
+        }
+      }
+    })
+    await Promise.all(historyWorkers)
+  }
+
   const enrichedRows = rows.map((row) => {
     const tkr = getRowTicker(row)
     const quote = tkr ? quoteByTicker.get(tkr) : null
+    const history = tkr ? historyByTicker.get(tkr) : null
 
     const price = row?.price ?? quote?.price ?? quote?.last ?? quote?.close
     const dailyChangePct = row?.dailyChangePct ?? quote?.dailyChangePct ?? quote?.changePct ?? quote?.change
+    const fallbackDailyChangePct = dailyChangePct == null ? computeDailyChangePctFromHistory(history) : null
 
     return {
       ...row,
       ticker: row?.ticker ?? (tkr || undefined),
+      predictionId: row?.predictionId ?? row?.prediction_id ?? null,
       price: coerceNumber(price),
-      dailyChangePct: coerceNumber(dailyChangePct)
+      dailyChangePct: coerceNumber(dailyChangePct ?? fallbackDailyChangePct)
     }
   })
 
-  return { ...data, rankings: enrichedRows, _enrichedAt: new Date().toISOString() }
+  const peerCount = derivePeerCount(data, enrichedRows)
+  const withPeer = peerCount === null
+    ? enrichedRows
+    : enrichedRows.map((row) => ({
+        ...row,
+        peerCount: coerceNumber(row?.peerCount ?? row?.peer_count) ?? peerCount
+      }))
+
+  const withInvalidators = withPeer.map((row) => rewriteInvalidators(row, peerCount))
+
+  return {
+    ...data,
+    peerCount: peerCount ?? data?.peerCount ?? data?.peer_count ?? null,
+    rankings: withInvalidators,
+    _enrichedAt: new Date().toISOString()
+  }
 }
 
 export const rankingEnrichmentService = {

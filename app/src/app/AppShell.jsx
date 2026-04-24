@@ -18,6 +18,10 @@ import Opportunities from '../features/Opportunities'
 import BotConfirm from '../features/BotConfirm'
 import OrderConfirm from '../features/OrderConfirm'
 import Profile from '../features/Profile'
+import AccountTab from '../features/profile/AccountTab'
+import BrokerTab from '../features/profile/BrokerTab'
+import ActivityTab from '../features/profile/ActivityTab'
+import BotsTab from '../features/profile/BotsTab'
 import Ops from '../features/Ops'
 import Auth from '../features/Auth'
 import ApiTest from '../test/ApiTest'
@@ -59,7 +63,13 @@ export function AppShell() {
         <Route path="/orders/confirm" element={<Protected><OrderConfirm /></Protected>} />
         <Route path="/showcase"       element={<Protected><AlphaShowcase /></Protected>} />
         <Route path="/opportunities"  element={<Protected><Opportunities /></Protected>} />
-        <Route path="/profile"        element={<Protected><Profile /></Protected>} />
+        <Route path="/profile"        element={<Protected><Profile /></Protected>}>
+          <Route index element={<Navigate to="/profile/account" replace />} />
+          <Route path="account" element={<AccountTab />} />
+          <Route path="broker" element={<BrokerTab />} />
+          <Route path="activity" element={<ActivityTab />} />
+          <Route path="bots" element={<BotsTab />} />
+        </Route>
         <Route path="/ops"            element={<Protected><Ops /></Protected>} />
         <Route path="/test"           element={<ApiTest />} />
         <Route path="/execution-test" element={<ExecutionTest />} />

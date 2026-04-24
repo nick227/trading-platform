@@ -1,7 +1,23 @@
 import { engineClient } from '../clients/engine.js'
 import { route } from './helpers/routeWrapper.js'
+import predictionsService from '../services/predictionsService.js'
 
 export default async function marketRoutes(fastify, opts) {
+  fastify.get('/calendar', route(async (request, reply) => {
+    const { month = null, limit = 50, distribution = 'uniform', min_days = 12 } = request.query ?? {}
+
+    const limitNum = Math.max(1, Math.min(500, Number(limit) || 50))
+    const minDaysNum = Math.max(1, Math.min(31, Number(min_days) || 12))
+    const distStr = String(distribution || 'uniform').trim().toLowerCase()
+
+    if (distStr !== 'actual' && distStr !== 'uniform') {
+      return reply.code(400).send({ error: 'invalid distribution; use actual or uniform' })
+    }
+
+    const data = await engineClient.getCalendarEvents(month, limitNum, distStr, minDaysNum)
+    return data
+  }))
+
   fastify.get('/health', route(async (request, reply) => {
     const health = await engineClient.checkHealth()
     return { success: true, data: health }

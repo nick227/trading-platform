@@ -1,78 +1,66 @@
-import { getSignalColor } from '../../../utils/signal.js'
+function safeList(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : []
+}
 
-export default function AlphaPanel({ alpha, loading, selectedStock, compact = false }) {
+export default function AlphaPanel({ explainability, loading, selectedStock, compact = false }) {
   const shellClass = `card ${compact ? 'card-pad-sm' : 'card-pad-md'}`
 
   if (!selectedStock) {
     return (
       <article className={shellClass}>
-        <div className="panel-empty">Select a stock to view AI analysis</div>
+        <div className="panel-empty">Select a stock to view engine rationale</div>
       </article>
     )
   }
 
-  const sigColor = getSignalColor(alpha?.signal)
+  const alpha = explainability && typeof explainability === 'object' ? explainability : null
+  const explanation = typeof alpha?.explanation === 'string' ? alpha.explanation : null
+  const factors = safeList(alpha?.factors)
+  const signals = safeList(alpha?.signals)
+
+  const hasAny = Boolean(explanation) || factors.length > 0 || signals.length > 0
 
   return (
     <article className={shellClass}>
       <div className="panel-header">
-        <h3 className="panel-title">Alpha Engine Analysis</h3>
+        <h3 className="panel-title">Engine Rationale</h3>
       </div>
 
       {loading ? (
-        <div className="panel-empty">Loading analysis…</div>
-      ) : alpha ? (
+        <div className="panel-empty">Loading analysis...</div>
+      ) : hasAny ? (
         <div className="stack-sm">
-          <div className="l-row">
-            <div className="hstack">
-              <span className="badge badge-xs" style={{ background: sigColor, color: 'white' }}>
-                {alpha.signal.replace(/_/g, ' ')}
-              </span>
-              <span className="text-xs font-600">{alpha.confidence}% confidence</span>
+          {explanation ? (
+            <div className="text-xs" style={{ lineHeight: 1.5 }}>
+              {explanation}
             </div>
-            <span className="text-xs muted">
-              {[alpha.risk, alpha.timeframe].filter(Boolean).join(' · ')}
-            </span>
-          </div>
-
-          <div className="progress mb-3">
-            <div className="progress-bar" style={{ '--progress': `${alpha.confidence}%`, '--progress-bg': sigColor }} />
-          </div>
-
-          {alpha.thesis?.length > 0 ? (
-            <ul className="list text-xs mb-3">
-              {alpha.thesis.map((point, i) => <li key={i}>{point}</li>)}
-            </ul>
-          ) : alpha.reasoning ? (
-            <div className="text-xs mb-3">{alpha.reasoning}</div>
           ) : null}
 
-          {!compact && (
-            <>
-              {alpha.entryZone && (
-                <div className="subcard subcard-sm mb-2">
-                  <div className="l-row text-xs">
-                    <span className="muted">Entry zone</span>
-                    <span className="font-600">
-                      ${alpha.entryZone[0].toFixed(2)} – ${alpha.entryZone[1].toFixed(2)}
-                    </span>
+          {factors.length > 0 ? (
+            <div>
+              <div className="eyebrow mb-0">Key factors</div>
+              <div className="data-rows mt-2">
+                {factors.slice(0, compact ? 4 : 8).map((f, idx) => (
+                  <div key={idx} className="data-row-3 data-row-divider">
+                    <span className="muted">{f.name ?? f.factor ?? f.key ?? 'Factor'}</span>
+                    <span className="font-600">{f.value ?? f.score ?? '—'}</span>
+                    <span className="muted text-right">{f.direction ?? f.signal ?? ' '}</span>
                   </div>
-                </div>
-              )}
+                ))}
+              </div>
+            </div>
+          ) : null}
 
-              {alpha.avoidIf?.length > 0 && (
-                <div className="text-xs muted">
-                  <span className="text-negative font-600">Avoid if: </span>
-                  {alpha.avoidIf.join(' · ')}
-                </div>
-              )}
-            </>
-          )}
+          {signals.length > 0 ? (
+            <div>
+              <div className="eyebrow mb-0">Signals</div>
+              <div className="text-xs muted mt-2">{signals.slice(0, compact ? 6 : 12).join(' · ')}</div>
+            </div>
+          ) : null}
         </div>
       ) : (
-        <div className="panel-empty">Analysis unavailable</div>
+        <div className="panel-empty">No engine rationale available.</div>
       )}
     </article>
   )
 }
-

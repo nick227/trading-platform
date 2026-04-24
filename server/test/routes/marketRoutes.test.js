@@ -85,6 +85,18 @@ describe('marketRoutes', () => {
       expect(typeof response.body.data.price).toBe('number')
       expect(response.body.data.price).not.toBeNaN()
     })
+
+    it('propagates upstream status codes when provided', async () => {
+      const err = new Error('Alpha Engine 404: not found')
+      err.statusCode = 404
+      engineClient.getQuote.mockRejectedValue(err)
+
+      const response = await request(app.server)
+        .get('/api/quote/VIX')
+        .expect(404)
+
+      expect(response.body).toEqual({ success: false, error: 'Alpha Engine 404: not found' })
+    })
   })
 
   describe('GET /api/history/:symbol', () => {

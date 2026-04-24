@@ -53,8 +53,7 @@ export default defineConfig({
           
           // Utility libraries
           utils: [
-            'date-fns',
-            'lodash-es'
+            // Keep this list limited to installed, frequently-used utilities.
           ],
           
           // API and data fetching
@@ -101,20 +100,7 @@ export default defineConfig({
     },
     
     // Minification options
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        // Remove console logs in production
-        drop_console: true,
-        drop_debugger: true,
-        pure_funcs: ['console.log', 'console.info', 'console.debug', 'console.warn']
-      },
-      mangle: {
-        // Keep class names for debugging
-        keep_classnames: false,
-        keep_fnames: false
-      }
-    },
+    minify: 'esbuild',
     
     // Report compressed size for better analysis
     reportCompressedSize: true,
