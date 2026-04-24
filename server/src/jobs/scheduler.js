@@ -2,6 +2,16 @@ import { runRegimeSnapshot } from './regimeSnapshotJob.js'
 
 const DEFAULT_SYMBOLS = ['SPY']
 
+// Backfill reconciler function
+async function runBackfillReconciler() {
+  try {
+    const { runBackfillReconciler } = await import('./backfillReconcilerJob.js')
+    await runBackfillReconciler()
+  } catch (error) {
+    console.error('[scheduler] backfill reconciler failed:', error)
+  }
+}
+
 /**
  * Starts background schedulers for the API server process.
  *
@@ -38,7 +48,13 @@ async function startRegimeCron() {
     timezone: 'America/New_York'
   })
 
+  // Once daily at 2:00 AM ET, every day.
+  cron.schedule('0 2 * * *', () => runBackfillReconciler(), {
+    timezone: 'America/New_York'
+  })
+
   console.log('[scheduler] regime snapshot cron scheduled (4:15 PM ET, Mon–Fri)')
+  console.log('[scheduler] backfill reconciler cron scheduled (2:00 AM ET, daily)')
   return true
 }
 

@@ -29,38 +29,79 @@ class MetricsService {
 
   // Insert trade fact from execution
   async insertTradeFact(execution) {
-    // Calculate return percentage and other metrics
-    const returnPct = execution.price > 0 ? ((execution.filledPrice - execution.price) / execution.price) * 100 : 0
+    // Defensive guards - validate required fields
+    if (!execution || !execution.id) {
+      console.error('[metrics] Invalid execution object:', execution);
+      throw new Error('Execution object is required with valid ID');
+    }
+    
+    if (!execution.userId) {
+      console.error(`[metrics] Missing userId on execution ${execution.id}, skipping`);
+      return; // Graceful skip instead of throwing
+    }
+
+    // Calculate return percentage and other metrics with safe defaults
+    const returnPct = execution.price && execution.price > 0 ? 
+      ((execution.filledPrice - execution.price) / execution.price) * 100 : 0
     const holdingMinutes = execution.filledAt && execution.submittedAt 
       ? Math.floor((execution.filledAt - execution.submittedAt) / (1000 * 60))
       : 0
 
+    // Look up templateId from bot if execution has a botId
+    let templateId = null
+    if (execution.botId && execution.sourceType === 'TEMPLATE') {
+      try {
+        const bot = await prisma.bot.findUnique({
+          where: { id: execution.botId },
+          select: { templateId: true }
+        })
+        templateId = bot?.templateId || null
+      } catch (error) {
+        console.error(`[metrics] Failed to lookup templateId for bot ${execution.botId}:`, error)
+      }
+    }
+
     const fact = {
       date: execution.filledAt || new Date(),
       userId: execution.userId,
-      botId: execution.botId,
-      templateId: execution.templateId,
+      botId: execution.botId || null,
+      templateId: templateId,
       sourceExecutionId: execution.id,
       eventType: 'fill',
       sourceType: execution.sourceType || 'UNKNOWN',
-      sourceId: execution.sourceId,
-      pnl: execution.pnl,
+      sourceId: execution.sourceId || null,
+      pnl: execution.pnl || 0,
       returnPct: returnPct,
-      isWin: Number(execution.pnl) > 0,
-      capitalUsed: execution.quantity * execution.price,
+      isWin: Number(execution.pnl || 0) > 0,
+      capitalUsed: execution.quantity && execution.price ? execution.quantity * execution.price : 0,
       holdingMinutes,
-      direction: execution.direction,
-      ticker: execution.ticker,
-      quantity: execution.quantity,
-      entryPrice: execution.price,
-      exitPrice: execution.filledPrice,
+      direction: execution.direction || 'UNKNOWN',
+      ticker: execution.ticker || 'UNKNOWN',
+      quantity: execution.quantity || 0,
+      entryPrice: execution.price || 0,
+      exitPrice: execution.filledPrice || 0,
       dailyEquityReturn: 0, // Will be calculated in nightly job
-      allocatedCapital: execution.quantity * execution.price,
+      allocatedCapital: execution.quantity && execution.price ? execution.quantity * execution.price : 0,
       portfolioValue: null, // Will be set by cash flow events
       processed: false
     }
 
-    await prisma.tradeMetricFact.create({ data: fact })
+    try {
+      await prisma.tradeMetricFact.create({ data: fact })
+      console.log(`[metrics] Created TradeMetricFact for execution: ${execution.id}`);
+    } catch (error) {
+      // Structured error logging for reconciler verification
+      console.error(`[metrics] ERROR: TradeMetricFact creation failed`, {
+        executionId: execution.id,
+        userId: execution.userId,
+        ticker: execution.ticker,
+        direction: execution.direction,
+        pnl: execution.pnl,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+      // Don't re-throw - log and continue to avoid crashing broker callbacks
+    }
   }
 
   // Update simple template metrics immediately

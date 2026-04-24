@@ -75,16 +75,91 @@ async function alphaFetch(endpoint, options = {}) {
 export { alphaFetch, getCacheKey, setCacheItem, getCacheItem, deleteCacheItem, invalidateByPattern, invalidationRules, cachedFetch, getCacheMetrics, CACHE_CONFIG }
 
 // Data transformation utilities
+function coerceFiniteNumber(value) {
+  const num = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+function coerceConfidence(value) {
+  const num = coerceFiniteNumber(value)
+  if (num === null) return null
+  // Support either 0..1 or 0..100 inputs.
+  if (num > 1 && num <= 100) return num / 100
+  if (num < 0) return 0
+  if (num > 1) return 1
+  return num
+}
+
+function extractSymbol(row) {
+  return String(row?.symbol ?? row?.ticker ?? row?.tkr ?? '').toUpperCase()
+}
+
 function transformRankingData(data) {
+  const rows = Array.isArray(data?.rankings) ? data.rankings : []
   return {
-    rankings: data.rankings?.map(r => ({
-      symbol: r.symbol,
-      rank: r.rank,
-      score: r.score,
-      confidence: r.confidence,
-      reasons: r.reasons || [],
-      timestamp: r.timestamp || new Date().toISOString()
-    })) || [],
+    rankings: rows.map((r, index) => {
+      const symbol = extractSymbol(r) || null
+
+      // Keep related-but-distinct measures separate.
+      // We still expose a best-effort `confidence` for legacy UI components,
+      // but consumers that care about semantics should use the specific fields below.
+      const modelConfidence = coerceConfidence(r?.confidence)
+      const conviction = coerceConfidence(r?.conviction)
+      const attributionConfidence = coerceConfidence(r?.attribution?.confidence)
+      const confidence = modelConfidence ?? conviction ?? attributionConfidence
+
+      const score = coerceFiniteNumber(
+        r?.score ?? r?.edgeScore ?? r?.score_today ?? r?.multiplier_score
+      )
+
+      const edgeScore = coerceFiniteNumber(r?.edgeScore)
+      const fragilityScore = coerceFiniteNumber(r?.fragilityScore)
+      const regime = typeof r?.regime === 'string' ? r.regime : null
+      const price = coerceFiniteNumber(r?.price)
+      const dailyChangePct = coerceFiniteNumber(r?.dailyChangePct)
+
+      const currentRank = coerceFiniteNumber(
+        r?.currentRank ?? r?.rank_today ?? r?.rank
+      )
+
+      const priorRank = coerceFiniteNumber(
+        r?.priorRank ?? r?.rank_yesterday ?? r?.previousRank ?? r?.previous_rank
+      )
+
+      const explicitRankChange = coerceFiniteNumber(
+        r?.rankChange ?? r?.rank_delta ?? r?.rank_change ?? r?.rankDelta
+      )
+
+      const rankChange = explicitRankChange !== null
+        ? explicitRankChange
+        : (currentRank !== null && priorRank !== null ? priorRank - currentRank : null)
+
+      const rank = currentRank !== null ? currentRank : index + 1
+
+      const reasons = Array.isArray(r?.reasons)
+        ? r.reasons
+        : (Array.isArray(r?.why) ? r.why : [])
+
+      return {
+        symbol: symbol || '—',
+        rank,
+        currentRank,
+        priorRank,
+        rankChange,
+        score,
+        edgeScore,
+        fragilityScore,
+        regime,
+        price,
+        dailyChangePct,
+        confidence,
+        modelConfidence,
+        conviction,
+        attributionConfidence,
+        reasons,
+        timestamp: r?.timestamp || data?.snapshot_ts_latest || new Date().toISOString()
+      }
+    }),
     asOf: data.as_of || new Date().toISOString(),
     total: data.total || 0
   }
@@ -319,13 +394,13 @@ export default {
           source: 'top_ranked'
         })),
         ...movers.rankings.slice(0, 5).map(r => ({
-          type: r.rank > 0 ? 'ENTRY' : 'EXIT',
+          type: (Number(r.rankChange) || 0) >= 0 ? 'ENTRY' : 'EXIT',
           symbol: r.symbol,
           confidence: r.confidence,
           score: r.score,
           reasons: r.reasons,
           source: 'mover',
-          rankChange: r.rank
+          rankChange: r.rankChange
         }))
       ].sort((a, b) => b.confidence - a.confidence)
 

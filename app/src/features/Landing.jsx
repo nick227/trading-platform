@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import StrategyChart from '../components/StrategyChart'
 import Calendar from '../components/Calendar'
 import { useAlphaDashboard, useAlphaSignals } from '../hooks/useAlphaEngine.js'
-import { getMarketPulse, getFeaturedAssets } from '../services/marketData.js'
 import { useAuth } from '../app/AuthProvider.jsx'
 import { usePendingOrders } from '../hooks/usePendingOrders.js'
 
@@ -50,13 +49,13 @@ function transformSignalsToLiveFormat(signals) {
   }))
 }
 
-function transformRankingsToPredictions(rankings) {
+function transformRankingsForTable(rankings) {
   return rankings.map(ranking => ({
     symbol: ranking.symbol,
-    axis: `${ranking.confidence > 0.8 ? 'HIGH' : ranking.confidence > 0.6 ? 'MED' : 'LOW'}_VOL_PREDICT_${ranking.symbol}_AGGRESSIVE_7d`,
-    prediction: (ranking.score || 0.05) * (ranking.rank > 0 ? 1 : -1),
+    direction: (ranking.score ?? 0) >= 0 ? 'Bullish' : 'Bearish',
+    score: ranking.score,
     confidence: ranking.confidence,
-    actual: null
+    reason: ranking.reasons?.[0] || null,
   }))
 }
 
@@ -74,12 +73,122 @@ function transformRankingsToFeaturedAssets(rankings) {
   }))
 }
 
+function formatTimeLabel(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+function formatNumber(value, digits = 2) {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return Number(value).toFixed(digits)
+}
+
+function buildMarketPulse({ dashboard, signals }) {
+  const list = Array.isArray(signals) ? signals : []
+  const entries = list.filter(s => s?.type === 'ENTRY').length
+  const exits = list.filter(s => s?.type === 'EXIT').length
+  const totalAlerts = entries + exits
+
+  const confidences = list
+    .map(s => Number(s?.confidence))
+    .filter(c => Number.isFinite(c))
+
+  const confidenceCoverage = totalAlerts > 0 ? `${confidences.length}/${totalAlerts}` : '—'
+  const confidenceCoverageNote = totalAlerts > 0
+    ? (confidences.length === totalAlerts ? 'complete' : 'partial')
+    : '—'
+
+  const topRankings = dashboard?.topRankings?.rankings || []
+  const topRanked = topRankings.slice(0, 5).map((r, idx) => ({
+    symbol: String(r?.symbol || '').toUpperCase(),
+    rank: typeof r?.rank === 'number' ? r.rank : idx + 1,
+    score: Number.isFinite(Number(r?.score)) ? Number(r.score) : null,
+    edgeScore: Number.isFinite(Number(r?.edgeScore)) ? Number(r.edgeScore) : null,
+    price: Number.isFinite(Number(r?.price)) ? Number(r.price) : null,
+    dailyChangePct: Number.isFinite(Number(r?.dailyChangePct)) ? Number(r.dailyChangePct) : null
+  })).filter(r => Boolean(r.symbol))
+
+  const topScoreMax = topRanked.reduce((mx, r) => {
+    const score = Number.isFinite(r.score) ? r.score : null
+    return score == null ? mx : Math.max(mx, score)
+  }, 0)
+
+  const movers = dashboard?.movers?.rankings || []
+  const uniqueBySymbol = (rows) => {
+    const seen = new Set()
+    const out = []
+    for (const row of rows) {
+      const symbol = String(row?.symbol || '').toUpperCase()
+      if (!symbol || seen.has(symbol)) continue
+      seen.add(symbol)
+      out.push(row)
+    }
+    return out
+  }
+
+  const improving = uniqueBySymbol(movers)
+    .filter(m => (Number(m?.rankChange) || 0) > 0)
+    .sort((a, b) => (Number(b?.rankChange) || 0) - (Number(a?.rankChange) || 0))
+    .slice(0, 3)
+    .map(m => ({ symbol: m?.symbol || '—', change: Number(m?.rankChange) || 0 }))
+
+  const cooling = uniqueBySymbol(movers)
+    .filter(m => (Number(m?.rankChange) || 0) < 0)
+    .sort((a, b) => (Number(a?.rankChange) || 0) - (Number(b?.rankChange) || 0))
+    .slice(0, 3)
+    .map(m => ({ symbol: m?.symbol || '—', change: Number(m?.rankChange) || 0 }))
+
+  const admission = dashboard?.admission?.summary || {}
+  const admitted = typeof admission.admitted === 'number' ? admission.admitted : null
+  const removed = typeof admission.removed === 'number' ? admission.removed : null
+  const queued = typeof admission.queued === 'number' ? admission.queued : null
+  const admissionPeriod = dashboard?.admission?.period || 'recent'
+
+  const healthStatus = dashboard?.health?.status || 'unknown'
+  const asOf = dashboard?.lastUpdated || dashboard?.topRankings?.asOf || null
+  const snapshotAgeHours = dashboard?.topRankings?.pipelineSignals?.latestRankingSnapshotAgeHours
+  const snapshotAgeLabel = Number.isFinite(Number(snapshotAgeHours))
+    ? `${Number(snapshotAgeHours).toFixed(1)}h`
+    : '—'
+
+  const statusHeadline = healthStatus === 'ok'
+    ? 'Alpha Engine active'
+    : healthStatus === 'unreachable'
+      ? 'Alpha Engine unreachable'
+      : 'Alpha Engine status unknown'
+
+  const statusSubhead = totalAlerts > 0
+    ? `${entries} entries / ${exits} exits • Confidence data ${confidenceCoverageNote} (${confidenceCoverage}) • Ranked names ${topRankings.length} • Snapshot age ${snapshotAgeLabel}`
+    : `No current alerts • Ranked names ${topRankings.length} • Snapshot age ${snapshotAgeLabel}`
+
+  const whyThisMatters = 'This is an engine status snapshot (freshness + output volume). It is not a “market” indicator.'
+
+  return {
+    healthStatus,
+    asOf,
+    statusHeadline,
+    statusSubhead,
+    whyThisMatters,
+    metrics: {
+      signalMix: totalAlerts > 0 ? `${entries} entries / ${exits} exits` : '—',
+      confidenceCoverage,
+      rankedCount: Array.isArray(topRankings) ? topRankings.length : 0
+    },
+    topRanked,
+    topScoreMax,
+    improving,
+    cooling,
+    admissionMeta: { admitted, removed, queued, admissionPeriod }
+  }
+}
+
 export default function Landing() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [selectedSignal, setSelectedSignal] = useState(null)
-  const [marketPulse, setMarketPulse] = useState(getMarketPulse())
 
   const { pendingOrders, cancelOrder, isCanceling } = usePendingOrders({
     enabled: Boolean(user),
@@ -92,8 +201,10 @@ export default function Landing() {
   
   // Transform alpha-engine data for UI components
   const liveSignals = transformSignalsToLiveFormat(signals || [])
-  const dimensionalPredictions = transformRankingsToPredictions(dashboard?.topRankings?.rankings || [])
+  const engineRankings = transformRankingsForTable(dashboard?.topRankings?.rankings || [])
   const featuredAssets = transformRankingsToFeaturedAssets(dashboard?.topRankings?.rankings || [])
+
+  const pulse = useMemo(() => buildMarketPulse({ dashboard, signals }), [dashboard, signals])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -141,19 +252,155 @@ export default function Landing() {
 
       {/* Market Pulse & Performance Grid */}
       <section style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-        <article style={{ background: 'linear-gradient(140deg, #111, #2a2a2a)', color: '#fff', borderRadius: 24, padding: '1.2rem' }}>
-          <div className="eyebrow" style={{ color: '#d9d9d9' }}>Market Pulse</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <article style={{ background: 'linear-gradient(140deg, #0b0b0c, #1b1c20)', color: '#fff', borderRadius: 24, padding: '1.2rem', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '1rem' }}>
             <div>
-              <div style={{ fontSize: '2rem', fontWeight: 700 }}>{marketPulse.regime}</div>
-              <div style={{ marginTop: '0.5rem', opacity: 0.88 }}>Signal breadth: {marketPulse.signalBreadth}% bullish</div>
-              <div style={{ opacity: 0.88 }}>Volatility regime: {marketPulse.volatilityRegime}</div>
-              <div style={{ opacity: 0.88 }}>VIX: {marketPulse.vix}</div>
+              <div className="eyebrow" style={{ color: '#d9d9d9' }}>Alpha Engine Pulse</div>
+              <div style={{ marginTop: '0.35rem', fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
+                {pulse.statusHeadline}
+              </div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '1.2rem', fontWeight: 600, color: '#6effb6' }}>{marketPulse.sp500Change}</div>
-              <div style={{ fontSize: '0.9rem', opacity: 0.88 }}>S&P 500</div>
-              <div style={{ marginTop: '0.8rem', color: '#6effb6', fontWeight: 700 }}>Top: {marketPulse.topOpportunity}</div>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.2rem 0.55rem',
+                borderRadius: 999,
+                background: pulse.healthStatus === 'ok' ? 'rgba(110,255,182,0.12)' : pulse.healthStatus === 'unreachable' ? 'rgba(255,99,99,0.12)' : 'rgba(255,255,255,0.10)',
+                border: pulse.healthStatus === 'ok' ? '1px solid rgba(110,255,182,0.25)' : pulse.healthStatus === 'unreachable' ? '1px solid rgba(255,99,99,0.25)' : '1px solid rgba(255,255,255,0.18)'
+              }}>
+                <span style={{ width: 7, height: 7, borderRadius: 999, background: pulse.healthStatus === 'ok' ? '#6effb6' : pulse.healthStatus === 'unreachable' ? '#ff6363' : '#d9d9d9' }} />
+                <span style={{ fontSize: 12, color: '#e9e9e9', fontWeight: 600 }}>
+                  Engine: {pulse.healthStatus}
+                </span>
+              </div>
+              <div style={{ marginTop: '0.45rem', fontSize: 12, color: '#cfcfcf' }}>
+                Updated {formatTimeLabel(pulse.asOf)}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '0.6rem', color: '#d6d6d6', lineHeight: 1.35 }}>
+            <div style={{ fontSize: 15 }}>{pulse.statusSubhead}</div>
+            <div style={{ marginTop: '0.35rem', color: '#bdbdbd', fontSize: 12 }}>
+              {pulse.whyThisMatters}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem', marginTop: '1rem' }}>
+            <div style={{ padding: '0.75rem', borderRadius: 16, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.75rem' }}>
+                <strong style={{ fontSize: 14 }}>Top ranked names</strong>
+                <span style={{ fontSize: 12, color: '#bdbdbd' }}>Ordered by engine rank</span>
+              </div>
+              <div style={{ marginTop: '0.65rem', display: 'grid', gap: '0.45rem' }}>
+                {dashboardLoading ? (
+                  <div style={{ color: '#bdbdbd', fontSize: 13 }}>Loading…</div>
+                ) : pulse.topRanked.length === 0 ? (
+                  <div style={{ color: '#bdbdbd', fontSize: 13 }}>—</div>
+                ) : (
+                  pulse.topRanked.map((row) => {
+                    const base = Number.isFinite(row.score) ? row.score : null
+                    const denom = pulse.topScoreMax > 0 ? pulse.topScoreMax : null
+                    const pct = base != null && denom != null ? Math.max(0, Math.min(1, base / denom)) : null
+
+                    return (
+                      <button
+                        key={row.symbol}
+                        className="ghost pressable"
+                        onClick={() => navigate(`/assets/${row.symbol}`)}
+                        style={{
+                          textAlign: 'left',
+                          padding: '0.5rem 0.6rem',
+                          fontSize: 12,
+                          color: '#fff',
+                          borderColor: 'rgba(255,255,255,0.18)',
+                          background: 'rgba(255,255,255,0.04)',
+                          borderRadius: 12
+                        }}
+                        title="This is the engine’s current ranking (not a buy/sell instruction)."
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'baseline' }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                            <span style={{ fontWeight: 900, letterSpacing: '0.02em' }}>{row.symbol}</span>
+                            <span style={{ color: '#bdbdbd' }}>{`#${row.rank}`}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
+                            <span style={{ color: '#cfcfcf' }}>{`score ${formatNumber(row.score, 3)}`}</span>
+                            <span style={{ color: '#bdbdbd' }}>{`edge ${formatNumber(row.edgeScore, 2)}`}</span>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          <div style={{ flex: 1, height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.10)', overflow: 'hidden' }}>
+                            <div style={{
+                              width: pct == null ? '0%' : `${Math.round(pct * 100)}%`,
+                              height: '100%',
+                              background: 'rgba(110,255,182,0.65)'
+                            }} />
+                          </div>
+                          {(row.price != null) && (
+                            <span style={{ color: '#cfcfcf' }}>
+                              ${row.price.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+              <div style={{ marginTop: '0.5rem', fontSize: 12, color: '#bdbdbd' }}>
+                Why these: they are the top rows returned by the engine’s `/ranking/top` endpoint. This widget does not label them “buy” or “sell” because that instruction is not provided by alpha-engine here.
+              </div>
+            </div>
+
+            <div style={{ padding: '0.75rem', borderRadius: 16, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.75rem' }}>
+                <strong style={{ fontSize: 14 }}>Biggest rank moves</strong>
+                <span style={{ fontSize: 12, color: '#bdbdbd' }}>Since prior snapshot</span>
+              </div>
+              <div style={{ marginTop: '0.65rem', display: 'grid', gap: '0.65rem' }}>
+                {(dashboardLoading) ? (
+                  <div style={{ color: '#bdbdbd', fontSize: 13 }}>Loading…</div>
+                ) : (pulse.improving.length === 0 && pulse.cooling.length === 0) ? (
+                  <div style={{ color: '#bdbdbd', fontSize: 13 }}>No meaningful rank movement yet.</div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: '#cfcfcf' }}>Up</div>
+                      <div style={{ marginTop: '0.3rem', display: 'grid', gap: '0.25rem' }}>
+                        {pulse.improving.length === 0 ? (
+                          <div style={{ color: '#bdbdbd', fontSize: 12 }}>—</div>
+                        ) : (
+                          pulse.improving.map((m) => (
+                            <div key={m.symbol} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                              <span style={{ fontWeight: 800 }}>{m.symbol}</span>
+                              <span style={{ color: '#6effb6', fontWeight: 700 }}>{`+${m.change}`}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 12, color: '#cfcfcf' }}>Down</div>
+                      <div style={{ marginTop: '0.3rem', display: 'grid', gap: '0.25rem' }}>
+                        {pulse.cooling.length === 0 ? (
+                          <div style={{ color: '#bdbdbd', fontSize: 12 }}>—</div>
+                        ) : (
+                          pulse.cooling.map((m) => (
+                            <div key={m.symbol} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                              <span style={{ fontWeight: 800 }}>{m.symbol}</span>
+                              <span style={{ color: '#ff6363', fontWeight: 700 }}>{`${m.change}`}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </article>
@@ -182,7 +429,7 @@ export default function Landing() {
       {/* Live Signals & Predictions */}
       <section style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className='signal-box-4' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <strong>Live Signals</strong>
             <div style={{ fontSize: '12px', color: '#7a7a7a' }}>
               {signalsLoading ? 'Loading...' : `${liveSignals.length} active`}
@@ -212,7 +459,7 @@ export default function Landing() {
                   }}
                   onClick={() => setSelectedSignal(signal)}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className='signal-box-1' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '16px' }}>{signal.symbol}</div>
                       <div className="muted" style={{ fontSize: '12px' }}>{signal.strategy}</div>
@@ -251,30 +498,43 @@ export default function Landing() {
         </article>
 
         <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
-          <strong>Dimensional Predictions</strong>
-          <div style={{ marginTop: '0.8rem', fontSize: '12px', color: '#7a7a7a' }}>6D Tagged Predictions</div>
-          <div style={{ maxHeight: '300px', overflowY: 'auto', marginTop: '0.5rem' }}>
+          <div>
+            <strong>Top Picks</strong>
+            <div style={{ fontSize: '12px', color: '#7a7a7a', marginTop: '0.2rem' }}>Highest-conviction names right now</div>
+          </div>
+          <div style={{ maxHeight: '300px', overflowY: 'auto', marginTop: '0.8rem' }}>
             {dashboardLoading ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-                Loading predictions from Alpha Engine...
+                Loading...
               </div>
-            ) : dimensionalPredictions.length === 0 ? (
+            ) : dashboardError ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#c0392b', fontSize: '13px' }}>
+                Engine offline — picks unavailable
+              </div>
+            ) : engineRankings.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-                No predictions available
+                No picks yet
               </div>
             ) : (
-              dimensionalPredictions.map((pred, index) => (
-                <div key={`${pred.symbol}-${index}`} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <strong>{pred.symbol}</strong>
-                    <span style={{ color: pred.actual ? '#1f8a4c' : '#7a7a7a' }}>
-                      {pred.actual ? `${(pred.actual * 100).toFixed(1)}%` : `${(pred.prediction * 100).toFixed(1)}%`}
+              engineRankings.map((item, index) => (
+                <div key={`${item.symbol}-${index}`} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.65rem', marginBottom: '0.65rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
+                      <strong style={{ fontSize: '14px' }}>{item.symbol}</strong>
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: item.direction === 'Bullish' ? '#1f8a4c' : '#c0392b'
+                      }}>
+                        {item.direction === 'Bullish' ? '↑' : '↓'} {item.direction}
+                      </span>
+                    </div>
+                    <span className="muted" style={{ fontSize: '11px' }}>
+                      {(item.confidence * 100).toFixed(0)}% conviction
                     </span>
                   </div>
-                  <div className="muted" style={{ fontSize: '11px', marginTop: '0.2rem' }}>{pred.axis}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '11px' }}>
-                    <span className="muted">Conf: {(pred.confidence * 100).toFixed(0)}%</span>
-                    {pred.actual && <span className="muted">Actual: {(pred.actual * 100).toFixed(1)}%</span>}
+                  <div style={{ fontSize: '12px', color: '#555', marginTop: '0.25rem', lineHeight: 1.4 }}>
+                    {item.reason || 'Strong technical setup detected'}
                   </div>
                 </div>
               ))
@@ -423,7 +683,7 @@ export default function Landing() {
                   const price = o.price ?? 0
                   return (
                     <div key={o.id} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                      <div className='signal-box-2' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                         <strong>{o.ticker}</strong>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <span style={{ fontSize: '11px', fontWeight: 700, color: '#856404' }}>

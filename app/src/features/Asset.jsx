@@ -398,7 +398,6 @@ export default function Asset() {
               &larr; Back to Assets
             </Link>
           </div>
-          <div className="eyebrow mb-1">{marketStatus} · {nextOpen ? `Next open ${nextOpen}` : ''}</div>
           <h1 className="hero mb-1" style={{ fontSize: 44 }}>
             {symbol}
             <span className="muted" style={{ fontWeight: 600 }}> · {company?.name ?? company?.companyName ?? '—'}</span>

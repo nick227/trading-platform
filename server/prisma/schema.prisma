@@ -387,11 +387,11 @@ model TradeMetricFact {
   processed           Boolean  @default(false) // Watermark replacement
   createdAt           DateTime @default(now())
 
+  @@unique([sourceExecutionId])
   @@index([processed, createdAt])
   @@index([date])
   @@index([userId, date])
   @@index([templateId, date])
-  @@index([sourceExecutionId])
   @@index([sourceType, sourceId])
 }
 

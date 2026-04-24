@@ -23,7 +23,9 @@ async function engineFetch(endpoint, options = {}) {
 
   if (!response.ok) {
     const errorText = await response.text()
-    throw new Error(`Alpha Engine ${response.status}: ${errorText}`)
+    const err = new Error(`Alpha Engine ${response.status}: ${errorText}`)
+    err.statusCode = response.status
+    throw err
   }
 
   return response.json()
@@ -145,9 +147,14 @@ export const engineClient = {
     return engineFetch(`/ranking/movers?limit=${limit}`)
   },
 
-  // Regime endpoint
+  // Regime endpoint — returns null when alpha-engine reports insufficient_history (422)
   async getRegime(symbol) {
-    return engineFetch(`/api/regime/${encodeURIComponent(symbol)}?tenant_id=default`)
+    try {
+      return await engineFetch(`/api/regime/${encodeURIComponent(symbol)}?tenant_id=default`)
+    } catch (err) {
+      if (err.statusCode === 422) return null
+      throw err
+    }
   },
 
   // Ticker-specific endpoints

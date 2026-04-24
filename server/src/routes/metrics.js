@@ -19,18 +19,21 @@ export default async function metricsRoutes(app, opts) {
         })
       }
 
-      // Don't show unreliable metrics
+      // Show factual metrics, but gate rate/return fields until sufficient data
       if (metrics.dataQuality !== 'sufficient') {
         return reply.send({
           templateId,
           dataQuality: metrics.dataQuality,
           message: getQualityMessage(metrics.dataQuality),
           metrics: {
-            annualReturn: null,
-            winRate: null,
-            sharpeRatio: null,
+            annualReturn: null, // Gated - need sufficient data
+            winRate: null,      // Gated - need sufficient data
+            sharpeRatio: null,  // Gated - need sufficient data
+            maxDrawdown: null,  // Gated - need sufficient data
             activeUsers: metrics.activeUsers,
-            totalTrades: metrics.totalTrades,
+            totalTrades: metrics.totalTrades,      // Factual - show always
+            totalPnl: metrics.totalPnl,            // Factual - show always
+            last30dReturn: null, // Gated - need sufficient data
             lastUpdated: metrics.lastUpdated
           }
         })
@@ -62,19 +65,18 @@ export default async function metricsRoutes(app, opts) {
       const userId = STUB_USER_ID // TODO: Replace with actual auth
       console.log('[metrics] Portfolio summary requested for userId:', userId)
 
-      // Get user's executions for portfolio KPIs
-      const executions = await prisma.execution.findMany({
+      // Get user's TradeMetricFacts for portfolio KPIs (canonical source)
+      const tradeFacts = await prisma.tradeMetricFact.findMany({
         where: {
           userId,
-          status: 'filled',
-          filledAt: { not: null }
+          eventType: 'fill'
         },
-        orderBy: { filledAt: 'desc' }
+        orderBy: { date: 'desc' }
       })
       
-      console.log('[metrics] Found executions:', executions.length)
+      console.log('[metrics] Found TradeMetricFacts:', tradeFacts.length)
 
-      if (executions.length === 0) {
+      if (tradeFacts.length === 0) {
         return reply.send({
           portfolioReturn: 0,
           totalPnl: 0,
@@ -87,10 +89,10 @@ export default async function metricsRoutes(app, opts) {
         })
       }
 
-      // Calculate basic portfolio metrics
-      const totalTrades = executions.length
-      const totalPnl = executions.reduce((sum, e) => sum + Number(e.pnl || 0), 0)
-      const winningTrades = executions.filter(e => Number(e.pnl || 0) > 0).length
+      // Calculate basic portfolio metrics from TradeMetricFacts
+      const totalTrades = tradeFacts.length
+      const totalPnl = tradeFacts.reduce((sum, f) => sum + Number(f.pnl || 0), 0)
+      const winningTrades = tradeFacts.filter(f => Number(f.pnl || 0) > 0).length
       const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0
 
       console.log('[metrics] Calculated portfolio metrics:', {
@@ -101,7 +103,7 @@ export default async function metricsRoutes(app, opts) {
       })
 
       // Simple return calculation (starting vs ending value)
-      const portfolioReturn = calculateSimpleReturn(executions)
+      const portfolioReturn = calculateSimpleReturn(tradeFacts)
 
       // Get active bots count
       const activeBots = await prisma.bot.count({
@@ -209,13 +211,13 @@ function getQualityMessage(quality) {
   return messages[quality] || 'Unknown data quality'
 }
 
-function calculateSimpleReturn(executions) {
-  if (executions.length === 0) return 0
+function calculateSimpleReturn(tradeFacts) {
+  if (tradeFacts.length === 0) return 0
   
   // Simple return: total PnL / initial capital assumption
   // TODO: Implement proper time-weighted return
-  const totalPnl = executions.reduce((sum, e) => sum + Number(e.pnl || 0), 0)
-  const totalValue = executions.reduce((sum, e) => sum + (Number(e.quantity) * Number(e.price)), 0)
+  const totalPnl = tradeFacts.reduce((sum, f) => sum + Number(f.pnl || 0), 0)
+  const totalValue = tradeFacts.reduce((sum, f) => sum + Number(f.allocatedCapital || 0), 0)
   
   return totalValue > 0 ? (totalPnl / totalValue) * 100 : 0
 }
