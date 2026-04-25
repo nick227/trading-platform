@@ -46,28 +46,73 @@ function symbolCandidates(symbol) {
 // Cache the full result and slice for smaller requests
 const rankingsCache = new Map()
 const RANKINGS_CACHE_TTL_MS = 30_000
+const RANKINGS_STALE_TTL_MS = 60_000 // Allow stale data for 60s while revalidating
+const RANKINGS_EMERGENCY_STALE_MS = 300_000 // 5 min emergency fallback
 const RANKINGS_CACHE_FETCH_LIMIT = 50
+
+// Separate cache for movers with different TTL
+const moversCache = new Map()
+const MOVERS_CACHE_TTL_MS = 30_000
+const MOVERS_STALE_TTL_MS = 60_000
+
+// Separate cache for quotes with shorter TTL (more time-sensitive)
+const quotesCache = new Map()
+const QUOTES_CACHE_TTL_MS = 5_000
+const QUOTES_STALE_TTL_MS = 15_000
+
+// Add jitter to TTL to prevent synchronized expiry
+function addJitter(baseTtlMs, jitterPct = 0.16) {
+  const jitterMs = baseTtlMs * jitterPct
+  const randomJitter = (Math.random() - 0.5) * 2 * jitterMs
+  return baseTtlMs + randomJitter
+}
+
+// In-flight promise deduplication to prevent cache stampede
+const inFlightRankings = new Map()
+
+// Cache metrics tracking
+const cacheMetrics = {
+  rankings: { hit: 0, stale: 0, miss: 0, dedupe: 0, error: 0 },
+  movers: { hit: 0, stale: 0, miss: 0, error: 0 },
+  quotes: { hit: 0, stale: 0, miss: 0, error: 0 }
+}
 
 function getRankingsCacheKey(maxFragility) {
   return `rankings:${maxFragility ?? 'null'}`
 }
 
-function getCachedRankings(maxFragility) {
+function getCachedRankings(maxFragility, allowStale = false, allowEmergency = false) {
   const key = getRankingsCacheKey(maxFragility)
   const entry = rankingsCache.get(key)
   if (!entry) return null
-  if (entry.expiresAt <= Date.now()) {
-    rankingsCache.delete(key)
-    return null
+
+  const now = Date.now()
+  const isFresh = now < entry.expiresAt
+  const isStale = now < entry.expiresAt + RANKINGS_STALE_TTL_MS
+  const isEmergency = now < entry.expiresAt + RANKINGS_EMERGENCY_STALE_MS
+
+  if (isFresh) {
+    return { data: entry.data, isStale: false, isEmergency: false }
   }
-  return entry.data
+
+  if (isStale && allowStale) {
+    return { data: entry.data, isStale: true, isEmergency: false }
+  }
+
+  if (isEmergency && allowEmergency) {
+    return { data: entry.data, isStale: true, isEmergency: true }
+  }
+
+  // Expired beyond emergency window
+  rankingsCache.delete(key)
+  return null
 }
 
 function setCachedRankings(maxFragility, data) {
   const key = getRankingsCacheKey(maxFragility)
   rankingsCache.set(key, {
     data,
-    expiresAt: Date.now() + RANKINGS_CACHE_TTL_MS
+    expiresAt: Date.now() + addJitter(RANKINGS_CACHE_TTL_MS)
   })
   if (rankingsCache.size > 10) {
     const keys = Array.from(rankingsCache.keys())
@@ -252,38 +297,129 @@ export const engineClient = {
 
   // Rankings endpoints
   async getTopRankings(limit = 20, maxFragility = null) {
-    // Check shared cache first (cache key based on maxFragility only, not limit)
-    const cached = getCachedRankings(maxFragility)
+    // Use base cache key (null) for all requests - filter locally
+    const baseCacheKey = getRankingsCacheKey(null)
+
+    // Check for stale cache first (stale-while-revalidate)
+    const cached = getCachedRankings(null, true)
     if (cached) {
-      // Slice cached result to requested limit
-      const sliced = {
-        ...cached,
-        rankings: Array.isArray(cached.rankings) ? cached.rankings.slice(0, limit) : []
+      let rankings = Array.isArray(cached.data.rankings) ? cached.data.rankings : []
+
+      // Apply fragility filter locally if specified
+      if (maxFragility !== null && maxFragility !== undefined && Number.isFinite(Number(maxFragility))) {
+        const fragilityThreshold = Number(maxFragility)
+        rankings = rankings.filter(r => {
+          const fragility = Number(r?.fragility ?? r?.fragility_score ?? 0)
+          return fragility <= fragilityThreshold
+        })
+        console.log(`[getTopRankings] LOCAL FILTER limit=${limit} maxFragility=${maxFragility} filtered=${rankings.length}/${cached.data.rankings?.length}`)
       }
-      console.log(`[getTopRankings] CACHE HIT limit=${limit} maxFragility=${maxFragility}`)
+
+      // Slice to requested limit
+      const sliced = {
+        ...cached.data,
+        rankings: rankings.slice(0, limit)
+      }
+      console.log(`[getTopRankings] CACHE ${cached.isStale ? 'STALE' : 'HIT'} limit=${limit} maxFragility=${maxFragility}`)
+
+      // Track metrics
+      if (cached.isEmergency) {
+        cacheMetrics.rankings.emergency++
+      } else if (cached.isStale) {
+        cacheMetrics.rankings.stale++
+      } else {
+        cacheMetrics.rankings.hit++
+      }
+
+      // If stale, trigger background refresh without waiting
+      if (cached.isStale && !inFlightRankings.has(baseCacheKey)) {
+        const refreshPromise = (async () => {
+          try {
+            const t0 = Date.now()
+            // Always fetch base rankings (no fragility filter)
+            const result = await engineFetch(`/ranking/top?limit=${RANKINGS_CACHE_FETCH_LIMIT}`)
+            const t1 = Date.now()
+            console.log(`[getTopRankings] BACKGROUND REFRESH total=${t1 - t0}ms`)
+            setCachedRankings(null, result)
+          } catch (error) {
+            cacheMetrics.rankings.error++
+            console.error('[getTopRankings] Background refresh failed:', error.message)
+          } finally {
+            inFlightRankings.delete(baseCacheKey)
+          }
+        })()
+
+        inFlightRankings.set(baseCacheKey, refreshPromise)
+      }
+
       return sliced
     }
 
-    // Not cached - fetch with larger limit (upstream cost is same regardless of limit)
+    // Check if there's already an in-flight request for base cache
+    if (inFlightRankings.has(baseCacheKey)) {
+      console.log(`[getTopRankings] IN-FLIGHT DEDUPE limit=${limit} maxFragility=${maxFragility}`)
+      cacheMetrics.rankings.dedupe++
+      const result = await inFlightRankings.get(baseCacheKey)
+
+      // Apply fragility filter locally if specified
+      let rankings = Array.isArray(result.rankings) ? result.rankings : []
+      if (maxFragility !== null && maxFragility !== undefined && Number.isFinite(Number(maxFragility))) {
+        const fragilityThreshold = Number(maxFragility)
+        rankings = rankings.filter(r => {
+          const fragility = Number(r?.fragility ?? r?.fragility_score ?? 0)
+          return fragility <= fragilityThreshold
+        })
+        console.log(`[getTopRankings] LOCAL FILTER limit=${limit} maxFragility=${maxFragility} filtered=${rankings.length}/${result.rankings?.length}`)
+      }
+
+      return {
+        ...result,
+        rankings: rankings.slice(0, limit)
+      }
+    }
+
+    // Not cached and no in-flight request - fetch base rankings (no fragility filter)
     const t0 = Date.now()
-    const params = new URLSearchParams()
-    params.set('limit', String(RANKINGS_CACHE_FETCH_LIMIT))
-    if (maxFragility !== null && maxFragility !== undefined && Number.isFinite(Number(maxFragility))) {
-      params.set('maxFragility', String(maxFragility))
-    }
-    const result = await engineFetch(`/ranking/top?${params.toString()}`)
-    const t1 = Date.now()
-    console.log(`[getTopRankings] CACHE MISS limit=${limit} maxFragility=${maxFragility} total=${t1 - t0}ms responseSize=${JSON.stringify(result).length}bytes`)
+    const fetchPromise = (async () => {
+      try {
+        // Always fetch base rankings without fragility filter
+        const result = await engineFetch(`/ranking/top?limit=${RANKINGS_CACHE_FETCH_LIMIT}`)
+        const t1 = Date.now()
+        console.log(`[getTopRankings] CACHE MISS total=${t1 - t0}ms responseSize=${JSON.stringify(result).length}bytes`)
+        cacheMetrics.rankings.miss++
 
-    // Cache the full result for 30 seconds
-    setCachedRankings(maxFragility, result)
+        // Cache the base result
+        setCachedRankings(null, result)
 
-    // Slice to requested limit
-    const sliced = {
-      ...result,
-      rankings: Array.isArray(result.rankings) ? result.rankings.slice(0, limit) : []
-    }
-    return sliced
+        // Apply fragility filter locally if specified
+        let rankings = Array.isArray(result.rankings) ? result.rankings : []
+        if (maxFragility !== null && maxFragility !== undefined && Number.isFinite(Number(maxFragility))) {
+          const fragilityThreshold = Number(maxFragility)
+          rankings = rankings.filter(r => {
+            const fragility = Number(r?.fragility ?? r?.fragility_score ?? 0)
+            return fragility <= fragilityThreshold
+          })
+          console.log(`[getTopRankings] LOCAL FILTER limit=${limit} maxFragility=${maxFragility} filtered=${rankings.length}/${result.rankings?.length}`)
+        }
+
+        // Slice to requested limit
+        const sliced = {
+          ...result,
+          rankings: rankings.slice(0, limit)
+        }
+        return sliced
+      } catch (error) {
+        cacheMetrics.rankings.error++
+        console.error('[getTopRankings] Fetch failed:', error.message)
+        throw error
+      } finally {
+        // Clean up in-flight promise when done
+        inFlightRankings.delete(baseCacheKey)
+      }
+    })()
+
+    inFlightRankings.set(baseCacheKey, fetchPromise)
+    return fetchPromise
   },
 
   async getRankingMovers(limit = 50) {
@@ -310,19 +446,6 @@ export const engineClient = {
   },
 
   // Ticker-specific endpoints
-  async getTickerExplainability(symbol) {
-    const { data, requested, resolved } = await engineFetchWithSymbolFallback(
-      (s) => `/ticker/${encodeURIComponent(s)}/why`,
-      symbol
-    )
-    if (data && typeof data === 'object') {
-      if ('symbol' in data) data.symbol = requested
-      if ('ticker' in data) data.ticker = requested
-      if (resolved !== requested && !('_engineSymbol' in data)) data._engineSymbol = resolved
-    }
-    return data
-  },
-
   async getTickerPerformance(symbol, window = '30d') {
     const { data, requested, resolved } = await engineFetchWithSymbolFallback(
       (s) => `/ticker/${encodeURIComponent(s)}/performance?window=${window}`,
@@ -453,12 +576,12 @@ export const engineClient = {
   // Bootstrap data for Orders page - combines multiple alpha-engine calls
   async getBootstrapData(symbol, range = '1Y', interval = '1D') {
     try {
-      const [quote, stats, company, history, explainability, recommendation] = await Promise.all([
+      const [quote, stats, company, history, regime, recommendation] = await Promise.all([
         this.getQuote(symbol).catch(() => null),
         this.getStats(symbol).catch(() => null),
         this.getCompany(symbol).catch(() => null),
         this.getHistory(symbol, range, interval).catch(() => null),
-        this.getTickerExplainability(symbol).catch(() => null),
+        this.getRegime(symbol).catch(() => null),
         this.getTickerRecommendation(symbol).catch(() => null)
       ])
 
@@ -467,7 +590,8 @@ export const engineClient = {
         stats,
         company,
         history,
-        alpha: explainability,
+        regime,
+        alpha: null,
         recommendation
       }
     } catch (error) {
@@ -518,9 +642,16 @@ export const engineClient = {
     return engineFetch(`/api/recommendations/batch?tickers=${encodeURIComponent(tickerList)}&mode=${mode}&tenant_id=default`)
   },
 
-  // Price-capped recommendations (direct proxy to engine)
+  // Price-capped recommendations (derived from canonical rankings cache)
   async getRecommendationsUnder(priceCap, mode = 'balanced', limit = 25, preference = null) {
     const capNum = toNumber(priceCap)
+    const targetCount = Math.min(limit, MIN_PRICE_CAP_RECOMMENDATIONS)
+
+    if (!Number.isFinite(capNum)) {
+      return { recommendations: [], meta: { targetCount, returnedCount: 0, complete: false, reason: 'invalid_price_cap' } }
+    }
+
+    // Try upstream first for engine-native recommendations
     const params = new URLSearchParams()
     params.set('mode', mode)
     params.set('limit', String(limit))
@@ -532,127 +663,77 @@ export const engineClient = {
       const data = await engineFetch(`/api/recommendations/under/${encodeURIComponent(String(priceCap))}?${params.toString()}`)
       normalized = normalizeRecommendationsPayload(data)
     } catch {
-      // Keep discovery cards available even if alpha-engine is offline.
-      normalized = { recommendations: [] }
+      // Engine unavailable - fall back to deriving from cached rankings
     }
+
     const existing = Array.isArray(normalized.recommendations) ? normalized.recommendations : []
-    const targetCount = Math.min(limit, MIN_PRICE_CAP_RECOMMENDATIONS)
-    const withMeta = (recommendations) => {
-      const returnedCount = Array.isArray(recommendations) ? recommendations.length : 0
-      const shortfall = Math.max(0, targetCount - returnedCount)
+
+    // If upstream returned enough results, return them
+    if (existing.length >= targetCount) {
       return {
         ...normalized,
-        recommendations,
+        recommendations: existing.slice(0, limit),
         meta: {
           targetCount,
-          returnedCount,
+          returnedCount: existing.length,
           liveOnly: true,
-          complete: shortfall === 0,
-          reason: shortfall > 0 ? 'insufficient_live_quotes' : null
+          complete: true,
+          source: 'engine_native'
         }
       }
     }
 
-    if (!Number.isFinite(capNum) || existing.length >= targetCount) {
-      return withMeta(existing)
-    }
-
+    // Derive from canonical rankings cache (in-flight dedup + stale-while-revalidate)
     const seen = new Set(existing.map(recommendationSymbol).filter(Boolean))
     let rankingRows = []
     try {
-      // Use smaller limit for fallback - we only need targetCount items
-      const rankingsPayload = await this.getTopRankings(Math.min(targetCount * 2, 50))
+      // Fetch from canonical cache - this triggers in-flight dedup if multiple calls happen
+      const rankingsPayload = await this.getTopRankings(RANKINGS_CACHE_FETCH_LIMIT)
       rankingRows = Array.isArray(rankingsPayload?.rankings) ? rankingsPayload.rankings : []
     } catch {
       rankingRows = []
     }
-    const rankedTickers = rankingRows
-      .map((row) => String(row?.ticker ?? row?.symbol ?? '').toUpperCase())
-      .filter(Boolean)
-      .filter((ticker) => !seen.has(ticker))
 
-    const fallbackRows = []
-    for (const ticker of rankedTickers) {
-      if (existing.length + fallbackRows.length >= targetCount) break
-      try {
-        const quote = await this.getQuote(ticker)
-        const price = toNumber(quote?.price ?? quote?.last)
-        if (price === null || price > capNum) continue
+    const derivedRows = []
+    for (const row of rankingRows) {
+      if (derivedRows.length + existing.length >= targetCount) break
 
-        const ranked = rankingRows.find((row) => String(row?.ticker ?? row?.symbol ?? '').toUpperCase() === ticker)
-        fallbackRows.push({
-          ticker,
-          symbol: ticker,
-          action: 'WATCH',
-          confidence: ranked?.confidence ?? null,
-          score: ranked?.score ?? null,
-          entryZone: [price, price],
-          priceCap: capNum,
-          mode,
-          asOf: new Date().toISOString(),
-          source: 'ranking_fallback'
-        })
-        seen.add(ticker)
-      } catch {
-        // Keep fallback best-effort when quote lookup fails.
-      }
-    }
+      const ticker = String(row?.ticker ?? row?.symbol ?? '').toUpperCase()
+      if (!ticker || seen.has(ticker)) continue
 
-    if (existing.length + fallbackRows.length < targetCount) {
-      let universeTickers = []
-      try {
-        const tickersPayload = await this.getTickers('')
-        const tickersData = tickersPayload?.data ?? tickersPayload
-        universeTickers = Array.isArray(tickersData?.tickers)
-          ? tickersData.tickers
-          : (Array.isArray(tickersData) ? tickersData : [])
-      } catch {
-        universeTickers = []
-      }
-      const universeSymbols = universeTickers
-        .map(extractTickerValue)
-        .filter(Boolean)
-        .filter((ticker) => !seen.has(ticker))
+      const price = toNumber(row?.price ?? row?.last ?? row?.entry)
+      if (price === null || price > capNum) continue
 
-      for (const ticker of universeSymbols) {
-        if (existing.length + fallbackRows.length >= targetCount) break
-        try {
-          const quote = await this.getQuote(ticker)
-          const price = toNumber(quote?.price ?? quote?.last)
-          if (price === null || price > capNum) continue
-
-          fallbackRows.push({
-            ticker,
-            symbol: ticker,
-            action: 'WATCH',
-            confidence: null,
-            score: null,
-            entryZone: [price, price],
-            priceCap: capNum,
-            mode,
-            asOf: new Date().toISOString(),
-            source: 'universe_fallback'
-          })
-          seen.add(ticker)
-        } catch {
-          // Keep fallback best-effort when quote lookup fails.
-        }
-      }
-    }
-
-    if (existing.length + fallbackRows.length < targetCount) {
-      const needed = targetCount - (existing.length + fallbackRows.length)
-      const discoveryRows = await getDiscoveryFallbackRows({
-        capNum,
+      derivedRows.push({
+        ticker,
+        symbol: ticker,
+        action: 'WATCH',
+        confidence: row?.confidence ?? null,
+        score: row?.score ?? null,
+        entryZone: [price, price],
+        priceCap: capNum,
         mode,
-        targetCount: needed,
-        seen
+        asOf: row?.asOf ?? new Date().toISOString(),
+        source: 'canonical_rankings'
       })
-      fallbackRows.push(...discoveryRows)
+      seen.add(ticker)
     }
 
-    const merged = [...existing, ...fallbackRows].slice(0, limit)
-    return withMeta(merged)
+    const merged = [...existing, ...derivedRows].slice(0, limit)
+    const returnedCount = merged.length
+    const shortfall = Math.max(0, targetCount - returnedCount)
+
+    return {
+      recommendations: merged,
+      meta: {
+        targetCount,
+        returnedCount,
+        liveOnly: true,
+        complete: shortfall === 0,
+        reason: shortfall > 0 ? 'insufficient_under_cap' : null,
+        source: existing.length > 0 ? 'hybrid' : 'canonical_rankings'
+      }
+    }
   },
 
   // Active signals for trading
@@ -693,7 +774,38 @@ export const engineClient = {
     params.set('distribution', distribution)
     params.set('min_days', String(minDays))
     params.set('tenant_id', 'default')
-    
+
     return engineFetch(`/api/engine/calendar?${params.toString()}`)
   }
+}
+
+// Cache warming function - call at server boot
+export async function warmCache() {
+  console.log('[cache_warm] Starting cache warm-up...')
+  const startTime = Date.now()
+
+  try {
+    // Prime rankings (canonical cache)
+    await engineClient.getTopRankings(50)
+    console.log('[cache_warm] Rankings cache primed')
+
+    // Prime movers
+    await engineClient.getRankingMovers(50)
+    console.log('[cache_warm] Movers cache primed')
+
+    // Prime major quotes
+    const majors = ['SPY', 'QQQ', 'IWM', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META']
+    await Promise.all(majors.map(ticker => engineClient.getQuote(ticker).catch(() => null)))
+    console.log('[cache_warm] Major quotes cache primed')
+
+    const elapsed = Date.now() - startTime
+    console.log(`[cache_warm] Complete in ${elapsed}ms`)
+  } catch (error) {
+    console.error('[cache_warm] Failed:', error.message)
+  }
+}
+
+// Get cache metrics for monitoring
+export function getCacheMetrics() {
+  return { ...cacheMetrics }
 }

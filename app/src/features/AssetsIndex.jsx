@@ -263,7 +263,6 @@ export default function AssetsIndex() {
   const [recs, setRecs] = useState({ loading: true, error: null, data: {} })
   const [tickers, setTickers] = useState({ loading: false, error: null, data: [] })
   const [spotQuotes, setSpotQuotes] = useState({})
-  const [portfolioMetrics, setPortfolioMetrics] = useState(null)
 
   const normalizeTicker = (symbol) => String(symbol ?? '').toUpperCase().trim()
   const tickerHref = (symbol) => {
@@ -348,43 +347,38 @@ export default function AssetsIndex() {
     }
   }
 
-  const loadPortfolioMetrics = async () => {
-    try {
-      const response = await fetch('/api/metrics/portfolio/summary')
-      const data = await response.json()
-      setPortfolioMetrics(data)
-    } catch (error) {
-      console.error('Failed to load portfolio metrics:', error)
-      setPortfolioMetrics(null)
-    }
-  }
-
-  useEffect(() => {
-    loadMarket()
-    loadRankings()
-    loadMovers()
-    loadRecs()
-    loadPortfolioMetrics()
-  }, [])
-
   useEffect(() => {
     let cancelled = false
+
+    // Consolidate all startup fetches into single parallel batch
     const tickersToLoad = Array.from(
       new Set([...POPULAR_TICKERS, ...SITE_PICKS].map((item) => String(item.ticker).toUpperCase().trim()).filter(Boolean))
     )
 
-    // Use batch quotes endpoint instead of individual calls
-    alphaFetch(`/api/quotes?symbols=${tickersToLoad.join(',')}`)
-      .then((response) => {
+    Promise.allSettled([
+      loadMarket(),
+      loadRankings(),
+      loadMovers(),
+      loadRecs(),
+      alphaFetch(`/api/quotes?symbols=${tickersToLoad.join(',')}`)
+    ])
+      .then((results) => {
         if (cancelled) return
-        const quotesData = response?.data || []
-        const next = {}
-        for (const quote of quotesData) {
-          if (quote && !quote.error) {
-            next[quote.symbol] = quote
+
+        // Handle quotes result
+        const quotesResult = results[4]
+        if (quotesResult.status === 'fulfilled') {
+          const quotesData = quotesResult.value?.data || []
+          const next = {}
+          for (const quote of quotesData) {
+            if (quote && !quote.error) {
+              next[quote.symbol] = quote
+            }
           }
+          setSpotQuotes(next)
+        } else {
+          setSpotQuotes({})
         }
-        setSpotQuotes(next)
       })
       .catch(() => {
         if (cancelled) return
@@ -765,18 +759,6 @@ export default function AssetsIndex() {
                 </div>
               ) : (
                 <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
-                  {portfolioMetrics && (
-                    <TickerRow3
-                      key="Portfolio"
-                      ticker="Portfolio"
-                      to="/portfolio"
-                      onOpen={() => {}}
-                      price={fmtPrice(portfolioMetrics.totalPnl)}
-                      special={`${portfolioMetrics.winRate?.toFixed(1)}% WR · ${portfolioMetrics.totalTrades} trades`}
-                      specialClassName="text-positive text-right text-nowrap"
-                    />
-                  )}
-
                   {[
                     ['SPY', market.data?.spy],
                     ['QQQ', market.data?.qqq],

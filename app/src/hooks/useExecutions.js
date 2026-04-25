@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import executionsService from '../api/services/executionsService.js'
-import { useConditionalPolling } from './usePolling.js'
+import { useSharedPolling } from './useSharedPolling.js'
 
 export function useExecutions({ poll = false } = {}) {
   const [executions, setExecutions] = useState([])
@@ -32,11 +32,23 @@ export function useExecutions({ poll = false } = {}) {
     }
   }
 
-  useEffect(() => {
-    fetchExecutions()
-  }, [])
+  // Use shared polling with key 'executions' to dedupe across components
+  const { data: sharedData, loading: sharedLoading, error: sharedError } = useSharedPolling(
+    'executions',
+    fetchExecutions,
+    15000,
+    poll,
+    'useExecutions'
+  )
 
-  useConditionalPolling(fetchExecutions, 5000, poll)
+  // Sync shared state with local state
+  useEffect(() => {
+    if (sharedData !== null) {
+      setExecutions(sharedData)
+    }
+    setLoading(sharedLoading)
+    setError(sharedError)
+  }, [sharedData, sharedLoading, sharedError])
 
   return { executions, loading, error, refetch: fetchExecutions, createExecution }
 }

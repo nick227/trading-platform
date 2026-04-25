@@ -18,10 +18,11 @@ export default {
 
   // Ticker-specific explainability
   async getTickerExplainability(symbol) {
+    // /why endpoint not implemented on backend - returning null
     return cachedFetch(
       'EXPLAINABILITY',
       () => getCacheKey('EXPLAINABILITY', symbol),
-      () => alphaFetch(`/ticker/${encodeURIComponent(symbol)}/why`).then(transformExplainability),
+      () => Promise.resolve(null),
       RECOMMENDATION_CACHE_TTL
     )
   },

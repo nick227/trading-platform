@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useApp } from '../app/AppProvider'
 import { get } from '../api/client.js'
 import executionsService from '../api/services/executionsService.js'
+import { createBotFromTemplate } from '../api/services/botCatalogService.js'
 import { STATUS } from '../api/constants.js'
 import { isMarketClosed } from '../utils/market.js'
 import { calculateOrderPreview } from '../utils/orderPreview.js'
@@ -14,6 +15,7 @@ export default function OrderConfirm() {
 
   const order = location.state?.order
     || state.orders?.find(item => item.id === state.selectedOrderId)
+  const bot = location.state?.bot
 
   // ── Live price using worker quote source (consistent with Orders.jsx) ───────────────────────
   const [latestPrice,  setLatestPrice]  = useState(null)
@@ -101,7 +103,8 @@ export default function OrderConfirm() {
 
   // ── Refresh live price using worker quote source ─────────────────────────────
   useEffect(() => {
-    if (!order?.asset) return
+    const asset = order?.asset || bot?.ticker
+    if (!asset) return
 
     const controller = new AbortController()
     let timeoutId = null
@@ -110,7 +113,7 @@ export default function OrderConfirm() {
       try {
         setPriceLoading(true)
         setPriceError(null)
-        const response = await fetch(`/api/market/quote/${order.asset}`)
+        const response = await fetch(`/api/market/quote/${asset}`)
         if (!response.ok) throw new Error('Quote fetch failed')
         const quote = await response.json()
         if (!controller.signal.aborted) {
@@ -142,7 +145,7 @@ export default function OrderConfirm() {
       controller.abort()
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [order?.asset])
+  }, [order?.asset, bot?.ticker])
 
   // ── Clean up poll on unmount ─────────────────────────────────────────────────
   useEffect(() => () => clearInterval(pollRef.current), [])
@@ -171,6 +174,7 @@ export default function OrderConfirm() {
 
   // ── Order validation ─────────────────────────────────────────────────────────
   const validateOrder = () => {
+    if (bot) return true // Bots don't require order validation
     if (!orderDetails) return false
     if (!bankConnected) { setExecutionError('Bank connection required for trading'); return false }
     if (order.type === 'BUY' && orderDetails.totalValue > bankBalance) {
@@ -230,6 +234,56 @@ export default function OrderConfirm() {
 
   // ── Execute order ────────────────────────────────────────────────────────────
   const handleExecuteOrder = async () => {
+    // Handle bot creation
+    if (bot) {
+      if (!portfolioId) {
+        setExecutionError('No portfolio found. Please refresh and try again.')
+        return
+      }
+      
+      setSubmitAttempted(true)
+      setIsExecuting(true)
+      setExecutionError(null)
+      
+      const startTime = new Date()
+      setAuditTimeline([{
+        timestamp: startTime.toISOString(),
+        status: 'initiated',
+        label: 'Bot Creation Initiated'
+      }])
+
+      try {
+        const createdBot = await createBotFromTemplate(bot.templateId, {
+          portfolioId,
+          name: `${bot.templateName} - ${bot.ticker}`,
+          botConfig: {
+            tickers: [bot.ticker],
+            quantity: 1,
+          }
+        })
+        
+        setAuditTimeline(prev => [...prev, {
+          timestamp: new Date().toISOString(),
+          status: 'created',
+          label: 'Bot Created Successfully'
+        }])
+        
+        setExecutionStatus('created')
+        setExecutionDetails(createdBot)
+        setIsExecuting(false)
+        
+        setTimeout(() => {
+          navigate('/bots')
+        }, 2000)
+      } catch (err) {
+        setExecutionError(err.message || 'Failed to create bot. Please try again.')
+        setIsExecuting(false)
+        setSubmitAttempted(false)
+      }
+      return
+    }
+
+    // Handle order execution
     if (!validateOrder() || submitAttempted) return
     
     setSubmitAttempted(true)
@@ -253,13 +307,7 @@ export default function OrderConfirm() {
     }
 
     try {
-      // Only execute immediately if market is open and order is not scheduled
-      if (order.scheduledFor) {
-        setExecutionError('This order is scheduled for later execution. Use the scheduling controls on the Orders page to manage scheduled orders.')
-        setIsExecuting(false)
-        setSubmitAttempted(false)
-        return
-      }
+      // Allow both immediate and scheduled orders to be submitted
       
       // Add executing entry (not queued)
       setAuditTimeline(prev => [...prev, {
@@ -274,6 +322,7 @@ export default function OrderConfirm() {
         side:        order.type,
         quantity:    orderDetails.quantity,
         price:       orderDetails.price,
+        scheduledFor: order.scheduledFor || null,
       })
       if (!execution) {
         setExecutionError('Failed to submit order. Please try again.')
@@ -330,6 +379,7 @@ export default function OrderConfirm() {
   }
 
   const submitLabel =
+    bot ? (executionStatus === 'created' ? 'Bot Created' : isExecuting ? 'Creating Bot...' : 'Create Bot') :
     executionStatus === STATUS.QUEUED     ? 'Order Queued...'   :
     executionStatus === STATUS.PROCESSING ? 'Submitted to Broker...'  :
     executionStatus === STATUS.PARTIALLY_FILLED ? 'Partially Filled...' :
@@ -338,20 +388,22 @@ export default function OrderConfirm() {
     order?.scheduledFor                  ? 'Order Scheduled' :
     `Confirm ${order?.type ?? ''} Order`
 
-  const isTerminal = !!(executionStatus
-    && [STATUS.FILLED, STATUS.CANCELLED, STATUS.FAILED].includes(executionStatus))
+  const isTerminal = !!(
+    (bot && executionStatus === 'created') ||
+    (executionStatus && [STATUS.FILLED, STATUS.CANCELLED, STATUS.FAILED].includes(executionStatus))
+  )
 
   const canCancel = !!(executionStatus
     && [STATUS.QUEUED, STATUS.PROCESSING].includes(executionStatus))
 
-  const submitDisabled = priceLoading || isExecuting || executionStatus === STATUS.FILLED || !orderDetails || submitAttempted || order?.scheduledFor
+  const submitDisabled = priceLoading || isExecuting || executionStatus === STATUS.FILLED || (order && !orderDetails) || submitAttempted
 
-  if (!order) {
+  if (!order && !bot) {
     return (
       <div className="page container" style={{ maxWidth: 600, margin: '0 auto', padding: '2rem 1rem 3rem' }}>
         <header style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h1 className="hero" style={{ marginBottom: '0.5rem' }}>Order Not Found</h1>
-          <div className="muted">The order you're looking for doesn't exist</div>
+          <h1 className="hero" style={{ marginBottom: '0.5rem' }}>Not Found</h1>
+          <div className="muted">The order or bot you're looking for doesn't exist</div>
         </header>
         <div style={{ textAlign: 'center' }}>
           <button className="primary pressable" onClick={() => navigate('/orders')} style={{ padding: '1rem 2rem' }}>
@@ -365,12 +417,16 @@ export default function OrderConfirm() {
   return (
     <div className="page container" style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem 3rem' }}>
       <header>
-        <h1 className="hero" style={{ marginBottom: '0.5rem' }}>Order Confirmation</h1>
-        <div className="muted">Review your order details before execution</div>
+        <h1 className="hero" style={{ marginBottom: '0.5rem' }}>
+          {bot ? 'Bot Confirmation' : 'Order Confirmation'}
+        </h1>
+        <div className="muted">
+          {bot ? 'Review your bot details before creation' : 'Review your order details before execution'}
+        </div>
       </header>
 
       {/* Market closed warning */}
-      {isMarketClosed() && (
+      {isMarketClosed() && !bot && (
         <article style={{ background: '#fff3cd', border: '2px solid #f39c12', borderRadius: 12, padding: '1.5rem', marginBottom: '1.5rem', color: '#856404' }}>
           <div style={{ fontWeight: 700, marginBottom: '0.5rem', fontSize: '16px' }}>Market Currently Closed</div>
           <div style={{ fontSize: '14px', marginBottom: '1rem' }}>
@@ -379,8 +435,42 @@ export default function OrderConfirm() {
                   </article>
       )}
 
+      {/* Bot details */}
+      {bot && (
+        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Bot Details</h3>
+            <div style={{
+              padding: '0.25rem 0.75rem', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+              background: '#e8f5e8',
+              color: '#0a7a47',
+            }}>
+              Bot
+            </div>
+          </div>
+          <div style={{ display: 'grid', gap: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="muted">Template:</span><span style={{ fontWeight: 600 }}>{bot.templateName}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="muted">Description:</span><span style={{ fontWeight: 600, maxWidth: '60%', textAlign: 'right' }}>{bot.templateDescription}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="muted">Asset:</span><span style={{ fontWeight: 600 }}>{bot.assetName || bot.ticker}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="muted">Symbol:</span><span style={{ fontWeight: 600 }}>{bot.ticker}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="muted">Current Price:</span>
+              <span style={{ fontWeight: 600 }}>{priceLoading ? 'Loading...' : latestPrice ? `$${latestPrice.toFixed(2)}` : '...'}</span>
+            </div>
+          </div>
+        </article>
+      )}
+
       {/* Price movement alert */}
-      {orderDetails && Math.abs(orderDetails.priceChange) > 0.5 && (
+      {order && orderDetails && Math.abs(orderDetails.priceChange) > 0.5 && (
         <article style={{
           background: orderDetails.priceChange > 0 ? '#fff5f5' : '#f0f9f4',
           border: `1px solid ${orderDetails.priceChange > 0 ? '#fed7d7' : '#c6f6d5'}`,
@@ -396,17 +486,18 @@ export default function OrderConfirm() {
       )}
 
       {/* Order details */}
-      <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Order Details</h3>
-          <div style={{
-            padding: '0.25rem 0.75rem', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-            background: order.type === 'BUY' ? '#e8f5e8' : '#ffeaea',
-            color:      order.type === 'BUY' ? '#0a7a47' : '#c0392b',
-          }}>
-            {order.type}
+      {order && (
+        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Order Details</h3>
+            <div style={{
+              padding: '0.25rem 0.75rem', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+              background: order.type === 'BUY' ? '#e8f5e8' : '#ffeaea',
+              color:      order.type === 'BUY' ? '#0a7a47' : '#c0392b',
+            }}>
+              {order.type}
+            </div>
           </div>
-        </div>
         <div style={{ display: 'grid', gap: '1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span className="muted">Asset:</span><span style={{ fontWeight: 600 }}>{order.assetName || order.asset}</span>
@@ -440,9 +531,10 @@ export default function OrderConfirm() {
           </div>
         </div>
       </article>
+      )}
 
       {/* Scheduling information */}
-      {order.scheduledFor && (
+      {order && order.scheduledFor && (
         <article style={{ background: '#fff3cd', border: '1px solid #f39c12', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
           <h3 style={{ margin: '0 0 1rem', fontSize: '18px', fontWeight: 600, color: '#856404' }}>Scheduled Order</h3>
           <div style={{ display: 'grid', gap: '1rem' }}>
@@ -473,26 +565,28 @@ export default function OrderConfirm() {
       )}
 
       {/* Account impact */}
-      <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
-        <h3 style={{ margin: '0 0 1rem', fontSize: '18px', fontWeight: 600 }}>Account Impact</h3>
-        <div style={{ display: 'grid', gap: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span className="muted">Current Balance:</span><span style={{ fontWeight: 600 }}>${bankBalance.toLocaleString()}</span>
+      {order && (
+        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
+          <h3 style={{ margin: '0 0 1rem', fontSize: '18px', fontWeight: 600 }}>Account Impact</h3>
+          <div style={{ display: 'grid', gap: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="muted">Current Balance:</span><span style={{ fontWeight: 600 }}>${bankBalance.toLocaleString()}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="muted">{order.type === 'BUY' ? 'Order Cost' : 'Sale Proceeds'}:</span>
+              <span style={{ fontWeight: 600, color: order.type === 'BUY' ? '#c0392b' : '#0a7a47' }}>
+                {orderDetails ? `${order.type === 'BUY' ? '-' : '+'}$${orderDetails.totalValue.toFixed(2)}` : '...'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '1rem', borderTop: '1px solid #e9ecef' }}>
+              <span className="muted" style={{ fontWeight: 600 }}>Balance After {order.type === 'BUY' ? 'Order' : 'Sale'}:</span>
+              <span style={{ fontSize: '16px', fontWeight: 700 }}>
+                {orderDetails ? `$${orderDetails.afterBalance.toLocaleString()}` : '...'}
+              </span>
+            </div>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span className="muted">{order.type === 'BUY' ? 'Order Cost' : 'Sale Proceeds'}:</span>
-            <span style={{ fontWeight: 600, color: order.type === 'BUY' ? '#c0392b' : '#0a7a47' }}>
-              {orderDetails ? `${order.type === 'BUY' ? '-' : '+'}$${orderDetails.totalValue.toFixed(2)}` : '...'}
-            </span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '1rem', borderTop: '1px solid #e9ecef' }}>
-            <span className="muted" style={{ fontWeight: 600 }}>Balance After {order.type === 'BUY' ? 'Order' : 'Sale'}:</span>
-            <span style={{ fontSize: '16px', fontWeight: 700 }}>
-              {orderDetails ? `$${orderDetails.afterBalance.toLocaleString()}` : '...'}
-            </span>
-          </div>
-        </div>
-      </article>
+        </article>
+      )}
 
       {/* Price fetch error */}
       {priceError && (
@@ -605,6 +699,42 @@ export default function OrderConfirm() {
             <button className="ghost pressable"   onClick={() => navigate('/portfolio')} style={{ padding: '0.75rem', fontWeight: 600 }}>View Portfolio</button>
             <button className="ghost pressable"   onClick={() => navigate('/portfolio')} style={{ padding: '0.75rem', fontWeight: 600 }}>View Activity</button>
             <button className="ghost pressable"   onClick={() => navigate('/orders', { state: { resetForm: true } })} style={{ padding: '0.75rem', fontWeight: 600 }}>Buy/Sell Again</button>
+          </div>
+        </article>
+      )}
+
+      {/* Bot Created — success card */}
+      {bot && executionStatus === 'created' && (
+        <article style={{
+          background: 'linear-gradient(135deg, #f0f9f4, #e8f5e8)', border: '2px solid #0a7a47',
+          borderRadius: 12, padding: '2rem', marginBottom: '1.5rem', color: '#0a7a47', textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '1rem' }}>✓ Bot Created Successfully</div>
+          <div style={{ background: 'rgba(255,255,255,0.8)', borderRadius: 8, padding: '1.5rem', marginBottom: '1.5rem', fontSize: '14px' }}>
+            <div style={{ marginBottom: '0.75rem' }}>
+              <span className="muted">{bot.templateName}</span>
+              <div style={{ fontSize: '18px', fontWeight: 600, marginTop: '0.25rem' }}>
+                {bot.ticker}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '12px' }}>
+              <div>
+                <div className="muted">Template:</div>
+                <div style={{ fontWeight: 600 }}>{bot.templateName}</div>
+              </div>
+              <div>
+                <div className="muted">Asset:</div>
+                <div style={{ fontWeight: 600 }}>{bot.ticker}</div>
+              </div>
+              <div>
+                <div className="muted">Current Price:</div>
+                <div style={{ fontWeight: 600 }}>{latestPrice ? `$${latestPrice.toFixed(2)}` : '...'}</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+            <button className="primary pressable" onClick={() => navigate('/bots')}    style={{ padding: '0.75rem', fontWeight: 600 }}>View Bots</button>
+            <button className="ghost pressable"   onClick={() => navigate('/orders')} style={{ padding: '0.75rem', fontWeight: 600 }}>Back to Orders</button>
           </div>
         </article>
       )}

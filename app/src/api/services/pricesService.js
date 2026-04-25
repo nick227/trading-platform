@@ -19,6 +19,7 @@ function getStubMap() {
 // In-memory cache to prevent duplicate requests
 let cachedPriceMap = null
 let cacheExpiry = 0
+let inFlightPromise = null
 const CACHE_TTL_MS = 30_000
 
 function normalizeEngineResponse(data) {
@@ -43,18 +44,33 @@ export default {
       return cachedPriceMap
     }
 
-    try {
-      const raw = await get('/engine/prices/current')
-      const normalized = normalizeEngineResponse(raw)
-      if (normalized && Object.keys(normalized).length > 0) {
-        cachedPriceMap = normalized
-        cacheExpiry = now + CACHE_TTL_MS
-        return normalized
-      }
-    } catch {
-      // engine unavailable — use stubs
+    // Return existing in-flight promise if available
+    if (inFlightPromise) {
+      return inFlightPromise
     }
-    return getStubMap()
+
+    // Create new in-flight promise
+    inFlightPromise = (async () => {
+      try {
+        const raw = await get('/engine/prices/current')
+        const normalized = normalizeEngineResponse(raw)
+        if (normalized && Object.keys(normalized).length > 0) {
+          cachedPriceMap = normalized
+          cacheExpiry = now + CACHE_TTL_MS
+          return normalized
+        }
+      } catch {
+        // engine unavailable — use stubs
+      }
+      return getStubMap()
+    })()
+
+    // Clear in-flight promise when it resolves/rejects
+    inFlightPromise.finally(() => {
+      inFlightPromise = null
+    })
+
+    return inFlightPromise
   },
 
   getPrice(priceMap, ticker) {

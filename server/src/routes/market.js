@@ -161,11 +161,10 @@ export default async function marketRoutes(app) {
         where: { ticker: ticker.toUpperCase() }
       })
       
-      const [stats, company, history, explainability, recommendation] = await Promise.allSettled([
+      const [stats, company, history, recommendation] = await Promise.allSettled([
         alphaEngineService.getStats(ticker),
         alphaEngineService.getCompany(ticker),
         alphaEngineService.getHistory(ticker, range, interval),
-        alphaEngineService.getTickerExplainability(ticker),
         alphaEngineService.getTickerRecommendation(ticker).catch(() => null)
       ])
 
@@ -189,7 +188,7 @@ export default async function marketRoutes(app) {
         stats: stats.status === 'fulfilled' ? stats.value : null,
         company: company.status === 'fulfilled' ? company.value : null,
         history: history.status === 'fulfilled' ? history.value : null,
-        alpha: explainability.status === 'fulfilled' ? explainability.value : null,
+        alpha: null,
         recommendation: recommendation.status === 'fulfilled' ? recommendation.value : null,
         timestamp: new Date().toISOString(),
         dataCoverage: {
@@ -197,7 +196,7 @@ export default async function marketRoutes(app) {
           stats: stats.status === 'fulfilled',
           company: company.status === 'fulfilled',
           history: history.status === 'fulfilled',
-          alpha: explainability.status === 'fulfilled'
+          alpha: false
         }
       }
       

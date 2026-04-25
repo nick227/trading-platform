@@ -220,7 +220,8 @@ function formatTimeAgo(ts) {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function usePortfolio() {
+export function usePortfolio(options = {}) {
+  const { bootstrapData = null } = options
   const [holdings, setHoldings] = useState(() => sharedData.holdings)
   const [stats, setStats] = useState(() => sharedData.stats)
   const [strategies, setStrategies] = useState(() => sharedData.strategies)
@@ -237,6 +238,66 @@ export function usePortfolio() {
     try {
       const now = Date.now()
       const useCache = cachedBots && cachedStrategies && cachedPerformanceStats && now < cacheExpiry
+
+      // If bootstrap data is provided, use it instead of fetching
+      if (bootstrapData) {
+        const executionsData = bootstrapData.executions || []
+        const botsResponse = bootstrapData.bots || []
+        const priceMap = bootstrapData.prices || {}
+        const performanceStats = bootstrapData.performanceStats || null
+
+        // Strategies from engine (may be unavailable)
+        let strategies = useCache ? cachedStrategies : []
+        if (!useCache) {
+          try {
+            const raw = await get('/strategies')
+            strategies = Array.isArray(raw) ? raw : []
+          } catch { /* engine offline */ }
+        }
+
+        // Update module-level cache
+        cachedBots = botsResponse
+        cachedStrategies = strategies
+        cachedPerformanceStats = performanceStats
+        cacheExpiry = now + CACHE_TTL_MS
+
+        // Derive settled positions (FIFO, single source of truth)
+        const positions = derivePositions(executionsData)
+
+        // Compute total market value for weight %
+        const totalMarketValue = positions.reduce((sum, pos) => {
+          const price = pricesService.getPrice(priceMap, pos.ticker) ?? pos.avgCost
+          return sum + pos.quantity * price
+        }, 0)
+
+        const nextHoldings = buildHoldings(positions, executionsData, priceMap, totalMarketValue)
+        const nextStats = buildStats(nextHoldings, executionsData, botsResponse, strategies, performanceStats)
+        const nextActivity = buildRecentActivity(executionsData)
+
+        // Update shared state
+        sharedData = {
+          holdings: nextHoldings,
+          stats: nextStats,
+          strategies,
+          performanceStats,
+          recentActivity: nextActivity,
+          executions: executionsData,
+          priceMap,
+          loading: false,
+          error: null,
+          lastUpdate: now
+        }
+
+        setHoldings(nextHoldings)
+        setStats(nextStats)
+        setStrategies(strategies)
+        setPerformanceStats(performanceStats)
+        setRecentActivity(nextActivity)
+        setExecutions(executionsData)
+        setPriceMap(priceMap)
+        setLoading(false)
+        return
+      }
 
       // Fetch executions, bots, prices, and performance data in parallel
       const [executionsData, botsResponse, priceMap, performanceStats] = await Promise.all([

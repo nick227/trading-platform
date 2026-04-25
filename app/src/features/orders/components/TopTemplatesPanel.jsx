@@ -46,23 +46,13 @@ export default function TopTemplatesPanel({ selectedStock, user }) {
           .filter((t) => Boolean(t.id))
           .slice(0, 12)
 
-        const metrics = await Promise.allSettled(
-          templates.map((t) => get(`/metrics/templates/${encodeURIComponent(t.id)}`).catch(() => null))
-        )
-
-        const enriched = templates.map((t, idx) => {
-          const m = metrics[idx].status === 'fulfilled' ? metrics[idx].value : null
-          const winRate = m?.metrics?.winRate ?? null
-          const totalTrades = m?.metrics?.totalTrades ?? null
-          const dataQuality = m?.dataQuality ?? null
-
-          return {
-            ...t,
-            winRate: normalizePct(winRate),
-            totalTrades,
-            dataQuality
-          }
-        })
+        // Skip metrics fetch - backend doesn't have data for most templates, causes 404 noise
+        const enriched = templates.map((t) => ({
+          ...t,
+          winRate: null,
+          totalTrades: null,
+          dataQuality: null
+        }))
 
         // Sort: prefer templates with a real winRate, then by totalTrades.
         enriched.sort((a, b) => {

@@ -349,9 +349,6 @@ export default function Orders() {
                 </div>
               )}
             </article>
-
-            <CompanyPanel selectedStock={selectedStock} bootstrapData={bootstrapData} loading={bootstrapLoading} />
-            <TickerStatsPanel selectedStock={selectedStock} bootstrapData={bootstrapData} loading={bootstrapLoading} />
             <PriceChart
               selectedStock={selectedStock}
               priceHistory={priceHistory}
@@ -362,14 +359,16 @@ export default function Orders() {
               loading={chartLoading}
               nextOpen={nextOpen}
             />
+            <CompanyPanel selectedStock={selectedStock} bootstrapData={bootstrapData} loading={bootstrapLoading} />
+            <TickerStatsPanel selectedStock={selectedStock} bootstrapData={bootstrapData} loading={bootstrapLoading} />
             <AlphaPanel selectedStock={selectedStock} explainability={bootstrapData?.alpha} loading={bootstrapLoading} />
 
+            <div className="mt-3">
+              <EngineSignalsPanel selectedStock={selectedStock} />
+            </div>
             {/* Ported from Asset.jsx: templates + research + recommendation + engine signals */}
             <div className="mt-3">
               <TopTemplatesPanel selectedStock={selectedStock} user={user} />
-            </div>
-            <div className="mt-3">
-              <EngineSignalsPanel selectedStock={selectedStock} />
             </div>
           </section>
 

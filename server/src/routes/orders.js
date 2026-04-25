@@ -167,13 +167,6 @@ export default async function ordersRoutes(app) {
           return data
         })(),
         (async () => {
-          const cached = getCachedData('explainability', ticker)
-          if (cached) return cached
-          const data = await alphaEngineService.getTickerExplainability(ticker)
-          setCachedData('explainability', ticker, data)
-          return data
-        })(),
-        (async () => {
           const cached = getCachedData('ownership', ticker, userId)
           if (cached) return cached
           const data = await getUserOwnershipData(ticker, userId)
@@ -188,7 +181,6 @@ export default async function ordersRoutes(app) {
         stats: stats.status === 'fulfilled' ? stats.value : null,
         company: company.status === 'fulfilled' ? company.value : null,
         history: history.status === 'fulfilled' ? history.value : null,
-        alpha: explainability.status === 'fulfilled' ? explainability.value : null,
         userOwnership: userOwnership.status === 'fulfilled' ? userOwnership.value : null,
         requestId,
         timestamp: new Date().toISOString(),
@@ -197,7 +189,6 @@ export default async function ordersRoutes(app) {
           stats: stats.status === 'fulfilled',
           company: company.status === 'fulfilled',
           history: history.status === 'fulfilled',
-          alpha: explainability.status === 'fulfilled',
           userOwnership: userOwnership.status === 'fulfilled'
         }
       }

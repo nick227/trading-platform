@@ -109,6 +109,7 @@ export default function Asset() {
   const [watchlist, setWatchlist] = useState(() => loadWatchlist())
   const watched = watchlist.includes(symbol)
   const [showFullDescription, setShowFullDescription] = useState(false)
+  const [activeTab, setActiveTab] = useState('overview')
 
   const [marketClock, setMarketClock] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -158,40 +159,19 @@ export default function Asset() {
     setLoading(true)
     setError(null)
 
-    Promise.allSettled([
-      alphaFetch(`/api/quote/${encodeURIComponent(symbol)}`),
-      alphaFetch(`/api/stats/${encodeURIComponent(symbol)}`),
-      alphaFetch(`/api/company/${encodeURIComponent(symbol)}`),
-      alphaFetch(`/api/regime/${encodeURIComponent(symbol)}`),
-      alphaFetch(`/api/ticker/${encodeURIComponent(symbol)}/accuracy`),
-      alphaFetch(`/api/consensus/signals?ticker=${encodeURIComponent(symbol)}`),
-      alphaFetch(`/api/ticker/${encodeURIComponent(symbol)}/attribution`),
-      alphaFetch(`/recommendations/${encodeURIComponent(symbol)}?mode=${DEFAULT_MODE}`),
-    ])
-      .then((results) => {
+    // Initial load: use batch dashboard endpoint for essential data
+    alphaFetch(`/api/engine/ticker/${encodeURIComponent(symbol)}/dashboard?range=${encodeURIComponent(chartRange)}&interval=1D`)
+      .then((data) => {
         if (cancelled) return
-        const [
-          quoteRes,
-          statsRes,
-          companyRes,
-          regimeRes,
-          accuracyRes,
-          consensusRes,
-          attributionRes,
-          recommendationRes,
-        ] = results
-
-        setQuote(quoteRes.status === 'fulfilled' ? quoteRes.value : null)
-        setStats(statsRes.status === 'fulfilled' ? statsRes.value : null)
-        setCompany(companyRes.status === 'fulfilled' ? companyRes.value : null)
-        setRegime(regimeRes.status === 'fulfilled' ? regimeRes.value : null)
-        setAccuracy(accuracyRes.status === 'fulfilled' ? accuracyRes.value : null)
-        setConsensus(consensusRes.status === 'fulfilled' ? consensusRes.value : null)
-        setAttribution(attributionRes.status === 'fulfilled' ? attributionRes.value : null)
-        setRecommendation(recommendationRes.status === 'fulfilled' ? recommendationRes.value : null)
+        setQuote(data?.quote ?? null)
+        setStats(data?.stats ?? null)
+        setCompany(data?.company ?? null)
+        setHistory(data?.history ?? [])
+        setRegime(data?.regime ?? null)
+        setRecommendation(data?.recommendation ?? null)
 
         // If core data is missing, treat as error.
-        const hasAny = quoteRes.status === 'fulfilled' || statsRes.status === 'fulfilled' || companyRes.status === 'fulfilled'
+        const hasAny = data?.quote || data?.stats || data?.company
         if (!hasAny) setError('Engine unreachable')
       })
       .catch((e) => {
@@ -206,7 +186,36 @@ export default function Asset() {
     return () => {
       cancelled = true
     }
-  }, [symbol])
+  }, [symbol, chartRange])
+
+  // Lazy load research data (accuracy, consensus, attribution) when research tab is active
+  useEffect(() => {
+    if (!symbol || activeTab !== 'research') return
+    if (accuracy && consensus && attribution) return // Already loaded
+
+    let cancelled = false
+
+    Promise.allSettled([
+      alphaFetch(`/api/ticker/${encodeURIComponent(symbol)}/accuracy`),
+      alphaFetch(`/api/consensus/signals?ticker=${encodeURIComponent(symbol)}`),
+      alphaFetch(`/api/ticker/${encodeURIComponent(symbol)}/attribution`),
+    ])
+      .then((results) => {
+        if (cancelled) return
+        const [accuracyRes, consensusRes, attributionRes] = results
+
+        setAccuracy(accuracyRes.status === 'fulfilled' ? accuracyRes.value : null)
+        setConsensus(consensusRes.status === 'fulfilled' ? consensusRes.value : null)
+        setAttribution(attributionRes.status === 'fulfilled' ? attributionRes.value : null)
+      })
+      .catch(() => {
+        // Silently fail - research data is optional
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [symbol, activeTab])
 
   useEffect(() => {
     if (!symbol) return
@@ -584,7 +593,13 @@ export default function Asset() {
         </article>
 
         <article className="card card-pad-md">
-          <strong>Research</strong>
+          <div className="l-row mb-2" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <strong>Research</strong>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {activeTab === 'research' && (!accuracy || !consensus || !attribution) ? 'Loading...' : ''}
+            </span>
+          </div>
+
           <div className="data-rows mt-2">
             <div className="data-row-3 data-row-divider">
               <span className="muted">Recommendation</span>
@@ -611,96 +626,285 @@ export default function Asset() {
         </article>
       </section>
 
-      <section className="l-grid-3lead mb-3">
-        <article className="card card-pad-sm">
-          <strong>Engine Signals</strong>
-          <div className="data-rows mt-2">
-            <div className="data-row-3 data-row-divider">
-              <span className="muted">Regime</span>
-              <span style={{ fontWeight: 700 }}>{regime?.regime ?? regime?.state ?? regime?.name ?? '—'}</span>
-              <span className="muted text-right">{regime?.asOf ? fmtAsOf(regime.asOf) : ' '}</span>
-            </div>
-            <div className="data-row-3 data-row-divider">
-              <span className="muted">Hit Rate</span>
-              <span style={{ fontWeight: 700 }}>{accuracy?.hitRate != null ? fmtPct(accuracy.hitRate <= 1 ? accuracy.hitRate * 100 : accuracy.hitRate) : '—'}</span>
-              <span className="muted text-right">{accuracy?.sampleCount != null ? `${fmtNumber(accuracy.sampleCount)} samples` : ' '}</span>
-            </div>
-            <div className="data-row-3 data-row-divider">
-              <span className="muted">Residual Alpha</span>
-              <span style={{ fontWeight: 700 }}>{accuracy?.residualAlpha != null ? fmtPct(accuracy.residualAlpha) : '—'}</span>
-              <span className="muted text-right">{accuracy?.pFinal != null ? `pFinal ${accuracy.pFinal}` : ' '}</span>
-            </div>
-            {(consensus?.pFinal != null || consensus?.agreementBonus != null || consensus?.consensusStalenessMinutes != null) ? (
-              <div className="data-row-3 data-row-divider">
-                <span className="muted">Consensus</span>
-                <span style={{ fontWeight: 700 }}>
-                  {consensus?.pFinal != null ? `pFinal ${consensus.pFinal}` : '—'}
-                </span>
-                <span className="muted text-right">
-                  {consensus?.agreementBonus != null ? `+${consensus.agreementBonus}` : consensus?.consensusStalenessMinutes != null ? `${consensus.consensusStalenessMinutes}m stale` : ' '}
-                </span>
-              </div>
-            ) : null}
-          </div>
-        </article>
-
-        <article className="card card-pad-sm">
-          <strong>Why / Attribution</strong>
-          {drivers.length ? (
-            <div className="data-rows mt-2">
-              {drivers.slice(0, 8).map((d, idx) => (
-                <div key={idx} className="data-row-divider">
-                  <div className="font-600">{d.category ?? d.group ?? '—'} · {d.direction ?? '—'} · {d.materiality ?? d.weight ?? '—'}</div>
-                  <div className="muted">
-                    {Array.isArray(d.tags) ? d.tags.join(', ') : d.tags ?? d.concepts ?? ''}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="muted mt-2">No attribution available.</div>
-          )}
-        </article>
-
-        <article className="card card-pad-sm">
-          <strong>Recommendation</strong>
-          {rec?.ticker || rec?.symbol || rec ? (
-            <div className="stack-sm mt-2">
-              <div className="l-row" style={{ justifyContent: 'space-between' }}>
-                <div style={{ fontWeight: 800, fontSize: 18 }}>{rec?.action ?? '—'}</div>
-                <div className="muted">{recConfidence != null ? `${recConfidence}%` : '—'}</div>
-              </div>
-              <div className="muted">{rec?.risk ?? '—'} · {rec?.horizon ?? '—'}</div>
-              {recEntry ? (
-                <div className="alert" style={{ padding: 12 }}>
-                  <div className="alert-title">Entry Zone</div>
-                  <div>{recEntry}</div>
-                </div>
-              ) : null}
-
-              {recThesis.length ? (
-                <div>
-                  <div className="eyebrow mb-0">Thesis</div>
-                  <ul className="list mt-2">
-                    {recThesis.slice(0, 6).map((t, idx) => <li key={idx}>{t}</li>)}
-                  </ul>
-                </div>
-              ) : null}
-
-              {recAvoidIf.length ? (
-                <div>
-                  <div className="eyebrow mb-0">Avoid If</div>
-                  <ul className="list mt-2">
-                    {recAvoidIf.slice(0, 6).map((t, idx) => <li key={idx}>{t}</li>)}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="muted mt-2">No recommendation available.</div>
-          )}
-        </article>
+      <section className="mb-3">
+        <div className="l-row mb-2" style={{ gap: 8 }}>
+          <button
+            className={`btn btn-sm pressable ${activeTab === 'overview' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActiveTab('overview')}
+          >
+            Overview
+          </button>
+          <button
+            className={`btn btn-sm pressable ${activeTab === 'research' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActiveTab('research')}
+          >
+            Engine Signals
+          </button>
+          <button
+            className={`btn btn-sm pressable ${activeTab === 'attribution' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActiveTab('attribution')}
+          >
+            Why / Attribution
+          </button>
+          <button
+            className={`btn btn-sm pressable ${activeTab === 'recommendation' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActiveTab('recommendation')}
+          >
+            Recommendation
+          </button>
+        </div>
       </section>
+
+      {activeTab === 'overview' && (
+        <section className="l-grid-3lead mb-3">
+          <article className="card card-pad-sm">
+            <strong>Engine Signals</strong>
+            <div className="data-rows mt-2">
+              <div className="data-row-3 data-row-divider">
+                <span className="muted">Regime</span>
+                <span style={{ fontWeight: 700 }}>{regime?.regime ?? regime?.state ?? regime?.name ?? '—'}</span>
+                <span className="muted text-right">{regime?.asOf ? fmtAsOf(regime.asOf) : ' '}</span>
+              </div>
+              <div className="data-row-3 data-row-divider">
+                <span className="muted">Hit Rate</span>
+                <span style={{ fontWeight: 700 }}>{accuracy?.hitRate != null ? fmtPct(accuracy.hitRate <= 1 ? accuracy.hitRate * 100 : accuracy.hitRate) : '—'}</span>
+                <span className="muted text-right">{accuracy?.sampleCount != null ? `${fmtNumber(accuracy.sampleCount)} samples` : ' '}</span>
+              </div>
+              <div className="data-row-3 data-row-divider">
+                <span className="muted">Residual Alpha</span>
+                <span style={{ fontWeight: 700 }}>{accuracy?.residualAlpha != null ? fmtPct(accuracy.residualAlpha) : '—'}</span>
+                <span className="muted text-right">{accuracy?.pFinal != null ? `pFinal ${accuracy.pFinal}` : ' '}</span>
+              </div>
+              {(consensus?.pFinal != null || consensus?.agreementBonus != null || consensus?.consensusStalenessMinutes != null) ? (
+                <div className="data-row-3 data-row-divider">
+                  <span className="muted">Consensus</span>
+                  <span style={{ fontWeight: 700 }}>
+                    {consensus?.pFinal != null ? `pFinal ${consensus.pFinal}` : '—'}
+                  </span>
+                  <span className="muted text-right">
+                    {consensus?.agreementBonus != null ? `+${consensus.agreementBonus}` : consensus?.consensusStalenessMinutes != null ? `${consensus.consensusStalenessMinutes}m stale` : ' '}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </article>
+
+          <article className="card card-pad-sm">
+            <strong>Why / Attribution</strong>
+            {drivers.length ? (
+              <div className="data-rows mt-2">
+                {drivers.slice(0, 8).map((d, idx) => (
+                  <div key={idx} className="data-row-divider">
+                    <div className="font-600">{d.category ?? d.group ?? '—'} · {d.direction ?? '—'} · {d.materiality ?? d.weight ?? '—'}</div>
+                    <div className="muted">
+                      {Array.isArray(d.tags) ? d.tags.join(', ') : d.tags ?? d.concepts ?? ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="muted mt-2">No attribution available.</div>
+            )}
+          </article>
+
+          <article className="card card-pad-sm">
+            <strong>Recommendation</strong>
+            {rec?.ticker || rec?.symbol || rec ? (
+              <div className="stack-sm mt-2">
+                <div className="l-row" style={{ justifyContent: 'space-between' }}>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>{rec?.action ?? '—'}</div>
+                  <div className="muted">{recConfidence != null ? `${recConfidence}%` : '—'}</div>
+                </div>
+                <div className="muted">{rec?.risk ?? '—'} · {rec?.horizon ?? '—'}</div>
+                {recEntry ? (
+                  <div className="alert" style={{ padding: 12 }}>
+                    <div className="alert-title">Entry Zone</div>
+                    <div>{recEntry}</div>
+                  </div>
+                ) : null}
+
+                {recThesis.length ? (
+                  <div>
+                    <div className="eyebrow mb-0">Thesis</div>
+                    <ul className="list mt-2">
+                      {recThesis.slice(0, 6).map((t, idx) => <li key={idx}>{t}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {recAvoidIf.length ? (
+                  <div>
+                    <div className="eyebrow mb-0">Avoid If</div>
+                    <ul className="list mt-2">
+                      {recAvoidIf.slice(0, 6).map((t, idx) => <li key={idx}>{t}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="muted mt-2">No recommendation available.</div>
+            )}
+          </article>
+        </section>
+      )}
+
+      {activeTab === 'research' && (
+        <section className="l-grid-3lead mb-3">
+          <article className="card card-pad-sm">
+            <strong>Engine Signals</strong>
+            <div className="data-rows mt-2">
+              <div className="data-row-3 data-row-divider">
+                <span className="muted">Regime</span>
+                <span style={{ fontWeight: 700 }}>{regime?.regime ?? regime?.state ?? regime?.name ?? '—'}</span>
+                <span className="muted text-right">{regime?.asOf ? fmtAsOf(regime.asOf) : ' '}</span>
+              </div>
+              <div className="data-row-3 data-row-divider">
+                <span className="muted">Hit Rate</span>
+                <span style={{ fontWeight: 700 }}>{accuracy?.hitRate != null ? fmtPct(accuracy.hitRate <= 1 ? accuracy.hitRate * 100 : accuracy.hitRate) : '—'}</span>
+                <span className="muted text-right">{accuracy?.sampleCount != null ? `${fmtNumber(accuracy.sampleCount)} samples` : ' '}</span>
+              </div>
+              <div className="data-row-3 data-row-divider">
+                <span className="muted">Residual Alpha</span>
+                <span style={{ fontWeight: 700 }}>{accuracy?.residualAlpha != null ? fmtPct(accuracy.residualAlpha) : '—'}</span>
+                <span className="muted text-right">{accuracy?.pFinal != null ? `pFinal ${accuracy.pFinal}` : ' '}</span>
+              </div>
+              {(consensus?.pFinal != null || consensus?.agreementBonus != null || consensus?.consensusStalenessMinutes != null) ? (
+                <div className="data-row-3 data-row-divider">
+                  <span className="muted">Consensus</span>
+                  <span style={{ fontWeight: 700 }}>
+                    {consensus?.pFinal != null ? `pFinal ${consensus.pFinal}` : '—'}
+                  </span>
+                  <span className="muted text-right">
+                    {consensus?.agreementBonus != null ? `+${consensus.agreementBonus}` : consensus?.consensusStalenessMinutes != null ? `${consensus.consensusStalenessMinutes}m stale` : ' '}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </article>
+
+          <article className="card card-pad-sm">
+            <strong>Why / Attribution</strong>
+            {drivers.length ? (
+              <div className="data-rows mt-2">
+                {drivers.slice(0, 8).map((d, idx) => (
+                  <div key={idx} className="data-row-divider">
+                    <div className="font-600">{d.category ?? d.group ?? '—'} · {d.direction ?? '—'} · {d.materiality ?? d.weight ?? '—'}</div>
+                    <div className="muted">
+                      {Array.isArray(d.tags) ? d.tags.join(', ') : d.tags ?? d.concepts ?? ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="muted mt-2">No attribution available.</div>
+            )}
+          </article>
+
+          <article className="card card-pad-sm">
+            <strong>Recommendation</strong>
+            {rec?.ticker || rec?.symbol || rec ? (
+              <div className="stack-sm mt-2">
+                <div className="l-row" style={{ justifyContent: 'space-between' }}>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>{rec?.action ?? '—'}</div>
+                  <div className="muted">{recConfidence != null ? `${recConfidence}%` : '—'}</div>
+                </div>
+                <div className="muted">{rec?.risk ?? '—'} · {rec?.horizon ?? '—'}</div>
+                {recEntry ? (
+                  <div className="alert" style={{ padding: 12 }}>
+                    <div className="alert-title">Entry Zone</div>
+                    <div>{recEntry}</div>
+                  </div>
+                ) : null}
+
+                {recThesis.length ? (
+                  <div>
+                    <div className="eyebrow mb-0">Thesis</div>
+                    <ul className="list mt-2">
+                      {recThesis.slice(0, 6).map((t, idx) => <li key={idx}>{t}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {recAvoidIf.length ? (
+                  <div>
+                    <div className="eyebrow mb-0">Avoid If</div>
+                    <ul className="list mt-2">
+                      {recAvoidIf.slice(0, 6).map((t, idx) => <li key={idx}>{t}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="muted mt-2">No recommendation available.</div>
+            )}
+          </article>
+        </section>
+      )}
+
+      {activeTab === 'attribution' && (
+        <section className="mb-3">
+          <article className="card card-pad-md">
+            <strong>Why / Attribution</strong>
+            {drivers.length ? (
+              <div className="data-rows mt-2">
+                {drivers.map((d, idx) => (
+                  <div key={idx} className="data-row-divider">
+                    <div className="font-600">{d.category ?? d.group ?? '—'} · {d.direction ?? '—'} · {d.materiality ?? d.weight ?? '—'}</div>
+                    <div className="muted">
+                      {Array.isArray(d.tags) ? d.tags.join(', ') : d.tags ?? d.concepts ?? ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="muted mt-2">No attribution available.</div>
+            )}
+          </article>
+        </section>
+      )}
+
+      {activeTab === 'recommendation' && (
+        <section className="mb-3">
+          <article className="card card-pad-md">
+            <strong>Recommendation</strong>
+            {rec?.ticker || rec?.symbol || rec ? (
+              <div className="stack-sm mt-2">
+                <div className="l-row" style={{ justifyContent: 'space-between' }}>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>{rec?.action ?? '—'}</div>
+                  <div className="muted">{recConfidence != null ? `${recConfidence}%` : '—'}</div>
+                </div>
+                <div className="muted">{rec?.risk ?? '—'} · {rec?.horizon ?? '—'}</div>
+                {recEntry ? (
+                  <div className="alert" style={{ padding: 12 }}>
+                    <div className="alert-title">Entry Zone</div>
+                    <div>{recEntry}</div>
+                  </div>
+                ) : null}
+
+                {recThesis.length ? (
+                  <div>
+                    <div className="eyebrow mb-0">Thesis</div>
+                    <ul className="list mt-2">
+                      {recThesis.map((t, idx) => <li key={idx}>{t}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {recAvoidIf.length ? (
+                  <div>
+                    <div className="eyebrow mb-0">Avoid If</div>
+                    <ul className="list mt-2">
+                      {recAvoidIf.map((t, idx) => <li key={idx}>{t}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="muted mt-2">No recommendation available.</div>
+            )}
+          </article>
+        </section>
+      )}
     </div>
   )
 }

@@ -95,7 +95,6 @@ button {
 }
 
 .hero {
-  margin: 0 0 var(--space-4);
   font-size: var(--font-lg);
   line-height: 0.94;
   letter-spacing: -0.07em;

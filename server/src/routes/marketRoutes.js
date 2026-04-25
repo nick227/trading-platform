@@ -91,12 +91,6 @@ export default async function marketRoutes(fastify, opts) {
     return { success: true, data }
   }))
 
-  fastify.get('/ticker/:symbol/explainability', route(async (request, reply) => {
-    const { symbol } = request.params
-    const data = await engineClient.getTickerExplainability(symbol)
-    return { success: true, data }
-  }))
-
   fastify.get('/ticker/:symbol/performance', route(async (request, reply) => {
     const { symbol } = request.params
     const { window = '30d' } = request.query
@@ -112,6 +106,44 @@ export default async function marketRoutes(fastify, opts) {
 
   fastify.get('/dashboard', route(async (request, reply) => {
     const data = await engineClient.getDashboardData()
+    return { success: true, data }
+  }))
+
+  fastify.get('/dashboard/bootstrap', route(async (request, reply) => {
+    const { fastify: { prisma } } = opts
+
+    // Fetch all dashboard data in parallel
+    const [engineData, bots, executions, priceMap, performanceStats, portfolioSummary] = await Promise.allSettled([
+      engineClient.getDashboardData(),
+      prisma.bot.findMany({ where: { status: 'running' } }).catch(() => []),
+      prisma.execution.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }).catch(() => []),
+      prisma.liveQuote.findMany().catch(() => []).then(quotes => {
+        const map = {}
+        quotes.forEach(q => map[q.ticker] = q)
+        return map
+      }),
+      prisma.performanceStats.findFirst().catch(() => null),
+      prisma.portfolioSummary.findFirst().catch(() => null)
+    ])
+
+    return {
+      success: true,
+      data: {
+        engine: engineData.status === 'fulfilled' ? engineData.value : null,
+        bots: bots.status === 'fulfilled' ? bots.value : [],
+        executions: executions.status === 'fulfilled' ? executions.value : [],
+        prices: priceMap.status === 'fulfilled' ? priceMap.value : {},
+        performanceStats: performanceStats.status === 'fulfilled' ? performanceStats.value : null,
+        portfolioSummary: portfolioSummary.status === 'fulfilled' ? portfolioSummary.value : null,
+        lastUpdated: new Date().toISOString()
+      }
+    }
+  }))
+
+  fastify.get('/ticker/:symbol/dashboard', route(async (request, reply) => {
+    const { symbol } = request.params
+    const { range = '1Y', interval = '1D' } = request.query
+    const data = await engineClient.getBootstrapData(symbol, range, interval)
     return { success: true, data }
   }))
 

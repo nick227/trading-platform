@@ -364,10 +364,11 @@ export default {
 
   // Ticker-specific endpoints
   async getTickerExplainability(symbol) {
+    // /why endpoint not implemented on backend - returning null
     return cachedFetch(
       'EXPLAINABILITY',
       () => cacheKeys.engine.alpha(symbol),
-      () => alphaFetch(`/ticker/${encodeURIComponent(symbol)}/why`).then(transformExplainability),
+      () => Promise.resolve(null),
       CACHE_CONFIG.ALPHA
     )
   },
@@ -488,7 +489,7 @@ export default {
       'QUOTE',
       () => cacheKeys.market.quote(symbol),
       async () => {
-        const response = await fetch(`/api/orders/bootstrap?ticker=${encodeURIComponent(symbol)}`)
+        const response = await fetch(`/api/market/bootstrap/${encodeURIComponent(symbol)}`)
         if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         const data = await response.json()
         return data?.quote
@@ -504,7 +505,7 @@ export default {
       'HISTORY',
       () => getCacheKey(CACHE_NAMESPACES.MARKET, 'HISTORY', `${symbol}:${range}:${interval}`),
       async () => {
-        const response = await fetch(`/api/orders/bootstrap?ticker=${encodeURIComponent(symbol)}&range=${range}&interval=${interval}`)
+        const response = await fetch(`/api/market/bootstrap/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`)
         if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         const data = await response.json()
         return data?.history || []
@@ -582,12 +583,12 @@ export default {
           }
         } catch (error) {
           console.error(`Failed to load bootstrap data for ${symbol}:`, error)
-          // Fallback to legacy orders endpoint
-          const fallbackData = await alphaFetch(`/orders/bootstrap?ticker=${encodeURIComponent(symbol)}&range=${range}&interval=${interval}`)
+          // Fallback to market bootstrap endpoint
+          const fallbackData = await alphaFetch(`/api/market/bootstrap/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`)
           if (fallbackData) {
             const enhancedFallback = {
               ...fallbackData,
-              _source: 'legacy-bootstrap',
+              _source: 'market-bootstrap',
               _cachedAt: Date.now(),
               _freshness: 'degraded'
             }

@@ -17,6 +17,47 @@ export default function Portfolio() {
   const { state } = useApp()
   const { holdings, stats, recentActivity, loading, error, refetch } = usePortfolio()
 
+  const pnlSnapshot = useMemo(() => {
+    const totalReturn = Number.isFinite(stats?.totalReturn) ? stats.totalReturn : null
+    const totalReturnPct = Number.isFinite(stats?.totalReturnPct) ? stats.totalReturnPct : null
+
+    const valueTone = totalReturn == null ? undefined : totalReturn > 0 ? 'positive' : totalReturn < 0 ? 'negative' : undefined
+    const subtitle =
+      totalReturnPct == null ? 'Total return' : `${formatPercent(totalReturnPct, { showSign: true, decimals: 1 })} total return`
+
+    return {
+      value: totalReturn == null ? 'â€”' : formatCurrency(totalReturn, 0),
+      subtitle,
+      valueTone,
+    }
+  }, [stats?.totalReturn, stats?.totalReturnPct])
+
+  const biggestMoves = useMemo(() => {
+    const list = Array.isArray(holdings) ? holdings : []
+    const rows = list
+      .map((h) => {
+        const marketValue = Number(h?.marketValue)
+        const buyIn = Number(h?.buyIn)
+        const pnl = marketValue - buyIn
+        if (!Number.isFinite(pnl)) return null
+        const ticker = String(h?.ticker ?? '').trim()
+        if (!ticker) return null
+        return { ticker, pnl }
+      })
+      .filter(Boolean)
+
+    if (!rows.length) return { profit: null, loss: null }
+
+    let profit = rows[0]
+    let loss = rows[0]
+    for (const row of rows) {
+      if (row.pnl > profit.pnl) profit = row
+      if (row.pnl < loss.pnl) loss = row
+    }
+
+    return { profit, loss }
+  }, [holdings])
+
   const [watchlist, setWatchlist] = useState(() => loadWatchlist())
   const watchlistCount = watchlist.length
   const watchlistView = useMemo(() => watchlist.slice(0, 12), [watchlist])
@@ -99,25 +140,27 @@ export default function Portfolio() {
             />
             <StatCard
               icon="🤖"
-              iconTone="positive"
-              valueTone="positive"
-              label="Active Bots"
-              value={`${stats?.activeBots.running ?? 0} / ${stats?.activeBots.total ?? 0}`}
-              subtitle="Currently running / total created"
+              iconTone="soft"
+              valueTone={pnlSnapshot.valueTone}
+              label="P&L Snapshot"
+              value={pnlSnapshot.value}
+              subtitle={pnlSnapshot.subtitle}
             />
             <StatCard
               icon="📈"
               iconTone="accent"
-              label="Top Strategy"
-              value={stats?.topStrategy.return !== 0 ? `${stats?.topStrategy.return}%` : 'N/A'}
-              subtitle={stats?.topStrategy.name}
+              valueTone={biggestMoves.profit?.pnl > 0 ? 'positive' : undefined}
+              label="Biggest Profit"
+              value={biggestMoves.profit ? `${biggestMoves.profit.ticker} ${formatCurrency(biggestMoves.profit.pnl, 0)}` : '—'}
+              subtitle="Largest unrealized gain"
             />
             <StatCard
               icon="⭐"
               iconTone="soft"
-              label="Most Traded Asset"
-              value={stats?.mostTradedAsset ?? '—'}
-              subtitle="Asset with highest activity"
+              valueTone={biggestMoves.loss?.pnl < 0 ? 'negative' : undefined}
+              label="Biggest Loss"
+              value={biggestMoves.loss ? `${biggestMoves.loss.ticker} ${formatCurrency(biggestMoves.loss.pnl, 0)}` : '—'}
+              subtitle="Largest unrealized loss"
             />
           </div>
         </section>

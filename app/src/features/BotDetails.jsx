@@ -173,11 +173,11 @@ export default function BotDetails() {
           
           <div className="l-grid-2wide">
             <div className="stack-sm">
-              <div className="hstack">
-                <h1 className="hero m-0">
+              <div className="col">
+                <div className={badgeClass}>{badgeLabel}</div>
+                <h1 className="hero mt-2">
                   {bot.name}
                 </h1>
-                <span className={badgeClass}>{badgeLabel}</span>
               </div>
               <p className="muted text-md m-0">
                 Asset: {bot.asset} · Strategy: {bot.strategy || 'Custom Configuration'}

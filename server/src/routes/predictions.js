@@ -55,14 +55,6 @@ export default async function predictionsRoutes(app, opts) {
     const ticker = String(prediction.ticker ?? '').toUpperCase().trim()
     let rankScore = null
     let rankingContext = null
-    try {
-      // Use ticker-specific endpoint instead of fetching all 100 rankings
-      const tickerData = await engineClient.getTickerExplainability(ticker)
-      rankScore = tickerData?.score ?? null
-      rankingContext = tickerData?.factors ? tickerData.factors.slice(0, 3).map(f => f.description).filter(Boolean) : null
-    } catch {
-      // ignore
-    }
 
     const coreTimestamp = prediction.predictedAt ? new Date(prediction.predictedAt).toISOString() : null
     const corePrediction = prediction.direction === 'buy' ? 'UP' : prediction.direction === 'sell' ? 'DOWN' : prediction.direction

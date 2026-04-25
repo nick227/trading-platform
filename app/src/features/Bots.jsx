@@ -243,7 +243,7 @@ export default function Bots() {
                         : 'Paused'
                   return (
                     <div className="virtual-list-item">
-                      <div className="l-row">
+                      <div className="row">
                         <div className="stack-sm flex-1">
                           <div className="hstack">
                             <h3 className="m-0 text-lg font-600">{bot.name}</h3>
@@ -255,7 +255,7 @@ export default function Bots() {
                             {bot.templateId && <span>Template: {bot.templateId}</span>}
                           </div>
                           <div className="text-sm text-muted">
-                            {bot.asset} | {bot.strategy}
+                            {bot.config?.tickers?.join(', ') || 'No tickers'} | {bot.strategy?.name || bot.strategyId || 'No strategy'}
                           </div>
                         </div>
                         <div className="stack-sm">

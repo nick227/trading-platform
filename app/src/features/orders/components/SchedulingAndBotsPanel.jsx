@@ -1,15 +1,33 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import DateTimePicker from '../../../components/DateTimePicker.jsx'
 import executionsService from '../../../api/services/executionsService.js'
+import { getBotCatalog } from '../../../api/services/botCatalogService.js'
 
 export default function SchedulingAndBotsPanel({ selectedStock }) {
   const [scheduleForLater, setScheduleForLater] = useState(false)
   const [scheduledDateTime, setScheduledDateTime] = useState(null)
   const [botEnabled, setBotEnabled] = useState(false)
-  const [botCondition, setBotCondition] = useState('price_above')
-  const [botPrice, setBotPrice] = useState('')
+  const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [botTemplates, setBotTemplates] = useState([])
+  const [templatesLoading, setTemplatesLoading] = useState(true)
   const navigate = useNavigate()
+
+  // Load bot templates on mount
+  useEffect(() => {
+    const loadTemplates = async () => {
+      setTemplatesLoading(true)
+      try {
+        const catalog = await getBotCatalog()
+        setBotTemplates(catalog.ruleBased || [])
+      } catch (err) {
+        console.error('Failed to load bot templates:', err)
+      } finally {
+        setTemplatesLoading(false)
+      }
+    }
+    loadTemplates()
+  }, [])
 
   const handleScheduleTrade = () => {
     if (!selectedStock || !scheduleForLater || !scheduledDateTime) return
@@ -32,37 +50,27 @@ export default function SchedulingAndBotsPanel({ selectedStock }) {
       scheduledForLocal: scheduledDateTime, // Keep local for display
     }
     
-    // Create the scheduled order directly (no confirmation needed for scheduling)
-    executionsService.create({
-      portfolioId: 'default', // This should come from user context
-      ticker: selectedStock.symbol,
-      side: 'BUY',
-      quantity: 1,
-      price: selectedStock.price,
-      scheduledFor: scheduledUTC,
-    }).then(() => {
-      // Navigate to orders page to show the queued order
-      navigate('/orders')
-    }).catch(err => {
-      console.error('Failed to schedule order:', err)
-    })
+    // Navigate to order confirmation screen with order details
+    navigate('/orders/confirm', { state: { order: orderData } })
   }
 
   const handleCreateBot = () => {
-    if (!selectedStock || !botEnabled || !botPrice) return
+    if (!selectedStock || !botEnabled || !selectedTemplate) return
     
     const botData = {
       id: Date.now(),
-      name: `${selectedStock.symbol} ${botCondition} ${botPrice}`,
+      templateId: selectedTemplate.id,
+      templateName: selectedTemplate.name,
+      templateDescription: selectedTemplate.description,
       ticker: selectedStock.symbol,
-      condition: botCondition,
-      price: parseFloat(botPrice),
+      assetName: selectedStock.name,
+      price: selectedStock.price,
       enabled: true,
       createdAt: new Date().toISOString(),
     }
     
-    // Navigate to bot creation/confirmation
-    navigate('/bots/create', { state: { bot: botData } })
+    // Navigate to order confirmation screen with bot details
+    navigate('/orders/confirm', { state: { order: null, bot: botData } })
   }
 
   const isMarketClosed = () => {
@@ -137,44 +145,38 @@ export default function SchedulingAndBotsPanel({ selectedStock }) {
 
         {botEnabled && (
           <div className="stack-sm">
-            <div className="field">
-              <label className="field-label" htmlFor="bot-condition">
-                Condition
-              </label>
-              <select
-                id="bot-condition"
-                className="field-select"
-                value={botCondition}
-                onChange={(e) => setBotCondition(e.target.value)}
-              >
-                <option value="price_above">Price Above</option>
-                <option value="price_below">Price Below</option>
-                <option value="percent_change">Percent Change</option>
-              </select>
-            </div>
+            {templatesLoading ? (
+              <div className="text-xs muted">Loading bot templates...</div>
+            ) : botTemplates.length === 0 ? (
+              <div className="text-xs muted">No bot templates available</div>
+            ) : (
+              <>
+                <div className="text-xs muted mb-2">Select a Bot Template</div>
+                <div className="stack-sm">
+                  {botTemplates.map((template) => (
+                    <div key={template.id} className="hstack">
+                      <input
+                        type="radio"
+                        id={`template-${template.id}`}
+                        name="bot-template"
+                        value={template.id}
+                        checked={selectedTemplate?.id === template.id}
+                        onChange={() => setSelectedTemplate(template)}
+                      />
+                      <label htmlFor={`template-${template.id}`} className="flex-1">
+                        <div className="font-600">{template.name}</div>
+                        <div className="text-xs muted">{template.description}</div>
+                      </label>
+                    </div>
+                  ))}
+                </div>
 
-            <div className="field">
-              <label className="field-label" htmlFor="bot-price">
-                {botCondition === 'price_above'
-                  ? 'Price Above'
-                  : botCondition === 'price_below'
-                    ? 'Price Below'
-                    : 'Percent Change'}
-              </label>
-              <input
-                id="bot-price"
-                className="field-input"
-                type="number"
-                value={botPrice}
-                onChange={(e) => setBotPrice(e.target.value)}
-                placeholder={`$${selectedStock?.price?.toFixed(2) ?? '0.00'}`}
-              />
-            </div>
-
-            {botPrice && (
-              <button className="btn btn-sm btn-ghost btn-block" onClick={handleCreateBot}>
-                Create {selectedStock?.symbol} Bot
-              </button>
+                {selectedTemplate && (
+                  <button className="btn btn-sm btn-ghost btn-block" onClick={handleCreateBot}>
+                    Create {selectedTemplate.name} Bot for {selectedStock?.symbol}
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}

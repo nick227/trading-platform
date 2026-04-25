@@ -38,7 +38,7 @@ export default {
     return cachedFetch(
       'QUOTE',
       () => getCacheKey('QUOTE', symbol),
-      () => alphaFetch(`/orders/bootstrap?ticker=${encodeURIComponent(symbol)}`).then(data => data?.quote).then(transformQuote),
+      () => alphaFetch(`/api/market/bootstrap/${encodeURIComponent(symbol)}`).then(data => data?.quote).then(transformQuote),
       MARKET_CACHE_TTL.QUOTE
     )
   },
@@ -48,7 +48,7 @@ export default {
     return cachedFetch(
       'HISTORY',
       () => getCacheKey('HISTORY', `${symbol}:${range}:${interval}`),
-      () => alphaFetch(`/orders/bootstrap?ticker=${encodeURIComponent(symbol)}&range=${range}&interval=${interval}`).then(data => data?.history || []).then(transformHistory),
+      () => alphaFetch(`/api/market/bootstrap/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`).then(data => data?.history || []).then(transformHistory),
       MARKET_CACHE_TTL.HISTORY
     )
   },
@@ -119,12 +119,12 @@ export default {
       }
     } catch (error) {
       console.error(`Failed to load bootstrap data for ${symbol}:`, error)
-      // Fallback to legacy orders endpoint
-      const fallbackData = await alphaFetch(`/orders/bootstrap?ticker=${encodeURIComponent(symbol)}&range=${range}&interval=${interval}`)
+      // Fallback to market bootstrap endpoint
+      const fallbackData = await alphaFetch(`/api/market/bootstrap/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`)
       if (fallbackData) {
         const enhancedFallback = {
           ...fallbackData,
-          _source: 'legacy-bootstrap',
+          _source: 'market-bootstrap',
           _cachedAt: Date.now(),
           _freshness: 'degraded'
         }

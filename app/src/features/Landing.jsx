@@ -5,6 +5,7 @@ import { useAlphaDashboard, useAlphaSignals, useCalendarEvents } from '../hooks/
 import { useAuth } from '../app/AuthProvider.jsx'
 import { usePendingOrders } from '../hooks/usePendingOrders.js'
 import { usePortfolio } from '../hooks/usePortfolio.js'
+import { useDashboardBootstrap } from '../hooks/useDashboardBootstrap.js'
 import pricesService from '../api/services/pricesService.js'
 import { get } from '../api/client.js'
 
@@ -232,17 +233,22 @@ export default function Landing() {
   const [predictionsIndex, setPredictionsIndex] = useState({ loading: false, error: null, items: [] })
   const [predictionContexts, setPredictionContexts] = useState({ loading: false, error: null, items: [] })
 
+  // Dashboard bootstrap - consolidates multiple API calls into one
+  const { data: dashboardData, loading: dashboardLoading } = useDashboardBootstrap({ refreshInterval: 60000 })
+
   // Portfolio performance data (includes strategies and executions)
-  const { stats: portfolioStats, strategies, loading: portfolioLoading, executions, priceMap } = usePortfolio()
+  const { stats: portfolioStats, strategies, loading: portfolioLoading, executions, priceMap } = usePortfolio({
+    bootstrapData: dashboardData
+  })
 
   const { pendingOrders, cancelOrder, isCanceling } = usePendingOrders({
     enabled: Boolean(user),
     pollIntervalMs: 10000,
     executions
   })
-  
+
   // Alpha Engine data - defer signals to reduce startup load
-  const { dashboard, loading: dashboardLoading, error: dashboardError } = useAlphaDashboard({ refreshInterval: 0 })
+  const { dashboard, loading: alphaDashboardLoading, error: dashboardError } = useAlphaDashboard({ refreshInterval: 0 })
   const [signals, setSignals] = useState([])
   const [signalsLoading, setSignalsLoading] = useState(false)
 

@@ -74,6 +74,10 @@
   gap: var(--space-6);
 }
 
+.row {
+  width: 100%;
+}
+
 .row,
 .l-row {
   display: flex;

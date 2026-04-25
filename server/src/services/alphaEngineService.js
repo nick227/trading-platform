@@ -9,15 +9,6 @@ export default {
     return data?.rankings ?? []
   },
 
-  // Returns explainability data for a single ticker (shape varies by engine version).
-  async getExplainability(symbol) {
-    try {
-      return await engineClient.getTickerExplainability(symbol)
-    } catch {
-      return null
-    }
-  },
-
   // Market data endpoints for Orders bootstrap
   async getTickers(search = '') {
     try {
