@@ -12,10 +12,26 @@ const ENGINE_SYMBOL_ALIASES = {
   DXY: ['DX-Y.NYB', '^DXY']
 }
 
+// Crypto pair normalization - convert to Alpha Engine compatible format
+function normalizeCryptoSymbol(symbol) {
+  const normalized = String(symbol ?? '').toUpperCase().trim()
+  // Convert BTC-USD -> BTC, ETH-USD -> ETH, etc. (strip currency suffix entirely)
+  if (/-USD$/.test(normalized)) {
+    return normalized.replace('-USD', '')
+  }
+  if (/-USDT$/.test(normalized)) {
+    return normalized.replace('-USDT', '')
+  }
+  if (/-USDC$/.test(normalized)) {
+    return normalized.replace('-USDC', '')
+  }
+  return normalized
+}
+
 const SYMBOL_RETRY_STATUS = new Set([400, 404, 422, 500])
 
 function normalizeSymbol(symbol) {
-  return String(symbol ?? '').toUpperCase().trim()
+  return normalizeCryptoSymbol(symbol)
 }
 
 function symbolCandidates(symbol) {
@@ -23,6 +39,40 @@ function symbolCandidates(symbol) {
   if (!base) return []
   const aliases = ENGINE_SYMBOL_ALIASES[base] ?? []
   return [base, ...aliases].filter((value, idx, arr) => arr.indexOf(value) === idx)
+}
+
+// Shared rankings cache to prevent duplicate upstream calls
+// Strategy: Always fetch limit=50 from upstream (cost is same as limit=5)
+// Cache the full result and slice for smaller requests
+const rankingsCache = new Map()
+const RANKINGS_CACHE_TTL_MS = 30_000
+const RANKINGS_CACHE_FETCH_LIMIT = 50
+
+function getRankingsCacheKey(maxFragility) {
+  return `rankings:${maxFragility ?? 'null'}`
+}
+
+function getCachedRankings(maxFragility) {
+  const key = getRankingsCacheKey(maxFragility)
+  const entry = rankingsCache.get(key)
+  if (!entry) return null
+  if (entry.expiresAt <= Date.now()) {
+    rankingsCache.delete(key)
+    return null
+  }
+  return entry.data
+}
+
+function setCachedRankings(maxFragility, data) {
+  const key = getRankingsCacheKey(maxFragility)
+  rankingsCache.set(key, {
+    data,
+    expiresAt: Date.now() + RANKINGS_CACHE_TTL_MS
+  })
+  if (rankingsCache.size > 10) {
+    const keys = Array.from(rankingsCache.keys())
+    keys.slice(0, 3).forEach(k => rankingsCache.delete(k))
+  }
 }
 
 async function engineFetch(endpoint, options = {}) {
@@ -38,6 +88,7 @@ async function engineFetch(endpoint, options = {}) {
   }
 
   let response
+  const t0 = Date.now()
   try {
     response = await fetch(url, {
       ...options,
@@ -50,6 +101,9 @@ async function engineFetch(endpoint, options = {}) {
     throw err
   }
 
+  const t1 = Date.now()
+  const networkTime = t1 - t0
+
   if (!response.ok) {
     const errorText = await response.text().catch(() => '')
     const snippet = errorText && errorText.length > 500 ? `${errorText.slice(0, 500)}…` : errorText
@@ -58,7 +112,16 @@ async function engineFetch(endpoint, options = {}) {
     throw err
   }
 
-  return response.json()
+  const json = await response.json()
+  const t2 = Date.now()
+  const parseTime = t2 - t1
+
+  // Log timing for ranking endpoints
+  if (endpoint.includes('/ranking/')) {
+    console.log(`[engine_fetch] endpoint=${endpoint} network=${networkTime}ms parse=${parseTime}ms total=${t2 - t0}ms`)
+  }
+
+  return json
 }
 
 async function engineFetchWithSymbolFallback(makeEndpoint, symbol, options) {
@@ -135,7 +198,7 @@ async function getDiscoveryFallbackRows({ capNum, mode, targetCount, seen }) {
         lq.changePct AS liveChangePct,
         lq.updatedAt AS quoteUpdatedAt
       FROM DiscoverySymbol ds
-      INNER JOIN LiveQuote lq ON lq.ticker = ds.symbol
+      INNER JOIN LiveQuote lq ON lq.ticker COLLATE utf8mb4_unicode_ci = ds.symbol COLLATE utf8mb4_unicode_ci
       WHERE lq.last IS NOT NULL
         AND lq.last <= ${capNum}
       ORDER BY ds.isTradable DESC, ds.avgVolume DESC, ds.marketCap DESC, lq.updatedAt DESC
@@ -189,12 +252,38 @@ export const engineClient = {
 
   // Rankings endpoints
   async getTopRankings(limit = 20, maxFragility = null) {
+    // Check shared cache first (cache key based on maxFragility only, not limit)
+    const cached = getCachedRankings(maxFragility)
+    if (cached) {
+      // Slice cached result to requested limit
+      const sliced = {
+        ...cached,
+        rankings: Array.isArray(cached.rankings) ? cached.rankings.slice(0, limit) : []
+      }
+      console.log(`[getTopRankings] CACHE HIT limit=${limit} maxFragility=${maxFragility}`)
+      return sliced
+    }
+
+    // Not cached - fetch with larger limit (upstream cost is same regardless of limit)
+    const t0 = Date.now()
     const params = new URLSearchParams()
-    params.set('limit', String(limit))
+    params.set('limit', String(RANKINGS_CACHE_FETCH_LIMIT))
     if (maxFragility !== null && maxFragility !== undefined && Number.isFinite(Number(maxFragility))) {
       params.set('maxFragility', String(maxFragility))
     }
-    return engineFetch(`/ranking/top?${params.toString()}`)
+    const result = await engineFetch(`/ranking/top?${params.toString()}`)
+    const t1 = Date.now()
+    console.log(`[getTopRankings] CACHE MISS limit=${limit} maxFragility=${maxFragility} total=${t1 - t0}ms responseSize=${JSON.stringify(result).length}bytes`)
+
+    // Cache the full result for 30 seconds
+    setCachedRankings(maxFragility, result)
+
+    // Slice to requested limit
+    const sliced = {
+      ...result,
+      rankings: Array.isArray(result.rankings) ? result.rankings.slice(0, limit) : []
+    }
+    return sliced
   },
 
   async getRankingMovers(limit = 50) {
@@ -471,7 +560,8 @@ export const engineClient = {
     const seen = new Set(existing.map(recommendationSymbol).filter(Boolean))
     let rankingRows = []
     try {
-      const rankingsPayload = await this.getTopRankings(100)
+      // Use smaller limit for fallback - we only need targetCount items
+      const rankingsPayload = await this.getTopRankings(Math.min(targetCount * 2, 50))
       rankingRows = Array.isArray(rankingsPayload?.rankings) ? rankingsPayload.rankings : []
     } catch {
       rankingRows = []

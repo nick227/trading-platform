@@ -16,6 +16,11 @@ function getStubMap() {
   return stubMap
 }
 
+// In-memory cache to prevent duplicate requests
+let cachedPriceMap = null
+let cacheExpiry = 0
+const CACHE_TTL_MS = 30_000
+
 function normalizeEngineResponse(data) {
   if (!data || typeof data !== 'object') return null
 
@@ -33,10 +38,19 @@ function normalizeEngineResponse(data) {
 
 export default {
   async getPriceMap() {
+    const now = Date.now()
+    if (cachedPriceMap && now < cacheExpiry) {
+      return cachedPriceMap
+    }
+
     try {
       const raw = await get('/engine/prices/current')
       const normalized = normalizeEngineResponse(raw)
-      if (normalized && Object.keys(normalized).length > 0) return normalized
+      if (normalized && Object.keys(normalized).length > 0) {
+        cachedPriceMap = normalized
+        cacheExpiry = now + CACHE_TTL_MS
+        return normalized
+      }
     } catch {
       // engine unavailable — use stubs
     }

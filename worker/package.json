@@ -4,7 +4,7 @@
   "type": "module",
   "main": "src/worker.js",
   "scripts": {
-    "dev": "node --watch src/worker.js",
+    "dev": "nodemon --watch src src/worker.js --ignore data --ignore logs --ignore node_modules",
     "start": "node src/worker.js",
     "db:generate": "prisma generate",
     "simulate": "node src/simulate.js"
@@ -20,6 +20,7 @@
     "pino": "^9.14.0"
   },
   "devDependencies": {
+    "nodemon": "^3.0.1",
     "prisma": "^5.6.0"
   }
 }

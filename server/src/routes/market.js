@@ -11,12 +11,12 @@ export default async function marketRoutes(app) {
   app.get('/quote/:ticker', async (request, reply) => {
     try {
       const { ticker } = request.params
-      
+
       // Try live_quotes table first (worker cache)
       const liveQuote = await prisma.liveQuote.findUnique({
         where: { ticker: ticker.toUpperCase() }
       })
-      
+
       if (liveQuote) {
         const ageMs = Date.now() - liveQuote.updatedAt.getTime()
         if (ageMs < QUOTE_TTL_MS) return reply.send({
@@ -35,7 +35,7 @@ export default async function marketRoutes(app) {
 
       // Fallback to alpha-engine if worker quote unavailable/stale
       const alphaQuote = await alphaEngineService.getQuote(ticker)
-      
+
       if (alphaQuote) {
         return reply.send({
           symbol: ticker,
@@ -48,11 +48,105 @@ export default async function marketRoutes(app) {
           freshness: 'delayed'
         })
       }
-      
+
       return reply.code(404).send({ error: 'Quote not found' })
     } catch (error) {
       request.log?.error?.(error)
       return reply.code(500).send({ error: 'Failed to fetch quote' })
+    }
+  })
+
+  // GET /api/market/quotes?tickers=SPY,QQQ,IWM
+  app.get('/quotes', async (request, reply) => {
+    try {
+      const { tickers } = request.query
+      if (!tickers) {
+        return reply.code(400).send({ error: 'Tickers query parameter required' })
+      }
+
+      const tickerList = String(tickers).split(',').map(t => t.trim().toUpperCase()).filter(Boolean)
+      if (tickerList.length === 0) {
+        return reply.code(400).send({ error: 'At least one ticker required' })
+      }
+
+      if (tickerList.length > 50) {
+        return reply.code(400).send({ error: 'Maximum 50 tickers per batch request' })
+      }
+
+      // Batch fetch from live_quotes table
+      const liveQuotes = await prisma.liveQuote.findMany({
+        where: {
+          ticker: { in: tickerList }
+        }
+      })
+
+      const liveQuoteMap = new Map(
+        liveQuotes.map(q => [q.ticker, q])
+      )
+
+      const results = []
+      const now = Date.now()
+
+      for (const ticker of tickerList) {
+        const liveQuote = liveQuoteMap.get(ticker)
+
+        if (liveQuote) {
+          const ageMs = now - liveQuote.updatedAt.getTime()
+          if (ageMs < QUOTE_TTL_MS) {
+            results.push({
+              symbol: ticker,
+              price: liveQuote.last,
+              bid: liveQuote.bid,
+              ask: liveQuote.ask,
+              change: liveQuote.changePct,
+              volume: liveQuote.volume,
+              updatedAt: liveQuote.updatedAt.toISOString(),
+              ageMs,
+              source: 'worker',
+              freshness: ageMs < 5000 ? 'live' : ageMs < 15000 ? 'fresh' : 'stale'
+            })
+            continue
+          }
+        }
+
+        // Fallback to alpha-engine for missing/stale quotes
+        try {
+          const alphaQuote = await alphaEngineService.getQuote(ticker)
+          if (alphaQuote) {
+            results.push({
+              symbol: ticker,
+              price: alphaQuote.price,
+              change: alphaQuote.change,
+              volume: alphaQuote.volume,
+              updatedAt: alphaQuote.timestamp,
+              ageMs: 0,
+              source: 'alpha-engine',
+              freshness: 'delayed'
+            })
+          } else {
+            results.push({
+              symbol: ticker,
+              error: 'Quote not found',
+              source: 'none'
+            })
+          }
+        } catch {
+          results.push({
+            symbol: ticker,
+            error: 'Quote fetch failed',
+            source: 'none'
+          })
+        }
+      }
+
+      return reply.send({
+        quotes: results,
+        count: results.length,
+        timestamp: new Date().toISOString()
+      })
+    } catch (error) {
+      request.log?.error?.(error)
+      return reply.code(500).send({ error: 'Failed to fetch batch quotes' })
     }
   })
 

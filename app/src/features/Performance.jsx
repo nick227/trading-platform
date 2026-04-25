@@ -1,22 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import LazyLoad from '../components/LazyLoad.jsx'
+import { usePortfolio } from '../hooks/usePortfolio.js'
 
 export default function Performance() {
-  const [stats, setStats] = useState(null)
+  const { performanceStats, loading: portfolioLoading } = usePortfolio()
   const [dailySnapshots, setDailySnapshots] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  
+
   useEffect(() => {
-    const fetchPerformanceData = async () => {
+    const fetchDailySnapshots = async () => {
       try {
         setLoading(true)
-        const [statsRes, snapshotsRes] = await Promise.all([
-          fetch('/api/performance/stats'),
-          fetch('/api/performance/daily-snapshots')
-        ])
-        
-        setStats(await statsRes.json())
+        const snapshotsRes = await fetch('/api/performance/daily-snapshots')
         setDailySnapshots(await snapshotsRes.json())
       } catch (error) {
         setError(error.message)
@@ -24,13 +20,13 @@ export default function Performance() {
         setLoading(false)
       }
     }
-    
-    fetchPerformanceData()
-    const interval = setInterval(fetchPerformanceData, 30000) // Refresh every 30 seconds
+
+    fetchDailySnapshots()
+    const interval = setInterval(fetchDailySnapshots, 30000) // Refresh every 30 seconds
     return () => clearInterval(interval)
   }, [])
   
-  if (loading) {
+  if (portfolioLoading || loading) {
     return (
       <div className="page container" style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
         <div className="muted">Loading performance data…</div>

@@ -36,4 +36,26 @@ export default async function recommendationRoutes(fastify, opts) {
     const data = await engineClient.getRecommendationsUnder(cap, mode, limitClamped, preference)
     return { success: true, data }
   }))
+
+  // Batch endpoint for dashboard - returns all 3 price-cap recommendations in one request
+  fastify.get('/recommendations/dashboard', route(async (request, reply) => {
+    const { mode = 'balanced', preference = null } = request.query
+    const limit = 10
+
+    // Fetch all 3 price-cap recommendations in parallel
+    const [under2, under10, under100] = await Promise.all([
+      engineClient.getRecommendationsUnder(2, mode, limit, preference).catch(() => ({ recommendations: [], meta: { complete: true } })),
+      engineClient.getRecommendationsUnder(10, mode, limit, preference).catch(() => ({ recommendations: [], meta: { complete: true } })),
+      engineClient.getRecommendationsUnder(100, mode, limit, preference).catch(() => ({ recommendations: [], meta: { complete: true } }))
+    ])
+
+    return {
+      success: true,
+      data: {
+        under2,
+        under10,
+        under100
+      }
+    }
+  }))
 }

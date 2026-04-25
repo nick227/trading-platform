@@ -35,6 +35,37 @@ export default async function marketRoutes(fastify, opts) {
     return { success: true, data }
   }))
 
+  fastify.get('/api/quotes', route(async (request, reply) => {
+    const { symbols } = request.query
+    if (!symbols) {
+      return reply.code(400).send({ error: 'Symbols query parameter required' })
+    }
+
+    const symbolList = String(symbols).split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+    if (symbolList.length === 0) {
+      return reply.code(400).send({ error: 'At least one symbol required' })
+    }
+
+    if (symbolList.length > 50) {
+      return reply.code(400).send({ error: 'Maximum 50 symbols per batch request' })
+    }
+
+    // Batch fetch quotes in parallel using engineClient which handles symbol normalization
+    const quotePromises = symbolList.map(symbol =>
+      engineClient.getQuote(symbol).catch(() => null)
+    )
+    const quotes = await Promise.all(quotePromises)
+
+    const results = quotes.map((quote, index) => {
+      if (!quote) {
+        return { symbol: symbolList[index], error: 'Quote not found' }
+      }
+      return { symbol: symbolList[index], ...quote }
+    })
+
+    return { success: true, data: results, count: results.length }
+  }))
+
   fastify.get('/api/history/:symbol', route(async (request, reply) => {
     const { symbol } = request.params
     const { range = '1Y', interval = '1D' } = request.query

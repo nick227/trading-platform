@@ -37,7 +37,7 @@ export default async function legacyRoutes(fastify, opts) {
     try {
       data = await legacyPricesClient.getCurrentPrices()
     } catch (error) {
-      request.log.info({ error: error.message }, 'legacy_prices_fallback_live_quote')
+      // Silent fallback to DB - old engine may not be running
       data = await buildLiveQuotePriceMap()
     }
     return { success: true, data }

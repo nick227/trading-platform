@@ -205,16 +205,6 @@ export default {
     if (!pid) return null
 
     try {
-      const rankingsPayload = await engineClient.getTopRankings(100)
-      const rows = Array.isArray(rankingsPayload?.rankings) ? rankingsPayload.rankings : []
-      const mapped = rows.map((r) => mapRankingToPrediction(r, 'alpha_ranking')).filter(Boolean)
-      const match = mapped.find((p) => p.id === pid) ?? null
-      if (match) return match
-    } catch {
-      // ignore
-    }
-
-    try {
       const { data } = await this.getPredictions({})
       return data.find((p) => p.id === pid) || null
     } catch {

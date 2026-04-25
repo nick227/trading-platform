@@ -6,6 +6,29 @@ import { derivePositions } from '../services/derivePositions.js'
 import { FALLBACK_STOCKS } from '../services/marketData.js'
 import { usePolling } from './usePolling.js'
 
+// In-memory cache to prevent duplicate requests during React StrictMode double-render
+let cachedBots = null
+let cachedStrategies = null
+let cachedPerformanceStats = null
+let cacheExpiry = 0
+const CACHE_TTL_MS = 30_000
+
+// Shared state to prevent multiple polling intervals from multiple hook instances
+let sharedData = {
+  holdings: [],
+  stats: null,
+  strategies: [],
+  performanceStats: null,
+  recentActivity: [],
+  executions: [],
+  priceMap: null,
+  loading: true,
+  error: null,
+  lastUpdate: 0
+}
+let pollingIntervalId = null
+let listenerCount = 0
+
 // ---------------------------------------------------------------------------
 // Static reference data (synchronous — uses the exported constant, not the
 // async getAvailableStocks() which returns a Promise)
@@ -198,33 +221,50 @@ function formatTimeAgo(ts) {
 // ---------------------------------------------------------------------------
 
 export function usePortfolio() {
-  const [holdings, setHoldings] = useState([])
-  const [stats, setStats] = useState(null)
-  const [recentActivity, setRecentActivity] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [holdings, setHoldings] = useState(() => sharedData.holdings)
+  const [stats, setStats] = useState(() => sharedData.stats)
+  const [strategies, setStrategies] = useState(() => sharedData.strategies)
+  const [performanceStats, setPerformanceStats] = useState(() => sharedData.performanceStats)
+  const [recentActivity, setRecentActivity] = useState(() => sharedData.recentActivity)
+  const [executions, setExecutions] = useState(() => sharedData.executions)
+  const [priceMap, setPriceMap] = useState(() => sharedData.priceMap)
+  const [loading, setLoading] = useState(() => sharedData.loading)
+  const [error, setError] = useState(() => sharedData.error)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
+      const now = Date.now()
+      const useCache = cachedBots && cachedStrategies && cachedPerformanceStats && now < cacheExpiry
+
       // Fetch executions, bots, prices, and performance data in parallel
-      const [executions, botsResponse, priceMap, performanceStats] = await Promise.all([
+      const [executionsData, botsResponse, priceMap, performanceStats] = await Promise.all([
         executionsService.getAll(),
-        get('/bots').catch(() => []),
+        useCache ? cachedBots : get('/bots').catch(() => []),
         pricesService.getPriceMap(),
-        get('/performance/stats').catch(() => null),
+        useCache ? cachedPerformanceStats : get('/performance/stats').catch(() => null),
       ])
 
       // Strategies from engine (may be unavailable)
-      let strategies = []
-      try {
-        const raw = await get('/strategies')
-        strategies = Array.isArray(raw) ? raw : []
-      } catch { /* engine offline */ }
+      let strategies = useCache ? cachedStrategies : []
+      if (!useCache) {
+        try {
+          const raw = await get('/strategies')
+          strategies = Array.isArray(raw) ? raw : []
+        } catch { /* engine offline */ }
+      }
+
+      // Update module-level cache if we fetched fresh data
+      if (!useCache) {
+        cachedBots = botsResponse
+        cachedStrategies = strategies
+        cachedPerformanceStats = performanceStats
+        cacheExpiry = now + CACHE_TTL_MS
+      }
 
       // Derive settled positions (FIFO, single source of truth)
-      const positions = derivePositions(executions)
+      const positions = derivePositions(executionsData)
 
       // Compute total market value for weight %
       const totalMarketValue = positions.reduce((sum, pos) => {
@@ -232,25 +272,75 @@ export function usePortfolio() {
         return sum + pos.quantity * price
       }, 0)
 
-      const nextHoldings = buildHoldings(positions, executions, priceMap, totalMarketValue)
-      const nextStats = buildStats(nextHoldings, executions, botsResponse, strategies, performanceStats)
-      const nextActivity = buildRecentActivity(executions)
+      const nextHoldings = buildHoldings(positions, executionsData, priceMap, totalMarketValue)
+      const nextStats = buildStats(nextHoldings, executionsData, botsResponse, strategies, performanceStats)
+      const nextActivity = buildRecentActivity(executionsData)
 
+      // Update shared state
+      sharedData = {
+        holdings: nextHoldings,
+        stats: nextStats,
+        strategies,
+        performanceStats,
+        recentActivity: nextActivity,
+        executions: executionsData,
+        priceMap,
+        loading: false,
+        error: null,
+        lastUpdate: Date.now()
+      }
+
+      // Update local state
       setHoldings(nextHoldings)
       setStats(nextStats)
       setRecentActivity(nextActivity)
+      setExecutions(executionsData)
+      setStrategies(strategies)
+      setPerformanceStats(performanceStats)
+      setPriceMap(priceMap)
     } catch (err) {
+      sharedData = { ...sharedData, loading: false, error: err.message }
       setError(err.message)
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    // If shared data is fresh (within 5 seconds), use it instead of refetching
+    const now = Date.now()
+    if (sharedData.lastUpdate > 0 && now - sharedData.lastUpdate < 5000) {
+      setHoldings(sharedData.holdings)
+      setStats(sharedData.stats)
+      setStrategies(sharedData.strategies)
+      setPerformanceStats(sharedData.performanceStats)
+      setRecentActivity(sharedData.recentActivity)
+      setExecutions(sharedData.executions)
+      setPriceMap(sharedData.priceMap)
+      setLoading(sharedData.loading)
+      setError(sharedData.error)
+    } else {
+      load()
+    }
+  }, [load])
 
-  // Background refresh every 60 s so the portfolio stays reasonably current
-  // without requiring a page reload.
-  usePolling(load, 60000)
+  // Only start polling for the first instance of the hook
+  useEffect(() => {
+    listenerCount++
+    if (listenerCount === 1 && !pollingIntervalId) {
+      pollingIntervalId = setInterval(() => {
+        load()
+      }, 60000)
+    }
 
-  return { holdings, stats, recentActivity, loading, error, refetch: load }
+    return () => {
+      listenerCount--
+      if (listenerCount === 0 && pollingIntervalId) {
+        clearInterval(pollingIntervalId)
+        pollingIntervalId = null
+      }
+    }
+  }, [load])
+
+  return { stats, loading, error, executions, performanceStats, holdings, strategies, recentActivity, refetch: load, priceMap }
 }

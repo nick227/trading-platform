@@ -17,10 +17,27 @@ async function apiFetch(path, options = {}) {
 
 // ── Session ──────────────────────────────────────────────────────────────────
 
+// In-memory cache to prevent duplicate auth calls during React StrictMode double-render
+let cachedUser = null
+let cachedUserExpiry = 0
+const USER_CACHE_TTL_MS = 15_000
+
+let cachedBrokerStatus = null
+let cachedBrokerStatusExpiry = 0
+const BROKER_STATUS_CACHE_TTL_MS = 15_000
+
 /** Returns the current user from the server cookie, or null if not logged in. */
 export async function getSessionUser() {
+  const now = Date.now()
+  if (cachedUser && now < cachedUserExpiry) {
+    return cachedUser
+  }
+
   try {
-    return await apiFetch('/auth/me')
+    const user = await apiFetch('/auth/me')
+    cachedUser = user
+    cachedUserExpiry = now + USER_CACHE_TTL_MS
+    return user
   } catch {
     return null
   }
@@ -43,20 +60,38 @@ export async function registerWithCredentials(email, password, fullName) {
 }
 
 export async function logoutFromServer() {
-  return apiFetch('/auth/logout', { method: 'POST' })
+  const result = await apiFetch('/auth/logout', { method: 'POST' })
+  // Invalidate caches on logout
+  cachedUser = null
+  cachedUserExpiry = 0
+  cachedBrokerStatus = null
+  cachedBrokerStatusExpiry = 0
+  return result
 }
 
 // ── Broker credentials ───────────────────────────────────────────────────────
 
 export async function saveBrokerCredentials(apiKey, apiSecret, paper = true) {
-  return apiFetch('/account/broker-credentials', {
+  const result = await apiFetch('/account/broker-credentials', {
     method: 'POST',
     body: JSON.stringify({ apiKey, apiSecret, paper })
   })
+  // Invalidate broker status cache after saving
+  cachedBrokerStatus = null
+  cachedBrokerStatusExpiry = 0
+  return result
 }
 
 export async function getBrokerStatus() {
-  return apiFetch('/account/broker-credentials')
+  const now = Date.now()
+  if (cachedBrokerStatus && now < cachedBrokerStatusExpiry) {
+    return cachedBrokerStatus
+  }
+
+  const status = await apiFetch('/account/broker-credentials')
+  cachedBrokerStatus = status
+  cachedBrokerStatusExpiry = now + BROKER_STATUS_CACHE_TTL_MS
+  return status
 }
 
 // ── Profile updates ──────────────────────────────────────────────────────────

@@ -1,28 +1,58 @@
 import { useState, useEffect, useCallback } from 'react'
 import alphaEngineService from '../api/services/alphaEngineService.js'
 
+// Shared state to prevent multiple polling intervals
+let sharedHealth = { status: 'unknown' }
+let healthListenerCount = 0
+let healthIntervalId = null
+
+let sharedRankings = { rankings: [], total: 0 }
+let sharedMovers = { rankings: [], total: 0 }
+let rankingsListenerCount = 0
+let rankingsIntervalId = null
+
+let sharedSignals = []
+let signalsListenerCount = 0
+let signalsIntervalId = null
+
+let sharedDashboard = null
+let dashboardListenerCount = 0
+let dashboardIntervalId = null
+
 export function useAlphaEngineHealth() {
-  const [health, setHealth] = useState({ status: 'unknown' })
-  const [loading, setLoading] = useState(true)
+  const [health, setHealth] = useState(() => sharedHealth)
+  const [loading, setLoading] = useState(() => healthListenerCount === 0)
   const [error, setError] = useState(null)
 
   const checkHealth = useCallback(async () => {
     try {
       const result = await alphaEngineService.checkHealth()
+      sharedHealth = result
       setHealth(result)
       setError(null)
     } catch (err) {
       setError(err.message)
-      setHealth({ status: 'error', error: err.message })
+      sharedHealth = { status: 'error', error: err.message }
+      setHealth(sharedHealth)
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    checkHealth()
-    const interval = setInterval(checkHealth, 30000) // Check every 30 seconds
-    return () => clearInterval(interval)
+    healthListenerCount++
+    if (healthListenerCount === 1 && !healthIntervalId) {
+      checkHealth()
+      healthIntervalId = setInterval(checkHealth, 30000)
+    }
+
+    return () => {
+      healthListenerCount--
+      if (healthListenerCount === 0 && healthIntervalId) {
+        clearInterval(healthIntervalId)
+        healthIntervalId = null
+      }
+    }
   }, [checkHealth])
 
   return { health, loading, error, refetch: checkHealth }
@@ -30,9 +60,9 @@ export function useAlphaEngineHealth() {
 
 export function useAlphaRankings(options = {}) {
   const { limit = 20, refreshInterval = 60000 } = options
-  const [rankings, setRankings] = useState({ rankings: [], total: 0 })
-  const [movers, setMovers] = useState({ rankings: [], total: 0 })
-  const [loading, setLoading] = useState(true)
+  const [rankings, setRankings] = useState(() => sharedRankings)
+  const [movers, setMovers] = useState(() => sharedMovers)
+  const [loading, setLoading] = useState(() => rankingsListenerCount === 0)
   const [error, setError] = useState(null)
 
   const fetchRankings = useCallback(async () => {
@@ -42,7 +72,9 @@ export function useAlphaRankings(options = {}) {
         alphaEngineService.getTopRankings(limit),
         alphaEngineService.getRankingMovers(limit)
       ])
-      
+
+      sharedRankings = topData
+      sharedMovers = moversData
       setRankings(topData)
       setMovers(moversData)
       setError(null)
@@ -55,10 +87,18 @@ export function useAlphaRankings(options = {}) {
   }, [limit])
 
   useEffect(() => {
-    fetchRankings()
-    if (refreshInterval > 0) {
-      const interval = setInterval(fetchRankings, refreshInterval)
-      return () => clearInterval(interval)
+    rankingsListenerCount++
+    if (rankingsListenerCount === 1 && !rankingsIntervalId && refreshInterval > 0) {
+      fetchRankings()
+      rankingsIntervalId = setInterval(fetchRankings, refreshInterval)
+    }
+
+    return () => {
+      rankingsListenerCount--
+      if (rankingsListenerCount === 0 && rankingsIntervalId) {
+        clearInterval(rankingsIntervalId)
+        rankingsIntervalId = null
+      }
     }
   }, [fetchRankings, refreshInterval])
 
@@ -67,14 +107,15 @@ export function useAlphaRankings(options = {}) {
 
 export function useAlphaSignals(options = {}) {
   const { refreshInterval = 30000 } = options
-  const [signals, setSignals] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [signals, setSignals] = useState(() => sharedSignals)
+  const [loading, setLoading] = useState(() => signalsListenerCount === 0)
   const [error, setError] = useState(null)
 
   const fetchSignals = useCallback(async () => {
     try {
       setLoading(true)
       const activeSignals = await alphaEngineService.getActiveSignals()
+      sharedSignals = activeSignals
       setSignals(activeSignals)
       setError(null)
     } catch (err) {
@@ -86,10 +127,18 @@ export function useAlphaSignals(options = {}) {
   }, [])
 
   useEffect(() => {
-    fetchSignals()
-    if (refreshInterval > 0) {
-      const interval = setInterval(fetchSignals, refreshInterval)
-      return () => clearInterval(interval)
+    signalsListenerCount++
+    if (signalsListenerCount === 1 && !signalsIntervalId && refreshInterval > 0) {
+      fetchSignals()
+      signalsIntervalId = setInterval(fetchSignals, refreshInterval)
+    }
+
+    return () => {
+      signalsListenerCount--
+      if (signalsListenerCount === 0 && signalsIntervalId) {
+        clearInterval(signalsIntervalId)
+        signalsIntervalId = null
+      }
     }
   }, [fetchSignals, refreshInterval])
 
@@ -171,14 +220,15 @@ export function useAlphaTicker(symbol) {
 
 export function useAlphaDashboard(options = {}) {
   const { refreshInterval = 60000 } = options
-  const [dashboard, setDashboard] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [dashboard, setDashboard] = useState(() => sharedDashboard)
+  const [loading, setLoading] = useState(() => dashboardListenerCount === 0)
   const [error, setError] = useState(null)
 
   const fetchDashboard = useCallback(async () => {
     try {
       setLoading(true)
       const data = await alphaEngineService.getDashboardData()
+      sharedDashboard = data
       setDashboard(data)
       setError(null)
     } catch (err) {
@@ -190,10 +240,18 @@ export function useAlphaDashboard(options = {}) {
   }, [])
 
   useEffect(() => {
-    fetchDashboard()
-    if (refreshInterval > 0) {
-      const interval = setInterval(fetchDashboard, refreshInterval)
-      return () => clearInterval(interval)
+    dashboardListenerCount++
+    if (dashboardListenerCount === 1 && !dashboardIntervalId && refreshInterval > 0) {
+      fetchDashboard()
+      dashboardIntervalId = setInterval(fetchDashboard, refreshInterval)
+    }
+
+    return () => {
+      dashboardListenerCount--
+      if (dashboardListenerCount === 0 && dashboardIntervalId) {
+        clearInterval(dashboardIntervalId)
+        dashboardIntervalId = null
+      }
     }
   }, [fetchDashboard, refreshInterval])
 

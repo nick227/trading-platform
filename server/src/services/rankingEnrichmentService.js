@@ -192,16 +192,20 @@ function rewriteInvalidators(row, peerCount) {
   }
 }
 
-async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
+async function enrichRankingsPayload(data, { limitConcurrency = 6, logger = null } = {}) {
   if (!data || typeof data !== 'object') return data
+  const t0 = Date.now()
+
   const rows = normalizeRankingsRows(data)
   if (rows.length === 0) return data
 
+  const t1 = Date.now()
   const uniqueTickers = Array.from(new Set(rows.map(getRowTicker).filter(Boolean)))
   const quoteByTicker = new Map()
   const historyByTicker = new Map()
 
   let cursor = 0
+  const t2 = Date.now()
   const workers = Array.from({ length: Math.min(limitConcurrency, uniqueTickers.length) }, async () => {
     while (cursor < uniqueTickers.length) {
       const i = cursor++
@@ -216,11 +220,14 @@ async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
   })
 
   await Promise.all(workers)
+  const t3 = Date.now()
+  if (logger) logger.info({ stage: 'quote_fetch', durationMs: t3 - t2, tickerCount: uniqueTickers.length }, 'enrich_timing')
 
   // Best-effort momentum enrichment: only when the surface is small (avoid large fan-out).
   const wantsHistory = rows.length <= 15
   if (wantsHistory) {
     let historyCursor = 0
+    const t4 = Date.now()
     const historyWorkers = Array.from({ length: Math.min(4, uniqueTickers.length) }, async () => {
       while (historyCursor < uniqueTickers.length) {
         const i = historyCursor++
@@ -234,8 +241,11 @@ async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
       }
     })
     await Promise.all(historyWorkers)
+    const t5 = Date.now()
+    if (logger) logger.info({ stage: 'history_fetch', durationMs: t5 - t4, tickerCount: uniqueTickers.length }, 'enrich_timing')
   }
 
+  const t6 = Date.now()
   const enrichedRows = rows.map((row) => {
     const tkr = getRowTicker(row)
     const quote = tkr ? quoteByTicker.get(tkr) : null
@@ -263,6 +273,10 @@ async function enrichRankingsPayload(data, { limitConcurrency = 6 } = {}) {
       }))
 
   const withInvalidators = withPeer.map((row) => rewriteInvalidators(row, peerCount))
+
+  const t7 = Date.now()
+  if (logger) logger.info({ stage: 'transform', durationMs: t7 - t6, rowCount: rows.length }, 'enrich_timing')
+  if (logger) logger.info({ stage: 'total_enrich', durationMs: t7 - t0 }, 'enrich_timing')
 
   return {
     ...data,

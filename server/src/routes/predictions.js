@@ -56,18 +56,10 @@ export default async function predictionsRoutes(app, opts) {
     let rankScore = null
     let rankingContext = null
     try {
-      const rankingsPayload = await engineClient.getTopRankings(100)
-      const rows = Array.isArray(rankingsPayload?.rankings) ? rankingsPayload.rankings : []
-      const row = rows.find((r) => String(r?.symbol ?? r?.ticker ?? '').toUpperCase() === ticker) ?? null
-      const scoreCandidate = row?.score ?? row?.subDrivers?.rankScoreRaw ?? row?.sub_drivers?.rankScoreRaw
-      const scoreNum = typeof scoreCandidate === 'number' ? scoreCandidate : Number(scoreCandidate)
-      rankScore = Number.isFinite(scoreNum) ? scoreNum : null
-
-      const rankContext = row?.rankContext ?? row?.rank_context ?? row?.subDrivers?.rankContext ?? null
-      const basis = Array.isArray(rankContext?.basis) ? rankContext.basis : null
-      const timing = Array.isArray(rankContext?.timing) ? rankContext.timing : null
-      const risks = Array.isArray(rankContext?.risks) ? rankContext.risks : null
-      rankingContext = [basis?.[0], timing?.[0], risks?.[0]].filter(Boolean)
+      // Use ticker-specific endpoint instead of fetching all 100 rankings
+      const tickerData = await engineClient.getTickerExplainability(ticker)
+      rankScore = tickerData?.score ?? null
+      rankingContext = tickerData?.factors ? tickerData.factors.slice(0, 3).map(f => f.description).filter(Boolean) : null
     } catch {
       // ignore
     }

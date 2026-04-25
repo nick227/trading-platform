@@ -297,12 +297,14 @@ export default function AssetsIndex() {
   const loadMarket = async () => {
     try {
       setMarket({ loading: true, error: null, data: null })
-      const [spy, qqq, iwm, regime] = await Promise.all([
-        alphaFetch('/api/quote/SPY'),
-        alphaFetch('/api/quote/QQQ'),
-        alphaFetch('/api/quote/IWM'),
+      const [quotesResponse, regime] = await Promise.all([
+        alphaFetch('/api/quotes?symbols=SPY,QQQ,IWM'),
         alphaFetch('/api/regime/SPY')
       ])
+      const quotesData = quotesResponse?.data || []
+      const spy = quotesData.find(q => q.symbol === 'SPY') || null
+      const qqq = quotesData.find(q => q.symbol === 'QQQ') || null
+      const iwm = quotesData.find(q => q.symbol === 'IWM') || null
       setMarket({ loading: false, error: null, data: { spy, qqq, iwm, regime } })
     } catch (error) {
       setMarket({ loading: false, error: error.message || 'Failed to load market context', data: null })
@@ -371,20 +373,23 @@ export default function AssetsIndex() {
       new Set([...POPULAR_TICKERS, ...SITE_PICKS].map((item) => String(item.ticker).toUpperCase().trim()).filter(Boolean))
     )
 
-    Promise.all(
-      tickersToLoad.map((tkr) =>
-        alphaFetch(`/api/quote/${encodeURIComponent(tkr)}`)
-          .then((quote) => [tkr, quote])
-          .catch(() => [tkr, null])
-      )
-    ).then((pairs) => {
-      if (cancelled) return
-      const next = {}
-      for (const [tkr, quote] of pairs) {
-        if (quote) next[tkr] = quote
-      }
-      setSpotQuotes(next)
-    })
+    // Use batch quotes endpoint instead of individual calls
+    alphaFetch(`/api/quotes?symbols=${tickersToLoad.join(',')}`)
+      .then((response) => {
+        if (cancelled) return
+        const quotesData = response?.data || []
+        const next = {}
+        for (const quote of quotesData) {
+          if (quote && !quote.error) {
+            next[quote.symbol] = quote
+          }
+        }
+        setSpotQuotes(next)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setSpotQuotes({})
+      })
 
     return () => {
       cancelled = true

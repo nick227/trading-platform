@@ -41,7 +41,7 @@ export default {
     return cachedFetch(
       'RECOMMENDATIONS',
       () => getCacheKey('RECOMMENDATIONS', `latest:${limit}:${mode}:${preference}`),
-      () => alphaFetch(`/api/recommendations/latest?limit=${limit}&mode=${mode}&preference=${preference}&tenant_id=default`),
+      () => alphaFetch(`/recommendations/latest?limit=${limit}&mode=${mode}&preference=${preference}&tenant_id=default`),
       RECOMMENDATION_CACHE_TTL
     )
   },
@@ -51,7 +51,7 @@ export default {
     return cachedFetch(
       'RECOMMENDATIONS',
       () => getCacheKey('RECOMMENDATIONS', `best:${mode}:${preference}`),
-      () => alphaFetch(`/api/recommendations/best?mode=${mode}&preference=${preference}&tenant_id=default`),
+      () => alphaFetch(`/recommendations/best?mode=${mode}&preference=${preference}&tenant_id=default`),
       RECOMMENDATION_CACHE_TTL
     )
   },
@@ -61,7 +61,7 @@ export default {
     return cachedFetch(
       'RECOMMENDATIONS',
       () => getCacheKey('RECOMMENDATIONS', `${symbol}:${mode}`),
-      () => alphaFetch(`/api/recommendations/${encodeURIComponent(symbol)}?mode=${mode}&tenant_id=default`),
+      () => alphaFetch(`/recommendations/${encodeURIComponent(symbol)}?mode=${mode}&tenant_id=default`),
       RECOMMENDATION_CACHE_TTL
     )
   },
@@ -69,12 +69,12 @@ export default {
   // Batch recommendations for multiple tickers
   async getBatchRecommendations(tickers, mode = 'balanced') {
     if (!tickers || tickers.length === 0) return {}
-    
+
     const tickerList = Array.isArray(tickers) ? tickers.join(',') : tickers
     return cachedFetch(
       'RECOMMENDATIONS',
       () => getCacheKey('RECOMMENDATIONS', `batch:${tickerList}:${mode}`),
-      () => alphaFetch(`/api/recommendations/batch?tickers=${encodeURIComponent(tickerList)}&mode=${mode}&tenant_id=default`),
+      () => alphaFetch(`/recommendations/batch?tickers=${encodeURIComponent(tickerList)}&mode=${mode}&tenant_id=default`),
       RECOMMENDATION_CACHE_TTL
     )
   },

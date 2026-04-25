@@ -518,7 +518,7 @@ export default {
       'CANDLES',
       () => getCacheKey(CACHE_NAMESPACES.MARKET, 'CANDLES', `${symbol}:${range}:${interval}`),
       async () => {
-        const response = await fetch(`/api/engine/api/candles/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&tenant_id=default`)
+        const response = await fetch(`/api/engine/candles/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&tenant_id=default`)
         if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         return response.json()
       },
@@ -531,7 +531,7 @@ export default {
       'STATS',
       () => cacheKeys.market.stats(symbol),
       async () => {
-        const response = await fetch(`/api/engine/api/stats/${encodeURIComponent(symbol)}?tenant_id=default`)
+        const response = await fetch(`/api/engine/stats/${encodeURIComponent(symbol)}?tenant_id=default`)
         if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         const data = await response.json()
         return transformStats(data)
@@ -545,7 +545,7 @@ export default {
       'COMPANY',
       () => cacheKeys.market.company(symbol),
       async () => {
-        const response = await fetch(`/api/engine/api/company/${encodeURIComponent(symbol)}?tenant_id=default`)
+        const response = await fetch(`/api/engine/company/${encodeURIComponent(symbol)}?tenant_id=default`)
         if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         const data = await response.json()
         return transformCompany(data)
@@ -606,7 +606,7 @@ export default {
     return cachedFetch(
       'RECOMMENDATIONS',
       () => getCacheKey(CACHE_NAMESPACES.ENGINE, 'RECOMMENDATIONS', `latest:${limit}:${mode}:${preference}`),
-      () => alphaFetch(`/api/recommendations/latest?limit=${limit}&mode=${mode}&preference=${preference}&tenant_id=default`),
+      () => alphaFetch(`/recommendations/latest?limit=${limit}&mode=${mode}&preference=${preference}&tenant_id=default`),
       CACHE_CONFIG.RECOMMENDATION
     )
   },
@@ -615,7 +615,7 @@ export default {
     return cachedFetch(
       'RECOMMENDATIONS',
       () => getCacheKey(CACHE_NAMESPACES.ENGINE, 'RECOMMENDATIONS', `best:${mode}:${preference}`),
-      () => alphaFetch(`/api/recommendations/best?mode=${mode}&preference=${preference}&tenant_id=default`),
+      () => alphaFetch(`/recommendations/best?mode=${mode}&preference=${preference}&tenant_id=default`),
       CACHE_CONFIG.RECOMMENDATION
     )
   },
@@ -624,19 +624,19 @@ export default {
     return cachedFetch(
       'RECOMMENDATIONS',
       () => cacheKeys.engine.recommendation(symbol),
-      () => alphaFetch(`/api/recommendations/${encodeURIComponent(symbol)}?mode=${mode}&tenant_id=default`),
+      () => alphaFetch(`/recommendations/${encodeURIComponent(symbol)}?mode=${mode}&tenant_id=default`),
       CACHE_CONFIG.RECOMMENDATION
     )
   },
 
   async getBatchRecommendations(tickers, mode = 'balanced') {
     if (!tickers || tickers.length === 0) return {}
-    
+
     const tickerList = Array.isArray(tickers) ? tickers.join(',') : tickers
     return cachedFetch(
       'RECOMMENDATIONS',
       () => getCacheKey(CACHE_NAMESPACES.ENGINE, 'RECOMMENDATIONS', `batch:${tickerList}:${mode}`),
-      () => alphaFetch(`/api/recommendations/batch?tickers=${encodeURIComponent(tickerList)}&mode=${mode}&tenant_id=default`),
+      () => alphaFetch(`/recommendations/batch?tickers=${encodeURIComponent(tickerList)}&mode=${mode}&tenant_id=default`),
       CACHE_CONFIG.RECOMMENDATION
     )
   },

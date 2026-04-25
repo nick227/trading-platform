@@ -5,30 +5,33 @@ import { useConditionalPolling } from './usePolling.js'
 
 const PENDING_STATUSES = new Set([STATUS.QUEUED, STATUS.PROCESSING])
 
-export function usePendingOrders({ enabled = true, pollIntervalMs = 5000 } = {}) {
-  const [executions, setExecutions] = useState([])
+export function usePendingOrders({ enabled = true, pollIntervalMs = 5000, executions: externalExecutions } = {}) {
+  const [internalExecutions, setInternalExecutions] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [cancelingIds, setCancelingIds] = useState(() => new Set())
+
+  // Use external executions if provided, otherwise use internal state
+  const executions = externalExecutions ?? internalExecutions
 
   const pendingOrders = useMemo(() => {
     return executions.filter(e => PENDING_STATUSES.has(e.status))
   }, [executions])
 
   const refetch = useCallback(async () => {
-    if (!enabled) return
+    if (!enabled || externalExecutions) return // Skip fetch if using external executions
     setLoading(true)
     setError(null)
     try {
       const data = await executionsService.getAll()
-      setExecutions(Array.isArray(data) ? data : [])
+      setInternalExecutions(Array.isArray(data) ? data : [])
     } catch (err) {
       setError(err?.message ?? 'Failed to load pending orders')
-      setExecutions([])
+      setInternalExecutions([])
     } finally {
       setLoading(false)
     }
-  }, [enabled])
+  }, [enabled, externalExecutions])
 
   const cancelOrder = useCallback(async (id) => {
     if (!id) return null
@@ -39,7 +42,9 @@ export function usePendingOrders({ enabled = true, pollIntervalMs = 5000 } = {})
     })
 
     // Optimistically remove from local list
-    setExecutions(prev => prev.filter(e => e.id !== id))
+    if (!externalExecutions) {
+      setInternalExecutions(prev => prev.filter(e => e.id !== id))
+    }
     try {
       const updated = await executionsService.cancel(id)
       return updated
@@ -52,9 +57,9 @@ export function usePendingOrders({ enabled = true, pollIntervalMs = 5000 } = {})
       // Ensure we converge to server truth (e.g. if cancel fails)
       refetch()
     }
-  }, [refetch])
+  }, [refetch, externalExecutions])
 
-  useConditionalPolling(refetch, pollIntervalMs, enabled)
+  useConditionalPolling(refetch, pollIntervalMs, enabled && !externalExecutions)
 
   const isCanceling = useCallback((id) => cancelingIds.has(id), [cancelingIds])
 

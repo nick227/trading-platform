@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import StrategyChart from '../components/StrategyChart'
 import Calendar from '../components/Calendar'
 import { useAlphaDashboard, useAlphaSignals, useCalendarEvents } from '../hooks/useAlphaEngine.js'
 import { useAuth } from '../app/AuthProvider.jsx'
@@ -45,6 +44,20 @@ function fmtAsOf(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
   return date.toLocaleString()
+}
+
+function fmtPercent(value, digits = 0) {
+  const num = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(num)) return '—'
+  const pct = num > 1 ? num : num * 100
+  return `${pct.toFixed(digits)}%`
+}
+
+function fmtDays(value) {
+  const num = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(num) || num <= 0) return '—'
+  if (num < 1) return `${Math.round(num * 24)}h`
+  return `${Math.round(num)}d`
 }
 
 function pickBackingLines(context) {
@@ -155,17 +168,6 @@ function transformSignalsToCalendarPredictions(signals) {
   }))
 }
 
-function transformStrategiesToPerformance(strategies) {
-  return strategies.map(strategy => ({
-    name: strategy.name || strategy.strategyType || 'Unknown Strategy',
-    edge: strategy.backtestScore ? `+${(strategy.backtestScore * 100).toFixed(1)}%` : '+0.0%',
-    winRate: strategy.liveScore ? `${Math.round(strategy.liveScore * 100)}%` : '0%',
-    trades: strategy.sampleSize || 0,
-    avgHold: `${((strategy.sampleSize || 1) * 0.1).toFixed(1)}d`, // Rough estimate
-    status: strategy.active ? 'ACTIVE' : (strategy.status?.toUpperCase() || 'INACTIVE')
-  })).slice(0, 5) // Top 5 strategies
-}
-
 // Helper functions to transform alpha-engine data
 function transformSignalsToLiveFormat(signals, priceMap) {
   return signals.map(signal => {
@@ -230,27 +232,69 @@ export default function Landing() {
   const [predictionsIndex, setPredictionsIndex] = useState({ loading: false, error: null, items: [] })
   const [predictionContexts, setPredictionContexts] = useState({ loading: false, error: null, items: [] })
 
+  // Portfolio performance data (includes strategies and executions)
+  const { stats: portfolioStats, strategies, loading: portfolioLoading, executions, priceMap } = usePortfolio()
+
   const { pendingOrders, cancelOrder, isCanceling } = usePendingOrders({
     enabled: Boolean(user),
-    pollIntervalMs: 10000
+    pollIntervalMs: 10000,
+    executions
   })
   
-  // Portfolio performance data
-  const { stats: portfolioStats, loading: portfolioLoading } = usePortfolio()
-  
-  // Strategy performance data
-  const [strategies, setStrategies] = useState([])
-  const [strategiesLoading, setStrategiesLoading] = useState(true)
-  
-  // Price data for calculations
-  const [priceMap, setPriceMap] = useState(null)
-  
-  // Alpha Engine data
+  // Alpha Engine data - defer signals to reduce startup load
   const { dashboard, loading: dashboardLoading, error: dashboardError } = useAlphaDashboard({ refreshInterval: 0 })
-  const { signals, loading: signalsLoading } = useAlphaSignals({ refreshInterval: 30000 })
-  
-  // Calendar events
-  const { events: calendarEvents, summary: calendarSummary, loading: calendarLoading } = useCalendarEvents(null, 50, 'uniform', 12)
+  const [signals, setSignals] = useState([])
+  const [signalsLoading, setSignalsLoading] = useState(false)
+
+  // Load signals after initial render to reduce startup requests
+  useEffect(() => {
+    const loadSignals = async () => {
+      setSignalsLoading(true)
+      try {
+        const data = await get('/engine/signals/active')
+        setSignals(Array.isArray(data) ? data : [])
+      } catch (err) {
+        console.error('Failed to load signals:', err)
+      } finally {
+        setSignalsLoading(false)
+      }
+    }
+    // Defer by 1 second to prioritize critical data
+    const timer = setTimeout(loadSignals, 1000)
+    return () => clearTimeout(timer)
+  }, [])
+
+  // Calendar events - defer to reduce startup load
+  const [calendarEvents, setCalendarEvents] = useState([])
+  const [calendarSummary, setCalendarSummary] = useState(null)
+  const [calendarLoading, setCalendarLoading] = useState(false)
+
+  useEffect(() => {
+    const loadCalendar = async () => {
+      setCalendarLoading(true)
+      try {
+        const data = await get('/engine/calendar?limit=50&distribution=uniform&min_days=12')
+        setCalendarEvents(data.events || [])
+        setCalendarSummary({
+          eventCount: data.eventCount || 0,
+          minimumExpected: data.minimumExpected || 10,
+          meetsMinimum: data.meetsMinimum || false,
+          countsByType: data.countsByType || {},
+          distinctDays: data.distinctDays || 0,
+          minimumDaysTarget: data.minimumDaysTarget || 12,
+          meetsDayTarget: data.meetsDayTarget || false,
+          distribution: data.distribution || 'uniform'
+        })
+      } catch (err) {
+        console.error('Failed to load calendar:', err)
+      } finally {
+        setCalendarLoading(false)
+      }
+    }
+    // Defer by 1.5 seconds to prioritize critical data
+    const timer = setTimeout(loadCalendar, 1500)
+    return () => clearTimeout(timer)
+  }, [])
 
   const predictionIdsToLoad = useMemo(() => {
     const list = Array.isArray(predictionsIndex.items) ? [...predictionsIndex.items] : []
@@ -272,23 +316,29 @@ export default function Landing() {
     return ids
   }, [predictionsIndex.items])
 
+  // Defer predictions to reduce startup load
   useEffect(() => {
     let cancelled = false
     setPredictionsIndex({ loading: true, error: null, items: [] })
 
-    get('/predictions')
-      .then((rows) => {
-        if (cancelled) return
-        const items = Array.isArray(rows) ? rows : []
-        setPredictionsIndex({ loading: false, error: null, items })
-      })
-      .catch((error) => {
-        if (cancelled) return
-        setPredictionsIndex({ loading: false, error: error?.message || 'Failed to load predictions', items: [] })
-      })
+    const loadPredictions = async () => {
+      get('/predictions')
+        .then((rows) => {
+          if (cancelled) return
+          const items = Array.isArray(rows) ? rows : []
+          setPredictionsIndex({ loading: false, error: null, items })
+        })
+        .catch((error) => {
+          if (cancelled) return
+          setPredictionsIndex({ loading: false, error: error?.message || 'Failed to load predictions', items: [] })
+        })
+    }
 
+    // Defer by 2 seconds to prioritize critical data
+    const timer = setTimeout(loadPredictions, 2000)
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
   }, [])
 
@@ -334,36 +384,68 @@ export default function Landing() {
       cancelled = true
     }
   }, [predictionIdsToLoad.join('|')])
-  
-  // Load strategies and price data
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Load strategies
-        const strategiesData = await get('/strategies')
-        setStrategies(strategiesData || [])
-      } catch (error) {
-        console.error('Failed to load strategies:', error)
-        setStrategies([])
-      } finally {
-        setStrategiesLoading(false)
-      }
-      
-      // Load prices
-      pricesService.getPriceMap().then(setPriceMap).catch(console.error)
-    }
-    
-    loadData()
-  }, [])
-  
+
   // Transform data for UI components
-  const strategyPerformance = useMemo(() => transformStrategiesToPerformance(strategies), [strategies])
   const liveSignals = useMemo(() => transformSignalsToLiveFormat(signals || [], priceMap), [signals, priceMap])
   const engineRankings = useMemo(() => transformRankingsForTable(dashboard?.topRankings?.rankings || []), [dashboard?.topRankings?.rankings])
   const featuredAssets = useMemo(() => transformRankingsToFeaturedAssets(dashboard?.topRankings?.rankings || [], priceMap), [dashboard?.topRankings?.rankings, priceMap])
   const calendarPredictions = useMemo(() => transformCalendarEventsToPredictions(calendarEvents || []), [calendarEvents])
 
   const topRankings = dashboard?.topRankings || null
+
+  const strategyPerformance = useMemo(() => {
+    const executionsList = Array.isArray(executions) ? executions : []
+    const strategyList = Array.isArray(strategies) ? strategies : []
+
+    const counts = new Map()
+    for (const exec of executionsList) {
+      const strategyId = exec?.strategyId ?? exec?.strategy_id ?? null
+      if (!strategyId) continue
+      const status = String(exec?.status ?? '').toLowerCase()
+      if (status && status !== 'filled' && status !== 'partially_filled') continue
+      counts.set(strategyId, (counts.get(strategyId) ?? 0) + 1)
+    }
+
+    const byId = new Map()
+    for (const strat of strategyList) {
+      const id = strat?.id ?? strat?.strategyId ?? strat?.strategy_id ?? null
+      if (!id) continue
+      byId.set(id, strat)
+    }
+
+    const ids = new Set([...counts.keys(), ...byId.keys()])
+    const rows = []
+    for (const id of ids) {
+      const strat = byId.get(id) ?? {}
+      const name =
+        strat?.name ??
+        strat?.title ??
+        (typeof id === 'string' && id.trim() ? `Strategy ${id.slice(0, 8)}` : 'Strategy')
+
+      const trades = counts.get(id) ?? 0
+      const winRateRaw = strat?.win_rate ?? strat?.winRate ?? strat?.winrate ?? null
+      const edgeRaw = strat?.edge ?? strat?.return ?? strat?.roi ?? null
+      const avgHoldRaw = strat?.avg_hold_days ?? strat?.avgHoldDays ?? strat?.avg_hold ?? strat?.avgHold ?? null
+
+      const statusRaw = strat?.status ?? strat?.state ?? null
+      const status = typeof statusRaw === 'string' && statusRaw.trim()
+        ? statusRaw.trim().toUpperCase()
+        : trades > 0 ? 'ACTIVE' : 'IDLE'
+
+      rows.push({
+        id: String(id),
+        name,
+        trades,
+        edge: typeof edgeRaw === 'string' && edgeRaw.trim() ? edgeRaw.trim() : fmtPercent(edgeRaw, 1),
+        winRate: typeof winRateRaw === 'string' && winRateRaw.trim() ? winRateRaw.trim() : fmtPercent(winRateRaw, 0),
+        avgHold: typeof avgHoldRaw === 'string' && avgHoldRaw.trim() ? avgHoldRaw.trim() : fmtDays(avgHoldRaw),
+        status
+      })
+    }
+
+    rows.sort((a, b) => (b.trades ?? 0) - (a.trades ?? 0))
+    return rows.slice(0, 12)
+  }, [executions, strategies])
 
   const predictionCards = useMemo(() => {
     const list = Array.isArray(predictionContexts.items) ? predictionContexts.items : []
@@ -710,20 +792,6 @@ export default function Landing() {
         )}
       </section>
 
-      {/* Strategy Performance Chart */}
-      <section style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)', marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '1rem' }}>
-          <div>
-            <strong>Strategy Performance Comparison</strong>
-            <div style={{ fontSize: '12px', color: '#7a7a7a', marginTop: '0.2rem' }}>
-              Alpha Engine Strategy vs DOW Jones Average (30-day performance)
-            </div>
-          </div>
-        </div>
-        <div style={{ marginTop: '1rem' }}>
-          <StrategyChart strategies={strategies} />
-        </div>
-      </section>
 
       {/* Featured Assets with Enhanced Details */}
       <section style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)', marginBottom: '1rem' }}>
@@ -809,8 +877,12 @@ export default function Landing() {
         <article style={{ background: 'white', borderRadius: 24, padding: '1rem', boxShadow: '0 8px 26px rgba(0,0,0,0.05)' }}>
           <strong>Strategy Performance</strong>
           <div style={{ marginTop: '0.8rem', maxHeight: '300px', overflowY: 'auto' }}>
-            {strategyPerformance.map((strategy) => (
-              <div key={strategy.name} style={{
+            {strategyPerformance.length === 0 ? (
+              <div className="muted" style={{ padding: '1rem', textAlign: 'center' }}>
+                No strategy stats available yet.
+              </div>
+            ) : strategyPerformance.map((strategy) => (
+              <div key={strategy.id} style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr auto auto auto auto',
                 gap: '0.5rem',

@@ -35,12 +35,22 @@ export default function ResearchPanel({ selectedStock }) {
     setLoading(true)
     setError(null)
 
-    alphaEngineService.getTopRankings(100)
+    // Use ticker-specific endpoint instead of fetching all 100 rankings
+    alphaEngineService.getTickerExplainability(symbol)
       .then((data) => {
         if (cancelled) return
-        const list = Array.isArray(data?.rankings) ? data.rankings : []
-        const match = list.find((r) => String(r?.symbol || '').toUpperCase() === symbol) || null
-        setRow(match)
+        // Transform explainability data to match expected row structure
+        setRow({
+          symbol,
+          rank: data?.rank ?? null,
+          peerCount: data?.peerCount ?? null,
+          rankContext: data?.factors ? {
+            basis: data?.factors?.map(f => f.description) || [],
+            timing: [],
+            risks: [],
+            invalidators: []
+          } : null
+        })
       })
       .catch((e) => {
         if (cancelled) return

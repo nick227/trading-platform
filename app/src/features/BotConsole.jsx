@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { usePortfolio } from '../hooks/usePortfolio.js'
 
 const statusBadge = (status) => {
   if (status === 'completed') return 'badge badge-positive badge-xs'
@@ -16,21 +17,19 @@ const actionAlert = (text) => {
 
 export default function BotConsole() {
   const navigate = useNavigate()
+  const { performanceStats } = usePortfolio()
   const [isRunning, setIsRunning] = useState(false)
   const [currentSignal, setCurrentSignal] = useState(null)
   const [lastAction, setLastAction] = useState(null)
   const [botRuns, setBotRuns] = useState([])
-  const [performance, setPerformance] = useState(null)
 
   const refreshData = async () => {
     try {
-      const [runsRes, perfRes, signalRes] = await Promise.all([
+      const [runsRes, signalRes] = await Promise.all([
         fetch('/api/bot/runs'),
-        fetch('/api/performance/stats'),
         fetch('/api/bot/current-signal'),
       ])
       setBotRuns(await runsRes.json())
-      setPerformance(await perfRes.json())
       const signalBody = await signalRes.json()
       setCurrentSignal(signalBody.signal ?? null)
     } catch (error) {
@@ -88,10 +87,10 @@ export default function BotConsole() {
   }
 
   const summary = useMemo(() => {
-    if (!performance) return null
+    if (!performanceStats) return null
 
-    const winTone = performance.win_rate >= 50 ? 'text-positive' : 'text-negative'
-    const pnlTone = performance.total_pnl >= 0 ? 'text-positive' : 'text-negative'
+    const winTone = performanceStats.win_rate >= 50 ? 'text-positive' : 'text-negative'
+    const pnlTone = performanceStats.total_pnl >= 0 ? 'text-positive' : 'text-negative'
     const runBadge = isRunning ? 'badge badge-positive badge-xs' : 'badge badge-neutral badge-xs'
 
     return {
@@ -99,7 +98,7 @@ export default function BotConsole() {
       pnlTone,
       runBadge,
     }
-  }, [performance, isRunning])
+  }, [performanceStats, isRunning])
 
   return (
     <div className="l-page">
@@ -117,21 +116,21 @@ export default function BotConsole() {
             <article className="card card-pad-md">
               <div className="kpi">
                 <div className="kpi-label">Total Trades</div>
-                <div className="kpi-value">{performance.total_trades}</div>
+                <div className="kpi-value">{performanceStats.total_trades}</div>
               </div>
             </article>
 
             <article className="card card-pad-md">
               <div className="kpi">
                 <div className="kpi-label">Win Rate</div>
-                <div className={`kpi-value ${summary.winTone}`}>{performance.win_rate?.toFixed(1)}%</div>
+                <div className={`kpi-value ${summary.winTone}`}>{performanceStats.win_rate?.toFixed(1)}%</div>
               </div>
             </article>
 
             <article className="card card-pad-md">
               <div className="kpi">
                 <div className="kpi-label">Total P&amp;L</div>
-                <div className={`kpi-value ${summary.pnlTone}`}>${performance.total_pnl?.toFixed(2)}</div>
+                <div className={`kpi-value ${summary.pnlTone}`}>${performanceStats.total_pnl?.toFixed(2)}</div>
               </div>
             </article>
 

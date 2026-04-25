@@ -35,7 +35,7 @@ const healthState = {
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
 async function main() {
-  log.info({ workerId: WORKER_ID, env: process.env.NODE_ENV ?? 'production' }, 'worker_start')
+  log.info({ workerId: WORKER_ID, env: process.env.NODE_ENV ?? 'development' }, 'worker_start')
 
   // Wire the inflight map from the bot engine into the order worker
   // so the worker can clear it when an order reaches a terminal state
