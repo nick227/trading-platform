@@ -259,10 +259,6 @@ export async function executeRuleBasedStrategy(bot, tick, context) {
   return determineSignal(results)
 }
 
-// Execute predefined strategy-based algorithm
-// TODO: data-fetching helpers (getHistoricalData, getOptionsFlowData, getSentimentData) are
-// stubs returning empty/zero values. Until real implementations are wired up, all strategy-based
-// bots will produce 'hold' signals and should not be enabled in production.
 export async function executeStrategyBasedAlgorithm(bot, tick, context) {
   throw new Error(
     `Strategy-based algorithms are not yet implemented. ` +

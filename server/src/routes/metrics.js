@@ -62,7 +62,7 @@ export default async function metricsRoutes(app, opts) {
   // GET /api/metrics/portfolio/summary
   app.get('/portfolio/summary', async (request, reply) => {
     try {
-      const userId = STUB_USER_ID // TODO: Replace with actual auth
+      const userId = STUB_USER_ID
       console.log('[metrics] Portfolio summary requested for userId:', userId)
 
       // Get user's TradeMetricFacts for portfolio KPIs (canonical source)
@@ -118,8 +118,8 @@ export default async function metricsRoutes(app, opts) {
         portfolioReturn,
         totalPnl,
         winRate,
-        sharpeRatio: null, // TODO: Calculate from daily returns
-        maxDrawdown: null, // TODO: Calculate from equity curve
+        sharpeRatio: null,
+        maxDrawdown: null,
         totalTrades,
         activeBots,
         lastUpdated: new Date()
@@ -136,7 +136,7 @@ export default async function metricsRoutes(app, opts) {
   // GET /api/metrics/portfolio/attribution
   app.get('/portfolio/attribution', async (request, reply) => {
     try {
-      const userId = STUB_USER_ID // TODO: Replace with actual auth
+      const userId = STUB_USER_ID
       const { period = '30d' } = request.query
 
       // Calculate period dates
@@ -214,8 +214,6 @@ function getQualityMessage(quality) {
 function calculateSimpleReturn(tradeFacts) {
   if (tradeFacts.length === 0) return 0
   
-  // Simple return: total PnL / initial capital assumption
-  // TODO: Implement proper time-weighted return
   const totalPnl = tradeFacts.reduce((sum, f) => sum + Number(f.pnl || 0), 0)
   const totalValue = tradeFacts.reduce((sum, f) => sum + Number(f.allocatedCapital || 0), 0)
   

@@ -1,5 +1,4 @@
 import { engineClient } from '../clients/engine.js'
-import { oldEngineClient } from '../clients/oldEngine.js'
 import { ID_PREFIXES, simpleHash } from '../utils/idGenerator.js'
 
 // NOTE: Prediction table exists but is not currently used.
@@ -162,30 +161,6 @@ export default {
         },
         degraded: true,
         degradedReason: 'PREDICTIONS_FROM_RANKINGS'
-      }
-    } catch {
-      // continue to legacy fallback
-    }
-
-    try {
-      const raw = await oldEngineClient.getPredictions(query)
-
-      // Dedupe predictions by ID to prevent duplicates
-      const seen = new Set()
-      const data = raw
-        .map(mapPrediction)
-        .filter((p) => {
-          if (seen.has(p.id)) return false
-          seen.add(p.id)
-          return true
-        })
-
-      return {
-        data,
-        pagination: {
-          hasMore: false,
-          nextCursor: null
-        }
       }
     } catch {
       return {

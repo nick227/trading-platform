@@ -570,7 +570,7 @@ export default function Landing() {
             ) : (
               liveSignals.map((signal, index) => (
                 <div
-                  key={`${signal.symbol}-${index}`}
+                  key={`signal-${signal.symbol}-${index}`}
                   style={{
                     borderBottom: '1px solid #eee',
                     paddingBottom: '0.8rem',
@@ -640,7 +640,7 @@ export default function Landing() {
               </div>
             ) : (
               engineRankings.map((item, index) => (
-                <div key={`${item.symbol}-${index}`} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.65rem', marginBottom: '0.65rem' }}>
+                <div key={`ranking-${item.symbol}-${index}`} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.65rem', marginBottom: '0.65rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
                       <strong style={{ fontSize: '14px' }}>{item.symbol}</strong>

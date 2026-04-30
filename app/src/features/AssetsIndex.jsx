@@ -135,6 +135,41 @@ function useDebounced(value, delayMs) {
   return debounced
 }
 
+function throttle(fn, delayMs) {
+  let last = 0
+  let trailing = null
+
+  const throttled = function(...args) {
+    const now = Date.now()
+
+    if (now - last >= delayMs) {
+      last = now
+      fn(...args)
+    } else {
+      clearTimeout(trailing)
+      trailing = setTimeout(() => {
+        last = Date.now()
+        fn(...args)
+      }, delayMs - (now - last))
+    }
+  }
+
+  throttled.cancel = () => {
+    clearTimeout(trailing)
+    trailing = null
+  }
+
+  return throttled
+}
+
+function normalizeSymbol(s) {
+  return String(s).toUpperCase().replace('.', '-')
+}
+
+function getSymbol(row) {
+  return normalizeSymbol(row?.ticker ?? row?.symbol ?? row?.tkr)
+}
+
 function VirtualRows({
   items,
   rowHeight = TABLE_ROW_H,
@@ -148,17 +183,30 @@ function VirtualRows({
   const scrollerRef = externalScrollerRef ?? internalScrollerRef
   const [scrollTop, setScrollTop] = useState(0)
 
+  const throttleRef = useRef(null)
+  if (!throttleRef.current) {
+    throttleRef.current = throttle((value) => setScrollTop(value), 16)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (throttleRef.current?.cancel) {
+        throttleRef.current.cancel()
+      }
+    }
+  }, [])
+
   const totalHeight = items.length * rowHeight
-  const effectiveScrollTop = Math.max(0, scrollTop - headerHeight)
+  const effectiveScrollTop = scrollTop
   const startIndex = Math.max(0, Math.floor(effectiveScrollTop / rowHeight) - 6)
   const endIndex = Math.min(items.length, Math.ceil((effectiveScrollTop + height) / rowHeight) + 6)
-  const slice = items.slice(startIndex, endIndex)
+  const slice = useMemo(() => items.slice(startIndex, endIndex), [items, startIndex, endIndex])
 
   return (
     <div
       ref={scrollerRef}
       style={{ height, overflow: 'auto', position: 'relative' }}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      onScroll={(e) => throttleRef.current(e.currentTarget.scrollTop)}
     >
       {renderHeader ? (
         <div style={{ position: 'sticky', top: 0, zIndex: 3 }}>
@@ -251,7 +299,16 @@ export default function AssetsIndex() {
 
   const [recent, setRecent] = useState(() => loadRecentSearches())
   const [query, setQuery] = useState('')
-  const debouncedQuery = useDebounced(query, 250)
+  const debouncedQuery = useDebounced(query, 120)
+
+  // Sync recent searches across tabs
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setRecent(loadRecentSearches())
+    }
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [])
 
   const [tableSort, setTableSort] = useState({ key: 'ticker', dir: 'asc' })
   const [tableIndex, setTableIndex] = useState(-1)
@@ -295,43 +352,43 @@ export default function AssetsIndex() {
 
   const loadMarket = async () => {
     try {
-      setMarket({ loading: true, error: null, data: null })
-      const [quotesResponse, regime] = await Promise.all([
-        alphaFetch('/api/quotes?symbols=SPY,QQQ,IWM'),
-        alphaFetch('/api/regime/SPY')
-      ])
-      const quotesData = quotesResponse?.data || []
-      const spy = quotesData.find(q => q.symbol === 'SPY') || null
-      const qqq = quotesData.find(q => q.symbol === 'QQQ') || null
-      const iwm = quotesData.find(q => q.symbol === 'IWM') || null
-      setMarket({ loading: false, error: null, data: { spy, qqq, iwm, regime } })
+      setMarket(prev => ({ ...prev, loading: true, error: null }))
+      const regime = await alphaFetch('/api/regime/SPY')
+      setMarket(prev => ({ ...prev, loading: false, data: { regime } }))
     } catch (error) {
-      setMarket({ loading: false, error: error.message || 'Failed to load market context', data: null })
+      setMarket(prev => ({ ...prev, loading: false, error: error.message || 'Failed to load market context' }))
     }
   }
 
-  const loadRankings = async () => {
+  const loadRankings = async (signal) => {
     try {
+      if (signal?.aborted) return
       setTopRankings({ loading: true, error: null, data: null })
       const data = await alphaFetch('/rankings/top?limit=25&maxFragility=0.40')
+      if (signal?.aborted) return
       setTopRankings({ loading: false, error: null, data })
     } catch (error) {
+      if (signal?.aborted) return
       setTopRankings({ loading: false, error: error.message || 'Failed to load ranked opportunities', data: null })
     }
   }
 
-  const loadMovers = async () => {
+  const loadMovers = async (signal) => {
     try {
+      if (signal?.aborted) return
       setMovers({ loading: true, error: null, data: null })
       const data = await alphaFetch('/rankings/movers?limit=25')
+      if (signal?.aborted) return
       setMovers({ loading: false, error: null, data })
     } catch (error) {
+      if (signal?.aborted) return
       setMovers({ loading: false, error: error.message || 'Failed to load ranking movers', data: null })
     }
   }
 
-  const loadRecs = async () => {
+  const loadRecs = async (signal) => {
     try {
+      if (signal?.aborted) return
       setRecs({ loading: true, error: null, data: {} })
       const caps = [2, 10, 100]
       const results = await Promise.all(
@@ -339,40 +396,48 @@ export default function AssetsIndex() {
           alphaFetch(`/recommendations/under/${cap}?mode=${DEFAULT_MODE}&limit=25`).then((data) => [cap, data])
         )
       )
+      if (signal?.aborted) return
       const next = {}
       for (const [cap, data] of results) next[cap] = data
       setRecs({ loading: false, error: null, data: next })
     } catch (error) {
+      if (signal?.aborted) return
       setRecs({ loading: false, error: error.message || 'Failed to load price-capped recommendations', data: {} })
     }
   }
 
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
+    const signal = controller.signal
 
     // Consolidate all startup fetches into single parallel batch
     const tickersToLoad = Array.from(
-      new Set([...POPULAR_TICKERS, ...SITE_PICKS].map((item) => String(item.ticker).toUpperCase().trim()).filter(Boolean))
+      new Set([
+        ...POPULAR_TICKERS, 
+        ...SITE_PICKS,
+        { ticker: 'SPY' },
+        { ticker: 'QQQ' },
+        { ticker: 'IWM' }
+      ].map((item) => String(item.ticker).toUpperCase().trim()).filter(Boolean))
     )
 
+    // Stage 1: Critical data (rankings, movers, quotes)
     Promise.allSettled([
-      loadMarket(),
-      loadRankings(),
-      loadMovers(),
-      loadRecs(),
-      alphaFetch(`/api/quotes?symbols=${tickersToLoad.join(',')}`)
+      loadRankings(signal),
+      loadMovers(signal),
+      alphaFetch(`/api/quotes?symbols=${tickersToLoad.join(',')}`, { signal })
     ])
       .then((results) => {
-        if (cancelled) return
+        if (signal.aborted) return
 
         // Handle quotes result
-        const quotesResult = results[4]
+        const quotesResult = results[2]
         if (quotesResult.status === 'fulfilled') {
           const quotesData = quotesResult.value?.data || []
           const next = {}
           for (const quote of quotesData) {
             if (quote && !quote.error) {
-              next[quote.symbol] = quote
+              next[normalizeSymbol(quote.symbol)] = quote
             }
           }
           setSpotQuotes(next)
@@ -381,14 +446,28 @@ export default function AssetsIndex() {
         }
       })
       .catch(() => {
-        if (cancelled) return
+        if (signal.aborted) return
         setSpotQuotes({})
       })
 
+    // Stage 2: Defer less critical data
+    const defer = window.requestIdleCallback || ((fn) => setTimeout(fn, 1))
+    defer(() => {
+      if (signal.aborted) return
+      loadMarket()
+    })
+
+    defer(() => {
+      if (signal.aborted) return
+      loadRecs(signal)
+    })
+
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [])
+
+  const searchRequestIdRef = useRef(0)
 
   useEffect(() => {
     const q = String(debouncedQuery || '').trim()
@@ -397,23 +476,19 @@ export default function AssetsIndex() {
       return
     }
 
-    let cancelled = false
+    const requestId = ++searchRequestIdRef.current
     setTickers((prev) => ({ ...prev, loading: true, error: null }))
 
     alphaFetch(`/api/tickers?q=${encodeURIComponent(q)}`)
       .then((data) => {
-        if (cancelled) return
+        if (requestId !== searchRequestIdRef.current) return
         const list = Array.isArray(data) ? data : Array.isArray(data?.tickers) ? data.tickers : []
         setTickers({ loading: false, error: null, data: list })
       })
       .catch((error) => {
-        if (cancelled) return
+        if (requestId !== searchRequestIdRef.current) return
         setTickers({ loading: false, error: error.message || 'Search failed', data: [] })
       })
-
-    return () => {
-      cancelled = true
-    }
   }, [debouncedQuery])
 
   const rankedRows = useMemo(() => {
@@ -426,8 +501,15 @@ export default function AssetsIndex() {
     return Array.isArray(rows) ? rows : []
   }, [movers.data])
 
+  const enrichedTickers = useMemo(() => {
+    return tickers.data.map(r => ({
+      ...r,
+      _price: deriveRowPrice(r)
+    }))
+  }, [tickers.data])
+
   const sortedTickers = useMemo(() => {
-    const list = tickers.data
+    const list = enrichedTickers
     if (!Array.isArray(list) || list.length === 0) return []
 
     const { key, dir } = tableSort
@@ -436,12 +518,12 @@ export default function AssetsIndex() {
     const getValue = (row) => {
       if (key === 'ticker') return String(row?.ticker ?? row?.symbol ?? row?.tkr ?? '')
       if (key === 'name') return String(row?.name ?? row?.companyName ?? row?.company_name ?? '')
-      if (key === 'price') return Number(row?.price ?? row?.last ?? NaN)
+      if (key === 'price') return Number(row._price ?? NaN)
       if (key === 'change') return Number(row?.dailyChangePct ?? row?.changePct ?? row?.change ?? NaN)
       return ''
     }
 
-    return [...list].sort((a, b) => {
+    return list.slice().sort((a, b) => {
       const av = getValue(a)
       const bv = getValue(b)
 
@@ -453,7 +535,7 @@ export default function AssetsIndex() {
 
       return sign * String(av).localeCompare(String(bv))
     })
-  }, [tickers.data, tableSort])
+  }, [enrichedTickers, tableSort])
 
   const toggleSort = (key) => {
     setTableSort((prev) => {
@@ -510,16 +592,19 @@ export default function AssetsIndex() {
             <article className="card card-pad-sm">
               <SectionHeader title="Popular Tickers" right="" />
               <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
-                {POPULAR_TICKERS.map(({ ticker, name }) => (
-                  <TickerRow3
-                    key={ticker}
-                    ticker={ticker}
-                    to={tickerHref(ticker)}
-                    onOpen={() => rememberTicker(ticker)}
-                    price={fmtPrice(spotQuotes?.[ticker]?.price ?? spotQuotes?.[ticker]?.last)}
-                    special={`${name} · Popular`}
-                  />
-                ))}
+                {POPULAR_TICKERS.map(({ ticker, name }) => {
+                  const sym = normalizeSymbol(ticker)
+                  return (
+                    <TickerRow3
+                      key={`popular-${ticker}`}
+                      ticker={ticker}
+                      to={tickerHref(ticker)}
+                      onOpen={() => rememberTicker(ticker)}
+                      price={fmtPrice(spotQuotes?.[sym]?.price ?? spotQuotes?.[sym]?.last)}
+                      special={`${name} · Popular`}
+                    />
+                  )
+                })}
               </div>
             </article>
 
@@ -538,12 +623,12 @@ export default function AssetsIndex() {
                 <div className="muted mt-2">No movers data available.</div>
               ) : (
                 <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
-                  {moverRows.slice(0, 8).map((r) => {
+                  {moverRows.slice(0, 8).map((r, idx) => {
                     const tkr = r.ticker ?? r.symbol
                     const currentRank = r.currentRank ?? r.current_rank ?? r.rank ?? null
                     const priorRank = r.priorRank ?? r.prior_rank ?? r.prevRank ?? r.previousRank ?? r.previous_rank ?? null
                     const rankChange = r.rankChange ?? r.rank_change ?? (currentRank !== null && priorRank !== null ? priorRank - currentRank : null)
-                    const price = r.price ?? r.last
+                    const price = r._price ?? deriveRowPrice(r)
                     const change = r.dailyChangePct ?? r.changePct ?? r.change
                     const changeLabel = change == null ? null : fmtPct(change)
                     const rankLabel =
@@ -553,7 +638,7 @@ export default function AssetsIndex() {
 
                     return (
                       <TickerRow3
-                        key={tkr}
+                        key={`mover-${tkr}-${idx}`}
                         ticker={tkr}
                         to={tickerHref(tkr)}
                         onOpen={() => rememberTicker(tkr)}
@@ -570,16 +655,19 @@ export default function AssetsIndex() {
             <article className="card card-pad-sm">
               <SectionHeader title="Site Picks" right="" />
               <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
-                {SITE_PICKS.map(({ ticker, name, reason }) => (
-                  <TickerRow3
-                    key={ticker}
-                    ticker={ticker}
-                    to={tickerHref(ticker)}
-                    onOpen={() => rememberTicker(ticker)}
-                    price={fmtPrice(spotQuotes?.[ticker]?.price ?? spotQuotes?.[ticker]?.last)}
-                    special={`${name} · ${reason}`}
-                  />
-                ))}
+                {SITE_PICKS.map(({ ticker, name, reason }) => {
+                  const sym = normalizeSymbol(ticker)
+                  return (
+                    <TickerRow3
+                      key={`sitepick-${ticker}`}
+                      ticker={ticker}
+                      to={tickerHref(ticker)}
+                      onOpen={() => rememberTicker(ticker)}
+                      price={fmtPrice(spotQuotes?.[sym]?.price ?? spotQuotes?.[sym]?.last)}
+                      special={`${name} · ${reason}`}
+                    />
+                  )
+                })}
               </div>
             </article>
           </section>
@@ -605,7 +693,16 @@ export default function AssetsIndex() {
                   placeholder="Ticker or company…"
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') openTicker(query)
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (sortedTickers.length > 0) {
+                        const firstResult = sortedTickers[0]
+                        const tkr = String(firstResult?.ticker ?? firstResult?.symbol ?? firstResult?.tkr ?? '').toUpperCase()
+                        openTicker(tkr)
+                      } else {
+                        openTicker(query)
+                      }
+                    }
                   }}
                   style={{
                     width: '100%',
@@ -624,7 +721,7 @@ export default function AssetsIndex() {
                   <span className="muted" style={{ fontSize: 12 }}>Recent:</span>
                   {recent.map((tkr) => (
                     <Link
-                      key={tkr}
+                      key={`recent-${tkr}`}
                       className="btn btn-xs btn-ghost pressable"
                       to={tickerHref(tkr)}
                       onClick={() => rememberTicker(tkr)}
@@ -650,13 +747,14 @@ export default function AssetsIndex() {
                   if (!sortedTickers.length) return
                   if (e.key === 'ArrowDown') {
                     e.preventDefault()
-                    setTableIndex((i) => Math.min(sortedTickers.length - 1, Math.max(0, i) + 1))
+                    setTableIndex((i) => i >= sortedTickers.length - 1 ? 0 : i + 1)
                   } else if (e.key === 'ArrowUp') {
                     e.preventDefault()
-                    setTableIndex((i) => Math.max(0, (i < 0 ? 0 : i) - 1))
+                    setTableIndex((i) => i < 0 ? sortedTickers.length - 1 : Math.max(0, i - 1))
                   } else if (e.key === 'Enter') {
                     e.preventDefault()
-                    const row = sortedTickers[Math.max(0, tableIndex)]
+                    if (tableIndex < 0) return
+                    const row = sortedTickers[tableIndex]
                     const tkr = String(row?.ticker ?? row?.symbol ?? row?.tkr ?? '').toUpperCase()
                     openTicker(tkr)
                   }
@@ -712,7 +810,7 @@ export default function AssetsIndex() {
                     renderRow={(row, idx) => {
                       const tkr = String(row?.ticker ?? row?.symbol ?? row?.tkr ?? '').toUpperCase()
                       const name = row?.name ?? row?.companyName ?? row?.company_name ?? '—'
-                      const price = row?.price ?? row?.last
+                      const price = row._price ?? deriveRowPrice(row)
                       const change = row?.dailyChangePct ?? row?.changePct ?? row?.change
                       const selected = idx === tableIndex
                       const changeClass = (change ?? 0) >= 0 ? 'text-positive' : 'text-negative'
@@ -759,21 +857,21 @@ export default function AssetsIndex() {
                 </div>
               ) : (
                 <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
-                  {[
-                    ['SPY', market.data?.spy],
-                    ['QQQ', market.data?.qqq],
-                    ['IWM', market.data?.iwm]
-                  ].map(([label, q]) => (
-                    <TickerRow3
-                      key={label}
-                      ticker={label}
-                      to={tickerHref(label)}
-                      onOpen={() => rememberTicker(label)}
-                      price={fmtPrice(q?.price ?? q?.last)}
-                      special={fmtPct(q?.dailyChangePct ?? q?.changePct ?? q?.change)}
-                      specialClassName="muted text-right text-nowrap"
-                    />
-                  ))}
+                  {['SPY', 'QQQ', 'IWM'].map((label) => {
+                    const sym = normalizeSymbol(label)
+                    const q = spotQuotes?.[sym]
+                    return (
+                      <TickerRow3
+                        key={label}
+                        ticker={label}
+                        to={tickerHref(label)}
+                        onOpen={() => rememberTicker(label)}
+                        price={fmtPrice(q?._price ?? deriveRowPrice(q))}
+                        special={fmtPct(q?.dailyChangePct ?? q?.changePct ?? q?.change)}
+                        specialClassName="muted text-right text-nowrap"
+                      />
+                    )
+                  })}
 
                   <div className="mt-2">
                     <div className="eyebrow mb-0">Regime</div>
@@ -805,17 +903,14 @@ export default function AssetsIndex() {
                     const conviction = r.conviction ?? r.confidence
                     const score = Number(r.score)
                     const conf = Number(conviction)
-                    const edge =
-                      (Number.isFinite(score) ? score : 0) *
-                      (Number.isFinite(conf) ? conf : 1)
                     return (
                       <TickerRow3
-                        key={tkr}
+                        key={`edge-${tkr}`}
                         ticker={tkr}
                         to={tickerHref(tkr)}
                         onOpen={() => rememberTicker(tkr)}
-                        price={fmtPrice(r.price)}
-                        special={`Edge ${fmtScore(edge)} · ${fmtPct(r.dailyChangePct)}`}
+                        price={fmtPrice(r._price ?? deriveRowPrice(r))}
+                        special={`Score ${fmtScore(score)} · Conf ${fmtPct(conf)} · ${fmtPct(r.dailyChangePct)}`}
                         specialClassName="muted text-right text-nowrap"
                       />
                     )
@@ -839,7 +934,7 @@ export default function AssetsIndex() {
                 <div className="muted mt-2">No movers.</div>
               ) : (
                 <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
-                  {moverRows.slice(0, 12).map((r) => {
+                  {moverRows.slice(0, 12).map((r, idx) => {
                     const tkr = r.ticker ?? r.symbol
                     const currentRank = r.currentRank ?? r.current_rank ?? r.rank ?? null
                     const priorRank = r.priorRank ?? r.prior_rank ?? r.prevRank ?? r.previousRank ?? r.previous_rank ?? null
@@ -847,11 +942,11 @@ export default function AssetsIndex() {
 
                     return (
                       <TickerRow3
-                        key={tkr}
+                        key={`rank-${tkr}-${idx}`}
                         ticker={tkr}
                         to={tickerHref(tkr)}
                         onOpen={() => rememberTicker(tkr)}
-                        price={fmtPrice(r.price)}
+                        price={fmtPrice(r._price ?? deriveRowPrice(r))}
                         special={`${currentRank !== null ? `#${currentRank}` : '—'}${
                           typeof rankChange === 'number' ? ` · ${rankChange > 0 ? '+' : ''}${rankChange}` : ''
                         } · ${fmtPct(r.dailyChangePct)}`}
@@ -897,10 +992,10 @@ export default function AssetsIndex() {
                             const tkr = r.ticker ?? r.symbol
                             const conf = normalizeConfidence(r.confidence)
                             const entry = Array.isArray(r.entryZone) ? `${r.entryZone[0]} – ${r.entryZone[1]}` : r.entryZone
-                            const price = deriveRowPrice(r)
+                            const price = r._price ?? deriveRowPrice(r)
                             return (
                               <TickerRow3
-                                key={tkr}
+                                key={`action-${tkr}`}
                                 ticker={tkr}
                                 to={tickerHref(tkr)}
                                 onOpen={() => rememberTicker(tkr)}

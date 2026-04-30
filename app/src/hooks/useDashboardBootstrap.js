@@ -15,9 +15,9 @@ export function useDashboardBootstrap(options = {}) {
   const fetchDashboard = useCallback(async () => {
     try {
       setLoading(true)
-      const response = await get('/api/engine/dashboard/bootstrap')
-      sharedData = response.data
-      setData(response.data)
+      const response = await get('/engine/dashboard/bootstrap')
+      sharedData = response
+      setData(response)
       setError(null)
     } catch (err) {
       setError(err.message)

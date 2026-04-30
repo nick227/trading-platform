@@ -1,6 +1,7 @@
 import { engineClient } from '../clients/engine.js'
 import { route } from './helpers/routeWrapper.js'
 import predictionsService from '../services/predictionsService.js'
+import prisma from '../loaders/prisma.js'
 
 export default async function marketRoutes(fastify, opts) {
   fastify.get('/calendar', route(async (request, reply) => {
@@ -110,10 +111,8 @@ export default async function marketRoutes(fastify, opts) {
   }))
 
   fastify.get('/dashboard/bootstrap', route(async (request, reply) => {
-    const { fastify: { prisma } } = opts
-
     // Fetch all dashboard data in parallel
-    const [engineData, bots, executions, priceMap, performanceStats, portfolioSummary] = await Promise.allSettled([
+    const [engineData, bots, executions, priceMap] = await Promise.allSettled([
       engineClient.getDashboardData(),
       prisma.bot.findMany({ where: { status: 'running' } }).catch(() => []),
       prisma.execution.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }).catch(() => []),
@@ -121,9 +120,7 @@ export default async function marketRoutes(fastify, opts) {
         const map = {}
         quotes.forEach(q => map[q.ticker] = q)
         return map
-      }),
-      prisma.performanceStats.findFirst().catch(() => null),
-      prisma.portfolioSummary.findFirst().catch(() => null)
+      })
     ])
 
     return {
@@ -133,8 +130,8 @@ export default async function marketRoutes(fastify, opts) {
         bots: bots.status === 'fulfilled' ? bots.value : [],
         executions: executions.status === 'fulfilled' ? executions.value : [],
         prices: priceMap.status === 'fulfilled' ? priceMap.value : {},
-        performanceStats: performanceStats.status === 'fulfilled' ? performanceStats.value : null,
-        portfolioSummary: portfolioSummary.status === 'fulfilled' ? portfolioSummary.value : null,
+        performanceStats: null,
+        portfolioSummary: null,
         lastUpdated: new Date().toISOString()
       }
     }

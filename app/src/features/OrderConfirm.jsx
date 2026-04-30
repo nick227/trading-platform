@@ -8,6 +8,8 @@ import { STATUS } from '../api/constants.js'
 import { isMarketClosed } from '../utils/market.js'
 import { calculateOrderPreview } from '../utils/orderPreview.js'
 
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
 export default function OrderConfirm() {
   const navigate  = useNavigate()
   const location  = useLocation()
@@ -21,8 +23,6 @@ export default function OrderConfirm() {
   const [latestPrice,  setLatestPrice]  = useState(null)
   const [priceLoading, setPriceLoading] = useState(true)
   const [priceError,   setPriceError]   = useState(null)
-  const [lastGoodQuote, setLastGoodQuote] = useState(null)
-  const [lastQuoteTime, setLastQuoteTime] = useState(null)
   
   // Use refs to avoid effect restarts when visibility/focus changes
   const visibilityRef = useRef(true)
@@ -70,6 +70,7 @@ export default function OrderConfirm() {
   const [submitAttempted,  setSubmitAttempted]  = useState(false)
   const [auditTimeline,   setAuditTimeline]     = useState([])
   const pollRef = useRef(null)
+  const executionStatusRef = useRef(null)
 
   // Load current ownership data for sell validation
   const [currentShares, setCurrentShares] = useState(0)
@@ -106,49 +107,64 @@ export default function OrderConfirm() {
     const asset = order?.asset || bot?.ticker
     if (!asset) return
 
-    const controller = new AbortController()
-    let timeoutId = null
-    
-    const fetchQuote = async () => {
-      try {
-        setPriceLoading(true)
-        setPriceError(null)
-        const response = await fetch(`/api/market/quote/${asset}`)
-        if (!response.ok) throw new Error('Quote fetch failed')
-        const quote = await response.json()
-        if (!controller.signal.aborted) {
+    let cancelled = false
+    let activeController = null
+
+    const runQuoteLoop = async () => {
+      let isFirstFetch = true
+      while (!cancelled) {
+        try {
+          if (isFirstFetch) setPriceLoading(true)
+          if (isFirstFetch) setPriceError(null)
+
+          if (activeController) activeController.abort()
+          activeController = new AbortController()
+          const response = await fetch(`/api/market/quote/${asset}`, {
+            signal: activeController.signal,
+          })
+          if (!response.ok) throw new Error('Quote fetch failed')
+
+          const quote = await response.json()
+          if (cancelled) break
+
           setLatestPrice(quote.price)
-          setLastGoodQuote(quote)
-          setLastQuoteTime(Date.now())
           setPriceError(null)
+        } catch {
+          if (!cancelled) {
+            setPriceError('Failed to fetch latest price')
+            console.warn('Live quote fetch failed')
+          }
+        } finally {
+          if (isFirstFetch && !cancelled) setPriceLoading(false)
         }
-      } catch (err) {
-        if (!controller.signal.aborted) {
-          setPriceError('Failed to fetch latest price')
-          console.warn('Live quote fetch failed:', err)
+
+        isFirstFetch = false
+        const interval = getPollingInterval()
+
+        if (!interval) {
+          await wait(1000)
+          if (cancelled) break
+          continue
         }
-      } finally {
-        if (!controller.signal.aborted) setPriceLoading(false)
-      }
-      
-      // Schedule next fetch based on visibility state
-      const interval = getPollingInterval()
-      if (interval && !controller.signal.aborted) {
-        timeoutId = setTimeout(fetchQuote, interval)
+
+        await wait(interval)
+        if (cancelled) break
       }
     }
 
-    // Initial fetch
-    fetchQuote()
+    runQuoteLoop()
 
     return () => {
-      controller.abort()
-      if (timeoutId) clearTimeout(timeoutId)
+      cancelled = true
+      activeController?.abort()
     }
   }, [order?.asset, bot?.ticker])
 
   // ── Clean up poll on unmount ─────────────────────────────────────────────────
-  useEffect(() => () => clearInterval(pollRef.current), [])
+  useEffect(() => () => {
+    if (pollRef.current) pollRef.current.cancelled = true
+    clearInterval(pollRef.current?.intervalId)
+  }, [])
 
   // ── Derived order details (memoised) ────────────────────────────────────────
   const orderDetails = useMemo(() => {
@@ -168,55 +184,103 @@ export default function OrderConfirm() {
     return {
       ...preview,
       priceChange:        latestPrice - order.price,
-      priceChangePercent: ((latestPrice - order.price) / order.price * 100).toFixed(2),
+      priceChangePercent: ((latestPrice - order.price) / order.price * 100),
     }
   }, [order, latestPrice, bankBalance, currentShares])
 
   // ── Order validation ─────────────────────────────────────────────────────────
   const validateOrder = () => {
-    if (bot) return true // Bots don't require order validation
-    if (!orderDetails) return false
-    if (!bankConnected) { setExecutionError('Bank connection required for trading'); return false }
+    if (bot) return null // Bots don't require order validation
+    if (!orderDetails) return 'Order details unavailable.'
+    if (!bankConnected) return 'Bank connection required for trading'
     if (order.type === 'BUY' && orderDetails.totalValue > bankBalance) {
-      setExecutionError('Insufficient buying power'); return false
+      return 'Insufficient buying power'
     }
     if (order.type === 'SELL' && orderDetails.quantity > currentShares) {
-      setExecutionError(`Insufficient shares. You own ${currentShares} shares but trying to sell ${orderDetails.quantity}`); return false
+      return `Insufficient shares. You own ${currentShares} shares but trying to sell ${orderDetails.quantity}`
     }
-    return true
+    return null
   }
 
   // ── Execution status polling with audit timeline ───────────────────────────
+  const setExecutionStatusState = (status, { trackTimeline = false } = {}) => {
+    const previousStatus = executionStatusRef.current
+    executionStatusRef.current = status
+    setExecutionStatus(status)
+
+    if (trackTimeline && previousStatus !== status) {
+      setAuditTimeline(prev => [...prev, {
+        timestamp: new Date().toISOString(),
+        status,
+        label: getStatusLabel(status),
+      }])
+    }
+
+    return previousStatus !== status
+  }
+
+  const stopStatusPolling = () => {
+    if (pollRef.current) {
+      pollRef.current.cancelled = true
+      clearInterval(pollRef.current.intervalId)
+    }
+    pollRef.current = null
+  }
+
+  const getStatusPollingInterval = () => {
+    if (!focusRef.current) return 4000
+    if (!visibilityRef.current) return 8000
+    return 2000
+  }
+
   const startStatusPolling = (id) => {
-    pollRef.current = setInterval(async () => {
-      const execution = await executionsService.getById(id)
-      if (!execution) return
-      
-      // Update audit timeline with status changes
-      if (execution.status !== executionStatus) {
-        const timestamp = new Date()
-        setAuditTimeline(prev => [...prev, {
-          timestamp: timestamp.toISOString(),
-          status: execution.status,
-          label: getStatusLabel(execution.status)
-        }])
-      }
-      
-      setExecutionStatus(execution.status)
-      const terminal = [STATUS.FILLED, STATUS.CANCELLED, STATUS.FAILED]
-      if (terminal.includes(execution.status)) {
-        clearInterval(pollRef.current)
-        setIsExecuting(false)
-        setExecutionDetails(execution)
-        if (execution.status === STATUS.FILLED) {
-          // Broadcast fill so Portfolio (and any other subscriber) invalidates its cache.
-          dispatch({ type: 'ORDER_FILLED', payload: Date.now() })
+    stopStatusPolling()
+
+    const pollingState = { cancelled: false, intervalId: null }
+    pollRef.current = pollingState
+
+    const runStatusLoop = async () => {
+      while (!pollingState.cancelled) {
+        try {
+          const execution = await executionsService.getById(id)
+          if (pollingState.cancelled) break
+          if (!execution) {
+            await wait(getStatusPollingInterval())
+            continue
+          }
+
+          setExecutionStatusState(execution.status, { trackTimeline: true })
+
+          const terminal = [STATUS.FILLED, STATUS.CANCELLED, STATUS.FAILED]
+          if (terminal.includes(execution.status)) {
+            stopStatusPolling()
+            setIsExecuting(false)
+            setSubmitAttempted(false)
+            setExecutionDetails(execution)
+            if (execution.status === STATUS.FILLED) {
+              // Broadcast fill so Portfolio (and any other subscriber) invalidates its cache.
+              dispatch({ type: 'ORDER_FILLED', payload: Date.now() })
+            }
+            if (execution.status === STATUS.FAILED) {
+              setExecutionError(execution.failReason || execution.cancelReason || 'Order failed after maximum retries.')
+            }
+            break
+          }
+        } catch {
+          if (!pollingState.cancelled) {
+            setExecutionError('Failed to refresh order status. Please try again.')
+            setIsExecuting(false)
+            setSubmitAttempted(false)
+            stopStatusPolling()
+          }
+          break
         }
-        if (execution.status === STATUS.FAILED) {
-          setExecutionError(execution.failReason || execution.cancelReason || 'Order failed after maximum retries.')
-        }
+
+        await wait(getStatusPollingInterval())
       }
-    }, 2000)
+    }
+
+    runStatusLoop()
   }
 
   // ── Status label helper ───────────────────────────────────────────────────────
@@ -268,9 +332,10 @@ export default function OrderConfirm() {
           label: 'Bot Created Successfully'
         }])
         
-        setExecutionStatus('created')
+        setExecutionStatusState('created')
         setExecutionDetails(createdBot)
         setIsExecuting(false)
+        setSubmitAttempted(false)
         
         setTimeout(() => {
           navigate('/bots')
@@ -284,12 +349,18 @@ export default function OrderConfirm() {
     }
 
     // Handle order execution
-    if (!validateOrder() || submitAttempted) return
+    const validationError = validateOrder()
+    if (validationError || submitAttempted) {
+      if (validationError) setExecutionError(validationError)
+      return
+    }
     
     setSubmitAttempted(true)
     setIsExecuting(true)
     setExecutionError(null)
+    executionStatusRef.current = null
     setExecutionStatus(null)
+    stopStatusPolling()
     
     // Add initial audit timeline entry
     const startTime = new Date()
@@ -312,7 +383,7 @@ export default function OrderConfirm() {
       // Add executing entry (not queued)
       setAuditTimeline(prev => [...prev, {
         timestamp: new Date().toISOString(),
-        status: STATUS.PROCESSING,
+        status: 'executing',
         label: 'Executing Order'
       }])
       
@@ -334,12 +405,12 @@ export default function OrderConfirm() {
       // Add submitted entry
       setAuditTimeline(prev => [...prev, {
         timestamp: new Date().toISOString(),
-        status: STATUS.PROCESSING,
+        status: 'submitted',
         label: 'Submitted to Broker'
       }])
       
       setExecutionId(execution.id)
-      setExecutionStatus(execution.status)
+      setExecutionStatusState(execution.status, { trackTimeline: false })
       dispatch({ type: 'SELECT_ORDER', payload: execution.id })
       startStatusPolling(execution.id)
     } catch {
@@ -360,22 +431,9 @@ export default function OrderConfirm() {
         status: 'cancelling',
         label: 'Cancel Requested'
       }])
-    } catch (err) {
+    } catch {
       setExecutionError('Failed to cancel order. Please try again.')
     }
-  }
-
-  const handleCreateBot = () => {
-    if (!order) return
-    navigate('/bots/create', {
-      state: {
-        defaultConfig: {
-          tickers:   [order.asset],
-          quantity:  orderDetails?.quantity,
-          direction: order.type.toLowerCase(),
-        },
-      },
-    })
   }
 
   const submitLabel =
@@ -396,7 +454,7 @@ export default function OrderConfirm() {
   const canCancel = !!(executionStatus
     && [STATUS.QUEUED, STATUS.PROCESSING].includes(executionStatus))
 
-  const submitDisabled = priceLoading || isExecuting || executionStatus === STATUS.FILLED || (order && !orderDetails) || submitAttempted
+  const submitDisabled = ((!order?.scheduledFor && priceLoading) || isExecuting || executionStatus === STATUS.FILLED || (order && !orderDetails) || submitAttempted)
 
   if (!order && !bot) {
     return (
@@ -480,7 +538,7 @@ export default function OrderConfirm() {
           <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Price Updated Since Order Creation</div>
           <div style={{ fontSize: '14px' }}>
             {order.asset} is now ${orderDetails.price.toFixed(2)}
-            ({orderDetails.priceChange > 0 ? '+' : ''}{orderDetails.priceChangePercent}%)
+            ({orderDetails.priceChange > 0 ? '+' : ''}{orderDetails.priceChangePercent.toFixed(2)}%)
           </div>
         </article>
       )}
@@ -638,6 +696,8 @@ export default function OrderConfirm() {
                 <div style={{
                   width: '8px', height: '8px', borderRadius: '50%',
                   background: entry.status === 'initiated' ? '#3b82f6' :
+                             entry.status === 'executing' ? '#8b5cf6' :
+                             entry.status === 'submitted' ? '#0ea5e9' :
                              entry.status === STATUS.QUEUED ? '#f59e0b' :
                              entry.status === STATUS.PROCESSING ? '#8b5cf6' :
                              entry.status === STATUS.FILLED ? '#10b981' :

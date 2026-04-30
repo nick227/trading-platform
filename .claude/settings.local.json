@@ -17,7 +17,8 @@
       "Bash(sed -n '244,248p' C:/wamp64/www/trading-platform/app/src/features/AlphaShowcase.jsx)",
       "Bash(sed -n '328,332p' C:/wamp64/www/trading-platform/app/src/features/AlphaShowcase.jsx)",
       "Bash(sed -i '214s/\\(stock, _i\\) =>/\\(stock, i\\) =>/' C:/wamp64/www/trading-platform/app/src/features/AlphaShowcase.jsx)",
-      "Bash(node_modules/.bin/eslint src *)"
+      "Bash(node_modules/.bin/eslint src *)",
+      "Bash(xargs grep *)"
     ]
   }
 }

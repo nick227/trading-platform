@@ -130,8 +130,6 @@ export default function Asset() {
 
   const [personalMetrics, setPersonalMetrics] = useState(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
-  const [templateMetrics, setTemplateMetrics] = useState(null)
-  const [templateLoading, setTemplateLoading] = useState(true)
 
   useEffect(() => {
     setWatchlist(loadWatchlist())
@@ -270,48 +268,6 @@ export default function Asset() {
         if (cancelled) return
         setMetricsLoading(false)
       })
-
-    return () => {
-      cancelled = true
-    }
-  }, [symbol])
-
-  // Fetch template performance metrics for this asset
-  useEffect(() => {
-    if (!symbol) return
-    let cancelled = false
-    setTemplateLoading(true)
-
-    // For now, we'll simulate template data since we don't have a specific API endpoint
-    // In a real implementation, this would call a template-specific metrics API
-    const fetchTemplateMetrics = async () => {
-      try {
-        // Simulate API call - replace with actual template metrics API when available
-        // const response = await fetch(`/api/metrics/templates/by-ticker/${symbol}`)
-        // const data = await response.json()
-        
-        // Mock data for demonstration
-        const mockTemplateData = {
-          topTemplates: [
-            { name: 'Momentum Buy', winRate: 85, totalTrades: 12, avgReturn: 3.2 },
-            { name: 'Golden Cross', winRate: 78, totalTrades: 9, avgReturn: 2.8 },
-            { name: 'RSI Extremes', winRate: 72, totalTrades: 18, avgReturn: 1.9 }
-          ]
-        }
-        
-        if (cancelled) return
-        setTemplateMetrics(mockTemplateData)
-      } catch (error) {
-        if (cancelled) return
-        console.error('Failed to fetch template metrics:', error)
-        setTemplateMetrics(null)
-      } finally {
-        if (cancelled) return
-        setTemplateLoading(false)
-      }
-    }
-
-    fetchTemplateMetrics()
 
     return () => {
       cancelled = true

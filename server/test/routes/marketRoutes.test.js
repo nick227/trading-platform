@@ -19,7 +19,18 @@ vi.mock('../../src/clients/engine.js', () => ({
   }
 }))
 
+vi.mock('../../src/loaders/prisma.js', () => ({
+  default: {
+    bot: { findMany: vi.fn() },
+    execution: { findMany: vi.fn() },
+    liveQuote: { findMany: vi.fn() },
+    performanceStats: { findFirst: vi.fn() },
+    portfolioSummary: { findFirst: vi.fn() }
+  }
+}))
+
 import { engineClient } from '../../src/clients/engine.js'
+import prisma from '../../src/loaders/prisma.js'
 import marketRoutes from '../../src/routes/marketRoutes.js'
 
 let app
@@ -203,6 +214,29 @@ describe('marketRoutes', () => {
         .expect(200)
 
       expect(response.body).toEqual({ success: true, data: dashboard })
+    })
+  })
+
+  describe('GET /dashboard/bootstrap', () => {
+    it('returns combined bootstrap payload', async () => {
+      engineClient.getDashboardData.mockResolvedValue({ rankings: [] })
+      prisma.bot.findMany.mockResolvedValue([{ id: 'bot-1', status: 'running' }])
+      prisma.execution.findMany.mockResolvedValue([{ id: 'exec-1' }])
+      prisma.liveQuote.findMany.mockResolvedValue([{ ticker: 'AAPL', last: 100 }])
+      prisma.performanceStats.findFirst.mockResolvedValue({ totalReturnPct: 12.5 })
+      prisma.portfolioSummary.findFirst.mockResolvedValue({ equity: 100000 })
+
+      const response = await request(app.server)
+        .get('/dashboard/bootstrap')
+        .expect(200)
+
+      expect(response.body.success).toBe(true)
+      expect(response.body.data.engine).toEqual({ rankings: [] })
+      expect(response.body.data.bots).toHaveLength(1)
+      expect(response.body.data.executions).toHaveLength(1)
+      expect(response.body.data.prices.AAPL).toMatchObject({ ticker: 'AAPL', last: 100 })
+      expect(response.body.data.performanceStats).toEqual({ totalReturnPct: 12.5 })
+      expect(response.body.data.portfolioSummary).toEqual({ equity: 100000 })
     })
   })
 

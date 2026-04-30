@@ -6,7 +6,7 @@ test.describe('Trade creation and portfolio update', () => {
     await page.goto('/')
     
     // Expect the page to load
-    await expect(page).toHaveTitle(/Lunastic|Trading/i)
+    await expect(page).toHaveTitle(/TradeLoom|Trading/i)
     
     // Wait for any redirect or initial load
     await page.waitForLoadState('networkidle')
