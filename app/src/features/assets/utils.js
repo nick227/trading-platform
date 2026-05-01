@@ -133,6 +133,20 @@ export function throttle(fn, delayMs) {
   return throttled
 }
 
+export function fmtPercent(value, digits = 0) {
+  const num = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(num)) return '—'
+  const pct = num > 1 ? num : num * 100
+  return `${pct.toFixed(digits)}%`
+}
+
+export function fmtDays(value) {
+  const num = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(num) || num <= 0) return '—'
+  if (num < 1) return `${Math.round(num * 24)}h`
+  return `${Math.round(num)}d`
+}
+
 export function normalizeSymbol(s) {
   return String(s).toUpperCase().replace('.', '-')
 }
