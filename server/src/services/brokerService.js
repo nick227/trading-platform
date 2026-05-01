@@ -1,18 +1,25 @@
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
+import { encrypt } from '../utils/encryption.js'
 
 export default {
   async createBrokerAccount({ userId, apiKey, apiSecret, paper = true }) {
+    const encryptedApiKey = encrypt(apiKey)
+    const encryptedApiSecret = encrypt(apiSecret)
+
     // Upsert — user can only have one broker account
     return prisma.brokerAccount.upsert({
       where: { userId },
-      update: { apiKey, apiSecret, paper },
+      update: { apiKey: encryptedApiKey, apiSecret: encryptedApiSecret, paper, status: 'active', lastVerifiedAt: new Date() },
       create: {
         id: generateId(ID_PREFIXES.BROKER),
         userId,
-        apiKey,
-        apiSecret,
-        paper
+        broker: 'alpaca',
+        apiKey: encryptedApiKey,
+        apiSecret: encryptedApiSecret,
+        paper,
+        status: 'active',
+        lastVerifiedAt: new Date()
       }
     })
   },
@@ -40,7 +47,7 @@ export default {
 function maskSecret(account) {
   return {
     ...account,
-    apiKey: account.apiKey.slice(0, 4) + '••••••••••••',
+    apiKey: '••••••••••••',
     apiSecret: '••••••••••••••••'
   }
 }

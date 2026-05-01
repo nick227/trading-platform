@@ -12,9 +12,18 @@ export default async function createApp() {
     logger: true
   })
 
-  // CORS setup for development
+  const isProduction = process.env.NODE_ENV === 'production'
+  const corsOrigins = (process.env.CORS_ORIGIN ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+
+  const origin = isProduction
+    ? (corsOrigins.length ? corsOrigins : false)
+    : true
+
   await app.register(cors, {
-    origin: true,
+    origin,
     credentials: true
   })
 

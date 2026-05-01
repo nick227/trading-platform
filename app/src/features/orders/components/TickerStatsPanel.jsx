@@ -1,12 +1,4 @@
 export default function TickerStatsPanel({ selectedStock, bootstrapData, loading }) {
-  if (!selectedStock) {
-    return (
-      <article className="card card-pad-md">
-        <div className="panel-empty">Select a stock to view statistics</div>
-      </article>
-    )
-  }
-
   const stats = bootstrapData?.stats
   const quote = bootstrapData?.quote
   const currentPrice = quote?.price ?? stats?.price ?? null
@@ -32,8 +24,15 @@ export default function TickerStatsPanel({ selectedStock, bootstrapData, loading
         <h3 className="panel-title">Key Statistics</h3>
       </div>
 
-      {loading ? (
-        <div className="panel-empty">Loading statistics…</div>
+      {!selectedStock ? (
+        <div className="panel-empty">Select a stock to view statistics</div>
+      ) : loading ? (
+        <div className="stack-md">
+          <div className="skeleton-block" style={{ height: 16, width: '40%' }} />
+          <div className="skeleton-block" style={{ height: 16, width: '50%', marginTop: 8 }} />
+          <div className="skeleton-block" style={{ height: 16, width: '50%', marginTop: 8 }} />
+          <div className="skeleton-block" style={{ height: 16, width: '50%', marginTop: 8 }} />
+        </div>
       ) : (
         <div className="stack-md">
           <div className="stack-sm">

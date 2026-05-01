@@ -15,7 +15,7 @@ vi.mock('../services/brokerService.js', () => ({
 }))
 
 vi.mock('../services/alpacaClockService.js', () => ({
-  resolveAlpacaCredentials: vi.fn().mockResolvedValue({
+  getUserAlpacaCredentialsOrThrow: vi.fn().mockResolvedValue({
     apiKey: 'TESTKEY',
     apiSecret: 'TESTSECRET',
     paper: true,

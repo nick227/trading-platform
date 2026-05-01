@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getBotById, updateBot, deleteBot, getBotEvents, getBotRules } from '../api/services/botCatalogService.js'
+import PageSkeleton from '../components/PageSkeleton'
 
 export default function BotDetails() {
   const navigate = useNavigate()
@@ -12,44 +13,36 @@ export default function BotDetails() {
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    const loadBotData = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        
-        const [botData, eventsData, rulesData] = await Promise.all([
-          getBotById(botId),
-          getBotEvents(botId),
-          getBotRules(botId)
-        ])
-        
-        setBot(botData)
-        setEvents(Array.isArray(eventsData) ? eventsData : [])
-        setRules(Array.isArray(rulesData) ? rulesData : [])
-      } catch (error) {
-        console.error('Failed to load bot data:', error)
-        setError('Failed to load bot details. Please try again.')
-      } finally {
-        setLoading(false)
-      }
-    }
-    
-    if (botId) {
-      loadBotData()
+  const loadBotData = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const [botData, eventsData, rulesData] = await Promise.all([
+        getBotById(botId),
+        getBotEvents(botId),
+        getBotRules(botId)
+      ])
+
+      setBot(botData)
+      setEvents(Array.isArray(eventsData) ? eventsData : [])
+      setRules(Array.isArray(rulesData) ? rulesData : [])
+    } catch (loadError) {
+      console.error('Failed to load bot data:', loadError)
+      setError('Failed to load bot details. Please try again.')
+    } finally {
+      setLoading(false)
     }
   }, [botId])
 
+  useEffect(() => {
+    if (botId) {
+      loadBotData()
+    }
+  }, [botId, loadBotData])
+
   if (loading) {
-    return (
-      <div className="l-page">
-        <div className="container">
-          <div className="centered p-8 text-muted">
-            Loading bot details...
-          </div>
-        </div>
-      </div>
-    )
+    return <PageSkeleton />
   }
 
   if (!bot) {
@@ -219,7 +212,7 @@ export default function BotDetails() {
               </div>
               
               {editing ? (
-                <BotEditForm bot={bot} onSave={handleSave} />
+                <BotEditForm bot={bot} onSave={handleSave} onCancel={() => setEditing(false)} />
               ) : (
                 <div className="stack-md">
                   <div className="kv">
@@ -357,7 +350,7 @@ export default function BotDetails() {
 }
 
 // Edit form component
-function BotEditForm({ bot, onSave }) {
+function BotEditForm({ bot, onSave, onCancel }) {
   const [formData, setFormData] = useState({
     name: bot.name,
     asset: bot.asset,
@@ -431,7 +424,7 @@ function BotEditForm({ bot, onSave }) {
           <button type="submit" className="btn btn-sm btn-primary">
             Save Changes
           </button>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => window.location.reload()}>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onCancel}>
             Cancel
           </button>
         </div>

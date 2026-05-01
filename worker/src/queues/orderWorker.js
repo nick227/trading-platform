@@ -103,6 +103,12 @@ async function processExecution(job) {
   try {
     const broker = await getBrokerClient(execution.userId)
     if (!broker) {
+      log.error({
+        executionId: execution.id,
+        userId: execution.userId,
+        botId: execution.botId ?? null,
+        reason: 'NO_BROKER'
+      }, 'missing_user_broker_credentials')
       await terminate(execution, 'cancelled', 'no_broker_account')
       return
     }

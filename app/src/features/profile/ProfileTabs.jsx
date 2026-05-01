@@ -1,16 +1,17 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 
-const tabLabels = ['Account', 'Broker', 'Activity', 'Bots']
+const tabLabels = ['Account', 'Broker']
 
-export default function ProfileTabs({ value }) {
+export default function ProfileTabs() {
   const navigate = useNavigate()
+  const location = useLocation()
 
   const tabToPath = {
     'Account': '/profile/account',
-    'Broker': '/profile/broker',
-    'Activity': '/profile/activity',
-    'Bots': '/profile/bots'
+    'Broker': '/profile/broker'
   }
+
+  const activeTab = tabLabels.find(label => location.pathname === tabToPath[label]) || 'Account'
 
   return (
     <div className="wrap">
@@ -18,7 +19,7 @@ export default function ProfileTabs({ value }) {
         <button
           key={label}
           type="button"
-          className={value === label ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
+          className={activeTab === label ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost'}
           onClick={() => navigate(tabToPath[label])}
         >
           {label}

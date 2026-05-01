@@ -7,6 +7,20 @@ export default async function strategiesRoutes(app, opts) {
     return reply.send(result)
   })
 
+  // GET /api/strategies/platform — all BotTemplates with aggregate subscriber + P&L stats
+  app.get('/platform', async (request, reply) => {
+    const { sort, order } = request.query
+    const strategies = await strategiesService.getPlatformStrategies({ sort, order })
+    return reply.send({ data: strategies })
+  })
+
+  // GET /api/strategies/:id/history — aggregate execution history for a template (no per-user data)
+  app.get('/:id/history', async (request, reply) => {
+    const { id } = request.params
+    const result = await strategiesService.getStrategyHistory(id, request.query)
+    return reply.send(result)
+  })
+
   // GET /api/strategies/:id
   app.get('/:id', async (request, reply) => {
     const { id } = request.params

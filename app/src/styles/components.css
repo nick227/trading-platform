@@ -7,6 +7,7 @@
   cursor: pointer;
   font-size: var(--text-md);
   font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
 
   transform: translateZ(0);
   transition:
@@ -70,7 +71,6 @@
   padding: var(--space-5);
   background: var(--color-surface);
   border-radius: var(--radius-main);
-  box-shadow: var(--elevation-card);
 
   transition: transform var(--dur-fast) var(--ease-premium);
 }

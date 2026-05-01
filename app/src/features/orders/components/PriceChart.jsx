@@ -135,6 +135,7 @@ export default function PriceChart({
   loading,
   compact = false,
   nextOpen,
+  availableRanges = RANGES,
 }) {
   const pricePanelRef = useRef(null)
   const plotRef = useRef(null)
@@ -152,8 +153,13 @@ export default function PriceChart({
 
   const safePriceHistory = Array.isArray(priceHistory) ? priceHistory : EMPTY_ARR
 
+  // Ensure chartRange is in availableRanges, fallback to first available
+  const effectiveRange = useMemo(() => {
+    return availableRanges.includes(chartRange) ? chartRange : availableRanges[0] || 'MAX'
+  }, [chartRange, availableRanges])
+
   // Memoised slices — avoids re-allocating arrays on every render.
-  const rangeDays = EXPECTED_DAYS[chartRange] ?? Infinity
+  const rangeDays = EXPECTED_DAYS[effectiveRange] ?? Infinity
   const chartBars = useMemo(() => {
     if (!safePriceHistory.length) return EMPTY_ARR
     if (!Number.isFinite(rangeDays) || rangeDays === Infinity) {
@@ -215,15 +221,15 @@ export default function PriceChart({
 
   const firstBar = chartBars.length > 0 ? chartBars[0] : null
   const lastBar = chartBars.length > 0 ? chartBars[chartBars.length - 1] : null
-  const startDateLabel = formatChartDate(firstBar?.ts, firstBar?.date, chartRange, hasIntraday)
-  const endDateLabel = formatChartDate(lastBar?.ts, lastBar?.date, chartRange, hasIntraday)
+  const startDateLabel = formatChartDate(firstBar?.ts, firstBar?.date, effectiveRange, hasIntraday)
+  const endDateLabel = formatChartDate(lastBar?.ts, lastBar?.date, effectiveRange, hasIntraday)
 
   const startTs = firstBar?.ts
   const endTs = lastBar?.ts
   const spanDays = (Number.isFinite(startTs) && Number.isFinite(endTs))
     ? (endTs - startTs) / (1000 * 60 * 60 * 24)
     : null
-  const expectedDays = EXPECTED_DAYS[chartRange] ?? null
+  const expectedDays = EXPECTED_DAYS[effectiveRange] ?? null
   const limitedForRange = Boolean(
     expectedDays &&
     expectedDays !== Infinity &&
@@ -292,11 +298,11 @@ export default function PriceChart({
         <div className="hstack">
           <select
             aria-label="Chart range"
-            value={chartRange}
+            value={effectiveRange}
             onChange={(e) => onRangeChange(e.target.value)}
             className="select-xs"
           >
-            {RANGES.map(range => (
+            {availableRanges.map(range => (
               <option key={range} value={range}>{range}</option>
             ))}
           </select>

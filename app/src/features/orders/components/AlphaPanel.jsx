@@ -5,14 +5,6 @@ function safeList(value) {
 export default function AlphaPanel({ explainability, loading, selectedStock, compact = false }) {
   const shellClass = `card ${compact ? 'card-pad-sm' : 'card-pad-md'}`
 
-  if (!selectedStock) {
-    return (
-      <article className={shellClass}>
-        <div className="panel-empty">Select a stock to view engine rationale</div>
-      </article>
-    )
-  }
-
   const alpha = explainability && typeof explainability === 'object' ? explainability : null
   const explanation = typeof alpha?.explanation === 'string' ? alpha.explanation : null
   const factors = safeList(alpha?.factors)
@@ -26,8 +18,14 @@ export default function AlphaPanel({ explainability, loading, selectedStock, com
         <h3 className="panel-title">Engine Rationale</h3>
       </div>
 
-      {loading ? (
-        <div className="panel-empty">Loading analysis...</div>
+      {!selectedStock ? (
+        <div className="panel-empty">Select a stock to view engine rationale</div>
+      ) : loading ? (
+        <div className="stack-md">
+          <div className="skeleton-block" style={{ height: 16, width: '90%' }} />
+          <div className="skeleton-block" style={{ height: 16, width: '70%', marginTop: 8 }} />
+          <div className="skeleton-block" style={{ height: 16, width: '80%', marginTop: 8 }} />
+        </div>
       ) : hasAny ? (
         <div className="stack-sm">
           {explanation ? (

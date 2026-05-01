@@ -54,6 +54,12 @@ export function AuthProvider({ children }) {
     return result
   }
 
+  const refreshBrokerStatus = async () => {
+    const status = await getBrokerStatus()
+    setBrokerStatus(status)
+    return status
+  }
+
   const resetPassword = async (currentPassword, nextPassword) => {
     return resetPasswordAPI(currentPassword, nextPassword)
   }
@@ -77,6 +83,7 @@ export function AuthProvider({ children }) {
         register,
         logout,
         saveAlpacaKeys,
+        refreshBrokerStatus,
         resetPassword,
         // kept for any components that still use the old shape
         alpacaApiKey: brokerStatus?.connected ? '••••••••' : '',

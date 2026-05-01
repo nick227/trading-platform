@@ -1,5 +1,5 @@
 import { authenticate } from '../middleware/authenticate.js'
-import { fetchAlpacaMarketClock, resolveAlpacaCredentials } from '../services/alpacaClockService.js'
+import { fetchAlpacaMarketClock, getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
 async function alpacaFetch(baseUrl, path, apiKey, apiSecret, options = {}) {
   const res = await fetch(`${baseUrl}${path}`, {
@@ -21,14 +21,13 @@ async function alpacaFetch(baseUrl, path, apiKey, apiSecret, options = {}) {
 
 async function resolveCredsOrReply(userId, reply) {
   try {
-    const creds = await resolveAlpacaCredentials(userId)
-    if (!creds) {
-      reply.code(503).send({ error: 'Alpaca credentials not configured' })
-      return null
-    }
-    return creds
+    return await getUserAlpacaCredentialsOrThrow(userId)
   } catch (err) {
     if (err?.code === 'LIVE_TRADING_DISABLED') {
+      reply.code(403).send({ error: err.message })
+      return null
+    }
+    if (err?.code === 'BROKER_NOT_CONFIGURED' || err?.code === 'BROKER_CREDENTIALS_INVALID') {
       reply.code(403).send({ error: err.message })
       return null
     }

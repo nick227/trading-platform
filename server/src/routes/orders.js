@@ -3,6 +3,8 @@
 
 import alphaEngineService from '../services/alphaEngineService.js'
 import executionsService from '../services/executionsService.js'
+import { authenticate } from '../middleware/authenticate.js'
+import { getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
 // Cache with TTL policies (in-memory). Capped at MAX_CACHE_ENTRIES to prevent
 // unbounded growth across many tickers and user IDs.
@@ -115,6 +117,21 @@ async function getUserOwnershipData(ticker, userId = 'default') {
 }
 
 export default async function ordersRoutes(app) {
+  app.addHook('preHandler', authenticate)
+  app.addHook('preHandler', async (request, reply) => {
+    try {
+      await getUserAlpacaCredentialsOrThrow(request.user.id)
+    } catch (error) {
+      if (error?.code === 'BROKER_NOT_CONFIGURED' || error?.code === 'BROKER_CREDENTIALS_INVALID') {
+        return reply.code(403).send({ error: error.message })
+      }
+      if (error?.code === 'LIVE_TRADING_DISABLED') {
+        return reply.code(403).send({ error: error.message })
+      }
+      throw error
+    }
+  })
+
   // GET /api/orders/bootstrap
   app.get('/bootstrap', async (request, reply) => {
     try {
@@ -128,7 +145,7 @@ export default async function ordersRoutes(app) {
       if (cachedBootstrap) return reply.send(cachedBootstrap)
 
       const requestId = Date.now() + Math.random()
-      const userId = request.user?.id ?? 'default'
+      const userId = request.user.id
 
       const [
         quote,
@@ -196,6 +213,9 @@ export default async function ordersRoutes(app) {
       setCachedData('bootstrap', ticker, bootstrapData, paramsKey)
       return reply.send(bootstrapData)
     } catch (error) {
+      if (error?.code === 'BROKER_NOT_CONFIGURED' || error?.code === 'BROKER_CREDENTIALS_INVALID') {
+        return reply.code(403).send({ error: error.message })
+      }
       request.log?.error?.(error)
       return reply.code(500).send({
         error: 'Failed to fetch bootstrap data',

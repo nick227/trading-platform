@@ -16,6 +16,10 @@ html, body, #root {
   min-height: 100%;
 }
 
+:root {
+  --nav-height: 84px;
+}
+
 body {
   margin: 0;
   font-family: Inter, system-ui, sans-serif;
@@ -42,7 +46,7 @@ button {
 }
 
 .nav {
-  min-height: 84px;
+  min-height: var(--nav-height);
   padding: var(--space-4) var(--space-5);
   display: flex;
   align-items: center;
@@ -57,17 +61,30 @@ button {
 
 .stage {
   flex: 1;
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: center;
   padding: var(--space-5);
-  min-height: calc(100vh - 84px);
+  min-height: calc(100vh - var(--nav-height));
+  position: relative;
 }
 
 .stage-inner {
-  width: min(100%, 1040px);
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   min-height: 540px;
-  display: grid;
-  place-items: center;
+  animation: stage-fade-in 120ms ease-out;
+  transition: opacity 120ms ease;
+}
+
+.stage-inner.loading {
+  opacity: 0.6;
+}
+
+.skeleton-row {
+  width: 100%;
+  height: 20px;
+  margin-bottom: var(--space-3);
 }
 
 .screen-shell {
@@ -220,6 +237,11 @@ button {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes stage-fade-in {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

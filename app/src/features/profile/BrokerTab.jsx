@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../app/AuthProvider.jsx'
 
 export default function BrokerTab() {
-  const { brokerStatus, saveAlpacaKeys } = useAuth()
+  const { brokerStatus, saveAlpacaKeys, refreshBrokerStatus } = useAuth()
 
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
@@ -40,11 +40,11 @@ export default function BrokerTab() {
   return (
     <div className="profile-pane">
       <div className="card profile-card">
-        <div className="profile-card-header">
+        <div className="profile-card-header flex row w-full">
           <h3 className="profile-card-title">Alpaca Broker</h3>
           <button
             className="btn btn-xs btn-ghost"
-            onClick={() => getBrokerStatus().then(setBrokerStatus).catch(() => {})}
+            onClick={() => refreshBrokerStatus().catch(() => {})}
             disabled={saving}
             title="Refresh status"
           >

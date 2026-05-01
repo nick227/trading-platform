@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 
-export default function SearchableDropdown({ stocks, selectedStock, onSelect, placeholder }) {
+export default function SearchableDropdown({ stocks, selectedStock, onSelect, placeholder, disabled = false }) {
   const [isOpen,       setIsOpen]       = useState(false)
   const [searchTerm,   setSearchTerm]   = useState('')
   const [displayValue, setDisplayValue] = useState('')
@@ -40,12 +40,14 @@ export default function SearchableDropdown({ stocks, selectedStock, onSelect, pl
         type="text"
         value={isOpen ? searchTerm : displayValue}
         onChange={e => { setSearchTerm(e.target.value); if (!isOpen) setIsOpen(true) }}
-        onFocus={() => setIsOpen(true)}
+        onFocus={() => !disabled && setIsOpen(true)}
         placeholder={placeholder}
         className="field-input"
+        disabled={disabled}
+        style={{ opacity: disabled ? 0.6 : 1 }}
       />
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="menu">
           {filteredStocks.map(stock => (
             <button

@@ -1,25 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../app/AuthProvider'
+import { prefetchByPath } from '../app/pagePrefetch'
 import Logo from './Logo'
 
 const routes = [
   { path: '/portfolio', label: 'Portfolio' },
-  { path: '/assets', label: 'Assets', prefix: '/assets' },
   { path: '/bots', label: 'Bots', prefix: '/bots' },
   { path: '/orders', label: 'Orders', prefix: '/orders' },
-  { path: '/profile', label: 'Profile' }
+  { path: '/profile', label: 'Profile', prefix: '/profile' }
 ]
 
 export default function Nav() {
   const { user } = useAuth()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [pendingActive, setPendingActive] = useState(null)
-
-  useEffect(() => {
-    setPendingActive(null)
-  }, [location.pathname])
 
   return (
     <nav className="nav">
@@ -44,9 +39,7 @@ export default function Nav() {
               ? location.pathname === route.path || location.pathname.startsWith(`${route.prefix}/`)
               : undefined
 
-            const isActive = pendingActive === route.path || (pendingActive === null && (
-              locationActive !== undefined ? locationActive : location.pathname === route.path
-            ))
+            const isActive = locationActive !== undefined ? locationActive : location.pathname === route.path
 
             return (
               <NavLink
@@ -55,9 +48,9 @@ export default function Nav() {
                 end={!route.prefix}
                 className={() => `nav-link ${isActive ? 'nav-link--active' : ''}`}
                 onClick={() => {
-                  setPendingActive(route.path)
                   setMobileOpen(false)
                 }}
+                onMouseEnter={() => prefetchByPath(route.path)}
               >
                 {route.label}
               </NavLink>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { alphaFetch } from '../api/services/alphaEngineService.js'
 import { get } from '../api/client.js'
@@ -131,6 +131,39 @@ export default function Asset() {
   const [personalMetrics, setPersonalMetrics] = useState(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
 
+  const loadAssetData = useCallback(() => {
+    if (!symbol) return () => {}
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+
+    alphaFetch(`/api/engine/ticker/${encodeURIComponent(symbol)}/dashboard?range=${encodeURIComponent(chartRange)}&interval=1D`)
+      .then((data) => {
+        if (cancelled) return
+        setQuote(data?.quote ?? null)
+        setStats(data?.stats ?? null)
+        setCompany(data?.company ?? null)
+        setHistory(data?.history ?? [])
+        setRegime(data?.regime ?? null)
+        setRecommendation(data?.recommendation ?? null)
+
+        const hasAny = data?.quote || data?.stats || data?.company
+        if (!hasAny) setError('Engine unreachable')
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setError(e?.message || 'Failed to load asset')
+      })
+      .finally(() => {
+        if (cancelled) return
+        setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [symbol, chartRange])
+
   useEffect(() => {
     setWatchlist(loadWatchlist())
   }, [symbol])
@@ -152,39 +185,8 @@ export default function Asset() {
   }, [])
 
   useEffect(() => {
-    if (!symbol) return
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-
-    // Initial load: use batch dashboard endpoint for essential data
-    alphaFetch(`/api/engine/ticker/${encodeURIComponent(symbol)}/dashboard?range=${encodeURIComponent(chartRange)}&interval=1D`)
-      .then((data) => {
-        if (cancelled) return
-        setQuote(data?.quote ?? null)
-        setStats(data?.stats ?? null)
-        setCompany(data?.company ?? null)
-        setHistory(data?.history ?? [])
-        setRegime(data?.regime ?? null)
-        setRecommendation(data?.recommendation ?? null)
-
-        // If core data is missing, treat as error.
-        const hasAny = data?.quote || data?.stats || data?.company
-        if (!hasAny) setError('Engine unreachable')
-      })
-      .catch((e) => {
-        if (cancelled) return
-        setError(e?.message || 'Failed to load asset')
-      })
-      .finally(() => {
-        if (cancelled) return
-        setLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [symbol, chartRange])
+    return loadAssetData()
+  }, [loadAssetData])
 
   // Lazy load research data (accuracy, consensus, attribution) when research tab is active
   useEffect(() => {
@@ -347,7 +349,7 @@ export default function Asset() {
           <div>{error}</div>
         </div>
         <div className="mt-3">
-          <button className="btn btn-sm btn-primary" onClick={() => window.location.reload()}>Retry</button>
+          <button className="btn btn-sm btn-primary" onClick={loadAssetData}>Retry</button>
           <Link className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} to="/assets">Back</Link>
         </div>
       </div>

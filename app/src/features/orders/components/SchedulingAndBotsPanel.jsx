@@ -4,7 +4,7 @@ import DateTimePicker from '../../../components/DateTimePicker.jsx'
 import executionsService from '../../../api/services/executionsService.js'
 import { getBotCatalog } from '../../../api/services/botCatalogService.js'
 
-export default function SchedulingAndBotsPanel({ selectedStock }) {
+export default function SchedulingAndBotsPanel({ selectedStock, brokerConnected = true }) {
   const [scheduleForLater, setScheduleForLater] = useState(false)
   const [scheduledDateTime, setScheduledDateTime] = useState(null)
   const [botEnabled, setBotEnabled] = useState(false)
@@ -30,7 +30,7 @@ export default function SchedulingAndBotsPanel({ selectedStock }) {
   }, [])
 
   const handleScheduleTrade = () => {
-    if (!selectedStock || !scheduleForLater || !scheduledDateTime) return
+    if (!selectedStock || !scheduleForLater || !scheduledDateTime || !brokerConnected) return
     
     // Convert scheduled datetime to UTC for server processing
     const scheduledDate = new Date(scheduledDateTime)
@@ -55,7 +55,7 @@ export default function SchedulingAndBotsPanel({ selectedStock }) {
   }
 
   const handleCreateBot = () => {
-    if (!selectedStock || !botEnabled || !selectedTemplate) return
+    if (!selectedStock || !botEnabled || !selectedTemplate || !brokerConnected) return
     
     const botData = {
       id: Date.now(),
@@ -93,6 +93,12 @@ export default function SchedulingAndBotsPanel({ selectedStock }) {
         <h3 className="panel-title">Trading Options</h3>
       </div>
 
+      {!brokerConnected && (
+        <div className="alert alert-error mb-4">
+          Connect your Alpaca credentials in Profile → Broker to schedule trades or create bots.
+        </div>
+      )}
+
       {/* Scheduling Section */}
       <div className="stack-md mb-5">
         <div className="hstack">
@@ -121,7 +127,7 @@ export default function SchedulingAndBotsPanel({ selectedStock }) {
             </div>
 
             {scheduledDateTime && (
-              <button className="btn btn-sm btn-primary btn-block" onClick={handleScheduleTrade}>
+              <button className="btn btn-sm btn-primary btn-block" onClick={handleScheduleTrade} disabled={!brokerConnected}>
                 Schedule {selectedStock?.symbol} Trade
               </button>
             )}
@@ -172,7 +178,7 @@ export default function SchedulingAndBotsPanel({ selectedStock }) {
                 </div>
 
                 {selectedTemplate && (
-                  <button className="btn btn-sm btn-ghost btn-block" onClick={handleCreateBot}>
+                  <button className="btn btn-sm btn-ghost btn-block" onClick={handleCreateBot} disabled={!brokerConnected}>
                     Create {selectedTemplate.name} Bot for {selectedStock?.symbol}
                   </button>
                 )}

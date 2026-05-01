@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, Suspense, useMemo } from 'react'
+import PageSkeleton from './PageSkeleton'
 
 // Simple lazy loading component
 export default function LazyLoad({ 
   children, 
-  fallback = null, 
+  fallback = <PageSkeleton />,
   rootMargin = '100px',
   threshold = 0.1,
   className = '',
@@ -52,15 +53,15 @@ export default function LazyLoad({
 
 // Hook for lazy loading any component
 export function useLazyLoad(Component, fallback = null) {
-  const LazyComponent = useMemo(() => {
-    return function LazyWrapper(props) {
+  const LazyComponent = useMemo(() => (
+    function LazyWrapper(props) {
       return (
         <LazyLoad fallback={fallback}>
           <Component {...props} />
         </LazyLoad>
       )
     }
-  }, [Component, fallback])
+  ), [Component, fallback])
 
   return LazyComponent
 }

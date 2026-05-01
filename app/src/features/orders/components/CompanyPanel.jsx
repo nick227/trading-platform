@@ -1,12 +1,4 @@
 export default function CompanyPanel({ selectedStock, bootstrapData, loading }) {
-  if (!selectedStock) {
-    return (
-      <article className="card card-pad-md">
-        <div className="panel-empty">Select a stock to view company information</div>
-      </article>
-    )
-  }
-
   const company = bootstrapData?.company
   const stats = bootstrapData?.stats
 
@@ -30,8 +22,15 @@ export default function CompanyPanel({ selectedStock, bootstrapData, loading }) 
         <h3 className="panel-title">Company Information</h3>
       </div>
 
-      {loading ? (
-        <div className="panel-empty">Loading company data…</div>
+      {!selectedStock ? (
+        <div className="panel-empty">Select a stock to view company information</div>
+      ) : loading ? (
+        <div className="stack-md">
+          <div className="skeleton-block" style={{ height: 20, width: '60%' }} />
+          <div className="skeleton-block" style={{ height: 16, width: '80%', marginTop: 8 }} />
+          <div className="skeleton-block" style={{ height: 16, width: 40, marginTop: 8 }} />
+          <div className="skeleton-block" style={{ height: 16, width: 40, marginTop: 8 }} />
+        </div>
       ) : (
         <div className="stack-md">
           {company && (

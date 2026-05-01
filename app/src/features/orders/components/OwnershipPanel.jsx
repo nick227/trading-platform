@@ -1,9 +1,8 @@
 export default function OwnershipPanel({ selectedStock, bootstrapData, loading }) {
   const ownership = bootstrapData?.userOwnership
-  if (!ownership) return null
 
   const cardClassName =
-    ownership.currentShares > 0
+    ownership?.currentShares > 0
       ? 'card card-pad-sm card-tint-positive'
       : 'card card-pad-sm card-tint-neutral'
 
@@ -11,8 +10,16 @@ export default function OwnershipPanel({ selectedStock, bootstrapData, loading }
     <article className={cardClassName}>
       <h3 className="m-0 mb-3 text-sm font-600">Your Position</h3>
 
-      {loading ? (
-        <div className="centered p-4 text-sm text-muted">Loading position...</div>
+      {!selectedStock ? (
+        <div className="centered p-4 text-sm text-muted">Select a stock to view your position</div>
+      ) : loading ? (
+        <div className="stack-md">
+          <div className="skeleton-block" style={{ height: 20, width: '30%' }} />
+          <div className="skeleton-block" style={{ height: 24, width: '40%', marginTop: 8 }} />
+          <div className="skeleton-block" style={{ height: 24, width: '40%', marginTop: 8 }} />
+        </div>
+      ) : !ownership ? (
+        <div className="centered p-4 text-sm text-muted">You haven't traded {selectedStock?.symbol} yet</div>
       ) : ownership.currentShares > 0 ? (
         <div>
           <div className="mini-kpis mb-3">

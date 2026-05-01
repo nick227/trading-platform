@@ -141,7 +141,7 @@ model Bot {
   @@index([portfolioId])
   @@index([enabled])
   @@index([userId])
-  @@index([templateId])
+  @@index([templateId, userId])
 }
 
 model BotRule {
@@ -201,7 +201,7 @@ model Execution {
   clientOrderId String?   @unique
   activeIntentKey String? @unique
   // Broker fields
-  brokerOrderId  String?
+  brokerOrderId  String?   @unique
   brokerStatus   String?
   submittedAt    DateTime?
   lastBrokerSyncAt DateTime?
@@ -238,6 +238,7 @@ model Execution {
   @@index([strategyId])
   @@index([botId, createdAt])
   @@index([status, lockedAt])          // worker claim query
+  @@index([botId, status])             // platform aggregation: filled executions per bot
   @@index([botId, ticker, status])     // bot engine inflight check (DB fallback)
   @@index([status, filledAt])          // daily loss rule: today's fills
   @@index([createdAt, id])             // cursor pagination
@@ -275,6 +276,24 @@ model BrokerAccount {
 
   @@index([userId])
   @@index([status])
+}
+
+model BrokerSyncCheckpoint {
+  id               String    @id @default(cuid()) @db.VarChar(191)
+  userId           String    @unique
+  lastSyncedAt     DateTime?
+  lastSyncStatus   String    @default("never") // never | ok | error
+  lastSyncError    String?
+  lastSyncOrderAt  DateTime?
+  inSync           Boolean   @default(true)
+  mismatchCount    Int       @default(0)
+  mismatchDetails  Json?
+  positionSource   String    @default("db") // db | broker
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([lastSyncedAt])
 }
 
 model User {

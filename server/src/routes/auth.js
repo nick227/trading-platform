@@ -3,6 +3,9 @@ import prisma from '../loaders/prisma.js'
 import { authenticate } from '../middleware/authenticate.js'
 
 export default async function authRoutes(fastify) {
+  const isProduction = process.env.NODE_ENV === 'production'
+  const cookieSameSite = isProduction ? 'none' : 'lax'
+
   // POST /api/auth/register
   fastify.post('/register', async (request, reply) => {
     const { email, password, fullName } = request.body ?? {}
@@ -50,8 +53,8 @@ export default async function authRoutes(fastify) {
     const token = fastify.jwt.sign({ sub: user.id }, { expiresIn: '7d' })
     reply.setCookie('access_token', token, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite: cookieSameSite,
+      secure: isProduction,
       path: '/',
       maxAge: 7 * 24 * 60 * 60
     })

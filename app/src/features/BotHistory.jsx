@@ -1,20 +1,16 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { useApp } from '../app/AppProvider'
+import { getBots } from '../api/services/botCatalogService.js'
 
 export default function BotHistory() {
   const navigate = useNavigate()
   const { botId } = useParams()
-  const { state } = useApp()
   const [bot, setBot] = useState(null)
   const [loading, setLoading] = useState(true)
   const [history, setHistory] = useState([])
   const [filter, setFilter] = useState('all')
 
   useEffect(() => {
-    const foundBot = state.bots.find((b) => b.id === botId)
-    setBot(foundBot)
-
     const mockHistory = [
       {
         id: '1',
@@ -74,8 +70,20 @@ export default function BotHistory() {
     ]
 
     setHistory(mockHistory)
-    setLoading(false)
-  }, [botId, state.bots])
+
+    const loadBot = async () => {
+      try {
+        const bots = await getBots()
+        const foundBot = Array.isArray(bots) ? bots.find((b) => b.id === botId) : null
+        setBot(foundBot ?? null)
+      } catch {
+        setBot(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadBot()
+  }, [botId])
 
   if (loading) {
     return (

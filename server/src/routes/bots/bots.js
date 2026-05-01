@@ -1,5 +1,23 @@
 import botsService from '../../services/botsService.js'
 import prisma from '../../loaders/prisma.js'
+import { getUserAlpacaCredentialsOrThrow } from '../../services/alpacaClockService.js'
+
+async function ensureBrokerConnectedOrReply(userId, reply) {
+  try {
+    await getUserAlpacaCredentialsOrThrow(userId)
+    return true
+  } catch (error) {
+    if (error?.code === 'BROKER_NOT_CONFIGURED' || error?.code === 'BROKER_CREDENTIALS_INVALID') {
+      reply.code(403).send({ error: { code: error.code, message: error.message } })
+      return false
+    }
+    if (error?.code === 'LIVE_TRADING_DISABLED') {
+      reply.code(403).send({ error: { code: error.code, message: error.message } })
+      return false
+    }
+    throw error
+  }
+}
 
 export default async function botsRoutes(app, opts) {
   // GET /api/bots
@@ -37,6 +55,9 @@ export default async function botsRoutes(app, opts) {
       }
     }
   }, async (request, reply) => {
+    const connected = await ensureBrokerConnectedOrReply(request.user.id, reply)
+    if (!connected) return
+
     const portfolio = await prisma.portfolio.findUnique({ where: { id: request.body.portfolioId } })
     if (!portfolio || portfolio.userId !== request.user.id) {
       return reply.code(400).send({ error: { code: 'INVALID_PORTFOLIO', message: 'Invalid portfolioId' } })
@@ -63,6 +84,11 @@ export default async function botsRoutes(app, opts) {
       const existing = await botsService.getBot(id)
       if (!existing || existing.userId !== request.user.id) {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
+      }
+
+      if (request.body?.enabled === true) {
+        const connected = await ensureBrokerConnectedOrReply(request.user.id, reply)
+        if (!connected) return
       }
 
       const bot = await botsService.updateBot(id, request.body)

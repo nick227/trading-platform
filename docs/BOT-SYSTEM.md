@@ -1,6 +1,6 @@
 # Bot System (Rule Bots) — Developer Guide
 
-Last updated: 2026-04-21
+Last updated: 2026-04-30
 
 This repo implements a **DB-configured, worker-executed** bot system:
 
@@ -88,9 +88,49 @@ File: `worker/src/engine/botEngine.js`
 - Reloads bots on an interval (`BOT_RELOAD_INTERVAL_MS`).
 - Subscribes to tickers derived from `bot.config.tickers`.
 - For each price tick:
-  - Applies an inflight guard (in-memory + DB fallback).
-  - Runs a rule pipeline (`BotRule[]`).
-  - If rules pass, enqueues a new `Execution` row.
+  1. **Inflight guard** (in-memory Map, no DB hit on every tick; one-time DB fallback on startup).
+  2. **Bot-type routing** — forks into one of three evaluation paths (see below).
+  3. **Risk gate** — `riskManager.evaluateExecutionRisk()` must approve before any write.
+  4. **Idempotency guard** — pre-insert `findUnique` on `activeIntentKey`; if present, lock the key and return.
+  5. **Execution create** — wrapped in `withInflightLock`; DB unique constraint on `activeIntentKey` is the final hard guarantee.
+
+### Bot-type routing
+
+`evaluateBot()` branches on `bot.botType`:
+
+| `botType` | Path | File |
+|---|---|---|
+| `rule_based` + `templateId` | `executeRuleBasedStrategy()` — evaluates the matching entry from `RULE_BASED_TEMPLATES` | `worker/src/engine/predefinedStrategies.js` |
+| `strategy_based` + `strategyId` | `executeStrategyBasedAlgorithm()` — **not yet implemented** (throws) | `worker/src/engine/predefinedStrategies.js` |
+| anything else | Custom `BotRule[]` pipeline from DB | `botEngine.js` inline |
+
+All paths return an `evaluationResult` with `{ signal, confidence, reason }`. A `signal` of `'hold'` skips execution.
+
+### Predefined strategy templates
+
+`RULE_BASED_TEMPLATES` in `predefinedStrategies.js` currently defines three built-in templates:
+
+- `momentum_crossover` — SMA-50 crossover + RSI confirmation
+- `mean_reversion_bollinger` — Bollinger Bands touch + RSI oversold/overbought
+- `breakout_momentum` — Resistance/support break + volume + trend filter
+
+`STRATEGY_BASED_TEMPLATES` defines the config shapes for `pairs_trading_spread`, `options_flow_sentiment`, and `sentiment_momentum` — the data-fetching helpers are stubs and will throw if executed.
+
+### Risk evaluation gate
+
+Before any `Execution` row is written, `riskManager.evaluateExecutionRisk(request)` is called with `{ portfolioId, ticker, direction, quantity, price }`. If `riskEvaluation.approved` is false, the execution is blocked and a `BotEvent(execution_blocked_by_risk)` is logged. Failure to call the risk service (unexpected error) also aborts.
+
+### Execution idempotency
+
+Three layers, in order:
+
+1. **In-memory `inflightMap`** — checked first on every tick (no DB). Pre-populated from DB active executions on worker startup (`initInflightMap`).
+2. **Pre-insert `findUnique`** — one `SELECT` on `activeIntentKey` before locking. Increments `duplicate_prevented` counter on hit; keeps the inflight lock set so future ticks skip cheaply.
+3. **`withInflightLock` + DB unique constraint** — `inflightMap` is set atomically before the `INSERT`. If a concurrent tick wins the race and causes a `P2002` unique violation, the lock is kept (real duplicate) and `duplicate_race_condition` is counted. Any other error releases the lock so the next tick can retry.
+
+The `withInflightLock` pattern (`worker/src/utils/inflightGuard.js`) is a reusable utility: it accepts a `keepLockOn(err)` predicate so callers supply domain knowledge (P2002 on `activeIntentKey`) while the utility handles the generic `finally`-based release guarantee.
+
+In-memory counters are in `worker/src/metrics/counters.js` (`increment(key)` / `getAll()`). They are not yet exposed via an HTTP endpoint.
 
 ### Built-in rule types
 
@@ -289,6 +329,9 @@ Add BotEvent entries that explicitly log:
 ### Key files
 - Worker bot engine: `worker/src/engine/botEngine.js`
 - Worker order execution: `worker/src/queues/orderWorker.js`
+- Predefined strategy templates: `worker/src/engine/predefinedStrategies.js`
+- Inflight lock utility: `worker/src/utils/inflightGuard.js`
+- In-memory metrics counters: `worker/src/metrics/counters.js`
 - Bot routes: `server/src/routes/bots/*`
 - Bot service: `server/src/services/botsService.js`
 - Alpha Engine client: `server/src/clients/engine.js`

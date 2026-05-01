@@ -3,7 +3,7 @@ import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { authenticate } from '../middleware/authenticate.js'
 import brokerService from '../services/brokerService.js'
 import executionsService from '../services/executionsService.js'
-import { fetchAlpacaMarketClock, resolveAlpacaCredentials } from '../services/alpacaClockService.js'
+import { fetchAlpacaMarketClock, getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
 const TERMINAL_STATUSES = new Set(['filled', 'cancelled', 'failed'])
 
@@ -62,12 +62,14 @@ export default async function tradeRoutes(app, opts) {
 
       let creds
       try {
-        creds = await resolveAlpacaCredentials(userId)
+        creds = await getUserAlpacaCredentialsOrThrow(userId)
       } catch (err) {
         if (err?.code === 'LIVE_TRADING_DISABLED') return reply.code(403).send({ error: err.message })
+        if (err?.code === 'BROKER_NOT_CONFIGURED' || err?.code === 'BROKER_CREDENTIALS_INVALID') {
+          return reply.code(403).send({ error: err.message })
+        }
         throw err
       }
-      if (!creds) return reply.code(503).send({ error: 'Alpaca credentials not configured' })
 
       const clock = await fetchAlpacaMarketClock(creds)
       if (!clock.isOpen && process.env.SKIP_MARKET_HOURS_CHECK !== 'true') {

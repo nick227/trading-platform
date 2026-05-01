@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import LazyLoad from '../components/LazyLoad.jsx'
+import PageSkeleton from '../components/PageSkeleton'
 import { usePortfolio } from '../hooks/usePortfolio.js'
 
 export default function Performance() {
@@ -8,37 +9,34 @@ export default function Performance() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    const fetchDailySnapshots = async () => {
-      try {
-        setLoading(true)
-        const snapshotsRes = await fetch('/api/performance/daily-snapshots')
-        setDailySnapshots(await snapshotsRes.json())
-      } catch (error) {
-        setError(error.message)
-      } finally {
-        setLoading(false)
-      }
+  const fetchDailySnapshots = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const snapshotsRes = await fetch('/api/performance/daily-snapshots')
+      setDailySnapshots(await snapshotsRes.json())
+    } catch (fetchError) {
+      setError(fetchError.message)
+    } finally {
+      setLoading(false)
     }
+  }, [])
 
+  useEffect(() => {
     fetchDailySnapshots()
     const interval = setInterval(fetchDailySnapshots, 30000) // Refresh every 30 seconds
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchDailySnapshots])
   
   if (portfolioLoading || loading) {
-    return (
-      <div className="page container" style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
-        <div className="muted">Loading performance data…</div>
-      </div>
-    )
+    return <PageSkeleton />
   }
   
   if (error) {
     return (
       <div className="page container" style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem' }}>
         <div style={{ color: '#c0392b', marginBottom: '1rem' }}>Failed to load performance: {error}</div>
-        <button className="ghost pressable" onClick={() => window.location.reload()}>Retry</button>
+        <button className="ghost pressable" onClick={fetchDailySnapshots}>Retry</button>
       </div>
     )
   }
@@ -100,19 +98,7 @@ export default function Performance() {
       
       {/* Daily Performance */}
       <LazyLoad
-        fallback={
-          <div style={{ 
-            height: '300px', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            background: 'white',
-            borderRadius: '16px',
-            marginBottom: '1rem'
-          }}>
-            <div style={{ color: '#666' }}>Loading daily performance...</div>
-          </div>
-        }
+        fallback={<PageSkeleton />}
         rootMargin="100px"
       >
         <section>

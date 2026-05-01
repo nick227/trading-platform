@@ -14,7 +14,7 @@ import { isMarketClosed } from '../../../utils/market.js'
  *   onSubmit       — (orderData) => void
  *   bootstrapData  — optional bootstrap payload (currently unused; available for extensions)
  */
-export default function OrderTicket({ selectedStock, bankBalance, onSubmit, bootstrapData }) {
+export default function OrderTicket({ selectedStock, bankBalance, onSubmit, bootstrapData, brokerConnected = true }) {
   const [orderType, setOrderType] = useState('BUY')
   const [fillType, setFillType] = useState('MARKET')
   const [orderAmount, setOrderAmount] = useState('')
@@ -70,6 +70,7 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
     preview?.canAfford &&
       hasMeaningfulInput &&
       (!scheduleForLater || scheduledDateTime) &&
+      brokerConnected &&
       !marketIsClosed
   )
   const showInsufficientWarning = Boolean(hasMeaningfulInput && preview?.canAfford === false)
@@ -236,6 +237,12 @@ export default function OrderTicket({ selectedStock, bankBalance, onSubmit, boot
                 Immediate orders are only available during market hours (9:30 AM – 4:00 PM ET). Use the “Trading
                 Options” panel below to schedule this order for later.
               </div>
+            </div>
+          )}
+
+          {!brokerConnected && (
+            <div className="alert alert-error">
+              Connect your Alpaca credentials in Profile → Broker before placing orders.
             </div>
           )}
 

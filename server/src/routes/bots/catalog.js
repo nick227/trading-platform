@@ -1,5 +1,6 @@
 import botsService from '../../services/botsService.js'
 import prisma from '../../loaders/prisma.js'
+import { getUserAlpacaCredentialsOrThrow } from '../../services/alpacaClockService.js'
 
 export default async function catalogRoutes(app, opts) {
   // GET /api/bots/catalog
@@ -46,6 +47,18 @@ export default async function catalogRoutes(app, opts) {
       }
     }
   }, async (request, reply) => {
+    try {
+      await getUserAlpacaCredentialsOrThrow(request.user.id)
+    } catch (error) {
+      if (error?.code === 'BROKER_NOT_CONFIGURED' || error?.code === 'BROKER_CREDENTIALS_INVALID') {
+        return reply.code(403).send({ error: { code: error.code, message: error.message } })
+      }
+      if (error?.code === 'LIVE_TRADING_DISABLED') {
+        return reply.code(403).send({ error: { code: error.code, message: error.message } })
+      }
+      throw error
+    }
+
     const portfolio = await prisma.portfolio.findUnique({ where: { id: request.body.portfolioId } })
     if (!portfolio || portfolio.userId !== request.user.id) {
       return reply.code(400).send({ error: { code: 'INVALID_PORTFOLIO', message: 'Invalid portfolioId' } })

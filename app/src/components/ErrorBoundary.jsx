@@ -14,6 +14,10 @@ export class ErrorBoundary extends Component {
     console.error('Error Boundary caught:', error, errorInfo)
   }
 
+  handleReset = () => {
+    this.setState({ hasError: false, error: null })
+  }
+
   render() {
     if (this.state.hasError) {
       return (
@@ -29,7 +33,7 @@ export class ErrorBoundary extends Component {
           <h2>Something went wrong</h2>
           <p>We're sorry, but something unexpected happened.</p>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={this.handleReset}
             style={{
               padding: '0.5rem 1rem',
               backgroundColor: '#dc3545',
@@ -39,7 +43,7 @@ export class ErrorBoundary extends Component {
               cursor: 'pointer'
             }}
           >
-            Reload Page
+            Try Again
           </button>
         </div>
       )

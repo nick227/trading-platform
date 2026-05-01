@@ -12,6 +12,8 @@ import { evaluateDailyLoss }      from './rules/dailyLoss.js'
 import { evaluateTrendFilter }   from './rules/trendFilter.js'
 import { evaluateTimeWindow }    from './rules/timeWindow.js'
 import { recordExecutionAudit }   from '../audit/executionAudit.js'
+import { increment as metricsIncrement } from '../metrics/counters.js'
+import { withInflightLock } from '../utils/inflightGuard.js'
 import { executeRuleBasedStrategy, executeStrategyBasedAlgorithm } from './predefinedStrategies.js'
 import { riskManager } from '../risk/riskManagement.js'
 
@@ -343,33 +345,51 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     return
   }
 
-  // Risk approved — create the execution record
+  // Pre-insert guard: avoids a noisy P2002 in the normal (non-race) case.
+  // The DB unique constraint on activeIntentKey remains the hard guarantee.
+  const existingIntent = await prisma.execution.findUnique({
+    where: { activeIntentKey },
+    select: { id: true }
+  })
+  if (existingIntent) {
+    inflightMap.set(inflightKey, true)
+    metricsIncrement('duplicate_prevented')
+    log.info({ botId: bot.id, ticker, direction, activeIntentKey, existingId: existingIntent.id }, 'duplicate_prevented')
+    await maybeLogInflightSkip(bot, ticker, inflightKey)
+    return
+  }
+
+  // Clear the DB-checked marker before acquiring the lock so the next cycle
+  // re-validates against the DB after this execution resolves.
+  dbCheckedKeys.delete(inflightKey)
+
   let execution
   try {
-    execution = await prisma.execution.create({
-      data: {
-        id:            executionId,
-        userId:        bot.userId,
-        portfolioId:   bot.portfolioId,
-        strategyId:    bot.strategyId ?? null,
-        botId:         bot.id,
-        ticker,
-        direction,
-        quantity,
-        price:         tick.last,
-        origin:        'bot',
-        status:        'queued',
-        clientOrderId: `tp_${executionId}`,
-        activeIntentKey,
-        signalScore:   confidence,
-        pnl:           0
-      }
-    })
+    await withInflightLock(inflightMap, inflightKey, async () => {
+      execution = await prisma.execution.create({
+        data: {
+          id:            executionId,
+          userId:        bot.userId,
+          portfolioId:   bot.portfolioId,
+          strategyId:    bot.strategyId ?? null,
+          botId:         bot.id,
+          ticker,
+          direction,
+          quantity,
+          price:         tick.last,
+          origin:        'bot',
+          status:        'queued',
+          clientOrderId: `tp_${executionId}`,
+          activeIntentKey,
+          signalScore:   confidence,
+          pnl:           0
+        }
+      })
+    }, { keepLockOn: isActiveIntentConflict })
   } catch (err) {
     if (isActiveIntentConflict(err)) {
-      // DB unique constraint fired — a concurrent tick snuck in; restore in-memory guard
-      inflightMap.set(inflightKey, true)
-      dbCheckedKeys.delete(inflightKey)
+      metricsIncrement('duplicate_race_condition')
+      log.warn({ botId: bot.id, ticker, direction, activeIntentKey }, 'duplicate_race_condition')
       await maybeLogInflightSkip(bot, ticker, inflightKey)
       return
     }
@@ -381,10 +401,6 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     })
     return
   }
-
-  // Mark as inflight to prevent duplicates on subsequent ticks
-  inflightMap.set(inflightKey, true)
-  dbCheckedKeys.delete(inflightKey)
 
   log.info({ executionId: execution.id, botId: bot.id, ticker, direction, qty: quantity, confidence }, 'execution_queued')
 
@@ -469,7 +485,22 @@ async function getPositions(userId) {
   }
 
   const broker = await getBrokerClient(userId)
-  if (!broker) return cached?.positions ?? []
+  if (!broker) {
+    let reason = 'NO_BROKER'
+    try {
+      const account = await prisma.brokerAccount.findUnique({
+        where: { userId },
+        select: { id: true, apiKey: true, apiSecret: true }
+      })
+      if (account && (!account.apiKey || !account.apiSecret)) {
+        reason = 'INVALID_BROKER'
+      }
+    } catch {
+      reason = 'INVALID_BROKER'
+    }
+    log.error({ userId, botId: null, reason }, 'missing_user_broker_credentials')
+    return cached?.positions ?? []
+  }
 
   try {
     const positions = await broker.getPositions()

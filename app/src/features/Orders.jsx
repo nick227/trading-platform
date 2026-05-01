@@ -1,5 +1,5 @@
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useApp } from '../app/AppProvider'
 import { get } from '../api/client.js'
 import { getAvailableStocks } from '../services/marketData.js'
@@ -23,9 +23,14 @@ import EngineSignalsPanel from './orders/components/EngineSignalsPanel.jsx'
 import PendingOrdersWidget from '../components/PendingOrdersWidget.jsx'
 import TimezoneClock from '../components/TimezoneClock.jsx'
 import { useAuth } from '../app/AuthProvider'
+import PageSkeleton from '../components/PageSkeleton.jsx'
+import ErrorState from '../components/ErrorState.jsx'
+import usePageData from '../hooks/usePageData.js'
+import pageTitleService from '../services/pageTitleService.js'
 
 export default function Orders() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const { dispatch } = useApp()
 
@@ -38,6 +43,7 @@ export default function Orders() {
   // ── Alpaca account (loaded once) ────────────────────────────────────────────
   const [alpacaAccount, setAlpacaAccount] = useState(null)
   const [marketClock, setMarketClock] = useState(null)
+  const [pageInitError, setPageInitError] = useState(null)
 
   // ── Bootstrap data (via hook — AbortController-based race protection) ───────
   const {
@@ -198,32 +204,57 @@ export default function Orders() {
   const nextOpen = formatETNextOpen(marketClock?.nextOpen)
 
   // ── Load stock list ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    setStocksLoading(true)
-    getAvailableStocks()
-      .then(data => {
-        setStocks(data)
-        if (data.length > 0 && !selectedStock) setSelectedStock(data[0])
-      })
-      .catch(err => console.error('Failed to load stocks:', err))
-      .finally(() => setStocksLoading(false))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const fetchOrdersPage = useCallback(async () => {
+    console.log('fetchOrdersPage called')
+    try {
+      setPageInitError(null)
+      setStocksLoading(true)
+      const [stocksResult, accountRes, clockRes] = await Promise.allSettled([
+        getAvailableStocks(),
+        get('/alpaca/account'),
+        get('/alpaca/market-clock'),
+      ])
 
-  // ── Load alpaca account + market clock ──────────────────────────────────────
-  useEffect(() => {
-    Promise.allSettled([
-      get('/alpaca/account'),
-      get('/alpaca/market-clock'),
-    ]).then(([accountRes, clockRes]) => {
+      console.log('fetchOrdersPage results:', { stocksResult: stocksResult.status, accountRes: accountRes.status, clockRes: clockRes.status })
+
+      if (stocksResult.status === 'fulfilled') {
+        const stockList = Array.isArray(stocksResult.value) ? stocksResult.value : []
+        console.log('Setting stocks:', stockList.length)
+        setStocks(stockList)
+        setSelectedStock((prev) => {
+          const next = prev ?? (stockList.length > 0 ? stockList[0] : null)
+          console.log('Setting selectedStock:', next?.symbol, 'prev was:', prev?.symbol)
+          return next
+        })
+      } else {
+        const loadError = new Error('Failed to load stocks')
+        setPageInitError(loadError)
+        throw loadError
+      }
+
       if (accountRes.status === 'fulfilled') setAlpacaAccount(accountRes.value)
       if (clockRes.status === 'fulfilled') setMarketClock(clockRes.value)
-    })
+
+      return true
+    } finally {
+      console.log('fetchOrdersPage complete, setting stocksLoading false')
+      setStocksLoading(false)
+    }
   }, [])
+  const { loading: pageLoading, error: pageError, retry } = usePageData({
+    key: 'orders-page',
+    fetcher: fetchOrdersPage,
+    staleTime: 0 // Force refresh every time to ensure state is set
+  })
+
+  // Debug logging
+  console.log('Render state:', { stocksLength: stocks.length, selectedStock: selectedStock?.symbol, stocksLoading, pageLoading })
 
   // ── Pre-select stock from URL ?ticker= param ────────────────────────────────
   useEffect(() => {
     const ticker = searchParams.get('ticker')
-    if (!ticker || !stocks.length) return
+    if (!ticker) return
+    if (!stocks.length) return
     const match = stocks.find(s => s.symbol === ticker)
     if (match) setSelectedStock(match)
   }, [searchParams, stocks])
@@ -233,7 +264,14 @@ export default function Orders() {
     dispatch({ type: 'SELECT_ORDER', payload: orderData.id })
     navigate('/orders/confirm', { state: { order: orderData } })
   }
-  const { user } = useAuth()
+  const { user, brokerStatus } = useAuth()
+  const brokerConnected = Boolean(brokerStatus?.connected)
+
+  useEffect(() => {
+    pageTitleService.setTitleFromSearch('Orders', location.search)
+  }, [location.search])
+
+  if (pageError || pageInitError) return <ErrorState onRetry={retry} message={(pageError || pageInitError)?.message} />
 
   return (
     <div className="l-page">
@@ -242,18 +280,37 @@ export default function Orders() {
         {/* Account header */}
         <header className="orders-header">
           <div className="orders-header-left meta-kpis">
-            <div className="meta-kpi">
-              <div className="meta-label">Account</div>
-              <div className="meta-value">Individual {accountNumber}</div>
-            </div>
-            <div className="meta-kpi">
-              <div className="meta-label">Available Funds</div>
-              <div className="meta-value-lg text-positive">${bankBalance.toLocaleString()}</div>
-            </div>
-            <div className="meta-kpi">
-              <div className="meta-label">Buying Power</div>
-              <div className="meta-value">${buyingPower.toLocaleString()}</div>
-            </div>
+            {pageLoading ? (
+              <>
+                <div className="meta-kpi">
+                  <div className="meta-label">Account</div>
+                  <div className="skeleton-block" style={{ height: 20, width: 120 }} />
+                </div>
+                <div className="meta-kpi">
+                  <div className="meta-label">Available Funds</div>
+                  <div className="skeleton-block" style={{ height: 28, width: 150 }} />
+                </div>
+                <div className="meta-kpi">
+                  <div className="meta-label">Buying Power</div>
+                  <div className="skeleton-block" style={{ height: 20, width: 100 }} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="meta-kpi">
+                  <div className="meta-label">Account</div>
+                  <div className="meta-value">Individual {accountNumber}</div>
+                </div>
+                <div className="meta-kpi">
+                  <div className="meta-label">Available Funds</div>
+                  <div className="meta-value-lg text-positive">${bankBalance.toLocaleString()}</div>
+                </div>
+                <div className="meta-kpi">
+                  <div className="meta-label">Buying Power</div>
+                  <div className="meta-value">${buyingPower.toLocaleString()}</div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="orders-header-right">
@@ -263,6 +320,12 @@ export default function Orders() {
             </div>
           </div>
         </header>
+
+        {!brokerConnected && (
+          <div className="alert alert-error mb-4">
+            Alpaca is not connected. Go to Profile → Broker to add credentials before trading or creating bots.
+          </div>
+        )}
 
         {/* 2-column layout */}
         <div className="orders-grid">
@@ -278,20 +341,28 @@ export default function Orders() {
                     stocks={stocks}
                     selectedStock={selectedStock}
                     onSelect={setSelectedStock}
-                    placeholder="Search symbols or companies..."
+                    placeholder={stocksLoading ? "Loading stocks..." : "Search symbols or companies..."}
+                    disabled={stocksLoading}
                   />
                 </div>
                 <div className="text-right">
-                  <div className="quote">
-                    <div className="quote-price">
-                      ${displayStock ? displayStock.price.toFixed(2) : '0.00'}
+                  {stocksLoading ? (
+                    <div className="quote">
+                      <div className="skeleton-block" style={{ height: 24, width: 80 }} />
+                      <div className="skeleton-block" style={{ height: 18, width: 60, marginTop: 4 }} />
                     </div>
-                    <div className={`quote-change ${(displayStock?.change ?? 0) >= 0 ? 'text-positive' : 'text-negative'}`}>
-                      {displayStock && Number.isFinite(displayStock.change)
-                        ? `${displayStock.change >= 0 ? '+' : ''}${displayStock.change.toFixed(2)}%`
-                        : '—'}
+                  ) : (
+                    <div className="quote">
+                      <div className="quote-price">
+                        ${displayStock ? displayStock.price.toFixed(2) : '0.00'}
+                      </div>
+                      <div className={`quote-change ${(displayStock?.change ?? 0) >= 0 ? 'text-positive' : 'text-negative'}`}>
+                        {displayStock && Number.isFinite(displayStock.change)
+                          ? `${displayStock.change >= 0 ? '+' : ''}${displayStock.change.toFixed(2)}%`
+                          : '—'}
+                      </div>
                     </div>
-                  </div>
+                  )}
                   {(() => {
                     if (quoteError && lastGoodQuote) {
                       const freshness = getQuoteFreshness(lastQuoteTime)
@@ -374,15 +445,23 @@ export default function Orders() {
 
           {/* ── Right column: order ticket + ownership + recent trades ── */}
           <section className="orders-col">
-            <OrderTicket
-              selectedStock={selectedStock}
-              bankBalance={bankBalance}
-              onSubmit={handleSubmit}
-              bootstrapData={bootstrapData}
-            />
+            {stocksLoading || !selectedStock ? (
+              <article className="card card-pad-sm">
+                <div className="skeleton-block" style={{ height: 200, width: '100%' }} />
+              </article>
+            ) : (
+              <OrderTicket
+                selectedStock={selectedStock}
+                bankBalance={bankBalance}
+                onSubmit={handleSubmit}
+                bootstrapData={bootstrapData}
+                brokerConnected={brokerConnected}
+              />
+            )}
             <OwnershipPanel selectedStock={selectedStock} bootstrapData={bootstrapData} loading={bootstrapLoading} />
             <SchedulingAndBotsPanel
               selectedStock={selectedStock}
+              brokerConnected={brokerConnected}
             />
             {user && <PendingOrdersWidget />}
             <RecentExecutions selectedStock={selectedStock} bootstrapData={bootstrapData} />

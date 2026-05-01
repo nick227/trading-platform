@@ -1,6 +1,6 @@
 import executionsService from '../services/executionsService.js'
 import { authenticate } from '../middleware/authenticate.js'
-import { fetchAlpacaMarketClock, resolveAlpacaCredentials } from '../services/alpacaClockService.js'
+import { fetchAlpacaMarketClock, getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
 export default async function executionsRoutes(app) {
   // GET /api/executions/summary — must precede /:id
@@ -46,16 +46,15 @@ export default async function executionsRoutes(app) {
   }, async (request, reply) => {
     let creds
     try {
-      creds = await resolveAlpacaCredentials(request.user.id)
+      creds = await getUserAlpacaCredentialsOrThrow(request.user.id)
     } catch (err) {
       if (err?.code === 'LIVE_TRADING_DISABLED') {
         return reply.code(403).send({ error: { code: 'LIVE_TRADING_DISABLED', message: err.message } })
       }
+      if (err?.code === 'BROKER_NOT_CONFIGURED' || err?.code === 'BROKER_CREDENTIALS_INVALID') {
+        return reply.code(403).send({ error: { code: err.code, message: err.message } })
+      }
       throw err
-    }
-
-    if (!creds) {
-      return reply.code(503).send({ error: { code: 'BROKER_NOT_CONFIGURED', message: 'Alpaca credentials not configured' } })
     }
 
     const clock = await fetchAlpacaMarketClock(creds)
