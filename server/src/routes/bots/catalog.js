@@ -2,6 +2,7 @@ import botsService from '../../services/botsService.js'
 import { getEmergencyStop } from '../../services/emergencyStopService.js'
 import prisma from '../../loaders/prisma.js'
 import { getUserAlpacaCredentialsOrThrow } from '../../services/alpacaClockService.js'
+import { simulationConfig } from '../../services/simulationService.js'
 
 export default async function catalogRoutes(app, opts) {
   // GET /api/bots/catalog
@@ -62,7 +63,7 @@ export default async function catalogRoutes(app, opts) {
     }
 
     try {
-      await getUserAlpacaCredentialsOrThrow(request.user.id)
+      if (!simulationConfig().enabled) await getUserAlpacaCredentialsOrThrow(request.user.id)
     } catch (error) {
       if (error?.code === 'BROKER_NOT_CONFIGURED' || error?.code === 'BROKER_CREDENTIALS_INVALID') {
         return reply.code(403).send({ error: { code: error.code, message: error.message } })

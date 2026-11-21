@@ -4,8 +4,11 @@ import { encrypt } from '../utils/encryption.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 import { getReconcileStatus, reconcileBrokerActivity } from '../services/brokerReconciliationService.js'
+import { simulationConfig, simulatedAccount } from '../services/simulationService.js'
 
 async function fetchAlpacaAccount(userId) {
+  // Simulator mode never contacts Alpaca: the account is derived from simulator fills.
+  if (simulationConfig().enabled) return simulatedAccount(userId)
   let creds
   try {
     creds = await getUserAlpacaCredentialsOrThrow(userId)
@@ -146,6 +149,14 @@ export default async function accountRoutes(fastify) {
   // GET /api/account/broker-credentials — check if broker account is connected
   fastify.get('/broker-credentials', async (request, reply) => {
     const userId = request.user.id
+    const sim = simulationConfig()
+    if (sim.enabled) {
+      const acct = await simulatedAccount(userId)
+      return reply.send({
+        connected: true, paper: true, simulated: true, mode: sim.mode, session: sim.session, status: 'simulated',
+        lastVerifiedAt: null, accountNumber: null, equity: acct.equity, cash: acct.cash, buyingPower: acct.buying_power,
+      })
+    }
     const broker = await prisma.brokerAccount.findUnique({ where: { userId: String(userId) } })
     if (!broker) return reply.send({ connected: false })
 

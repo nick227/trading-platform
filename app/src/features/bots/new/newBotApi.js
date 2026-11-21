@@ -46,6 +46,7 @@ function researchDefaults(research) {
     minConfidencePct: Math.round(num(r.minConfidence, 0.6) * 100),
     maxAgeHours: num(r.maxPredictionAgeHours, 96),
     maxDriftPct: num(r.maxEntryDriftPct, 5),
+    requireEdge: r.requireEdgeOverBaseline !== false,
     base: r,
   }
 }
@@ -67,6 +68,7 @@ export function toResearchConfig(values, base = {}) {
     minConfidence: Number(values.minConfidencePct) / 100,
     maxPredictionAgeHours: Number(values.maxAgeHours),
     maxEntryDriftPct: Number(values.maxDriftPct),
+    requireEdgeOverBaseline: values.requireEdge !== false,
   }
 }
 

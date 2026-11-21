@@ -504,14 +504,14 @@ describe('Alpha Research Follower', () => {
     fireEvent.change(within(box).getByLabelText('Minimum research confidence'), { target: { value: '75' } })
     fireEvent.change(within(box).getByLabelText('Ignore research older than'), { target: { value: '48' } })
     fireEvent.click(continueBtn())
-    expect(screen.getByTestId('review-summary')).toHaveTextContent('Confidence at least 75% · research under 48 hours old · price within 5%')
+    expect(screen.getByTestId('review-summary')).toHaveTextContent('Confidence at least 75% · research under 48 hours old · price within 5% · only research that beat its baseline')
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
 
     expect(await screen.findByTestId('bot-page')).toHaveTextContent('bot bot_r created')
     expect(post).toHaveBeenCalledWith('/bots/catalog/from-template', expect.objectContaining({
       templateId: 'tmpl_alpha_research', tickers: ['SPY'], enabled: false,
-      config: { research: { tenantId: 'default', minConfidence: 0.75, maxPredictionAgeHours: 48, maxEntryDriftPct: 5 } },
+      config: { research: { tenantId: 'default', minConfidence: 0.75, maxPredictionAgeHours: 48, maxEntryDriftPct: 5, requireEdgeOverBaseline: true } },
     }))
   })
 
@@ -523,4 +523,31 @@ describe('Alpha Research Follower', () => {
     fireEvent.click(continueBtn())
     expect(screen.queryByTestId('research-settings')).toBeNull()
   })
+
+  it('can opt in to simulating research without a demonstrated edge, and says so', async () => {
+    mockGets({ catalog })
+    post.mockResolvedValue({ id: 'bot_r', enabled: false })
+    put.mockResolvedValue({ id: 'bot_r', enabled: true })
+    renderWizard()
+    await toControls()
+    const edge = screen.getByTestId('research-require-edge')
+    expect(edge).toBeChecked()
+    fireEvent.click(edge)
+    fireEvent.click(continueBtn())
+    expect(screen.getByTestId('review-summary')).toHaveTextContent('includes research without a demonstrated edge')
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
+    await screen.findByTestId('bot-page')
+    expect(post.mock.calls[0][1].config.research.requireEdgeOverBaseline).toBe(false)
+  })
+
+  it('shows the simulator account plainly on Review', async () => {
+    authState.brokerStatus = { connected: true, paper: true, simulated: true, mode: 'historical_replay', session: '2026-11-19' }
+    mockGets({ catalog })
+    renderWizard()
+    await toControls()
+    fireEvent.click(continueBtn())
+    expect(screen.getByTestId('review-summary')).toHaveTextContent('Simulated — historical replay of 2026-11-19 (no broker orders)')
+  })
 })
+

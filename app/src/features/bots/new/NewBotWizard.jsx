@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../../app/AuthProvider'
-import { getTradingMode } from '../../../components/ModeBadge'
+import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
 import {
   createAndStartBot,
   defaultCapital,
@@ -57,7 +57,7 @@ function StepHeader({ index }) {
   )
 }
 
-const researchFormValues = (r) => (r ? { minConfidencePct: String(r.minConfidencePct), maxAgeHours: String(r.maxAgeHours), maxDriftPct: String(r.maxDriftPct) } : null)
+const researchFormValues = (r) => (r ? { minConfidencePct: String(r.minConfidencePct), maxAgeHours: String(r.maxAgeHours), maxDriftPct: String(r.maxDriftPct), requireEdge: r.requireEdge } : null)
 
 const RESEARCH_FIELDS = [
   { key: 'minConfidencePct', label: 'Minimum research confidence', unit: '%', help: 'Alpha Engine’s confidence score for the prediction. It’s a score, not a probability of profit.' },
@@ -360,6 +360,15 @@ export default function NewBotWizard() {
                   <FieldError id={`research-${key}-error`} message={touched.research ? controlsErrors[key] : null} />
                 </div>
               ))}
+              <label className="wizard-confirm mt-2">
+                <input
+                  type="checkbox"
+                  checked={research.requireEdge}
+                  onChange={(e) => update({ research: { ...research, requireEdge: e.target.checked } })}
+                  data-testid="research-require-edge"
+                />
+                <span>Only trade research whose holdout beat the always-up baseline. Turn off to simulate research that hasn’t shown an edge.</span>
+              </label>
             </fieldset>
           )}
 
@@ -414,13 +423,13 @@ export default function NewBotWizard() {
         <section>
           <dl className="wizard-summary card card-pad-md" data-testid="review-summary">
             <div><dt>Bot</dt><dd>{form.name.trim()} <span className="muted">({template.name})</span></dd></div>
-            <div><dt>Account</dt><dd>{mode === 'paper' ? 'Paper trading (simulated money)' : 'No paper account connected'}</dd></div>
+            <div><dt>Account</dt><dd>{mode !== 'paper' ? 'No paper account connected' : isSimulated(brokerStatus) ? `Simulated — historical replay of ${brokerStatus.session} (no broker orders)` : 'Paper trading (simulated money)'}</dd></div>
             <div><dt>Symbols</dt><dd>{symbols.join(', ')}</dd></div>
             <div><dt>Simulated capital</dt><dd>{fmtMoney(capitalNum)} <span className="muted">(not set aside)</span></dd></div>
             <div><dt>Max per buy order</dt><dd>{fmtMoney(Number(form.maxPerOrder))}</dd></div>
             <div><dt>Can place</dt><dd>{describeTemplateAction(template)}</dd></div>
             {research && (
-              <div><dt>Research settings</dt><dd>Confidence at least {research.minConfidencePct}% · research under {research.maxAgeHours} hours old · price within {research.maxDriftPct}%</dd></div>
+              <div><dt>Research settings</dt><dd>Confidence at least {research.minConfidencePct}% · research under {research.maxAgeHours} hours old · price within {research.maxDriftPct}% · {research.requireEdge ? 'only research that beat its baseline' : 'includes research without a demonstrated edge'}</dd></div>
             )}
             <div><dt>After you start</dt><dd>The bot runs automatically and may place paper orders when its rules are met. Pause it anytime.</dd></div>
           </dl>

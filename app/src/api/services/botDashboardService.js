@@ -166,6 +166,28 @@ export function eventToItem(e) {
     executionId: meta.executionId ?? e.executionId ?? null,
   }
 
+  // Research-driven decisions carry the verified Alpha Engine evidence they were made on.
+  if (e.type === 'decision_made' && meta.decision && meta.researchEvidence) {
+    const ev = meta.researchEvidence
+    const evaluation = ev.ranking?.evaluation ?? null
+    const ctx = meta.decisionContext ?? {}
+    const research = {
+      decision: meta.decision, reason: ctx.reason ?? null, direction: ev.direction ?? null, horizon: ev.horizon ?? null,
+      score: ev.confidence ?? null, observedAt: ev.observedAt ?? null, publicationId: ev.ranking?.publicationId ?? null,
+      mode: ev.ranking?.mode ?? null, holdout: evaluation?.holdout ?? null,
+      edgeOverBaseline: evaluation ? evaluation.edgeOverBaseline === true : null,
+      genuineOutOfSample: evaluation ? evaluation.genuineOutOfSample === true : null,
+      simulation: ctx.simulation ?? null,
+    }
+    const dir = sideWord(String(ev.direction ?? '').toLowerCase() === 'sell' ? 'sell' : 'buy')
+    if (meta.decision === 'accepted') {
+      return { ...base, category: 'signal', research, title: `Research: ${dir} ${sym}`,
+        explanation: `Verified Alpha Engine ${dir} research (${ev.horizon ?? 'n/a'} horizon) accepted by this bot.` }
+    }
+    return { ...base, category: 'evaluation', research, title: `Research not traded: ${sym}`,
+      explanation: RESEARCH_REASON_TEXT[ctx.reason] ?? `The research was ${meta.decision} (${ctx.reason ?? 'no reason recorded'}).` }
+  }
+
   switch (e.type) {
     case 'signal_hold':
     case 'decision_made':
@@ -210,8 +232,23 @@ export function eventToItem(e) {
   }
 }
 
+const RESEARCH_REASON_TEXT = {
+  no_edge_over_baseline: 'Its holdout didn’t beat the always-up baseline, and this bot only trades research with an edge.',
+  below_min_confidence: 'Its score was below this bot’s minimum.',
+  stale_prediction: 'The research was older than this bot allows.',
+  entry_price_drift: 'The price had moved too far from the research’s entry price.',
+  degraded_research_run: 'The research run didn’t pass Alpha Engine’s quality gates.',
+  research_tier_not_full: 'The research run didn’t pass Alpha Engine’s quality gates.',
+  direction_mismatch: 'The research direction didn’t match this bot.',
+}
+
+const REPLAY_ORDER = /^simreplay_(\d{4}-\d{2}-\d{2})_/
+
 export function normalizeExecution(x) {
+  const replay = typeof x.brokerOrderId === 'string' ? x.brokerOrderId.match(REPLAY_ORDER) : null
   return {
+    brokerOrderId: x.brokerOrderId ?? null,
+    replaySession: replay ? replay[1] : null,
     id: x.id,
     symbol: x.ticker ?? null,
     side: x.direction ?? null,
@@ -249,7 +286,10 @@ export function executionToItems(x, { hasCreatedEvent }) {
       items.push({
         id: `exe:${x.id}:fill`, at: x.filledAt ?? x.updatedAt, symbol: x.symbol, category: 'fill', executionId: x.id, diagnostics,
         title: x.status === 'filled' ? `${sideWord(x.side, true)} ${qty ?? ''} ${sym}`.replace(/\s+/g, ' ').trim() : `Partly filled: ${sym}`,
-        explanation: [x.filledPrice !== null ? `at ${fmt(x.filledPrice)}` : null, x.costs > 0 ? `costs ${fmt(x.costs)}` : null].filter(Boolean).join(' · ') || 'Paper fill.',
+        explanation: x.replaySession
+          ? `Simulated fill at the ${x.replaySession} close${x.filledPrice !== null ? ` (${fmt(x.filledPrice)})` : ''} — historical replay, not a broker execution.`
+          : [x.filledPrice !== null ? `at ${fmt(x.filledPrice)}` : null, x.costs > 0 ? `costs ${fmt(x.costs)}` : null].filter(Boolean).join(' · ') || 'Paper fill.',
+        simulated: Boolean(x.replaySession),
       })
       break
     case 'failed':
@@ -376,4 +416,10 @@ export function updateBotSettings(bot, { name, allocation, maxPerOrder }) {
       maxOrderNotional: maxPerOrder,
     },
   })
+}
+
+/** Archived, digest-verified research evidence for one execution (trade history). */
+export async function getExecutionResearch(executionId) {
+  const res = await get(`/executions/${encodeURIComponent(executionId)}/research`)
+  return res?.data ?? res
 }

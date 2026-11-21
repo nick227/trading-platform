@@ -5,6 +5,11 @@ import { Link } from 'react-router-dom'
  * 'checking' and 'unknown' are neutral: never present "no account" before the
  * status is actually known. Live trading is disabled platform-wide.
  */
+/** Internal historical-replay simulator: paper-like for every check, labelled distinctly. */
+export function isSimulated(brokerStatus) {
+  return brokerStatus?.simulated === true
+}
+
 export function getTradingMode(brokerStatus, { loading = false, error = false } = {}) {
   if (loading) return 'checking'
   if (error) return 'unknown'
@@ -31,6 +36,9 @@ const SHORT_LABELS = {
 
 export default function ModeBadge({ brokerStatus, loading = false, error = false }) {
   const mode = getTradingMode(brokerStatus, { loading, error })
+  const simulated = mode === 'paper' && isSimulated(brokerStatus)
+  const full = simulated ? `Simulated · replay of ${brokerStatus.session}` : LABELS[mode]
+  const short = simulated ? 'Simulated' : SHORT_LABELS[mode]
   return (
     <Link
       to="/profile/broker"
@@ -38,12 +46,12 @@ export default function ModeBadge({ brokerStatus, loading = false, error = false
       data-testid="mode-badge"
       data-mode={mode}
       title="Trading account status"
-      aria-label={LABELS[mode]}
+      aria-label={full}
       aria-busy={mode === 'checking' || undefined}
     >
       <span className="mode-badge-dot" aria-hidden="true" />
-      <span className="mode-badge-full" aria-hidden="true">{LABELS[mode]}</span>
-      <span className="mode-badge-short" aria-hidden="true">{SHORT_LABELS[mode]}</span>
+      <span className="mode-badge-full" aria-hidden="true">{full}</span>
+      <span className="mode-badge-short" aria-hidden="true">{short}</span>
     </Link>
   )
 }
