@@ -242,6 +242,14 @@ describe('PUT /api/bots/:id', () => {
     })
     expect(res.statusCode).toBe(404)
   })
+
+  it('maps invalid research settings to 400 INVALID_CONFIG', async () => {
+    const botsService = (await import('../../services/botsService.js')).default
+    vi.mocked(botsService.updateBot).mockRejectedValueOnce(Object.assign(new Error('Invalid research settings (invalid_minConfidence)'), { statusCode: 400 }))
+    const res = await app.inject({ method: 'PUT', url: '/api/bots/bot_test123', payload: { config: { signalSource: 'alpha_research', research: { minConfidence: 5 } } } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.code).toBe('INVALID_CONFIG')
+  })
 })
 
 describe('DELETE /api/bots/:id', () => {

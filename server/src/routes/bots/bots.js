@@ -64,8 +64,15 @@ export default async function botsRoutes(app, opts) {
       return reply.code(400).send({ error: { code: 'INVALID_PORTFOLIO', message: 'Invalid portfolioId' } })
     }
 
-    const bot = await botsService.createBot({ ...request.body, userId: request.user.id })
-    return reply.code(201).send({ data: bot })
+    try {
+      const bot = await botsService.createBot({ ...request.body, userId: request.user.id })
+      return reply.code(201).send({ data: bot })
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return reply.code(400).send({ error: { code: 'INVALID_CONFIG', message: error.message } })
+      }
+      throw error
+    }
   })
 
   app.put('/:id', {
@@ -99,6 +106,9 @@ export default async function botsRoutes(app, opts) {
       const bot = await botsService.updateBot(id, request.body)
       return { data: bot }
     } catch (error) {
+      if (error.statusCode === 400) {
+        return reply.code(400).send({ error: { code: 'INVALID_CONFIG', message: error.message } })
+      }
       if (error.code === 'P2025') {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
       }

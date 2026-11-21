@@ -26,9 +26,54 @@ export function normalizeTemplate(t) {
     config,
     rules: Array.isArray(t.rules) ? t.rules : [],
     tags: Array.isArray(t.tags) ? t.tags : [],
+    research: config.signalSource === 'alpha_research' ? researchDefaults(config.research) : null,
     available,
     unavailableReason: available ? null : 'Not available yet — strategy-based bots can’t run in the bot engine.',
   }
+}
+
+// Mirrors the bot engine's research policy bounds (worker/src/engine/researchDecision.js).
+export const RESEARCH_LIMITS = {
+  minConfidencePct: { min: 0, max: 100 },
+  maxAgeHours: { min: 1, max: 720 },
+  maxDriftPct: { min: 0, max: 50 },
+}
+
+function researchDefaults(research) {
+  const r = research && typeof research === 'object' ? research : {}
+  const num = (v, fallback) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : fallback)
+  return {
+    minConfidencePct: Math.round(num(r.minConfidence, 0.6) * 100),
+    maxAgeHours: num(r.maxPredictionAgeHours, 96),
+    maxDriftPct: num(r.maxEntryDriftPct, 5),
+    base: r,
+  }
+}
+
+/** Field errors for research settings. Empty object = valid. */
+export function validateResearch(values) {
+  const errors = {}
+  for (const [key, { min, max }] of Object.entries(RESEARCH_LIMITS)) {
+    const n = toNumberOrNull(values?.[key])
+    if (n === null || n < min || n > max) errors[key] = `Enter a number from ${min} to ${max}.`
+  }
+  return errors
+}
+
+/** Wizard values → config.research, keeping template keys the wizard doesn't edit. */
+export function toResearchConfig(values, base = {}) {
+  return {
+    ...base,
+    minConfidence: Number(values.minConfidencePct) / 100,
+    maxPredictionAgeHours: Number(values.maxAgeHours),
+    maxEntryDriftPct: Number(values.maxDriftPct),
+  }
+}
+
+/** What a template's bot does, in plain words. */
+export function describeTemplateAction(template) {
+  if (template?.research) return 'Buys on current Alpha Engine BUY research; sells shares it holds on SELL research'
+  return describeDirection(template?.direction)
 }
 
 export function describeDirection(direction) {
@@ -159,7 +204,7 @@ export function friendlyCreateError(error) {
  * If activation fails, the bot already exists, paused, with the confirmed
  * limits; the result says so and links to it rather than retrying creation.
  */
-export async function createAndStartBot({ template, portfolioId, name, tickers, capital, maxPerOrder }) {
+export async function createAndStartBot({ template, portfolioId, name, tickers, capital, maxPerOrder, research }) {
   let created
   try {
     created = await post('/bots/catalog/from-template', {
@@ -172,6 +217,7 @@ export async function createAndStartBot({ template, portfolioId, name, tickers, 
       maxOrderNotional: maxPerOrder,
       riskOnExposure: 1,
       enabled: false,
+      ...(template.research && research ? { config: { research: toResearchConfig(research, template.research.base) } } : {}),
     })
   } catch (error) {
     return { ok: false, stage: 'create', message: friendlyCreateError(error) }
