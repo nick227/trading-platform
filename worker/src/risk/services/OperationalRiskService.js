@@ -1,6 +1,9 @@
 // Operational Risk Score Service
 // Measures if the system can execute safely right now
 
+// Real schema: executions (not a 'trade' model), BotEventType enum values, LiveQuote.
+const PENDING_EXECUTION_STATUSES = ['queued', 'processing']
+const ERROR_EVENT_TYPES = ['error_occurred', 'strategy_error', 'execution_failed', 'risk_evaluation_failed']
 import prisma from '../../db/prisma.js'
 
 export class OperationalRiskService {
@@ -98,7 +101,7 @@ export class OperationalRiskService {
       // Check recent order failures
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
       
-      const failedOrders = await prisma.trade.count({
+      const failedOrders = await prisma.execution.count({
         where: {
           portfolioId,
           status: 'failed',
@@ -125,17 +128,14 @@ export class OperationalRiskService {
   // Score quote freshness (0-100, penalty to subtract)
   async scoreQuoteFreshness(portfolioId) {
     try {
-      // Check most recent quote timestamp
-      const portfolio = await prisma.portfolio.findUnique({
-        where: { id: portfolioId },
-        select: { lastQuoteUpdate: true }
-      })
+      // Most recent quote written by the worker's quote sync (live stream or replay feed)
+      const latest = await prisma.liveQuote.findFirst({ orderBy: { updatedAt: 'desc' }, select: { updatedAt: true } })
 
-      if (!portfolio || !portfolio.lastQuoteUpdate) {
+      if (!latest?.updatedAt) {
         return { score: 50, penalty: 15, status: 'no_quotes' }
       }
 
-      const freshness = Date.now() - portfolio.lastQuoteUpdate.getTime()
+      const freshness = Date.now() - latest.updatedAt.getTime()
 
       if (freshness > this.thresholds.quoteFreshnessMax) {
         return { score: 20, penalty: this.penalties.staleQuotes, status: 'stale', age: freshness }
@@ -178,8 +178,8 @@ export class OperationalRiskService {
       // Check pending execution queue size
       // This would need to connect to your queue system
       // For V1, we'll use trade count with 'pending' status
-      const pendingTrades = await prisma.trade.count({
-        where: { status: 'pending' }
+      const pendingTrades = await prisma.execution.count({
+        where: { status: { in: PENDING_EXECUTION_STATUSES } }
       })
 
       if (pendingTrades > this.thresholds.queueBacklogMax) {
@@ -211,7 +211,7 @@ export class OperationalRiskService {
       const errorEvents = await prisma.botEvent.count({
         where: {
           portfolioId,
-          type: { contains: 'error' },
+          type: { in: ERROR_EVENT_TYPES },
           createdAt: { gte: fiveMinutesAgo }
         }
       })
@@ -267,15 +267,12 @@ export class OperationalRiskService {
   // Get detailed operational information
   async getOperationalDetails(portfolioId) {
     try {
-      const portfolio = await prisma.portfolio.findUnique({
-        where: { id: portfolioId },
-        select: { lastQuoteUpdate: true }
-      })
+      const latestQuote = await prisma.liveQuote.findFirst({ orderBy: { updatedAt: 'desc' }, select: { updatedAt: true } })
 
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
 
       const [failedOrders, errorEvents, pendingTrades] = await Promise.all([
-        prisma.trade.count({
+        prisma.execution.count({
           where: {
             portfolioId,
             status: 'failed',
@@ -285,18 +282,18 @@ export class OperationalRiskService {
         prisma.botEvent.count({
           where: {
             portfolioId,
-            type: { contains: 'error' },
+            type: { in: ERROR_EVENT_TYPES },
             createdAt: { gte: fiveMinutesAgo }
           }
         }),
-        prisma.trade.count({
-          where: { status: 'pending' }
+        prisma.execution.count({
+          where: { status: { in: PENDING_EXECUTION_STATUSES } }
         })
       ])
 
       return {
-        lastQuoteUpdate: portfolio?.lastQuoteUpdate,
-        quoteAge: portfolio?.lastQuoteUpdate ? Date.now() - portfolio.lastQuoteUpdate.getTime() : null,
+        lastQuoteUpdate: latestQuote?.updatedAt ?? null,
+        quoteAge: latestQuote?.updatedAt ? Date.now() - latestQuote.updatedAt.getTime() : null,
         failedOrdersLast5min: failedOrders,
         errorEventsLast5min: errorEvents,
         pendingQueueSize: pendingTrades,
