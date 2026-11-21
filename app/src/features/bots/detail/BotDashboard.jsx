@@ -107,6 +107,11 @@ function PerformanceCard({ performance, fills, executionsAvailable }) {
           <span className="muted">Profit and loss for this bot isn’t available yet.</span>
         </p>
       )}
+      {performance?.valuation?.simulated && (
+        <p className="muted text-xs mb-0" data-testid="performance-valuation">
+          Simulated: open positions valued at the latest known daily close ({[...new Set(Object.values(performance.valuation.sessions ?? {}))].join(', ')}).
+        </p>
+      )}
       {performance?.asOf && <p className="muted text-xs mb-0">As of {fmtWhen(performance.asOf)}</p>}
       {fills && executionsAvailable && (
         <p className="text-sm mb-0" data-testid="fill-summary">

@@ -175,7 +175,9 @@ describe('prediction → decision → paper execution → broker confirmation �
       decisionContext: { reason: 'research_accepted', signal: 'buy', researchConfidence: 0.82, confidenceIsProbability: false, executionId: exe.id }
     })
     expect(decision.metadata.researchCanonicalJson).toBe(FIXTURES.traces.pred_spy_buy.evidence.canonicalJson)
-    expect(ae.requests).toEqual(['/api/research/latest', '/api/predictions/pred_spy_buy/trace'])
+    // Research is located and verified first; then real market data for the risk check.
+    expect(ae.requests.slice(0, 2)).toEqual(['/api/research/latest', '/api/predictions/pred_spy_buy/trace'])
+    expect(ae.requests.slice(2).sort()).toEqual(['/api/market/session-close', '/api/regime/SPY'])
 
     // Paper execution and broker confirmation (submit, then the reconciliation sweep sees the fill).
     await drain()

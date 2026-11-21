@@ -9,13 +9,13 @@ import { readFileSync } from 'node:fs'
 import request from 'supertest'
 import { createMemoryPrisma } from '../support/memoryPrisma.js'
 
-const h = vi.hoisted(() => ({ db: null, alpacaConstructed: 0 }))
+const h = vi.hoisted(() => ({ db: null, alpacaConstructed: 0, risk: null }))
 vi.mock('../../../worker/src/db/prisma.js', () => ({ default: new Proxy({}, { get: (_, k) => h.db[k] }) }))
 vi.mock('../../src/loaders/prisma.js', () => ({ default: new Proxy({}, { get: (_, k) => h.db[k] }) }))
 vi.mock('../../src/services/metricsService.js', () => ({ default: { processExecutionFill: async () => {} } }))
 vi.mock('../../../worker/src/logger.js', () => ({ log: { info() {}, warn() {}, error() {}, debug() {} } }))
 vi.mock('../../../worker/src/market/dataStream.js', () => ({ subscribe() {}, unsubscribe() {} }))
-vi.mock('../../../worker/src/risk/riskManagement.js', () => ({ riskManager: { evaluateExecutionRisk: async () => ({ approved: true, riskScore: 0.1 }) } }))
+vi.mock('../../../worker/src/risk/riskManagement.js', () => ({ riskManager: { evaluateExecutionRisk: async () => h.risk ?? { approved: true, decision: 'approve', riskScore: 0.1 } } }))
 vi.mock('../../../worker/src/broker/alpacaClient.js', async (orig) => {
   const real = await orig()
   return { ...real, AlpacaClient: class { constructor() { h.alpacaConstructed += 1; throw new Error('Alpaca must never be constructed in simulator mode') } } }
@@ -24,7 +24,7 @@ vi.mock('../../../worker/src/broker/alpacaClient.js', async (orig) => {
 const { traces } = JSON.parse(readFileSync(new URL('../fixtures/alpha-engine/traces.json', import.meta.url), 'utf8'))
 const SESSION = '2026-11-20' // fixture research observed 2026-11-20T14:30Z; replay clock = session close 21:00Z
 const KEY = 'test-internal-key'
-const ae = { closes: {}, requests: [] }
+const ae = { closes: {}, latest: {}, requests: [] }
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
   ae.requests.push(url.pathname + url.search)
@@ -39,8 +39,8 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === '/api/predictions/pred_spy_buy/trace') return send(200, traces.pred_spy_buy)
   if (url.pathname === '/api/market/session-close') {
-    const t = url.searchParams.get('ticker'); const c = ae.closes[t]
-    return c ? send(200, { ticker: t, session: c.session, close: c.close, timeframe: '1d', source: 'alpha-engine price_bars' }) : send(404, {})
+    const t = url.searchParams.get('ticker'); const c = url.searchParams.get('session') ? ae.closes[t] : ae.latest[t]
+    return c ? send(200, { ticker: t, session: c.session, close: c.close, volume: 3e6, avgVolume20: 2e6, timeframe: '1d', source: 'alpha-engine price_bars' }) : send(404, {})
   }
   send(404, {})
 })
@@ -78,7 +78,10 @@ beforeEach(async () => {
   engine.inflightMap.clear()
   worker.setInflightMap(engine.inflightMap)
   ae.closes = { SPY: { session: SESSION, close: 540.25 } }
+  ae.latest = { SPY: { session: '2026-11-21', close: 545.75 } }
   ae.requests = []
+  h.risk = null
+  delete process.env.SIM_TEST_SCENARIO
   setMarketOpenState(false)
   Object.assign(worker.orderWorkerConfig, { sleep: async () => {}, now: () => { vi.setSystemTime(new Date(Date.now() + 1)); return new Date() },
     fillTimeoutMs: 0, fillPollIntervalMs: 0, reconcileIntervalMs: 0, notFoundGraceMs: 60_000, stuckAfterMs: 120_000, cancelPollMs: 0, maxAttempts: 3 })
@@ -165,3 +168,38 @@ describe('historical-replay simulator', () => {
     expect(await h.db.execution.count()).toBe(0)
   })
 })
+
+describe('normal risk policy inside the simulator', () => {
+  const reject = { approved: false, decision: 'reject', reason: 'execution_weak', adjustedQuantity: 0, failedChecks: [], scores: { execution: { score: 45 } }, riskScore: 100 }
+
+  it('blocks research the risk engine rejects, recording the verdict and real market data', async () => {
+    h.risk = reject
+    setMarketOpenState(true)
+    await feedTick()
+    expect(await h.db.execution.count()).toBe(0)
+    const ev = await h.db.botEvent.findFirst({ where: { type: 'execution_blocked_by_risk' } })
+    expect(ev.metadata.riskDecision).toMatchObject({ basis: 'rejected', decision: 'reject', reason: 'execution_weak',
+      marketData: { ticker: 'SPY', price: 540.25, volume: 3e6, avgVolume: 2e6, session: SESSION } })
+    expect(ev.metadata.riskDecision.marketData.regime).toBeUndefined()
+  })
+
+  it('a labelled test scenario simulates the lifecycle anyway, with P&L at the latest known close', async () => {
+    h.risk = reject
+    process.env.SIM_TEST_SCENARIO = 'p0-demo'
+    setMarketOpenState(true)
+    await feedTick()
+    const [exe] = await h.db.execution.findMany({})
+    const created = await h.db.botEvent.findFirst({ where: { type: 'execution_created' } })
+    expect(created.metadata.riskDecision).toMatchObject({ basis: 'simulator_test_scenario', decision: 'reject', reason: 'execution_weak',
+      testScenario: { name: 'p0-demo', mode: 'historical_replay', session: SESSION } })
+    const audit = await h.db.executionAudit.findFirst({ where: { executionId: exe.id, eventType: 'execution_created' } })
+    expect(audit.metadata.riskDecision.basis).toBe('simulator_test_scenario')
+    await drain()
+    expect(await h.db.execution.findUnique({ where: { id: exe.id } })).toMatchObject({ status: 'filled', filledPrice: 540.25, brokerOrderId: `simreplay_${SESSION}_${exe.clientOrderId}` })
+
+    const bot = await request(app.server).get('/api/bots/bot_r').set(as())
+    expect(bot.body.data.performance).toMatchObject({ unrealizedPnl: Number(((545.75 - 540.25) * 9).toFixed(2)),
+      valuation: { simulated: true, sessions: { SPY: '2026-11-21' } } })
+  })
+})
+
