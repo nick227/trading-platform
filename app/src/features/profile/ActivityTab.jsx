@@ -67,16 +67,21 @@ export default function ActivityTab() {
   return (
     <div className="profile-pane">
       <div className="card profile-card">
-        <div className="profile-card-header">
+        <div className="profile-card-header flex justify-between items-center">
           <h3 className="profile-card-title">Recent Activity</h3>
-          <button 
-            className="btn btn-xs btn-ghost" 
-            onClick={loadExecutions} 
-            disabled={loading}
-            title="Refresh"
-          >
-            {loading ? '...' : '↻'}
-          </button>
+          <div className="hstack gap-2">
+            <Link to="/history" className="text-xs text-primary hover:underline">
+              Full History →
+            </Link>
+            <button 
+              className="btn btn-xs btn-ghost" 
+              onClick={loadExecutions} 
+              disabled={loading}
+              title="Refresh"
+            >
+              {loading ? '...' : '↻'}
+            </button>
+          </div>
         </div>
 
         {loading ? (

@@ -28,6 +28,7 @@ import pageTitleService from '../services/pageTitleService'
 const Portfolio = lazy(() => import('../features/Portfolio'))
 const AssetsIndex = lazy(() => import('../features/AssetsIndex'))
 const Orders = lazy(() => import('../features/Orders'))
+const TradeHistory = lazy(() => import('../features/history/TradeHistory'))
 
 /** Redirects logged-in users away from auth pages. */
 function AuthScreen() {
@@ -65,6 +66,7 @@ function AppLayout() {
       '/bots': 'Bots',
       '/bots/new': 'New bot',
       '/orders': 'Orders',
+      '/history': 'Trade History',
       '/profile': 'Account',
       '/research': 'Research',
       '/opportunities': 'Opportunities',
@@ -139,6 +141,16 @@ export function AppShell() {
             <Protected>
               <Suspense fallback={<PageSkeleton />}>
                 <Orders />
+              </Suspense>
+            </Protected>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <Protected>
+              <Suspense fallback={<PageSkeleton />}>
+                <TradeHistory />
               </Suspense>
             </Protected>
           }

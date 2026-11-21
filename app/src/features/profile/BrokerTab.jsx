@@ -1,14 +1,28 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../app/AuthProvider.jsx'
 
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+function fmtMoney(n) {
+  return n === null || n === undefined ? '—' : currency.format(n)
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 export default function BrokerTab() {
-  const { brokerStatus, saveAlpacaKeys, refreshBrokerStatus } = useAuth()
+  const { brokerStatus, saveAlpacaKeys, refreshBrokerStatus, disconnectBroker } = useAuth()
 
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
   const [paper, setPaper] = useState(brokerStatus?.paper ?? true)
   const [status, setStatus] = useState(null) // { type: 'success'|'error', message }
   const [saving, setSaving] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   useEffect(() => {
     if (brokerStatus?.paper !== undefined) setPaper(brokerStatus.paper)
@@ -35,20 +49,39 @@ export default function BrokerTab() {
     }
   }
 
-  const connected = brokerStatus?.connected
+  const handleDisconnect = async () => {
+    if (!window.confirm('Disconnect your Alpaca account? Your bots will pause and broker operations will be disabled until you reconnect.')) {
+      return
+    }
+
+    setDisconnecting(true)
+    setStatus(null)
+    try {
+      await disconnectBroker()
+      setApiKey('')
+      setApiSecret('')
+      setStatus({ type: 'success', message: 'Alpaca broker account disconnected.' })
+    } catch (err) {
+      setStatus({ type: 'error', message: err.message || 'Failed to disconnect broker account.' })
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
+  const connected = Boolean(brokerStatus?.connected)
 
   return (
     <div className="profile-pane">
       <div className="card profile-card">
         <div className="profile-card-header flex row w-full">
-          <h3 className="profile-card-title">Alpaca Broker</h3>
+          <h3 className="profile-card-title">Alpaca Broker Connection</h3>
           <button
             className="btn btn-xs btn-ghost"
             onClick={() => refreshBrokerStatus().catch(() => {})}
-            disabled={saving}
+            disabled={saving || disconnecting}
             title="Refresh status"
           >
-            {saving ? '...' : '↻'}
+            {saving || disconnecting ? '...' : '↻'}
           </button>
         </div>
 
@@ -59,6 +92,43 @@ export default function BrokerTab() {
             <span className="chip">Not Connected</span>
           )}
         </div>
+
+        {connected && (
+          <section className="card card-pad-sm mb-4 bg-subtle" aria-labelledby="verified-balances-label">
+            <h4 id="verified-balances-label" className="text-xs font-600 muted uppercase tracking-wide mb-3">
+              Verified Alpaca Paper Balances
+            </h4>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <span className="muted text-xs block">Paper Equity</span>
+                <span className="font-600 font-mono text-base">{fmtMoney(brokerStatus.equity)}</span>
+              </div>
+              <div>
+                <span className="muted text-xs block">Cash Balance</span>
+                <span className="font-600 font-mono text-base">{fmtMoney(brokerStatus.cash)}</span>
+              </div>
+              <div>
+                <span className="muted text-xs block">Paper Buying Power</span>
+                <span className="font-600 font-mono text-base">{fmtMoney(brokerStatus.buyingPower)}</span>
+              </div>
+              <div>
+                <span className="muted text-xs block">Account Number</span>
+                <span className="font-mono text-sm">{brokerStatus.accountNumber || '—'}</span>
+              </div>
+            </div>
+            <div className="text-xs muted flex justify-between items-center pt-2 border-t">
+              <span>Last Synchronized: {fmtTime(brokerStatus.lastVerifiedAt)}</span>
+              <button
+                type="button"
+                className="btn btn-xs btn-ghost text-negative"
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+              >
+                {disconnecting ? 'Disconnecting…' : 'Disconnect Account'}
+              </button>
+            </div>
+          </section>
+        )}
 
         <div className="wrap mb-4">
           <button
@@ -81,6 +151,12 @@ export default function BrokerTab() {
           <div className="alert alert-warn mb-4">
             Live trading uses real money. Ensure your credentials are correct before saving.
           </div>
+        )}
+
+        {paper && !connected && (
+          <p className="muted text-xs mb-4">
+            Enter your Alpaca paper trading API keys. Paper trading uses simulated funds hosted by Alpaca (<code>https://paper-api.alpaca.markets</code>) so you can test bots with zero financial risk.
+          </p>
         )}
 
         <div className="field">
@@ -110,8 +186,8 @@ export default function BrokerTab() {
           />
         </div>
 
-        <div className="profile-actions">
-          <button className="btn btn-sm btn-primary" type="button" onClick={handleSave} disabled={saving}>
+        <div className="profile-actions flex gap-2">
+          <button className="btn btn-sm btn-primary" type="button" onClick={handleSave} disabled={saving || disconnecting}>
             {saving ? 'Verifying…' : connected ? 'Update Credentials' : 'Connect Alpaca'}
           </button>
         </div>
@@ -125,4 +201,3 @@ export default function BrokerTab() {
     </div>
   )
 }
-

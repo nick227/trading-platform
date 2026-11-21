@@ -135,6 +135,11 @@ export default {
     
     const executions = await prisma.execution.findMany({
       where,
+      include: {
+        bot: {
+          select: { id: true, name: true, templateId: true }
+        }
+      },
       orderBy: [
         { createdAt: 'desc' },
         { id: 'desc' }
@@ -153,7 +158,15 @@ export default {
   },
 
   async getExecution(id) {
-    return prisma.execution.findUnique({ where: { id } })
+    return prisma.execution.findUnique({
+      where: { id },
+      include: {
+        bot: {
+          select: { id: true, name: true, templateId: true }
+        },
+        events: true
+      }
+    })
   },
 
   async getExecutionSummary(query) {

@@ -56,9 +56,18 @@ function BalanceCard({ account, today, mode }) {
           <dt className="muted">Cash</dt>
           <dd>{fmtMoney(account?.cash ?? null)}</dd>
         </div>
+        {account?.buyingPower !== null && account?.buyingPower !== undefined && (
+          <div>
+            <dt className="muted">Buying power</dt>
+            <dd>{fmtMoney(account.buyingPower)}</dd>
+          </div>
+        )}
       </dl>
       {connected ? (
-        <Link className="home-link" to="/portfolio">View portfolio →</Link>
+        <div className="flex gap-4 mt-2">
+          <Link className="home-link" to="/portfolio">View portfolio →</Link>
+          <Link className="home-link text-xs muted" to="/history">Trade history →</Link>
+        </div>
       ) : (
         <div className="alert alert-warn mt-3" role="status">
           No trading account connected.{' '}

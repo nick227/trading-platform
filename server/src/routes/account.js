@@ -148,7 +148,25 @@ export default async function accountRoutes(fastify) {
     const userId = request.user.id
     const broker = await prisma.brokerAccount.findUnique({ where: { userId: String(userId) } })
     if (!broker) return reply.send({ connected: false })
-    return reply.send({ connected: true, paper: broker.paper, status: broker.status, lastVerifiedAt: broker.lastVerifiedAt })
+
+    const alpaca = await fetchAlpacaAccount(userId)
+    return reply.send({
+      connected: true,
+      paper: broker.paper,
+      status: broker.status,
+      lastVerifiedAt: broker.lastVerifiedAt,
+      accountNumber: alpaca?.account_number ?? null,
+      equity: alpaca ? parseFloat(alpaca.equity) : null,
+      cash: alpaca ? parseFloat(alpaca.cash) : null,
+      buyingPower: alpaca ? parseFloat(alpaca.buying_power) : null,
+    })
+  })
+
+  // DELETE /api/account/broker-credentials — disconnect broker account
+  fastify.delete('/broker-credentials', async (request, reply) => {
+    const userId = request.user.id
+    await prisma.brokerAccount.deleteMany({ where: { userId: String(userId) } })
+    return reply.send({ ok: true })
   })
 
   fastify.get('/reconcile-status', async (request, reply) => {

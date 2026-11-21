@@ -5,6 +5,7 @@ import {
   registerWithCredentials,
   logoutFromServer,
   saveBrokerCredentials,
+  disconnectBroker as disconnectBrokerAPI,
   getBrokerStatus,
   resetPassword as resetPasswordAPI,
 } from '../api/profileClient'
@@ -77,6 +78,12 @@ export function AuthProvider({ children }) {
     return result
   }
 
+  const disconnectBroker = async () => {
+    const result = await disconnectBrokerAPI()
+    await loadBrokerStatus()
+    return result
+  }
+
   const refreshBrokerStatus = () => loadBrokerStatus()
 
   const resetPassword = async (currentPassword, nextPassword) => {
@@ -104,6 +111,7 @@ export function AuthProvider({ children }) {
         register,
         logout,
         saveAlpacaKeys,
+        disconnectBroker,
         refreshBrokerStatus,
         resetPassword,
         // kept for any components that still use the old shape

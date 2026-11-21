@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import Sheet from '../../../components/Sheet'
 import StatusPill from '../../../components/BotStatusPill'
@@ -120,9 +120,38 @@ function PerformanceCard({ performance, fills, executionsAvailable }) {
 function Diagnostics({ data }) {
   const entries = Object.entries(data ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== '')
   if (entries.length === 0) return null
+
+  const hasIntelligence = Boolean(
+    data.rankingScore !== undefined ||
+    data.rank !== undefined ||
+    data.conviction !== undefined ||
+    data.mlFeatures !== undefined ||
+    data.suppressionReason !== undefined ||
+    data.orderEligibility !== undefined
+  )
+
   return (
     <details className="timeline-diag">
       <summary>Details</summary>
+      {hasIntelligence && (
+        <div className="intelligence-summary mb-2 p-2 bg-subtle rounded border text-xs">
+          <strong className="block text-primary mb-1">Alpha Engine Research & Decision:</strong>
+          {data.rankingScore !== undefined && (
+            <div>Ranking Score: {typeof data.rankingScore === 'number' ? data.rankingScore.toFixed(2) : data.rankingScore}</div>
+          )}
+          {data.conviction && <div>Conviction: {String(data.conviction)}</div>}
+          {data.orderEligibility && <div>Order Eligibility: {String(data.orderEligibility).toUpperCase()}</div>}
+          {data.suppressionReason && (
+            <div className="text-warn font-500">Suppression: {String(data.suppressionReason)}</div>
+          )}
+          {data.mlFeatures && (
+            <div className="mt-1">
+              <span className="muted font-500">ML Model Evidence: </span>
+              {typeof data.mlFeatures === 'object' ? JSON.stringify(data.mlFeatures) : String(data.mlFeatures)}
+            </div>
+          )}
+        </div>
+      )}
       <dl>
         {entries.map(([k, v]) => (
           <div key={k}>
@@ -132,6 +161,71 @@ function Diagnostics({ data }) {
         ))}
       </dl>
     </details>
+  )
+}
+
+function BotHoldingsCard({ executions }) {
+  const positions = useMemo(() => {
+    if (!executions) return []
+    const filled = executions.filter((x) => x.status === 'filled')
+    const posMap = {}
+    for (const e of filled) {
+      const sym = e.symbol
+      if (!sym) continue
+      if (!posMap[sym]) posMap[sym] = { symbol: sym, quantity: 0, cost: 0 }
+      const price = e.filledPrice || e.intentPrice || 0
+      if (e.side === 'buy') {
+        posMap[sym].quantity += e.quantity || 0
+        posMap[sym].cost += (e.quantity || 0) * price
+      } else if (e.side === 'sell') {
+        const remaining = Math.max(0, posMap[sym].quantity - (e.quantity || 0))
+        const ratio = posMap[sym].quantity > 0 ? remaining / posMap[sym].quantity : 0
+        posMap[sym].quantity = remaining
+        posMap[sym].cost = posMap[sym].cost * ratio
+      }
+    }
+    return Object.values(posMap)
+      .filter((p) => p.quantity > 0)
+      .map((p) => ({
+        ...p,
+        avgPrice: p.quantity > 0 ? p.cost / p.quantity : 0,
+      }))
+  }, [executions])
+
+  return (
+    <section className="card card-pad-md" aria-labelledby="holdings-title">
+      <h2 className="panel-title" id="holdings-title">Bot Holdings</h2>
+      {positions.length === 0 ? (
+        <p className="muted text-sm m-0" data-testid="bot-holdings-empty">
+          No open positions held by this bot.
+        </p>
+      ) : (
+        <div className="table-responsive">
+          <table className="table w-full text-sm" data-testid="bot-holdings-table">
+            <thead>
+              <tr>
+                <th className="text-left">Symbol</th>
+                <th className="text-right">Shares</th>
+                <th className="text-right">Avg Price</th>
+                <th className="text-right">Cost Basis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((p) => (
+                <tr key={p.symbol}>
+                  <td className="font-600">
+                    <Link to={`/assets/${p.symbol}`}>{p.symbol}</Link>
+                  </td>
+                  <td className="text-right">{p.quantity}</td>
+                  <td className="text-right">{fmtMoney(p.avgPrice)}</td>
+                  <td className="text-right">{fmtMoney(p.cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -427,6 +521,8 @@ export default function BotDashboard() {
         <PerformanceCard performance={bot.performance} fills={fills} executionsAvailable={activity.executionsAvailable} />
         <CapitalCard bot={bot} buyingPower={buyingPower} />
       </div>
+
+      <BotHoldingsCard executions={activity.executions} />
 
       <section className="card card-pad-md" aria-labelledby="activity-title">
         <div className="home-section-head">
