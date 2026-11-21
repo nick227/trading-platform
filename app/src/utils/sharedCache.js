@@ -7,16 +7,17 @@ import {
   invalidateByPattern,
   invalidationRules,
   scheduleRefresh,
+  clearRefreshQueues,
   enforceEphemeralLimits
 } from './cacheInvalidation.js'
-import { setCacheItem, getCacheItem, deleteCacheItem, cachedFetch } from './cacheFetch.js'
+import { setCacheItem, getCacheItem, deleteCacheItem, cachedFetch, clearPendingRequests } from './cacheFetch.js'
 
 // Named re-exports so callers can import from this single module
 export {
   globalCache,
   metrics, getCacheMetrics, resetMetrics,
-  invalidateNamespace, invalidateByPattern, invalidationRules, scheduleRefresh, enforceEphemeralLimits,
-  setCacheItem, getCacheItem, deleteCacheItem, cachedFetch
+  invalidateNamespace, invalidateByPattern, invalidationRules, scheduleRefresh, clearRefreshQueues, enforceEphemeralLimits,
+  setCacheItem, getCacheItem, deleteCacheItem, cachedFetch, clearPendingRequests
 }
 
 // Cache namespaces for precise invalidation

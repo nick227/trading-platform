@@ -98,10 +98,12 @@ export async function cachedFetch(type, keyFactory, fetchFn, ttl, options = {}) 
       }).catch(() => {
         // Silent fail for background refresh
       })
-      return cached.data
+      const staleData = cached.data !== undefined ? cached.data : cached
+      return { ...staleData, _cached: true, _source: 'cache' }
     } else {
       console.debug(`Cache hit for ${cacheKey}`)
-      return { ...cached, _cached: true, _source: 'cache' }
+      const payload = allowStale && cached.data !== undefined ? cached.data : cached
+      return { ...payload, _cached: true, _source: 'cache' }
     }
   }
   
@@ -123,4 +125,8 @@ export async function cachedFetch(type, keyFactory, fetchFn, ttl, options = {}) 
   
   pendingRequests.set(cacheKey, requestPromise)
   return requestPromise
+}
+
+export function clearPendingRequests() {
+  pendingRequests.clear()
 }

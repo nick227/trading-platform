@@ -1,6 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterEach, afterAll } from 'vitest'
 import { setupServer } from 'msw/node'
-import { rest } from 'msw'
+import { http, HttpResponse } from 'msw'
+
+// Unmock client so integration tests use real client through MSW
+vi.unmock('../../api/client')
+
 import { 
   getBots, 
   getBotById, 
@@ -14,45 +18,45 @@ import { mockBots, mockTemplates } from '../fixtures/botFixtures'
 // MSW server setup
 const server = setupServer(
   // GET /api/bots
-  rest.get('/api/bots', (req, res, ctx) => {
-    return res(ctx.json(mockBots))
+  http.get('*/api/bots', () => {
+    return HttpResponse.json(mockBots)
   }),
   
   // GET /api/bots/:id
-  rest.get('/api/bots/:id', (req, res, ctx) => {
-    const { id } = req.params
+  http.get('*/api/bots/:id', ({ params }) => {
+    const { id } = params
     const bot = mockBots.find(b => b.id === id)
     if (!bot) {
-      return res(ctx.status(404), ctx.json({ error: 'Bot not found' }))
+      return HttpResponse.json({ error: 'Bot not found' }, { status: 404 })
     }
-    return res(ctx.json(bot))
+    return HttpResponse.json(bot)
   }),
   
   // PUT /api/bots/:id
-  rest.put('/api/bots/:id', (req, res, ctx) => {
-    const { id } = req.params
-    const updateData = req.body as any
+  http.put('*/api/bots/:id', async ({ params, request }) => {
+    const { id } = params
+    const updateData = await request.json() as any
     const bot = mockBots.find(b => b.id === id)
     if (!bot) {
-      return res(ctx.status(404), ctx.json({ error: 'Bot not found' }))
+      return HttpResponse.json({ error: 'Bot not found' }, { status: 404 })
     }
     const updatedBot = { ...bot, ...updateData, updatedAt: new Date().toISOString() }
-    return res(ctx.json(updatedBot))
+    return HttpResponse.json(updatedBot)
   }),
   
   // DELETE /api/bots/:id
-  rest.delete('/api/bots/:id', (req, res, ctx) => {
-    const { id } = req.params
+  http.delete('*/api/bots/:id', ({ params }) => {
+    const { id } = params
     const bot = mockBots.find(b => b.id === id)
     if (!bot) {
-      return res(ctx.status(404), ctx.json({ error: 'Bot not found' }))
+      return HttpResponse.json({ error: 'Bot not found' }, { status: 404 })
     }
-    return res(ctx.json({ success: true, deletedBot: bot }))
+    return HttpResponse.json({ success: true, deletedBot: bot })
   }),
   
   // POST /api/bots/catalog/from-template
-  rest.post('/api/bots/catalog/from-template', (req, res, ctx) => {
-    const body = req.body as any
+  http.post('*/api/bots/catalog/from-template', async ({ request }) => {
+    const body = await request.json() as any
     const newBot = {
       id: `bot-${Date.now()}`,
       ...body,
@@ -61,12 +65,12 @@ const server = setupServer(
       updatedAt: new Date().toISOString(),
       deletedAt: null
     }
-    return res(ctx.status(201), ctx.json(newBot))
+    return HttpResponse.json(newBot, { status: 201 })
   }),
   
   // POST /api/bots/strategy-based
-  rest.post('/api/bots/strategy-based', (req, res, ctx) => {
-    const body = req.body as any
+  http.post('*/api/bots/strategy-based', async ({ request }) => {
+    const body = await request.json() as any
     const newBot = {
       id: `bot-${Date.now()}`,
       ...body,
@@ -76,7 +80,7 @@ const server = setupServer(
       updatedAt: new Date().toISOString(),
       deletedAt: null
     }
-    return res(ctx.status(201), ctx.json(newBot))
+    return HttpResponse.json(newBot, { status: 201 })
   })
 )
 
@@ -198,8 +202,8 @@ describe('Bot CRUD Integration Tests', () => {
     it('should handle network errors gracefully', async () => {
       // Override the handler to simulate network error
       server.use(
-        rest.get('/api/bots', (req, res, ctx) => {
-          return res.networkError('Network connection failed')
+        http.get('*/api/bots', () => {
+          return HttpResponse.error()
         })
       )
       
@@ -208,8 +212,8 @@ describe('Bot CRUD Integration Tests', () => {
 
     it('should handle server errors gracefully', async () => {
       server.use(
-        rest.get('/api/bots', (req, res, ctx) => {
-          return res(ctx.status(500), ctx.json({ error: 'Internal server error' }))
+        http.get('*/api/bots', () => {
+          return HttpResponse.json({ error: 'Internal server error' }, { status: 500 })
         })
       )
       
@@ -218,8 +222,10 @@ describe('Bot CRUD Integration Tests', () => {
 
     it('should handle malformed responses', async () => {
       server.use(
-        rest.get('/api/bots', (req, res, ctx) => {
-          return res(ctx.text('Invalid JSON response'))
+        http.get('*/api/bots', () => {
+          return new HttpResponse('Invalid JSON response', {
+            headers: { 'Content-Type': 'application/json' }
+          })
         })
       )
       
@@ -263,8 +269,8 @@ describe('Bot CRUD Integration Tests', () => {
       }))
       
       server.use(
-        rest.get('/api/bots', (req, res, ctx) => {
-          return res(ctx.json(largeBots))
+        http.get('*/api/bots', () => {
+          return HttpResponse.json(largeBots)
         })
       )
       
