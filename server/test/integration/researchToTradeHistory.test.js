@@ -522,3 +522,18 @@ describe('edge over baseline (default policy)', () => {
   })
 })
 
+describe('in-flight guard', () => {
+  it('clears a stale in-memory guard when no active execution exists, and keeps a real one', async () => {
+    await researchBot()
+    inflightMap.set('bot_r:SPY', true) // stale: nothing active in the database
+    await tick('bot_r', 'SPY', 540)
+    expect(await executions()).toHaveLength(1)
+
+    // Now a real active order exists: the guard holds and nothing duplicates.
+    advance(61_000)
+    await tick('bot_r', 'SPY', 540)
+    expect(await executions()).toHaveLength(1)
+    expect(inflightMap.get('bot_r:SPY')).toBe(true)
+  })
+})
+

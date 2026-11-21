@@ -157,6 +157,7 @@ export function stopBotEngine() {
   positionCacheByUser.clear()
   lastSkipEventAt.clear()
   lastRuleBlockEventAt.clear()
+  lastInflightCheckAt.clear()
   if (previousTickers.size > 0) {
     unsubscribe([...previousTickers])
   }
@@ -228,10 +229,16 @@ export async function onPriceTick(ticker) {
 export async function evaluateBot(bot, ticker) {
   const inflightKey = `${bot.id}:${ticker}`
 
-  // Primary guard: in-memory (no DB hit on every tick)
+  // Primary guard: in-memory (no DB hit on every tick). A key can go stale (e.g. a very
+  // fast fill finalized before the guard was re-set), so confirm it against the DB at most
+  // once per window; the DB unique activeIntentKey still guarantees a single active order.
   if (inflightMap.get(inflightKey)) {
-    await maybeLogInflightSkip(bot, ticker, inflightKey)
-    return
+    if (!(await inflightIsStale(bot, ticker, inflightKey))) {
+      await maybeLogInflightSkip(bot, ticker, inflightKey)
+      return
+    }
+    inflightMap.delete(inflightKey)
+    log.info({ botId: bot.id, ticker }, 'stale_inflight_guard_cleared')
   }
 
   // Fallback guard: one-time DB check per key to cover the startup window before
@@ -874,6 +881,19 @@ async function logBotEvent(bot, type, detail, ticker, metadata = {}) {
     log.error({ err: err.message, botId: bot.id, type, ticker }, 'bot_event_write_error')
     throw err
   }
+}
+
+const lastInflightCheckAt = new Map()
+
+async function inflightIsStale(bot, ticker, inflightKey) {
+  const now = Date.now()
+  if (now - (lastInflightCheckAt.get(inflightKey) ?? 0) < SKIP_EVENT_WINDOW_MS / 2) return false
+  lastInflightCheckAt.set(inflightKey, now)
+  const active = await prisma.execution.findFirst({
+    where: { botId: bot.id, ticker, status: { in: ACTIVE_EXECUTION_STATUSES } },
+    select: { id: true }
+  })
+  return !active
 }
 
 async function maybeLogInflightSkip(bot, ticker, inflightKey) {
