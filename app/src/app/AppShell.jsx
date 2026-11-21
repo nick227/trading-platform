@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import Nav from '../components/Nav'
 import Landing from '../features/Landing'
 import HomeDashboard from '../features/home/HomeDashboard'
@@ -7,8 +7,7 @@ import Welcome from '../features/home/Welcome'
 import NewBotWizard from '../features/bots/new/NewBotWizard'
 import Asset from '../features/Asset'
 import Bots from '../features/Bots'
-import BotDetails from '../features/BotDetails'
-import BotHistory from '../features/BotHistory'
+import BotDashboard from '../features/bots/detail/BotDashboard'
 import StrategyHistory from '../features/StrategyHistory'
 import AlphaShowcase from '../features/AlphaShowcase'
 import Opportunities from '../features/Opportunities'
@@ -34,6 +33,11 @@ const Orders = lazy(() => import('../features/Orders'))
 function AuthScreen() {
   const { user } = useAuth()
   return user ? <Navigate to="/" replace /> : <Auth />
+}
+
+function BotHistoryRedirect() {
+  const { botId } = useParams()
+  return <Navigate to={`/bots/${encodeURIComponent(botId)}`} replace />
 }
 
 /** "/" — bots-first Home for signed-in users, a short welcome otherwise. */
@@ -123,8 +127,9 @@ export function AppShell() {
         <Route path="/bots/create/rule-based" element={<Navigate to="/bots/new" replace />} />
         <Route path="/bots/create/strategy-based" element={<Navigate to="/bots/new" replace />} />
         <Route path="/bots/confirm" element={<Navigate to="/bots/new" replace />} />
-        <Route path="/bots/:botId" element={<Protected><BotDetails /></Protected>} />
-        <Route path="/bots/:botId/history" element={<Protected><BotHistory /></Protected>} />
+        <Route path="/bots/:botId" element={<Protected><BotDashboard /></Protected>} />
+        {/* Former mock-data history page; the bot page timeline replaces it. */}
+        <Route path="/bots/:botId/history" element={<BotHistoryRedirect />} />
         <Route path="/strategies/:templateId/history" element={<Protected><StrategyHistory /></Protected>} />
         <Route path="/templates" element={<Navigate to="/bots/new" replace />} />
         <Route path="/templates/:templateSlug" element={<Navigate to="/bots/new" replace />} />

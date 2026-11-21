@@ -94,8 +94,8 @@ export async function del(path) {
       method: 'DELETE',
       credentials: 'include'
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    return response.status === 204 ? null : response.json()
+    if (response.status === 204) return null
+    return await handleResponse(response)
   } catch (error) {
     console.warn(`API DELETE failed: ${path}`, error)
     throw error

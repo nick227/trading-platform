@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { getTradingMode } from '../../components/ModeBadge'
 import { loadHome, setBotRunning } from './homeApi'
+import { STATUS_LABELS, controlErrorMessage, deriveStatus } from '../../api/services/botDashboardService'
+import StatusPill from '../../components/BotStatusPill'
 
 const UNAVAILABLE = '—'
 
@@ -67,45 +69,43 @@ function BalanceCard({ account, today, mode }) {
   )
 }
 
+function lastActivityText(bot) {
+  if (bot.lastActivity) {
+    const a = bot.lastActivity
+    return `${a.title}${a.symbol && !a.title.includes(a.symbol) ? ` · ${a.symbol}` : ''} · ${fmtTime(a.at)}`
+  }
+  return bot.activityAvailable ? 'No activity yet' : 'Activity unavailable'
+}
+
+/** Name, status, allocation, P/L (when supplied), last activity, one control. */
 function BotCard({ bot, busy, error, onToggle }) {
-  const detail = bot.strategyName ?? (bot.botType === 'strategy_based' ? 'Strategy bot' : 'Rule bot')
+  const control = bot.stopped ? null : bot.running ? 'Pause' : 'Resume'
+  const pnl = bot.performance?.total ?? null
   return (
     <li className="card card-pad-sm home-bot" data-testid="bot-card">
-      <div className="home-bot-main">
-        <Link to={`/bots/${bot.id}`} className="home-bot-name">{bot.name}</Link>
-        <span className={`pill home-status home-status--${bot.running ? 'running' : 'paused'}`}>
-          {bot.running ? 'Running' : 'Paused'}
-        </span>
-      </div>
-      <div className="home-bot-meta muted">
-        <span>{detail}</span>
-        {bot.tickers.length > 0 && <span>{bot.tickers.slice(0, 4).join(', ')}{bot.tickers.length > 4 ? '…' : ''}</span>}
-      </div>
-      <dl className="home-bot-stats">
-        <div>
-          <dt className="muted">Allocated</dt>
-          <dd>{bot.allocation !== null ? fmtMoney(bot.allocation) : <span className="muted">Not set</span>}</dd>
+      <div className="home-bot-row">
+        <Link to={`/bots/${bot.id}`} className="home-bot-link" aria-label={`${bot.name}, ${STATUS_LABELS[bot.status]}`}>
+          <span className="home-bot-name">{bot.name}</span>
+          <span className="home-bot-meta muted">
+            <span>{bot.allocation !== null ? `${fmtMoney(bot.allocation)} simulated` : 'Capital not set'}</span>
+            {pnl !== null && <span className={toneClass(pnl)} data-testid="bot-pnl">{fmtSignedMoney(pnl)}</span>}
+          </span>
+          <span className="home-bot-last muted" data-testid="bot-last-activity">{lastActivityText(bot)}</span>
+        </Link>
+        <div className="home-bot-side">
+          <StatusPill status={bot.status} />
+          {control && (
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost"
+              onClick={() => onToggle(bot)}
+              disabled={busy}
+              aria-label={`${control} ${bot.name}`}
+            >
+              {busy ? 'Saving…' : control}
+            </button>
+          )}
         </div>
-        <div>
-          <dt className="muted">Trades</dt>
-          <dd>{bot.tradeCount ?? UNAVAILABLE}</dd>
-        </div>
-        <div>
-          <dt className="muted">Performance</dt>
-          <dd><span className="muted" title="Per-bot performance is not available yet">Not yet tracked</span></dd>
-        </div>
-      </dl>
-      <div className="home-bot-actions">
-        <button
-          type="button"
-          className="btn btn-xs btn-ghost"
-          onClick={() => onToggle(bot)}
-          disabled={busy}
-          aria-label={`${bot.running ? 'Pause' : 'Resume'} ${bot.name}`}
-        >
-          {busy ? 'Saving…' : bot.running ? 'Pause' : 'Resume'}
-        </button>
-        <Link to={`/bots/${bot.id}`} className="btn btn-xs btn-ghost">Details</Link>
       </div>
       {error && <div className="text-negative text-xs mt-1" role="alert">{error}</div>}
     </li>
@@ -114,33 +114,20 @@ function BotCard({ bot, busy, error, onToggle }) {
 
 function ActivityList({ items, error }) {
   if (error) return <p className="muted">{error}</p>
-  if (items.length === 0) return <p className="muted">No bot trades yet. Activity appears here once a bot places a paper order.</p>
+  if (items.length === 0) return <p className="muted">No bot activity yet. Checks and paper orders appear here once a bot runs.</p>
   return (
     <ul className="home-activity" data-testid="activity-list">
       {items.map((e) => (
-        <li key={e.id} className="home-activity-row">
+        <li key={`${e.botId}:${e.id}`} className="home-activity-row">
           <span>
-            <strong>{e.botName}</strong>{' '}
-            {e.direction ? e.direction.toLowerCase() : 'order'}{' '}
-            {e.quantity !== null ? `${e.quantity} ` : ''}
-            <Link to={`/assets/${encodeURIComponent(e.ticker)}`}>{e.ticker}</Link>
-            {e.filledPrice !== null && ` @ ${fmtMoney(e.filledPrice)}`}
+            <Link to={`/bots/${e.botId}`}><strong>{e.botName}</strong></Link>{' '}
+            {e.title}{e.symbol && !e.title.includes(e.symbol) ? ` · ${e.symbol}` : ''}
           </span>
-          <span className="muted text-xs text-nowrap">
-            {e.status ?? ''}{e.at ? ` · ${fmtTime(e.at)}` : ''}
-          </span>
+          <span className="muted text-xs text-nowrap">{fmtTime(e.at)}</span>
         </li>
       ))}
     </ul>
   )
-}
-
-function friendlyToggleError(err, resuming) {
-  const msg = String(err?.message ?? '')
-  if (resuming && msg.includes('403')) {
-    return 'Can’t resume: connect a paper trading account first.'
-  }
-  return resuming ? 'Couldn’t resume this bot. Try again.' : 'Couldn’t pause this bot. Try again.'
 }
 
 export default function HomeDashboard() {
@@ -167,10 +154,17 @@ export default function HomeDashboard() {
       await setBotRunning(bot.id, resuming)
       setState((s) => ({
         ...s,
-        data: { ...s.data, bots: s.data.bots.map((b) => (b.id === bot.id ? { ...b, running: resuming } : b)) },
+        data: {
+          ...s.data,
+          bots: s.data.bots.map((b) => {
+            if (b.id !== bot.id) return b
+            const next = { ...b, enabled: resuming, running: resuming }
+            return { ...next, status: deriveStatus(next, next.lastActivity ? [next.lastActivity] : []) }
+          }),
+        },
       }))
     } catch (err) {
-      setErrors((e) => ({ ...e, [bot.id]: friendlyToggleError(err, resuming) }))
+      setErrors((e) => ({ ...e, [bot.id]: controlErrorMessage(err, resuming ? 'resume' : 'pause') }))
     } finally {
       setBusy((b) => ({ ...b, [bot.id]: false }))
     }

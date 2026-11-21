@@ -1,15 +1,19 @@
-import { get, put } from '../../api/client'
+import { get } from '../../api/client'
+import {
+  deriveStatus,
+  loadBotActivity,
+  normalizeBot as normalizeDashboardBot,
+  pauseBot,
+  resumeBot,
+  toNumberOrNull,
+} from '../../api/services/botDashboardService'
 
-// Max bots whose recent executions are fetched for the activity feed.
+export { toNumberOrNull }
+
+// Max bots whose activity is fetched for Home.
 export const ACTIVITY_BOT_LIMIT = 10
 export const ACTIVITY_ITEM_LIMIT = 5
-
-/** Number or null — never coerces missing values to 0. */
-export function toNumberOrNull(value) {
-  if (value === null || value === undefined || value === '') return null
-  const n = Number(value)
-  return Number.isFinite(n) ? n : null
-}
+const PER_BOT_ACTIVITY = 10
 
 function asArray(value) {
   if (Array.isArray(value)) return value
@@ -33,38 +37,19 @@ export function normalizeToday(raw) {
   }
 }
 
-export function normalizeBot(raw) {
-  const config = raw?.config && typeof raw.config === 'object' ? raw.config : {}
-  const tickers = Array.isArray(config.tickers) ? config.tickers.filter(Boolean) : []
+/** Home's view of a bot: dashboard bot + status + latest activity. */
+export function normalizeBot(raw, activity = null) {
+  const bot = normalizeDashboardBot(raw ?? {})
+  const timeline = activity?.timeline ?? []
   return {
-    id: raw.id,
-    name: raw.name || 'Untitled bot',
-    running: raw.enabled === true,
-    strategyName: raw.strategy?.name ?? null,
-    botType: raw.botType ?? null,
-    // allocatedAmount is what the bot engine sizes orders from (set by /bots/new).
-    allocation: toNumberOrNull(config.allocatedAmount ?? config.allocation),
-    tickers,
-    tradeCount: toNumberOrNull(raw._count?.executions),
-    updatedAt: raw.updatedAt ?? null,
+    ...bot,
+    running: bot.enabled && !bot.stopped,
+    status: deriveStatus(bot, timeline),
+    lastActivity: timeline[0] ?? null,
+    activityAvailable: activity ? activity.eventsAvailable || activity.executionsAvailable : false,
   }
 }
 
-export function normalizeExecution(raw, botsById) {
-  return {
-    id: raw.id,
-    botId: raw.botId,
-    botName: botsById.get(raw.botId)?.name ?? 'Bot',
-    ticker: raw.ticker ?? '—',
-    direction: raw.direction ?? null,
-    quantity: toNumberOrNull(raw.quantity),
-    status: raw.status ?? null,
-    filledPrice: toNumberOrNull(raw.filledPrice),
-    at: raw.filledAt ?? raw.createdAt ?? null,
-  }
-}
-
-/** Settled value or null, so one failing source doesn't blank the page. */
 async function settle(promise) {
   try {
     return { ok: true, value: await promise }
@@ -80,20 +65,20 @@ export async function loadHome() {
     settle(get('/bots')),
   ])
 
-  const botList = bots.ok ? asArray(bots.value).map(normalizeBot) : []
-  const botsById = new Map(botList.map((b) => [b.id, b]))
+  const rawBots = bots.ok ? asArray(bots.value) : []
+  const tracked = rawBots.slice(0, ACTIVITY_BOT_LIMIT)
+  const activities = await Promise.all(tracked.map((b) => loadBotActivity(b.id, { limit: PER_BOT_ACTIVITY })))
+  const activityById = new Map(tracked.map((b, i) => [b.id, activities[i]]))
 
-  const activityResults = await Promise.all(
-    botList
-      .slice(0, ACTIVITY_BOT_LIMIT)
-      .map((bot) => settle(get('/executions', { botId: bot.id, limit: ACTIVITY_ITEM_LIMIT })))
-  )
-  const activity = activityResults
-    .filter((r) => r.ok)
-    .flatMap((r) => asArray(r.value))
-    .map((e) => normalizeExecution(e, botsById))
+  const botList = rawBots.map((b) => normalizeBot(b, activityById.get(b.id) ?? null))
+  const names = new Map(botList.map((b) => [b.id, b.name]))
+
+  const activity = tracked
+    .flatMap((b, i) => activities[i].timeline.map((item) => ({ ...item, botId: b.id, botName: names.get(b.id) })))
     .sort((a, b) => new Date(b.at ?? 0) - new Date(a.at ?? 0))
     .slice(0, ACTIVITY_ITEM_LIMIT)
+
+  const anyActivitySource = activities.some((a) => a.eventsAvailable || a.executionsAvailable)
 
   return {
     account: account.ok ? normalizeAccount(account.value) : null,
@@ -101,13 +86,10 @@ export async function loadHome() {
     bots: botList,
     botsError: bots.ok ? null : 'Could not load your bots.',
     activity,
-    activityError:
-      activityResults.length > 0 && activityResults.every((r) => !r.ok)
-        ? 'Could not load recent activity.'
-        : null,
+    activityError: tracked.length > 0 && !anyActivitySource ? 'Could not load recent activity.' : null,
   }
 }
 
 export async function setBotRunning(botId, running) {
-  return put(`/bots/${botId}`, { enabled: running })
+  return running ? resumeBot(botId) : pauseBot(botId)
 }
