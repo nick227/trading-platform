@@ -313,26 +313,36 @@ describe('Step 4 — review & start', () => {
     expect(start).toBeEnabled()
   })
 
-  it('creates, saves limits, starts, and opens the bot page', async () => {
+  it('creates the bot atomically (paused, with limits), then activates it and opens its page', async () => {
     mockGets()
-    post.mockResolvedValue({ id: 'bot_9', config: { direction: 'buy', quantity: 10, tickers: ['SPY', 'QQQ', 'IWM'] } })
-    put.mockResolvedValue({ id: 'bot_9' })
+    post.mockResolvedValue({ id: 'bot_9', enabled: false, config: { direction: 'buy', tickers: ['SPY', 'QQQ', 'IWM'], allocatedAmount: 1000, maxOrderNotional: 1000 } })
+    put.mockResolvedValue({ id: 'bot_9', enabled: true })
     renderWizard()
     await walkToReview()
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
 
     expect(await screen.findByTestId('bot-page')).toHaveTextContent('bot bot_9 created')
+    expect(post).toHaveBeenCalledTimes(1)
     expect(post).toHaveBeenCalledWith('/bots/catalog/from-template', {
-      templateId: 'tmpl_golden_cross', portfolioId: 'pf_1', name: 'Golden Cross Hunter', tickers: ['SPY', 'QQQ', 'IWM'], enabled: false,
+      templateId: 'tmpl_golden_cross', portfolioId: 'pf_1', name: 'Golden Cross Hunter', tickers: ['SPY', 'QQQ', 'IWM'],
+      capitalMode: 'allocated', allocatedAmount: 1000, maxOrderNotional: 1000, riskOnExposure: 1, enabled: false,
     })
-    expect(put).toHaveBeenCalledWith('/bots/bot_9', {
-      enabled: true,
-      config: {
-        direction: 'buy', quantity: 10, tickers: ['SPY', 'QQQ', 'IWM'],
-        capitalMode: 'allocated', allocatedAmount: 1000, riskOnExposure: 1, maxOrderNotional: 1000,
-      },
-    })
+    // Activation is a separate, explicit step carrying only the state change.
+    expect(put).toHaveBeenCalledTimes(1)
+    expect(put).toHaveBeenCalledWith('/bots/bot_9', { enabled: true })
+    expect(post.mock.invocationCallOrder[0]).toBeLessThan(put.mock.invocationCallOrder[0])
+  })
+
+  it('maps a server-side config rejection', async () => {
+    mockGets()
+    post.mockRejectedValue(apiError(400, 'INVALID_CONFIG'))
+    renderWizard()
+    await walkToReview()
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
+    expect(await screen.findByTestId('submit-error')).toHaveTextContent('rejected these settings')
+    expect(put).not.toHaveBeenCalled()
   })
 
   it('reports a failed creation and stays on review without navigating', async () => {
@@ -349,20 +359,31 @@ describe('Step 4 — review & start', () => {
     expect(screen.getByRole('button', { name: 'Start paper trading' })).toBeEnabled()
   })
 
-  it('pauses the bot and says so if its limits cannot be saved', async () => {
+  it('if activation fails, says the bot exists paused with its limits and links to it', async () => {
     mockGets()
-    post.mockResolvedValue({ id: 'bot_7', config: {} })
-    put.mockRejectedValueOnce(apiError(500, null)).mockResolvedValueOnce({ id: 'bot_7', enabled: false })
+    post.mockResolvedValue({ id: 'bot_7', enabled: false, config: {} })
+    put.mockRejectedValue(apiError(500, null))
     renderWizard()
     await walkToReview()
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
     const err = await screen.findByTestId('submit-error')
-    expect(err).toHaveTextContent('it has been paused')
+    expect(err).toHaveTextContent('created with your limits but couldn’t be started, so it’s paused')
     expect(within(err).getByRole('link', { name: 'Open the bot' })).toHaveAttribute('href', '/bots/bot_7')
-    expect(put).toHaveBeenLastCalledWith('/bots/bot_7', { enabled: false })
+    expect(put).toHaveBeenCalledTimes(1)
     // A second submit would create a duplicate bot.
     expect(screen.getByRole('button', { name: 'Start paper trading' })).toBeDisabled()
+  })
+
+  it('explains an activation blocked by a missing paper account', async () => {
+    mockGets()
+    post.mockResolvedValue({ id: 'bot_8', enabled: false, config: {} })
+    put.mockRejectedValue(apiError(403, 'BROKER_NOT_CONFIGURED'))
+    renderWizard()
+    await walkToReview()
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
+    expect(await screen.findByTestId('submit-error')).toHaveTextContent('Connect a paper trading account, then resume it')
   })
 
   it('blocks when the portfolio cannot be loaded', async () => {

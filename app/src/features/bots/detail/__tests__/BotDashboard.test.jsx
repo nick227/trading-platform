@@ -179,6 +179,23 @@ describe('Capital and performance', () => {
     expect(perf).toHaveTextContent('$1.50')
   })
 
+  it('with realized-only P/L (backend shape: unrealized null), headlines Realized and never Total', async () => {
+    mockApi({ bot: { ...baseBot, performance: { realizedPnl: -12.5, unrealizedPnl: null, totalPnl: -12.5, fees: 0, asOf: '2026-11-20T16:00:00Z' }, capitalInUse: null } })
+    renderPage()
+    const perf = await screen.findByTestId('performance')
+    expect(perf).toHaveTextContent('Realized P/L')
+    expect(perf).toHaveTextContent('−$12.50')
+    expect(perf).not.toHaveTextContent('Total P/L')
+    expect(screen.getByTestId('unrealized-unavailable')).toHaveTextContent('Not available yet')
+    expect(screen.getByTestId('capital-in-use')).toHaveTextContent('Not available yet')
+  })
+
+  it('shows capital in use when the backend supplies it', async () => {
+    mockApi({ bot: { ...baseBot, capitalInUse: 640 } })
+    renderPage()
+    expect(await screen.findByTestId('capital-in-use')).toHaveTextContent('$640.00')
+  })
+
   it('counts fills and costs from real executions only', async () => {
     mockApi({
       executions: [
@@ -221,6 +238,21 @@ describe('Activity timeline', () => {
     expect(items[2]).toHaveTextContent('Today’s loss limit was reached')
     expect(items[3]).toHaveTextContent('too small to buy a single share')
     expect(items[2].className).toContain('timeline-item--risk')
+  })
+
+  it('shows persisted pause/resume/stop lifecycle events', async () => {
+    mockApi({
+      events: [
+        ev('l3', 'bot_resumed', '2026-11-20T15:10:00Z', { enabled: true, userId: 'u' }, 'Bot resumed'),
+        ev('l2', 'bot_paused', '2026-11-20T15:05:00Z', { enabled: false, userId: 'u' }, 'Bot paused'),
+        ev('l1', 'execution_skipped', '2026-11-20T15:00:00Z', { ticker: 'SPY', reason: 'market_closed' }, 'Rule blocked'),
+      ],
+    })
+    renderPage()
+    const items = within(await screen.findByTestId('timeline')).getAllByRole('listitem')
+    expect(items.map((li) => li.querySelector('.timeline-title').textContent)).toEqual(['Resumed', 'Paused', 'Waiting — market closedSPY'])
+    expect(items[0].className).toContain('timeline-item--control')
+    expect(status()).toHaveTextContent('Running')
   })
 
   it('collapses repeated routine checks', async () => {

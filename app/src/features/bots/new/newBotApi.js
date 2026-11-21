@@ -144,20 +144,20 @@ export function friendlyCreateError(error) {
   if (code === 'BROKER_CREDENTIALS_INVALID') return 'Your paper account credentials were rejected. Reconnect your account and try again.'
   if (code === 'INVALID_PORTFOLIO') return 'Your portfolio couldn’t be found. Reload the page and try again.'
   if (code === 'NOT_FOUND') return 'That bot template is no longer available. Choose another bot.'
+  if (code === 'INVALID_CONFIG') return 'The server rejected these settings. Check the capital and order limit, then try again.'
   if (error?.status === 401) return 'Your session expired. Sign in again.'
   return 'We couldn’t create your bot. Nothing was saved. Try again.'
 }
 
 /**
- * Creates the bot, then saves its capital/limits and starts it.
+ * Creates the bot atomically (paused, with capital and limits), then — because
+ * the user has confirmed on the Review step — explicitly activates it.
  *
- * `from-template` cannot persist allocation or limits (its schema accepts only
- * tickers/quantity and the service always creates the bot enabled), so a
- * second PUT writes config.{capitalMode, allocatedAmount, maxOrderNotional}
- * — the fields the bot engine already uses to size buy orders.
- *
- * If that second step fails, the bot is paused so it never runs without the
- * limits the user confirmed, and the result reports a partial failure.
+ * `POST /bots/catalog/from-template` persists config.{allocatedAmount,
+ * maxOrderNotional, capitalMode} and rules in one transaction and creates the
+ * bot paused (`enabled: false`). Activation is a separate `PUT { enabled: true }`.
+ * If activation fails, the bot already exists, paused, with the confirmed
+ * limits; the result says so and links to it rather than retrying creation.
  */
 export async function createAndStartBot({ template, portfolioId, name, tickers, capital, maxPerOrder }) {
   let created
@@ -167,6 +167,10 @@ export async function createAndStartBot({ template, portfolioId, name, tickers, 
       portfolioId,
       name,
       tickers,
+      capitalMode: 'allocated',
+      allocatedAmount: capital,
+      maxOrderNotional: maxPerOrder,
+      riskOnExposure: 1,
       enabled: false,
     })
   } catch (error) {
@@ -178,34 +182,23 @@ export async function createAndStartBot({ template, portfolioId, name, tickers, 
     return { ok: false, stage: 'create', message: 'The server didn’t return the new bot. Check your bots list before trying again.' }
   }
 
-  const config = {
-    ...(created.config && typeof created.config === 'object' ? created.config : {}),
-    tickers,
-    capitalMode: 'allocated',
-    allocatedAmount: capital,
-    riskOnExposure: 1,
-    maxOrderNotional: maxPerOrder,
-  }
-
   try {
-    await put(`/bots/${botId}`, { config, enabled: true })
+    await put(`/bots/${botId}`, { enabled: true })
     return { ok: true, botId }
   } catch (error) {
-    let paused = false
-    try {
-      await put(`/bots/${botId}`, { enabled: false })
-      paused = true
-    } catch {
-      paused = false
-    }
     return {
       ok: false,
-      stage: 'configure',
+      stage: 'activate',
       botId,
-      paused,
-      message: paused
-        ? 'Your bot was created, but its capital and limits couldn’t be saved, so it has been paused. Open the bot to review it.'
-        : 'Your bot was created, but its capital and limits couldn’t be saved and we couldn’t confirm it is paused. Open the bot and pause it.',
+      paused: true,
+      message: `Your bot was created with your limits but couldn’t be started, so it’s paused. ${friendlyActivateError(error)}`,
     }
   }
+}
+
+function friendlyActivateError(error) {
+  const code = error?.code
+  if (code === 'BROKER_NOT_CONFIGURED' || code === 'BROKER_CREDENTIALS_INVALID') return 'Connect a paper trading account, then resume it from its page.'
+  if (code === 'LIVE_TRADING_DISABLED') return 'Live trading is disabled; connect a paper account, then resume it.'
+  return 'Open the bot to resume it.'
 }

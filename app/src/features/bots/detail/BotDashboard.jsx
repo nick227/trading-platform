@@ -55,7 +55,11 @@ function CapitalCard({ bot, buyingPower }) {
         </div>
         <div>
           <dt>In use</dt>
-          <dd className="muted" data-testid="capital-in-use">Not available yet</dd>
+          {bot.capitalInUse !== null ? (
+            <dd data-testid="capital-in-use">{fmtMoney(bot.capitalInUse)}</dd>
+          ) : (
+            <dd className="muted" data-testid="capital-in-use">Not available yet</dd>
+          )}
         </div>
         <div>
           <dt>Paper buying power</dt>
@@ -73,12 +77,28 @@ function PerformanceCard({ performance, fills, executionsAvailable }) {
       <h2 className="panel-title" id="perf-title">Performance</h2>
       {performance ? (
         <dl className="bot-facts" data-testid="performance">
+          {performance.total !== null ? (
+            <>
+              <div>
+                <dt>Total P/L</dt>
+                <dd className={`bot-big ${tone(performance.total)}`}>{fmtSigned(performance.total)}</dd>
+              </div>
+              <div><dt>Realized</dt><dd className={tone(performance.realized)}>{fmtSigned(performance.realized)}</dd></div>
+            </>
+          ) : (
+            <div>
+              <dt>Realized P/L</dt>
+              <dd className={`bot-big ${tone(performance.realized)}`}>{fmtSigned(performance.realized)}</dd>
+            </div>
+          )}
           <div>
-            <dt>Total P/L</dt>
-            <dd className={`bot-big ${tone(performance.total)}`}>{fmtSigned(performance.total)}</dd>
+            <dt>Unrealized</dt>
+            {performance.unrealized !== null ? (
+              <dd className={tone(performance.unrealized)}>{fmtSigned(performance.unrealized)}</dd>
+            ) : (
+              <dd className="muted" data-testid="unrealized-unavailable">Not available yet</dd>
+            )}
           </div>
-          <div><dt>Realized</dt><dd className={tone(performance.realized)}>{fmtSigned(performance.realized)}</dd></div>
-          <div><dt>Unrealized</dt><dd className={tone(performance.unrealized)}>{fmtSigned(performance.unrealized)}</dd></div>
           {performance.fees !== null && <div><dt>Fees</dt><dd>{fmtMoney(performance.fees)}</dd></div>}
         </dl>
       ) : (
