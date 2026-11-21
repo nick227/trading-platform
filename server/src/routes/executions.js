@@ -46,6 +46,14 @@ export default async function executionsRoutes(app) {
 
   // POST /api/executions — requires auth; userId is taken from JWT, not body
   app.post('/', {
+    preValidation: async (request, reply) => {
+      // Reject, rather than silently strip, untrusted broker/strategy metadata.
+      const allowed = new Set(['ticker', 'direction', 'quantity', 'price', 'portfolioId'])
+      if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body) ||
+          Object.keys(request.body).some(key => !allowed.has(key))) {
+        return reply.code(400).send({ error: { code: 'INVALID_EXECUTION_FIELDS', message: 'Manual orders cannot specify bot or broker attribution fields' } })
+      }
+    },
     preHandler: [authenticate],
     schema: {
       body: {
