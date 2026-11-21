@@ -22,8 +22,7 @@ import TradingCalendarSection from './landing/TradingCalendarSection.jsx'
 
 export default function Landing() {
   useEffect(() => {
-    pageTitleService.setHomeTitle('Home Dashboard')
-    pageTitleService.setTitle('Home')
+    pageTitleService.setTitle('Research')
   }, [])
 
   const { data: dashboardData } = useDashboardBootstrap({ refreshInterval: 60000 })

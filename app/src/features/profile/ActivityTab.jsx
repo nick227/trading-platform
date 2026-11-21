@@ -84,7 +84,7 @@ export default function ActivityTab() {
         ) : executions.length === 0 ? (
           <div className="text-center py-4">
             <p className="muted mb-2">No recent activity.</p>
-            <Link to="/bots/create" className="btn btn-sm btn-primary">
+            <Link to="/bots/new" className="btn btn-sm btn-primary">
               Start Trading
             </Link>
           </div>

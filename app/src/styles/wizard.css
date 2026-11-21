@@ -1,0 +1,154 @@
+/* New-bot wizard */
+
+.wizard {
+  max-width: var(--container-md);
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-3) var(--space-7);
+}
+
+.wizard-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.wizard-dots {
+  display: flex;
+  gap: var(--space-0_5);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wizard-dots li {
+  width: 28px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.wizard-dots li.is-done {
+  background: var(--color-accent);
+}
+
+.wizard-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.wizard-title:focus {
+  outline: none;
+}
+
+.wizard-options {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.wizard-option {
+  display: grid;
+  gap: var(--space-0_5);
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+.wizard-option.is-selected {
+  border-color: var(--color-accent);
+}
+
+.wizard-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.wizard-option:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.wizard-option-name {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-md);
+}
+
+.wizard-option-desc,
+.wizard-option-meta {
+  font-size: var(--text-sm);
+}
+
+.wizard-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--space-0_5);
+}
+
+.wizard-money {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.wizard-facts,
+.wizard-summary {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.wizard-facts dt,
+.wizard-summary dt {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.wizard-facts dd,
+.wizard-summary dd {
+  margin: 0;
+}
+
+.wizard-advanced {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-2);
+}
+
+.wizard-advanced summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-semibold);
+}
+
+.wizard-rules {
+  margin: 0;
+  padding-left: var(--space-3);
+}
+
+.wizard-confirm {
+  display: flex;
+  gap: var(--space-1);
+  align-items: flex-start;
+  font-size: var(--text-sm);
+}
+
+.wizard-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.wizard-skeleton {
+  min-height: 240px;
+}

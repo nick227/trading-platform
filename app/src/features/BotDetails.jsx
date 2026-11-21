@@ -1,11 +1,19 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useState, useEffect, useCallback } from 'react'
 import { getBotById, updateBot, deleteBot, getBotEvents, getBotRules } from '../api/services/botCatalogService.js'
 import PageSkeleton from '../components/PageSkeleton'
 
+function fmtConfigMoney(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? `$${n.toLocaleString()}` : null
+}
+
 export default function BotDetails() {
   const navigate = useNavigate()
   const { botId } = useParams()
+  const location = useLocation()
+  const justCreated = Boolean(location.state?.created)
   const [bot, setBot] = useState(null)
   const [events, setEvents] = useState([])
   const [rules, setRules] = useState([])
@@ -148,6 +156,12 @@ export default function BotDetails() {
   return (
     <div className="l-page">
       <div className="container">
+        {justCreated && (
+          <section className="alert alert-success mb-5" role="status">
+            Your bot was created{bot.enabled ? ' and is running in paper trading' : ''}. You can pause it anytime.
+          </section>
+        )}
+
         {/* Error Display */}
         {error && (
           <section className="alert alert-error mb-5">
@@ -173,7 +187,7 @@ export default function BotDetails() {
                 </h1>
               </div>
               <p className="muted text-md m-0">
-                Asset: {bot.asset} · Strategy: {bot.strategy || 'Custom Configuration'}
+                {bot.config?.tickers?.length ? bot.config.tickers.join(', ') : 'No symbols set'} · Paper trading
               </p>
             </div>
             
@@ -197,7 +211,7 @@ export default function BotDetails() {
                 onClick={handleStatusToggle}
                 disabled={status === 'archived'}
               >
-                {bot.enabled ? 'Pause' : 'Start'}
+                {bot.enabled ? 'Pause' : 'Resume'}
               </button>
             </div>
           </div>
@@ -246,8 +260,12 @@ export default function BotDetails() {
                     <div>{bot.config?.direction || 'Not set'}</div>
                   </div>
                   <div className="kv">
-                    <div className="kv-key">Position Size:</div>
-                    <div>{bot.positionSize || '10%'}</div>
+                    <div className="kv-key">Simulated capital:</div>
+                    <div>{fmtConfigMoney(bot.config?.allocatedAmount) ? `${fmtConfigMoney(bot.config.allocatedAmount)} (not set aside)` : 'Not set'}</div>
+                  </div>
+                  <div className="kv">
+                    <div className="kv-key">Max per buy order:</div>
+                    <div>{fmtConfigMoney(bot.config?.maxOrderNotional) ?? 'Not set'}</div>
                   </div>
                 </div>
               )}
@@ -264,24 +282,9 @@ export default function BotDetails() {
                 </button>
               </div>
               
-              <div className="kpi-grid-4">
-                <div className="tile">
-                  <div className="tile-value text-positive">+8.2%</div>
-                  <div className="tile-label">Total Return</div>
-                </div>
-                <div className="tile">
-                  <div className="tile-value text-primary">24</div>
-                  <div className="tile-label">Trades</div>
-                </div>
-                <div className="tile">
-                  <div className="tile-value text-muted">71%</div>
-                  <div className="tile-label">Win Rate</div>
-                </div>
-                <div className="tile">
-                  <div className="tile-value text-muted">2.1h</div>
-                  <div className="tile-label">Avg Hold</div>
-                </div>
-              </div>
+              <p className="muted m-0" data-testid="bot-performance-unavailable">
+                Performance for individual bots isn’t available yet. Trades this bot places will appear in its history.
+              </p>
             </article>
           </section>
 
@@ -300,11 +303,7 @@ export default function BotDetails() {
                 </button>
                 <button
                   className="btn btn-sm btn-ghost btn-block text-left"
-                  onClick={() => navigate('/bots/create', { 
-                    state: { 
-                      duplicateFrom: bot
-                    } 
-                  })}
+                  onClick={() => navigate(bot.templateId ? `/bots/new?template=${encodeURIComponent(bot.templateId)}` : '/bots/new')}
                 >
                   Duplicate Bot
                 </button>

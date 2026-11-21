@@ -13,7 +13,18 @@ function buildUrl(path, params = {}) {
 
 async function handleResponse(response) {
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    // Message format is relied on elsewhere; structured fields are additive.
+    const error = new Error(`HTTP ${response.status}: ${response.statusText}`)
+    error.status = response.status
+    try {
+      const body = await response.json()
+      error.code = body?.error?.code ?? null
+      error.serverMessage = body?.error?.message ?? (typeof body?.error === 'string' ? body.error : null)
+    } catch {
+      error.code = null
+      error.serverMessage = null
+    }
+    throw error
   }
   const json = await response.json()
   return json.data ?? json
