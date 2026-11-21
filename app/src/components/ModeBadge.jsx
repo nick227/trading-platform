@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom'
  */
 export function getTradingMode(brokerStatus, { loading = false, error = false } = {}) {
   if (loading) return 'checking'
-  if (error && !brokerStatus) return 'unknown'
+  if (error) return 'unknown'
   if (!brokerStatus?.connected) return 'none'
   return brokerStatus.paper === false ? 'live-disabled' : 'paper'
 }

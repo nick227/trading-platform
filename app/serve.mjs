@@ -4,6 +4,7 @@
 // - Streams /api/* to API_PROXY_TARGET (e.g. Railway private API), passing cookies through.
 // - /healthz answers without touching the API.
 import http from 'node:http'
+import https from 'node:https'
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
@@ -52,7 +53,8 @@ export function createServer({ distDir, apiTarget }) {
     headers['x-forwarded-for'] = fwdFor ? `${fwdFor}, ${req.socket.remoteAddress}` : req.socket.remoteAddress
     headers['x-forwarded-proto'] = req.headers['x-forwarded-proto'] || 'http'
     headers['x-forwarded-host'] = req.headers.host || ''
-    const up = http.request(
+    const transport = upstream.protocol === 'https:' ? https : http
+    const up = transport.request(
       { protocol: upstream.protocol, hostname: upstream.hostname, port: upstream.port, method: req.method, path: req.url, headers },
       (upRes) => {
         res.writeHead(upRes.statusCode || 502, upRes.headers)
@@ -64,6 +66,8 @@ export function createServer({ distDir, apiTarget }) {
       if (!res.headersSent) send(res, 502, JSON.stringify({ error: 'API unavailable' }), { 'Content-Type': 'application/json' })
       else res.destroy()
     })
+    req.on('aborted', () => up.destroy())
+    res.on('close', () => { if (!res.writableFinished) up.destroy() })
     req.pipe(up)
   }
 
@@ -73,7 +77,10 @@ export function createServer({ distDir, apiTarget }) {
     const rel = path.relative(root, filePath)
     const cache = isIndex ? 'no-cache' : HASHED.test(rel) ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'
     const headers = { ...SECURITY_HEADERS, 'Content-Type': type, 'Cache-Control': cache, Vary: 'Accept-Encoding' }
-    const gzip = COMPRESSIBLE.test(type) && /\bgzip\b/.test(req.headers['accept-encoding'] || '')
+    const gzip = COMPRESSIBLE.test(type) && (req.headers['accept-encoding'] || '').split(',').some(value => {
+      const [encoding, quality] = value.trim().split(';')
+      return encoding === 'gzip' && (!quality || !/^q=0(?:\.0*)?$/.test(quality.trim()))
+    })
     if (gzip) headers['Content-Encoding'] = 'gzip'
     res.writeHead(200, headers)
     if (req.method === 'HEAD') return res.end()
@@ -83,7 +90,8 @@ export function createServer({ distDir, apiTarget }) {
   }
 
   return http.createServer((req, res) => {
-    const url = new URL(req.url, 'http://local')
+    let url
+    try { url = new URL(req.url, 'http://local') } catch { return send(res, 400, 'Bad Request') }
     if (url.pathname === '/healthz') return send(res, 200, 'ok', { 'Cache-Control': 'no-store' })
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return proxy(req, res)
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method Not Allowed', { Allow: 'GET, HEAD' })
@@ -94,6 +102,8 @@ export function createServer({ distDir, apiTarget }) {
     } catch {
       return send(res, 400, 'Bad Request')
     }
+    if (decoded.includes('\0')) return send(res, 400, 'Bad Request')
+    if (decoded.split('/').some(segment => segment.startsWith('.'))) return send(res, 404, 'Not Found')
     const filePath = path.resolve(root, '.' + path.posix.normalize(decoded))
     if (filePath !== root && !filePath.startsWith(root + path.sep)) return send(res, 403, 'Forbidden')
 
@@ -109,10 +119,11 @@ export function createServer({ distDir, apiTarget }) {
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
 if (isMain) {
   const here = path.dirname(fileURLToPath(import.meta.url))
+  if (!fs.existsSync(path.join(here, 'dist', 'index.html'))) throw new Error('Build output missing: run npm run build first')
   const server = createServer({ distDir: path.join(here, 'dist'), apiTarget: process.env.API_PROXY_TARGET })
   const port = Number(process.env.PORT || 4173)
   const host = process.env.HOST || '::'
-  server.listen(port, host, () => console.log(`[serve] listening on ${host}:${port}; /api -> ${process.env.API_PROXY_TARGET || '(not configured)'}`))
+  server.listen(port, host, () => console.log(`[serve] listening on ${host}:${port}; API proxy ${process.env.API_PROXY_TARGET ? 'configured' : 'not configured'}`))
   const stop = () => server.close(() => process.exit(0))
   process.on('SIGTERM', stop)
   process.on('SIGINT', stop)
