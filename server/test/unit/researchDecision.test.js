@@ -105,3 +105,16 @@ describe('Alpha Research Follower template', () => {
     expect(t.rules.map((r) => r.type)).toEqual(['market_hours', 'position_limit'])
   })
 })
+
+describe('seeded bot templates', () => {
+  // BotTemplate.id/name/description are Prisma `String` on MySQL → VARCHAR(191).
+  // The API pre-deploy seed fails (P2000) if any value is longer.
+  it('fit the BotTemplate column limits', () => {
+    const templates = JSON.parse(readFileSync(new URL('../../prisma/seeds/bot-templates.json', import.meta.url), 'utf8'))
+    for (const t of templates) {
+      for (const col of ['id', 'name', 'description', 'botType']) {
+        expect(t[col].length, `${t.id}.${col}`).toBeLessThanOrEqual(191)
+      }
+    }
+  })
+})

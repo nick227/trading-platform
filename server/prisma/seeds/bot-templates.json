@@ -185,7 +185,7 @@
   {
     "id": "tmpl_alpha_research",
     "name": "Alpha Research Follower",
-    "description": "Trades only when a current, verified Alpha Engine prediction supports it. Direction and confidence come from the stored prediction, which is archived with every order for trade history. Acts once per prediction; stale, low-confidence, degraded-run, or price-drifted research is recorded and not traded. Paper trading only.",
+    "description": "Trades only on current, verified Alpha Engine predictions, archiving the evidence with each order. Stale, low-confidence or price-drifted research is not traded. Paper only.",
     "botType": "rule_based",
     "tags": ["research", "alpha-engine", "evidence"],
     "config": {
