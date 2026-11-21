@@ -5,6 +5,7 @@ import StatusPill from '../../../components/BotStatusPill'
 import {
   controlErrorMessage,
   deriveStatus,
+  getExecutionResearch,
   loadBotActivity,
   loadBotDashboard,
   loadBotRules,
@@ -229,6 +230,57 @@ function BotHoldingsCard({ executions }) {
   )
 }
 
+const pct = (v) => (v === null || v === undefined ? '—' : `${(Number(v) * 100).toFixed(1)}%`)
+
+function ResearchSummary({ research }) {
+  if (!research) return null
+  const h = research.holdout
+  return (
+    <dl className="research-facts text-xs" data-testid="research-summary">
+      <div><dt>Research</dt><dd>{research.direction} · {research.horizon} · observed {research.observedAt?.slice(0, 10) ?? '—'}{research.mode === 'historical_replay' ? ' · historical replay' : ''}</dd></div>
+      <div><dt>Score</dt><dd>{research.score ?? '—'} <span className="muted">(strategy score, not a probability)</span></dd></div>
+      {h && <div><dt>Holdout</dt><dd>{pct(h.precision)} hit rate vs {pct(h.baselineRate)} always-up baseline ({h.signals} signals) — {research.edgeOverBaseline ? 'beat the baseline' : 'no edge over the baseline'}</dd></div>}
+      {research.genuineOutOfSample === false && <div><dt>Evaluation</dt><dd>Pseudo-out-of-sample: the rule was fixed in advance, but the holdout period was already observable.</dd></div>}
+    </dl>
+  )
+}
+
+/** Archived evidence for an order, verified by digest; loaded only when opened. */
+function ResearchEvidence({ executionId }) {
+  const [state, setState] = useState({ status: 'idle' })
+  const onToggle = async (e) => {
+    if (!e.currentTarget.open || state.status !== 'idle') return
+    setState({ status: 'loading' })
+    try {
+      setState({ status: 'done', data: await getExecutionResearch(executionId) })
+    } catch {
+      setState({ status: 'error' })
+    }
+  }
+  const d = state.data
+  const ev = d?.evidence
+  return (
+    <details className="research-evidence text-xs" onToggle={onToggle} data-testid={`research-evidence-${executionId}`}>
+      <summary>Research evidence</summary>
+      {state.status === 'loading' && <p className="muted m-0">Loading…</p>}
+      {state.status === 'error' && <p className="text-negative m-0">Couldn’t load the evidence.</p>}
+      {state.status === 'done' && d?.status !== 'verified_digest' && (
+        <p className="m-0" role="status">{d?.status === 'unavailable' ? 'No research decision is linked to this order.' : `Evidence check: ${d?.status ?? 'unknown'} — this order’s research can’t be verified.`}</p>
+      )}
+      {state.status === 'done' && d?.status === 'verified_digest' && (
+        <dl className="research-facts">
+          <div><dt>Integrity</dt><dd>Verified: archived evidence matches its SHA-256 digest <span className="muted">(integrity, not proof of accuracy)</span></dd></div>
+          <div><dt>Prediction</dt><dd>{ev?.ticker} {ev?.direction} · {ev?.horizon} · observed {ev?.observedAt}</dd></div>
+          <div><dt>Entry price</dt><dd>{fmtMoney(ev?.entryPrice)}</dd></div>
+          <div><dt>Publication</dt><dd className="text-break">{ev?.ranking?.publicationId ?? '—'}{ev?.ranking?.mode === 'historical_replay' ? ' (historical replay)' : ''}</dd></div>
+          <div><dt>Strategy</dt><dd>{ev?.strategyId ?? '—'}</dd></div>
+          <div><dt>Digest</dt><dd className="text-break muted">{d.researchTrace?.evidenceSha256}</dd></div>
+        </dl>
+      )}
+    </details>
+  )
+}
+
 function Timeline({ activity, status, onRetry }) {
   const [shown, setShown] = useState(PAGE)
   const { timeline, eventsAvailable, executionsAvailable } = activity
@@ -268,6 +320,8 @@ function Timeline({ activity, status, onRetry }) {
                   <time className="muted text-xs" dateTime={item.at ?? undefined}>{fmtWhen(item.at)}</time>
                 </div>
                 {item.explanation && <p className="timeline-text">{item.explanation}</p>}
+                <ResearchSummary research={item.research} />
+                {item.executionId && (item.category === 'fill' || item.category === 'order') && <ResearchEvidence executionId={item.executionId} />}
                 {item.count > 1 && (
                   <p className="muted text-xs m-0">Repeated {item.count} times since {fmtWhen(item.since)}</p>
                 )}

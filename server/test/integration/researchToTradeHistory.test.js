@@ -32,12 +32,13 @@ vi.mock('../../../worker/src/risk/riskManagement.js', () => ({
 
 const FIXTURES = JSON.parse(readFileSync(new URL('../fixtures/alpha-engine/traces.json', import.meta.url), 'utf8'))
 const INTERNAL_KEY = 'test-internal-key'
-const ae = { up: true, traces: {}, rankings: [], run: {}, requests: [], failTrace: new Set() }
+const ae = { up: true, traces: {}, rankings: [], run: {}, requests: [], failTrace: new Set(), sessionClose: {} }
 
 function resetAlphaEngine() {
   ae.up = true
   ae.traces = structuredClone(FIXTURES.traces)
   ae.failTrace = new Set()
+  ae.sessionClose = {}
   ae.requests = []
   ae.run = { intelligenceConfidenceTier: 'full', rankedUnderDegradedRun: false, runStatus: 'SUCCESS' }
   ae.rankings = Object.values(ae.traces).filter((t) => t.source.predictionId !== 'pred_spy_buy_next').map((t, i) => ({ ticker: t.source.ticker, predictionId: t.source.predictionId, timestamp: '2026-11-20T15:05:08+00:00', rank: i + 1, notActionable: true }))
@@ -49,8 +50,17 @@ const aeServer = http.createServer((req, res) => {
   const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)) }
   if (!ae.up) return send(503, { detail: 'down for test' })
   if (req.headers['x-internal-key'] !== INTERNAL_KEY) return send(401, { detail: 'missing internal key' })
-  if (url.pathname === '/ranking/top') {
-    return send(200, { tenant_id: url.searchParams.get('tenant_id'), rankingKind: 'relative_priority', notActionable: true, ...ae.run, rankings: ae.rankings })
+  if (url.pathname === '/api/research/latest') {
+    const t = String(url.searchParams.get('ticker') ?? '').toUpperCase()
+    const row = ae.rankings.find((r) => r.ticker === t)
+    const base = { ticker: t, publicationId: 'pub_fixture', mode: url.searchParams.get('mode'), marketDate: '2026-11-20', publishedAt: '2026-11-20T15:05:08+00:00',
+      run: { intelligenceConfidenceTier: ae.run.intelligenceConfidenceTier, rankedUnderDegradedRun: ae.run.rankedUnderDegradedRun, runStatus: ae.run.runStatus } }
+    return send(200, row ? { found: true, predictionId: row.predictionId, ...base } : { found: false, reason: 'no_signal', ...base })
+  }
+  if (url.pathname === '/api/market/session-close') {
+    const t = String(url.searchParams.get('ticker') ?? '').toUpperCase()
+    const close = ae.sessionClose[t]
+    return close ? send(200, { ticker: t, session: url.searchParams.get('session'), close, timeframe: '1d' }) : send(404, { detail: 'no daily bar' })
   }
   const m = url.pathname.match(/^\/api\/predictions\/([^/]+)\/trace$/)
   if (m) {
@@ -123,7 +133,7 @@ beforeEach(async () => {
   }
 })
 
-async function researchBot(id = 'bot_r', { userId = 'usr_a', research = {}, config = {}, enabled = true } = {}) {
+async function researchBot(id = 'bot_r', { userId = 'usr_a', research = { requireEdgeOverBaseline: false }, config = {}, enabled = true } = {}) {
   return h.db.bot.create({ data: {
     id, userId, portfolioId: `por_${userId}`, name: id, enabled, botType: 'rule_based',
     config: { signalSource: 'alpha_research', tickers: ['SPY', 'QQQ', 'IWM', 'DIA'], capitalMode: 'allocated', allocatedAmount: 10_000, maxOrderNotional: 5_000, research, ...config }
@@ -165,7 +175,7 @@ describe('prediction → decision → paper execution → broker confirmation �
       decisionContext: { reason: 'research_accepted', signal: 'buy', researchConfidence: 0.82, confidenceIsProbability: false, executionId: exe.id }
     })
     expect(decision.metadata.researchCanonicalJson).toBe(FIXTURES.traces.pred_spy_buy.evidence.canonicalJson)
-    expect(ae.requests).toEqual(['/ranking/top', '/api/predictions/pred_spy_buy/trace'])
+    expect(ae.requests).toEqual(['/api/research/latest', '/api/predictions/pred_spy_buy/trace'])
 
     // Paper execution and broker confirmation (submit, then the reconciliation sweep sees the fill).
     await drain()
@@ -499,3 +509,14 @@ describe('multi-user isolation', () => {
     expect(process.env.ALLOW_LIVE_TRADING).not.toBe('true')
   })
 })
+
+describe('edge over baseline (default policy)', () => {
+  it('rejects research whose evidence shows no edge unless the bot opts in to simulate it', async () => {
+    await researchBot('bot_default', { research: {} })
+    await tick('bot_default', 'SPY', 540)
+    expect(await executions({ botId: 'bot_default' })).toHaveLength(0)
+    const [d] = await decisions('bot_default')
+    expect(d.metadata).toMatchObject({ decision: 'rejected', decisionContext: { reason: 'no_edge_over_baseline', edgeOverBaseline: null } })
+  })
+})
+

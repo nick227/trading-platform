@@ -62,3 +62,14 @@ describe('getTradingMode', () => {
     expect(getTradingMode({ connected: true, paper: false })).toBe('live-disabled')
   })
 })
+
+describe('simulator badge', () => {
+  it('labels the internal historical-replay simulator distinctly while staying paper-like for checks', () => {
+    authState.brokerStatus = { connected: true, paper: true, simulated: true, mode: 'historical_replay', session: '2026-11-19' }
+    expect(getTradingMode(authState.brokerStatus)).toBe('paper')
+    renderNav()
+    const badge = screen.getByTestId('mode-badge')
+    expect(badge).toHaveAttribute('aria-label', 'Simulated · replay of 2026-11-19')
+    expect(badge).toHaveTextContent('Simulated · replay of 2026-11-19')
+  })
+})

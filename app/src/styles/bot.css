@@ -302,3 +302,31 @@ a.btn {
     height: calc(100dvh - 72px);
   }
 }
+
+/* Research evidence on bot activity (P0) */
+.research-facts {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+}
+.research-facts > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) 1fr;
+  gap: var(--space-2);
+}
+.research-facts dt {
+  color: var(--color-muted);
+}
+.research-facts dd {
+  margin: 0;
+}
+.research-evidence {
+  margin-top: var(--space-1);
+}
+.research-evidence summary {
+  cursor: pointer;
+  color: var(--color-muted);
+}
+.text-break {
+  overflow-wrap: anywhere;
+}

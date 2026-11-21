@@ -9,6 +9,8 @@ import { startQuoteSync, checkSubscriptionRequests, expireOldSubscriptions } fro
 import { initCalendar, refreshCalendar, onMarketOpen, onMarketClose, getLastCalendarRefreshAt } from './market/calendar.js'
 import { startBotEngine, stopBotEngine, onPriceTick, inflightMap } from './engine/botEngine.js'
 import { log } from './logger.js'
+import { simulationConfig } from '../../server/src/services/simulationService.js'
+import { startReplayFeed } from './market/replayFeed.js'
 import { decrypt } from './utils/encryption.js'
 
 // Initialize quote sync to server
@@ -45,6 +47,37 @@ async function main() {
   // Controlled staging mode: WORKER_ORDER_PROCESSING=disabled verifies the database
   // and reports heartbeats only — no order worker, bot engine, or market stream, so
   // nothing can reach a broker. Unset keeps the normal runtime unchanged.
+  // Simulator mode: only when explicitly configured on both switches AND a replay session
+  // is named. Orders are filled by the internal replay simulator; no Alpaca client, stream
+  // or credentials are ever created. Any partial configuration fails closed.
+  const sim = simulationConfig()
+  const simProcessing = process.env.WORKER_ORDER_PROCESSING === 'simulated'
+  if (simProcessing || sim.requested) {
+    await prisma.$queryRaw`SELECT 1`
+    log.info('db_connectivity_ok')
+    if (!(simProcessing && sim.enabled)) {
+      log.error({ WORKER_ORDER_PROCESSING: process.env.WORKER_ORDER_PROCESSING ?? null, BROKER_MODE: process.env.BROKER_MODE ?? null, session: sim.session },
+        'simulator_misconfigured: requires WORKER_ORDER_PROCESSING=simulated, BROKER_MODE=simulated and SIM_REPLAY_SESSION=YYYY-MM-DD; order processing not started')
+      for (const k of ['orderWorker', 'alpacaWs', 'alpacaRest', 'calendar']) healthState[k] = 'disabled'
+      startHeartbeat()
+      return
+    }
+    log.warn({ mode: sim.mode, session: sim.session }, 'simulator_mode: historical replay fills only; no broker orders are submitted')
+    orderWorkerPromise = startOrderWorker().catch((err) => {
+      healthState.orderWorker = 'failed'
+      log.error({ err }, 'order_worker_crashed')
+      process.exit(1)
+    })
+    healthState.orderWorker = 'simulated'
+    healthState.alpacaWs = 'disabled'
+    healthState.alpacaRest = 'disabled'
+    healthState.calendar = `historical_replay:${sim.session}`
+    startHeartbeat()
+    await startBotEngine()
+    startReplayFeed({ session: sim.session, onTick: (ticker) => onPriceTick(ticker) })
+    return
+  }
+
   if (process.env.WORKER_ORDER_PROCESSING === 'disabled') {
     await prisma.$queryRaw`SELECT 1`
     log.info('db_connectivity_ok')

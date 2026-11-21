@@ -20,6 +20,8 @@ export const RESEARCH_POLICY_DEFAULTS = Object.freeze({
   maxPredictionAgeHours: 96, // daily pipeline + weekend gap
   maxEntryDriftPct: 5,
   allowedHorizons: null, // null = any published horizon
+  // Only trade research whose (recomputed, published) holdout beat the always-up baseline.
+  requireEdgeOverBaseline: true,
 })
 
 const MAX_FUTURE_SKEW_MS = 5 * 60_000
@@ -49,6 +51,10 @@ export function resolveResearchPolicy(config) {
     const n = finite(raw[key])
     if (n === null || n < min || n > max) return { ok: false, reason: `invalid_${key}` }
     policy[key] = n
+  }
+  if (raw.requireEdgeOverBaseline != null) {
+    if (typeof raw.requireEdgeOverBaseline !== 'boolean') return { ok: false, reason: 'invalid_requireEdgeOverBaseline' }
+    policy.requireEdgeOverBaseline = raw.requireEdgeOverBaseline
   }
   if (raw.allowedHorizons != null) {
     if (!Array.isArray(raw.allowedHorizons) || raw.allowedHorizons.length === 0 ||
@@ -116,6 +122,14 @@ export function evaluateResearchDecision({ trace, located, policy, price, config
   // 5. Confidence (uncalibrated score, compared as published).
   if (context.researchConfidence === null || context.researchConfidence < policy.minConfidence) {
     return out('rejected', 'below_min_confidence', { signal, ageHours })
+  }
+
+  // 5b. Edge over baseline, from the verified evidence (never from the locator).
+  const evaluation = snapshot.ranking?.evaluation ?? null
+  context.edgeOverBaseline = evaluation ? evaluation.edgeOverBaseline === true : null
+  context.genuineOutOfSample = evaluation ? evaluation.genuineOutOfSample === true : null
+  if (policy.requireEdgeOverBaseline && context.edgeOverBaseline !== true) {
+    return out('rejected', 'no_edge_over_baseline', { signal, ageHours })
   }
 
   // 6. Bot direction filter.

@@ -53,7 +53,6 @@ const RANKINGS_CACHE_FETCH_LIMIT = 50
 // Ticker → ranked predictionId index for bot research decisions (whole target universe).
 const researchIndexCache = new Map()
 const RESEARCH_INDEX_TTL_MS = Number(process.env.RESEARCH_INDEX_TTL_MS ?? 30_000)
-const RESEARCH_INDEX_LIMIT = 500
 
 // Separate cache for movers with different TTL
 const moversCache = new Map()
@@ -313,42 +312,51 @@ export const engineClient = {
   },
 
   /**
-   * Locate the latest persisted, ranked Alpha Engine prediction for a ticker.
-   * Uses the existing /ranking/top read model only as an index from ticker to
-   * predictionId plus run-quality gates; decisions must be made on the verified
-   * stored trace (getPredictionTrace), never on this ranking row.
-   * Returns null when the ticker has no ranked prediction. Network errors propagate.
+   * Locate the prediction for a ticker in Alpha Engine's latest accepted, independently
+   * validated research publication (`mode: 'historical_replay'` + `session` selects a
+   * labelled replay publication instead). Decisions must still be made on the verified
+   * stored trace (getPredictionTrace), never on this locator.
+   * Returns null when there is no publication or no signal. Network errors propagate.
    */
-  async locateResearchPrediction(ticker, tenantId = 'default') {
-    const wanted = new Set(symbolCandidates(ticker))
-    if (wanted.size === 0) return null
-    const key = tenantId
+  async locateResearchPrediction(ticker, tenantId = 'default', { mode = 'live', session = null } = {}) {
+    const symbol = symbolCandidates(ticker)[0]
+    if (!symbol) return null
+    const key = `${tenantId}|${mode}|${session ?? ''}|${symbol}`
     const now = Date.now()
     let entry = researchIndexCache.get(key)
-    // A clock that stepped backwards (NTP correction) must not extend a cached index.
+    // A clock that stepped backwards (NTP correction) must not extend a cached answer.
     if (!entry || now >= entry.expiresAt || now < entry.fetchedAt) {
-      const params = new URLSearchParams({ limit: String(RESEARCH_INDEX_LIMIT), tenant_id: tenantId })
-      const data = await engineFetch('/ranking/top?' + params.toString())
+      const params = new URLSearchParams({ ticker: symbol, tenant_id: tenantId, mode })
+      if (session) params.set('session', session)
+      const data = await engineFetch('/api/research/latest?' + params.toString())
       entry = { data, fetchedAt: now, expiresAt: now + RESEARCH_INDEX_TTL_MS }
       researchIndexCache.set(key, entry)
     }
     const data = entry.data ?? {}
-    const row = (Array.isArray(data.rankings) ? data.rankings : [])
-      .find((r) => r && wanted.has(String(r.ticker ?? '').toUpperCase()))
-    if (!row?.predictionId || typeof row.predictionId !== 'string') return null
+    if (!data.found || typeof data.predictionId !== 'string') return null
     return {
-      predictionId: row.predictionId,
-      ticker: String(row.ticker).toUpperCase(),
-      rankedAt: row.timestamp ?? null,
+      predictionId: data.predictionId,
+      ticker: String(data.ticker ?? symbol).toUpperCase(),
+      publicationId: data.publicationId ?? null,
+      mode: data.mode ?? mode,
+      marketDate: data.marketDate ?? null,
+      rankedAt: data.publishedAt ?? null,
       run: {
-        intelligenceConfidenceTier: data.intelligenceConfidenceTier ?? null,
-        rankedUnderDegradedRun: data.rankedUnderDegradedRun ?? null,
-        runStatus: data.runStatus ?? null
-      }
+        intelligenceConfidenceTier: data.run?.intelligenceConfidenceTier ?? null,
+        rankedUnderDegradedRun: data.run?.rankedUnderDegradedRun ?? null,
+        runStatus: data.run?.runStatus ?? null
+      },
+      quality: data.quality ?? null
     }
   },
 
-  // Rankings endpoints
+  /** Daily close of one session (latest on/before `session`) from Alpha Engine's own bars. */
+  async getSessionClose(ticker, session = null) {
+    const params = new URLSearchParams({ ticker: String(ticker).toUpperCase() })
+    if (session) params.set('session', session)
+    return engineFetch('/api/market/session-close?' + params.toString())
+  },
+
   async getTopRankings(limit = 20, maxFragility = null) {
     // Use base cache key (null) for all requests - filter locally
     const baseCacheKey = getRankingsCacheKey(null)
