@@ -58,6 +58,7 @@ export function normalizePerformance(raw) {
     realized,
     unrealized,
     total,
+    valuation: raw.valuation && typeof raw.valuation === 'object' ? raw.valuation : null,
     fees: toNumberOrNull(raw.fees),
     asOf: raw.asOf ?? raw.as_of ?? null,
   }
@@ -197,15 +198,30 @@ export function eventToItem(e) {
       return { ...base, category: 'evaluation', title: 'Checked — no trade', explanation: `Evaluated ${sym}; conditions for a trade weren’t met.` }
     case 'rule_triggered':
       return { ...base, category: 'signal', title: 'Rule triggered', explanation: e.detail || `A rule fired for ${sym}.` }
-    case 'execution_created':
-      return {
-        ...base,
-        category: 'order',
-        title: `Paper ${sideWord(meta.side ?? meta.direction ?? meta.signal)} order placed`,
-        explanation: meta.quantity ? `${meta.quantity} shares of ${sym}.` : `Order for ${sym}.`,
+    case 'execution_created': {
+      const rd = meta.riskDecision
+      const side = sideWord(meta.side ?? meta.direction ?? meta.signal)
+      const shares = meta.quantity ? `${meta.quantity} shares of ${sym}.` : `Order for ${sym}.`
+      if (rd?.basis === 'simulator_test_scenario') {
+        return { ...base, category: 'order', riskDecision: rd, testScenario: true,
+          title: `Test scenario: simulated ${side} order placed`,
+          explanation: `${shares} Isolated simulator test scenario — the normal risk policy would not place this order (${rd.decision}: ${MATRIX_TEXT[rd.reason] ?? rd.reason ?? 'not approved'}).` }
       }
-    case 'execution_blocked_by_risk':
+      if (rd?.basis === 'restricted_reduced') {
+        return { ...base, category: 'order', riskDecision: rd, title: `Paper ${side} order placed at reduced size`,
+          explanation: `${shares} Risk restricted this trade (${MATRIX_TEXT[rd.reason] ?? rd.reason}), so only the reduced size was placed.` }
+      }
+      return { ...base, category: 'order', title: `Paper ${side} order placed`, explanation: shares }
+    }
+    case 'execution_blocked_by_risk': {
+      const rd = meta.riskDecision
+      if (rd) {
+        const restricted = rd.basis === 'restricted_blocked'
+        return { ...base, category: 'risk', riskDecision: rd, title: restricted ? 'Restricted by risk — not traded' : 'Rejected by risk',
+          explanation: `${MATRIX_TEXT[rd.reason] ?? (rd.failedChecks?.length ? 'A risk limit failed.' : 'The risk engine didn’t approve this order.')}${restricted && rd.adjustedQuantity ? ` (would allow at most ${rd.adjustedQuantity} shares at reduced size; reduced-size trading is off)` : ''}` }
+      }
       return { ...base, category: 'risk', title: 'Blocked by risk limits', explanation: RISK_TEXT[reason] ?? 'A risk check stopped this order.' }
+    }
     case 'execution_skipped': {
       if (reason && RISK_REASONS.has(reason)) {
         return { ...base, category: 'risk', title: 'Blocked by a limit', explanation: RISK_TEXT[reason] ?? 'A limit stopped this order.' }
@@ -230,6 +246,17 @@ export function eventToItem(e) {
     default:
       return { ...base, category: 'other', title: String(e.type ?? 'Event').replace(/_/g, ' '), explanation: e.detail || '' }
   }
+}
+
+const MATRIX_TEXT = {
+  execution_weak: 'the signal was too weak to trust',
+  execution_moderate: 'the signal was only moderately reliable',
+  operational_critical: 'trading systems weren’t healthy enough',
+  operational_degraded: 'trading systems were degraded',
+  exposure_critical: 'the portfolio was too concentrated',
+  exposure_warning: 'the portfolio was getting concentrated',
+  stress_critical: 'the account is under drawdown stress',
+  stress_warning: 'the account is under some drawdown stress',
 }
 
 const RESEARCH_REASON_TEXT = {

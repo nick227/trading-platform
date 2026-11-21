@@ -14,13 +14,14 @@ export class RiskGateService {
   // Evaluate execution risk using 4-score decision matrix
   async evaluateExecutionRisk(executionRequest) {
     try {
-      const { portfolioId, ticker, direction, quantity, price, signal } = executionRequest
+      const { portfolioId, ticker, direction, quantity, price, signal, marketData } = executionRequest
 
-      // Use 4-score decision matrix for intelligent risk evaluation
+      // Use 4-score decision matrix for intelligent risk evaluation. Never fabricate inputs:
+      // a missing signal/regime/liquidity is scored as unknown, not as confident or bullish.
       const decision = await riskDecisionMatrix.evaluateTradeRequest(
         portfolioId,
-        signal || { confidence: 0.7, ticker, regime: 'bull' },
-        { ticker, price }
+        { ticker, direction, ...(signal ?? {}), ...(marketData?.regime && !signal?.regime ? { regime: marketData.regime } : {}) },
+        { ticker, price, ...(marketData ?? {}) }
       )
 
       // Apply position multiplier from decision matrix
