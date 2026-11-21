@@ -362,45 +362,29 @@ describe('GET /api/bots/:id/events', () => {
 })
 
 describe('POST /api/bots/:id/events', () => {
-  it('creates an event and returns 201', async () => {
+  it('rejects client-authored system events, including research decision metadata', async () => {
     const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_test123/events',
+      method: 'POST', url: '/api/bots/bot_test123/events',
       payload: {
-        botId: 'bot_test123',
-        portfolioId: 'por_test123',
-        type: 'rule_triggered',
-        detail: 'Rule fired'
+        botId: 'bot_test123', portfolioId: 'por_test123',
+        type: 'decision_made', detail: 'Approved paper order',
+        metadata: { decision: 'accepted', researchIntegrity: { verifiedAtCapture: true } }
       }
     })
-    expect(res.statusCode).toBe(201)
-    expect(res.json().data.id).toBe('evt_test123')
+    expect(res.statusCode).toBe(403)
+    expect(res.json().error.code).toBe('SYSTEM_EVENTS_READ_ONLY')
+    const botsService = (await import('../../services/botsService.js')).default
+    expect(botsService.createBotEvent).not.toHaveBeenCalled()
   })
 
-  it('returns 404 when bot not found', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.bot.findFirst).mockResolvedValueOnce(null)
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_missing/events',
-      payload: {
-        botId: 'bot_missing',
-        portfolioId: 'por_test123',
-        type: 'rule_triggered',
-        detail: 'Rule fired'
-      }
-    })
-    expect(res.statusCode).toBe(404)
-  })
-
-  it('returns 400 when required fields are missing', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_test123/events',
-      payload: { botId: 'bot_test123' }
-    })
-    expect(res.statusCode).toBe(400)
+  it('rejects forged order and risk events', async () => {
+    for (const type of ['execution_created', 'execution_blocked_by_risk', 'rule_triggered']) {
+      const res = await app.inject({
+        method: 'POST', url: '/api/bots/bot_test123/events',
+        payload: { portfolioId: 'por_test123', type, detail: 'Forged' }
+      })
+      expect(res.statusCode).toBe(403)
+    }
   })
 })
 
