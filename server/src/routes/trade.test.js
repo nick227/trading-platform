@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest'
 import createApp from '../loaders/fastify.js'
 import tradeRoutes from './trade.js'
 
@@ -88,6 +88,7 @@ beforeAll(async () => {
 })
 
 afterAll(() => app.close())
+beforeEach(() => vi.clearAllMocks())
 
 describe('POST /api/trade', () => {
   it('queues an execution and returns 201', async () => {
@@ -102,6 +103,44 @@ describe('POST /api/trade', () => {
     expect(body.execution.symbol).toBe('AAPL')
     expect(body.execution.direction).toBe('BUY')
     expect(body.execution.alpacaOrderId).toBeNull()
+  })
+
+  it('rejects live credentials even when globally allowed', async () => {
+    const { getUserAlpacaCredentialsOrThrow, fetchAlpacaMarketClock } =
+      await import('../services/alpacaClockService.js')
+    const executionsService = (await import('../services/executionsService.js')).default
+    vi.mocked(getUserAlpacaCredentialsOrThrow).mockResolvedValueOnce({
+      paper: false, baseUrl: 'https://api.alpaca.markets'
+    })
+    const res = await app.inject({
+      method: 'POST', url: '/api/trade',
+      payload: { symbol: 'AAPL', direction: 'BUY', quantity: 1, price: 150 }
+    })
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe('PAPER_ONLY')
+    expect(vi.mocked(fetchAlpacaMarketClock)).not.toHaveBeenCalled()
+    expect(vi.mocked(executionsService.createExecution)).not.toHaveBeenCalled()
+  })
+
+  it.each(['botId', 'predictionId', 'strategyId', 'userId', 'status', 'brokerOrderId'])(
+    'rejects forged %s on manual trade submissions', async (key) => {
+      const executionsService = (await import('../services/executionsService.js')).default
+      const res = await app.inject({
+        method: 'POST', url: '/api/trade',
+        payload: { symbol: 'AAPL', direction: 'BUY', quantity: 1, price: 150, [key]: 'forged' }
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().code).toBe('INVALID_TRADE_FIELDS')
+      expect(vi.mocked(executionsService.createExecution)).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([0, -1])('rejects nonpositive price %s', async (price) => {
+    const res = await app.inject({
+      method: 'POST', url: '/api/trade',
+      payload: { symbol: 'AAPL', direction: 'BUY', quantity: 1, price }
+    })
+    expect(res.statusCode).toBe(400)
   })
 
   it('returns 409 when market is closed', async () => {
