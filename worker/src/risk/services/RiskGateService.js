@@ -309,20 +309,15 @@ export class RiskGateService {
   // Get risk settings
   async getRiskSettings(portfolioId) {
     try {
-      const portfolio = await prisma.portfolio.findUnique({
-        where: { id: portfolioId },
-        include: {
-          user: {
-            select: { riskSettings: true }
-          }
-        }
-      })
+      // Portfolio has no user relation in the schema: read the owner's settings by userId.
+      const portfolio = await prisma.portfolio.findUnique({ where: { id: portfolioId }, select: { userId: true } })
 
       if (!portfolio) {
         throw new Error(`Portfolio not found: ${portfolioId}`)
       }
 
-      const userSettings = portfolio.user?.riskSettings || {}
+      const owner = await prisma.user.findUnique({ where: { id: portfolio.userId }, select: { riskSettings: true } })
+      const userSettings = owner?.riskSettings && typeof owner.riskSettings === 'object' ? owner.riskSettings : {}
       
       // Default risk limits
       const defaults = {

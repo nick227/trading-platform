@@ -518,7 +518,9 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
             clientOrderId: `tp_${executionId}`,
             activeIntentKey,
             signalScore:   confidence,
-            pnl:           0
+            pnl:           0,
+            commission:    0,  // required columns; fees/commission are recorded on fill
+            fees:          0
           }
         })
         if (research) {
@@ -863,7 +865,8 @@ async function logBotEvent(bot, type, detail, ticker, metadata = {}) {
         botId:       bot.id,
         portfolioId: bot.portfolioId,
         type,
-        detail,
+        // BotEvent.detail is VARCHAR(191): long error text would make the event itself fail.
+        detail:      String(detail ?? '').slice(0, 190),
         metadata:    { ticker, ...metadata }
       }
     })
