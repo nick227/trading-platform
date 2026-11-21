@@ -58,7 +58,10 @@ export function AuthProvider({ children }) {
   }
 
   const register = async (email, password, fullName) => {
-    const u = await registerWithCredentials(email, password, fullName)
+    await registerWithCredentials(email, password, fullName)
+    // Registration creates the account but no session; sign in so the session cookie exists
+    // before any authenticated request (otherwise every call after sign-up returns 401).
+    const u = await loginWithCredentials(email, password)
     setUser(u)
     loadBrokerStatus()
     return u
