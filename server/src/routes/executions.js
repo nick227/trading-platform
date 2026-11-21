@@ -1,4 +1,5 @@
 import executionsService from '../services/executionsService.js'
+import { getExecutionResearch } from '../services/executionResearchService.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { fetchAlpacaMarketClock, getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
@@ -28,6 +29,18 @@ export default async function executionsRoutes(app) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Execution not found' } })
     }
     return { data: execution }
+  })
+
+  // GET /api/executions/:id/research — archived, verified decision evidence.
+  app.get('/:id/research', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      return { data: await getExecutionResearch({ userId: request.user.id, executionId: request.params.id }) }
+    } catch (err) {
+      if (err.code === 'NOT_FOUND') {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Execution not found' } })
+      }
+      throw err
+    }
   })
 
   // POST /api/executions — requires auth; userId is taken from JWT, not body
