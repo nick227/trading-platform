@@ -11,6 +11,8 @@ import { evaluateRiskCaps } from './riskCaps.js'
 import { ACTIVE_EXECUTION_STATUSES } from '../queues/executionStatus.js'
 import { readEmergencyStop } from '../../../server/src/services/emergencyStopService.js'
 import { calculateFifoAccounting, loadBotFills, realizedPnlSince } from '../../../server/src/services/botAccountingService.js'
+import { assessLinkedResearch } from '../../../server/src/services/executionResearchService.js'
+import { isResearchDriven } from '../engine/researchDecision.js'
 
 function envNumber(name, fallback) {
   const v = Number(process.env[name])
@@ -63,6 +65,20 @@ export async function evaluateOrderEligibility(execution, { broker, now = new Da
     if (bot.userId !== execution.userId) return refuse('bot_owner_mismatch')
     if (!bot.enabled) return refuse('bot_paused')
     const config = bot.config && typeof bot.config === 'object' ? bot.config : {}
+
+    // Research-driven bots: the order must carry exactly one accepted decision whose
+    // archived evidence still verifies and matches this order's ticker and direction.
+    if (isResearchDriven(bot)) {
+      const events = await prismaClient.botEvent.findMany({
+        where: { executionId: execution.id, botId: bot.id, type: 'decision_made' },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: 2
+      })
+      const research = assessLinkedResearch(execution, events)
+      if (research.status !== 'verified_digest') {
+        return refuse('research_evidence_unverified', { researchStatus: research.status, researchReason: research.reason })
+      }
+    }
 
     const fills = await loadBotFills(bot.id, { prismaClient })
     const accounting = calculateFifoAccounting(fills)

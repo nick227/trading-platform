@@ -1,7 +1,7 @@
 // Minimal in-memory Prisma stand-in for deterministic runtime tests.
 // Supports the query shapes used by the order worker, eligibility checks, accounting,
 // and the emergency stop: equality/null, in, not, gt/gte/lt/lte, OR, increment,
-// orderBy, and $transaction (callback form rolls back on throw; array form sequential).
+// orderBy, single-column @unique constraints (P2002), and $transaction (callback form rolls back on throw; array form sequential).
 // updateMany matches and writes synchronously, so a conditional updateMany is atomic
 // with respect to other in-flight async callers — like a row-level conditional UPDATE.
 
@@ -82,6 +82,24 @@ const DEFAULTS = {
   botRule: () => ({ enabled: true, config: {} }),
 }
 
+// Single-column @unique constraints from schema.prisma (NULLs never conflict, as in MySQL).
+const UNIQUE = {
+  execution: ['clientOrderId', 'activeIntentKey', 'brokerOrderId'],
+}
+
+function assertUnique(name, all, candidate, self = null) {
+  for (const col of UNIQUE[name] ?? []) {
+    const v = candidate[col]
+    if (v == null) continue
+    if (all.some((r) => r !== self && r[col] === v)) {
+      const err = new Error(`memoryPrisma: Unique constraint failed on ${name}.${col}`)
+      err.code = 'P2002'
+      err.meta = { target: [col] }
+      throw err
+    }
+  }
+}
+
 function model(store, name) {
   const rows = () => store[name] ?? (store[name] = [])
   return {
@@ -102,6 +120,7 @@ function model(store, name) {
       const now = new Date()
       const row = { ...(DEFAULTS[name]?.() ?? {}), createdAt: now, updatedAt: now, ...clone(data) }
       if (!row.id) row.id = `${name}_${rows().length + 1}`
+      assertUnique(name, rows(), row)
       rows().push(row)
       return clone(row)
     },
@@ -112,11 +131,19 @@ function model(store, name) {
         err.code = 'P2025'
         throw err
       }
+      const next = structuredClone(row)
+      applyData(next, data)
+      assertUnique(name, rows(), next, row)
       applyData(row, data)
       return clone(row)
     },
     async updateMany({ where, data }) {
       const hit = rows().filter((r) => matches(r, where))
+      for (const row of hit) {
+        const next = structuredClone(row)
+        applyData(next, data)
+        assertUnique(name, rows(), next, row)
+      }
       for (const row of hit) applyData(row, data)
       return { count: hit.length }
     },

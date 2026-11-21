@@ -1,0 +1,351 @@
+{
+  "generatedBy": "alpha-engine build_prediction_trace",
+  "alphaEngineCommit": "0a58e7e",
+  "traces": {
+    "pred_spy_buy": {
+      "schemaVersion": "research-trace/v1",
+      "traceId": "research:f2c9609cb2f1e13d439d4732b1300b81e3e111fd803bc6667410221e9d1ba1f3",
+      "tenant_id": "default",
+      "source": {
+        "system": "alpha-engine",
+        "kind": "stored_prediction",
+        "predictionId": "pred_spy_buy",
+        "strategyId": "realness_repricer_v1_paper",
+        "ticker": "SPY",
+        "observedAt": "2026-11-20T14:30:00+00:00",
+        "horizon": "5d"
+      },
+      "decisionReference": {
+        "schemaVersion": "research-trace/v1",
+        "traceId": "research:f2c9609cb2f1e13d439d4732b1300b81e3e111fd803bc6667410221e9d1ba1f3",
+        "predictionId": "pred_spy_buy",
+        "observedAt": "2026-11-20T14:30:00+00:00",
+        "evidenceSha256": "69690cf56b7304211d4c643b20a415c52c6c9bd7eb244780f2f8acc60c47815a"
+      },
+      "evidence": {
+        "sha256": "69690cf56b7304211d4c643b20a415c52c6c9bd7eb244780f2f8acc60c47815a",
+        "canonicalJson": "{\"confidence\":0.82,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":540.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\",\"momentum_20d\":0.034,\"note\":\"café ✓\",\"rsi_14\":61.5},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_spy_buy\",\"rankScore\":0.6,\"ranking\":{\"as_of_date\":\"2026-11-20\",\"config\":{\"pipeline_version\":\"9f52dc1\"},\"rank_score\":0.6},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"SPY\"}",
+        "snapshot": {
+          "predictionId": "pred_spy_buy",
+          "ticker": "SPY",
+          "observedAt": "2026-11-20T14:30:00+00:00",
+          "strategyId": "realness_repricer_v1_paper",
+          "direction": "BUY",
+          "horizon": "5d",
+          "mode": "discovery",
+          "entryPrice": 540.0,
+          "rankScore": 0.6,
+          "confidence": 0.82,
+          "confidenceIsProbability": false,
+          "successProbability": null,
+          "features": {
+            "model_id": "realness_repricer_v1_paper",
+            "rsi_14": 61.5,
+            "momentum_20d": 0.034,
+            "note": "café ✓"
+          },
+          "ranking": {
+            "as_of_date": "2026-11-20",
+            "config": {
+              "pipeline_version": "9f52dc1"
+            },
+            "rank_score": 0.6
+          }
+        },
+        "availability": {
+          "features": true,
+          "ranking": true,
+          "modelId": true
+        },
+        "snapshotOrigin": "stored_prediction_fields",
+        "completeness": "stored_fields_present"
+      },
+      "integrity": {
+        "digestAlgorithm": "SHA-256",
+        "canonicalization": "JSON sorted keys, compact UTF-8, non-finite rejected",
+        "digitallySigned": false,
+        "immutableStorageVerified": false,
+        "pointInTimeSourceAuditVerified": false,
+        "limitation": "Hash detects changes only if the consuming service persists the original snapshot and digest at decision time."
+      },
+      "trading": {
+        "actionable": false,
+        "executionPermission": false,
+        "botDecisionId": null,
+        "brokerOrderId": null,
+        "reason": "research_reference_only"
+      }
+    },
+    "pred_qqq_weak": {
+      "schemaVersion": "research-trace/v1",
+      "traceId": "research:c6dfab5ea6eea7a18e27c1847e7a0bac5a886a1dbd5d984b450bcdaea90828a6",
+      "tenant_id": "default",
+      "source": {
+        "system": "alpha-engine",
+        "kind": "stored_prediction",
+        "predictionId": "pred_qqq_weak",
+        "strategyId": "ownership_vacuum_v1_paper",
+        "ticker": "QQQ",
+        "observedAt": "2026-11-20T14:30:00+00:00",
+        "horizon": "15d"
+      },
+      "decisionReference": {
+        "schemaVersion": "research-trace/v1",
+        "traceId": "research:c6dfab5ea6eea7a18e27c1847e7a0bac5a886a1dbd5d984b450bcdaea90828a6",
+        "predictionId": "pred_qqq_weak",
+        "observedAt": "2026-11-20T14:30:00+00:00",
+        "evidenceSha256": "194d71b7116e56e49beb812319943f40ff561d611c8054b4ddb4d5dd2c3810f0"
+      },
+      "evidence": {
+        "sha256": "194d71b7116e56e49beb812319943f40ff561d611c8054b4ddb4d5dd2c3810f0",
+        "canonicalJson": "{\"confidence\":0.35,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":480.25,\"features\":{\"model_id\":\"ownership_vacuum_v1_paper\",\"rsi_14\":48.0},\"horizon\":\"15d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_qqq_weak\",\"rankScore\":0.41,\"ranking\":{\"as_of_date\":\"2026-11-20\"},\"strategyId\":\"ownership_vacuum_v1_paper\",\"successProbability\":null,\"ticker\":\"QQQ\"}",
+        "snapshot": {
+          "predictionId": "pred_qqq_weak",
+          "ticker": "QQQ",
+          "observedAt": "2026-11-20T14:30:00+00:00",
+          "strategyId": "ownership_vacuum_v1_paper",
+          "direction": "BUY",
+          "horizon": "15d",
+          "mode": "discovery",
+          "entryPrice": 480.25,
+          "rankScore": 0.41,
+          "confidence": 0.35,
+          "confidenceIsProbability": false,
+          "successProbability": null,
+          "features": {
+            "model_id": "ownership_vacuum_v1_paper",
+            "rsi_14": 48.0
+          },
+          "ranking": {
+            "as_of_date": "2026-11-20"
+          }
+        },
+        "availability": {
+          "features": true,
+          "ranking": true,
+          "modelId": true
+        },
+        "snapshotOrigin": "stored_prediction_fields",
+        "completeness": "stored_fields_present"
+      },
+      "integrity": {
+        "digestAlgorithm": "SHA-256",
+        "canonicalization": "JSON sorted keys, compact UTF-8, non-finite rejected",
+        "digitallySigned": false,
+        "immutableStorageVerified": false,
+        "pointInTimeSourceAuditVerified": false,
+        "limitation": "Hash detects changes only if the consuming service persists the original snapshot and digest at decision time."
+      },
+      "trading": {
+        "actionable": false,
+        "executionPermission": false,
+        "botDecisionId": null,
+        "brokerOrderId": null,
+        "reason": "research_reference_only"
+      }
+    },
+    "pred_iwm_sell": {
+      "schemaVersion": "research-trace/v1",
+      "traceId": "research:a5ad37eebed14295113750e36655b1c50e4a36a90abbf646be542f5a3af7443b",
+      "tenant_id": "default",
+      "source": {
+        "system": "alpha-engine",
+        "kind": "stored_prediction",
+        "predictionId": "pred_iwm_sell",
+        "strategyId": "realness_repricer_v1_paper",
+        "ticker": "IWM",
+        "observedAt": "2026-11-20T14:30:00+00:00",
+        "horizon": "5d"
+      },
+      "decisionReference": {
+        "schemaVersion": "research-trace/v1",
+        "traceId": "research:a5ad37eebed14295113750e36655b1c50e4a36a90abbf646be542f5a3af7443b",
+        "predictionId": "pred_iwm_sell",
+        "observedAt": "2026-11-20T14:30:00+00:00",
+        "evidenceSha256": "ac81e1638fe92f128ba20137ba7dcd8484655f8b2596e113ac7c7cddb50ae7f4"
+      },
+      "evidence": {
+        "sha256": "ac81e1638fe92f128ba20137ba7dcd8484655f8b2596e113ac7c7cddb50ae7f4",
+        "canonicalJson": "{\"confidence\":0.9,\"confidenceIsProbability\":false,\"direction\":\"SELL\",\"entryPrice\":200.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\"},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_iwm_sell\",\"rankScore\":0.55,\"ranking\":{\"as_of_date\":\"2026-11-20\"},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"IWM\"}",
+        "snapshot": {
+          "predictionId": "pred_iwm_sell",
+          "ticker": "IWM",
+          "observedAt": "2026-11-20T14:30:00+00:00",
+          "strategyId": "realness_repricer_v1_paper",
+          "direction": "SELL",
+          "horizon": "5d",
+          "mode": "discovery",
+          "entryPrice": 200.0,
+          "rankScore": 0.55,
+          "confidence": 0.9,
+          "confidenceIsProbability": false,
+          "successProbability": null,
+          "features": {
+            "model_id": "realness_repricer_v1_paper"
+          },
+          "ranking": {
+            "as_of_date": "2026-11-20"
+          }
+        },
+        "availability": {
+          "features": true,
+          "ranking": true,
+          "modelId": true
+        },
+        "snapshotOrigin": "stored_prediction_fields",
+        "completeness": "stored_fields_present"
+      },
+      "integrity": {
+        "digestAlgorithm": "SHA-256",
+        "canonicalization": "JSON sorted keys, compact UTF-8, non-finite rejected",
+        "digitallySigned": false,
+        "immutableStorageVerified": false,
+        "pointInTimeSourceAuditVerified": false,
+        "limitation": "Hash detects changes only if the consuming service persists the original snapshot and digest at decision time."
+      },
+      "trading": {
+        "actionable": false,
+        "executionPermission": false,
+        "botDecisionId": null,
+        "brokerOrderId": null,
+        "reason": "research_reference_only"
+      }
+    },
+    "pred_spy_buy_next": {
+      "schemaVersion": "research-trace/v1",
+      "traceId": "research:584cdd614f1e3a9c22232db049f66231f6f191b71743a507914d076eaf481718",
+      "tenant_id": "default",
+      "source": {
+        "system": "alpha-engine",
+        "kind": "stored_prediction",
+        "predictionId": "pred_spy_buy_next",
+        "strategyId": "realness_repricer_v1_paper",
+        "ticker": "SPY",
+        "observedAt": "2026-11-20T14:45:00+00:00",
+        "horizon": "5d"
+      },
+      "decisionReference": {
+        "schemaVersion": "research-trace/v1",
+        "traceId": "research:584cdd614f1e3a9c22232db049f66231f6f191b71743a507914d076eaf481718",
+        "predictionId": "pred_spy_buy_next",
+        "observedAt": "2026-11-20T14:45:00+00:00",
+        "evidenceSha256": "df5b6e7b4adbdf13dc2ab66cc37db838c0776d2bcbdeadccaecb4282b437c4ae"
+      },
+      "evidence": {
+        "sha256": "df5b6e7b4adbdf13dc2ab66cc37db838c0776d2bcbdeadccaecb4282b437c4ae",
+        "canonicalJson": "{\"confidence\":0.77,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":541.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\",\"rsi_14\":63.0},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:45:00+00:00\",\"predictionId\":\"pred_spy_buy_next\",\"rankScore\":0.62,\"ranking\":{\"as_of_date\":\"2026-11-20\",\"rank_score\":0.62},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"SPY\"}",
+        "snapshot": {
+          "predictionId": "pred_spy_buy_next",
+          "ticker": "SPY",
+          "observedAt": "2026-11-20T14:45:00+00:00",
+          "strategyId": "realness_repricer_v1_paper",
+          "direction": "BUY",
+          "horizon": "5d",
+          "mode": "discovery",
+          "entryPrice": 541.0,
+          "rankScore": 0.62,
+          "confidence": 0.77,
+          "confidenceIsProbability": false,
+          "successProbability": null,
+          "features": {
+            "model_id": "realness_repricer_v1_paper",
+            "rsi_14": 63.0
+          },
+          "ranking": {
+            "as_of_date": "2026-11-20",
+            "rank_score": 0.62
+          }
+        },
+        "availability": {
+          "features": true,
+          "ranking": true,
+          "modelId": true
+        },
+        "snapshotOrigin": "stored_prediction_fields",
+        "completeness": "stored_fields_present"
+      },
+      "integrity": {
+        "digestAlgorithm": "SHA-256",
+        "canonicalization": "JSON sorted keys, compact UTF-8, non-finite rejected",
+        "digitallySigned": false,
+        "immutableStorageVerified": false,
+        "pointInTimeSourceAuditVerified": false,
+        "limitation": "Hash detects changes only if the consuming service persists the original snapshot and digest at decision time."
+      },
+      "trading": {
+        "actionable": false,
+        "executionPermission": false,
+        "botDecisionId": null,
+        "brokerOrderId": null,
+        "reason": "research_reference_only"
+      }
+    },
+    "pred_dia_stale": {
+      "schemaVersion": "research-trace/v1",
+      "traceId": "research:6b84d7e5bf69b71c85e06bbdbacd4946b996613a5cf8553b1fa7703a22c9dc7f",
+      "tenant_id": "default",
+      "source": {
+        "system": "alpha-engine",
+        "kind": "stored_prediction",
+        "predictionId": "pred_dia_stale",
+        "strategyId": "realness_repricer_v1_paper",
+        "ticker": "DIA",
+        "observedAt": "2026-11-10T14:30:00+00:00",
+        "horizon": "5d"
+      },
+      "decisionReference": {
+        "schemaVersion": "research-trace/v1",
+        "traceId": "research:6b84d7e5bf69b71c85e06bbdbacd4946b996613a5cf8553b1fa7703a22c9dc7f",
+        "predictionId": "pred_dia_stale",
+        "observedAt": "2026-11-10T14:30:00+00:00",
+        "evidenceSha256": "46be9d3fe18dd108b3b708dd262b41cba5c5073635f140df44bb356b10ab214c"
+      },
+      "evidence": {
+        "sha256": "46be9d3fe18dd108b3b708dd262b41cba5c5073635f140df44bb356b10ab214c",
+        "canonicalJson": "{\"confidence\":0.95,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":420.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\"},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-10T14:30:00+00:00\",\"predictionId\":\"pred_dia_stale\",\"rankScore\":0.7,\"ranking\":{\"as_of_date\":\"2026-11-10\"},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"DIA\"}",
+        "snapshot": {
+          "predictionId": "pred_dia_stale",
+          "ticker": "DIA",
+          "observedAt": "2026-11-10T14:30:00+00:00",
+          "strategyId": "realness_repricer_v1_paper",
+          "direction": "BUY",
+          "horizon": "5d",
+          "mode": "discovery",
+          "entryPrice": 420.0,
+          "rankScore": 0.7,
+          "confidence": 0.95,
+          "confidenceIsProbability": false,
+          "successProbability": null,
+          "features": {
+            "model_id": "realness_repricer_v1_paper"
+          },
+          "ranking": {
+            "as_of_date": "2026-11-10"
+          }
+        },
+        "availability": {
+          "features": true,
+          "ranking": true,
+          "modelId": true
+        },
+        "snapshotOrigin": "stored_prediction_fields",
+        "completeness": "stored_fields_present"
+      },
+      "integrity": {
+        "digestAlgorithm": "SHA-256",
+        "canonicalization": "JSON sorted keys, compact UTF-8, non-finite rejected",
+        "digitallySigned": false,
+        "immutableStorageVerified": false,
+        "pointInTimeSourceAuditVerified": false,
+        "limitation": "Hash detects changes only if the consuming service persists the original snapshot and digest at decision time."
+      },
+      "trading": {
+        "actionable": false,
+        "executionPermission": false,
+        "botDecisionId": null,
+        "brokerOrderId": null,
+        "reason": "research_reference_only"
+      }
+    }
+  }
+}

@@ -50,6 +50,11 @@ const RANKINGS_STALE_TTL_MS = 60_000 // Allow stale data for 60s while revalidat
 const RANKINGS_EMERGENCY_STALE_MS = 300_000 // 5 min emergency fallback
 const RANKINGS_CACHE_FETCH_LIMIT = 50
 
+// Ticker → ranked predictionId index for bot research decisions (whole target universe).
+const researchIndexCache = new Map()
+const RESEARCH_INDEX_TTL_MS = Number(process.env.RESEARCH_INDEX_TTL_MS ?? 30_000)
+const RESEARCH_INDEX_LIMIT = 500
+
 // Separate cache for movers with different TTL
 const moversCache = new Map()
 const MOVERS_CACHE_TTL_MS = 30_000
@@ -305,6 +310,42 @@ export const engineClient = {
     if (!predictionId || typeof predictionId !== 'string') throw new Error('predictionId is required')
     const params = new URLSearchParams({ tenant_id: tenantId })
     return engineFetch('/api/predictions/' + encodeURIComponent(predictionId) + '/trace?' + params.toString())
+  },
+
+  /**
+   * Locate the latest persisted, ranked Alpha Engine prediction for a ticker.
+   * Uses the existing /ranking/top read model only as an index from ticker to
+   * predictionId plus run-quality gates; decisions must be made on the verified
+   * stored trace (getPredictionTrace), never on this ranking row.
+   * Returns null when the ticker has no ranked prediction. Network errors propagate.
+   */
+  async locateResearchPrediction(ticker, tenantId = 'default') {
+    const wanted = new Set(symbolCandidates(ticker))
+    if (wanted.size === 0) return null
+    const key = tenantId
+    const now = Date.now()
+    let entry = researchIndexCache.get(key)
+    // A clock that stepped backwards (NTP correction) must not extend a cached index.
+    if (!entry || now >= entry.expiresAt || now < entry.fetchedAt) {
+      const params = new URLSearchParams({ limit: String(RESEARCH_INDEX_LIMIT), tenant_id: tenantId })
+      const data = await engineFetch('/ranking/top?' + params.toString())
+      entry = { data, fetchedAt: now, expiresAt: now + RESEARCH_INDEX_TTL_MS }
+      researchIndexCache.set(key, entry)
+    }
+    const data = entry.data ?? {}
+    const row = (Array.isArray(data.rankings) ? data.rankings : [])
+      .find((r) => r && wanted.has(String(r.ticker ?? '').toUpperCase()))
+    if (!row?.predictionId || typeof row.predictionId !== 'string') return null
+    return {
+      predictionId: row.predictionId,
+      ticker: String(row.ticker).toUpperCase(),
+      rankedAt: row.timestamp ?? null,
+      run: {
+        intelligenceConfidenceTier: data.intelligenceConfidenceTier ?? null,
+        rankedUnderDegradedRun: data.rankedUnderDegradedRun ?? null,
+        runStatus: data.runStatus ?? null
+      }
+    }
   },
 
   // Rankings endpoints
