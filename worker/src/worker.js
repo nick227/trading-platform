@@ -42,6 +42,21 @@ async function main() {
   // so the worker can clear it when an order reaches a terminal state
   setInflightMap(inflightMap)
 
+  // Controlled staging mode: WORKER_ORDER_PROCESSING=disabled verifies the database
+  // and reports heartbeats only — no order worker, bot engine, or market stream, so
+  // nothing can reach a broker. Unset keeps the normal runtime unchanged.
+  if (process.env.WORKER_ORDER_PROCESSING === 'disabled') {
+    await prisma.$queryRaw`SELECT 1`
+    log.info('db_connectivity_ok')
+    log.warn('worker_order_processing_disabled: connectivity-only mode (no order worker, bot engine, or market stream)')
+    healthState.orderWorker = 'disabled'
+    healthState.alpacaWs = 'disabled'
+    healthState.alpacaRest = 'disabled'
+    healthState.calendar = 'disabled'
+    startHeartbeat()
+    return
+  }
+
   // Start the order worker loop — processes queued executions continuously.
   // Each execution carries userId → worker loads the correct BrokerAccount per order.
   orderWorkerPromise = startOrderWorker().catch((err) => {

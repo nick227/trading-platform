@@ -113,7 +113,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3001',
+        // Also used by `vite preview` (preview.proxy defaults to server.proxy).
+        // On Railway: API_PROXY_TARGET=http://<api private domain>:<port>.
+        target: process.env.API_PROXY_TARGET || 'http://127.0.0.1:3001',
         changeOrigin: true
       }
     },
