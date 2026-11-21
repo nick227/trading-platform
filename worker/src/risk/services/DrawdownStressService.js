@@ -83,7 +83,7 @@ export class DrawdownStressService {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
 
-      const trades = await prisma.trade.findMany({
+      const trades = await prisma.execution.findMany({
         where: {
           portfolioId,
           createdAt: { gte: today },
@@ -122,7 +122,7 @@ export class DrawdownStressService {
   // Score losing streak (0-100)
   async scoreLosingStreak(portfolioId) {
     try {
-      const trades = await prisma.trade.findMany({
+      const trades = await prisma.execution.findMany({
         where: {
           portfolioId,
           status: 'filled'
@@ -166,7 +166,7 @@ export class DrawdownStressService {
     try {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
-      const trades = await prisma.trade.findMany({
+      const trades = await prisma.execution.findMany({
         where: {
           portfolioId,
           createdAt: { gte: sevenDaysAgo },
@@ -221,7 +221,7 @@ export class DrawdownStressService {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
 
-      const trades = await prisma.trade.findMany({
+      const trades = await prisma.execution.findMany({
         where: {
           portfolioId,
           createdAt: { gte: today },
@@ -235,7 +235,7 @@ export class DrawdownStressService {
         ? Math.abs(dailyLoss) / portfolio.currentEquity
         : 0
 
-      const recentTrades = await prisma.trade.findMany({
+      const recentTrades = await prisma.execution.findMany({
         where: {
           portfolioId,
           status: 'filled'

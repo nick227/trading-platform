@@ -4,6 +4,37 @@
 import prisma from '../../db/prisma.js'
 
 export class PortfolioExposureService {
+  /**
+   * Open holdings for a portfolio from its filled executions (no Position model exists):
+   * net quantity and average cost per ticker, sells reducing cost proportionally.
+   */
+  async holdings(portfolioId) {
+    const fills = await prisma.execution.findMany({
+      where: { portfolioId, filledQuantity: { gt: 0 } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { ticker: true, direction: true, filledQuantity: true, filledPrice: true, price: true }
+    })
+    const book = new Map()
+    for (const f of fills) {
+      const qty = Number(f.filledQuantity) || 0
+      const px = Number(f.filledPrice ?? f.price) || 0
+      const h = book.get(f.ticker) ?? { ticker: f.ticker, quantity: 0, cost: 0 }
+      if (String(f.direction).toLowerCase() === 'sell') {
+        const avg = h.quantity ? h.cost / h.quantity : 0
+        const sold = Math.min(qty, h.quantity)
+        h.quantity -= sold
+        h.cost -= avg * sold
+      } else {
+        h.quantity += qty
+        h.cost += qty * px
+      }
+      book.set(f.ticker, h)
+    }
+    return [...book.values()]
+      .filter((h) => h.quantity > 1e-9)
+      .map((h) => ({ ticker: h.ticker, quantity: h.quantity, avgPrice: h.cost / h.quantity }))
+  }
+
   constructor() {
     this.thresholds = {
       singleTickerMax: 0.20, // 20% max single position
@@ -49,17 +80,7 @@ export class PortfolioExposureService {
   // Score single ticker concentration (0-100)
   async scoreSingleTickerConcentration(portfolioId) {
     try {
-      const holdings = await prisma.position.findMany({
-        where: {
-          portfolioId,
-          quantity: { not: 0 }
-        },
-        select: {
-          ticker: true,
-          quantity: true,
-          avgPrice: true
-        }
-      })
+      const holdings = await this.holdings(portfolioId)
 
       if (holdings.length === 0) return 100
 
@@ -89,17 +110,7 @@ export class PortfolioExposureService {
   // Score sector concentration (0-100)
   async scoreSectorConcentration(portfolioId) {
     try {
-      const holdings = await prisma.position.findMany({
-        where: {
-          portfolioId,
-          quantity: { not: 0 }
-        },
-        select: {
-          ticker: true,
-          quantity: true,
-          avgPrice: true
-        }
-      })
+      const holdings = await this.holdings(portfolioId)
 
       if (holdings.length === 0) return 100
 
@@ -176,15 +187,7 @@ export class PortfolioExposureService {
   // Score correlation clustering (0-100)
   async scoreCorrelation(portfolioId) {
     try {
-      const holdings = await prisma.position.findMany({
-        where: {
-          portfolioId,
-          quantity: { not: 0 }
-        },
-        select: {
-          ticker: true
-        }
-      })
+      const holdings = await this.holdings(portfolioId)
 
       if (holdings.length < 2) return 100
 
@@ -221,17 +224,7 @@ export class PortfolioExposureService {
   // Get detailed exposure information
   async getExposureDetails(portfolioId) {
     try {
-      const holdings = await prisma.position.findMany({
-        where: {
-          portfolioId,
-          quantity: { not: 0 }
-        },
-        select: {
-          ticker: true,
-          quantity: true,
-          avgPrice: true
-        }
-      })
+      const holdings = await this.holdings(portfolioId)
 
       const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.quantity * h.avgPrice), 0)
 
@@ -275,17 +268,7 @@ export class PortfolioExposureService {
       const currentExposure = await this.calculatePortfolioExposure(portfolioId)
       
       // Get current holdings
-      const holdings = await prisma.position.findMany({
-        where: {
-          portfolioId,
-          quantity: { not: 0 }
-        },
-        select: {
-          ticker: true,
-          quantity: true,
-          avgPrice: true
-        }
-      })
+      const holdings = await this.holdings(portfolioId)
 
       const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.quantity * h.avgPrice), 0)
       const newTotalValue = totalValue + tradeValue
