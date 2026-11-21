@@ -106,6 +106,13 @@ describe('HomeDashboard', () => {
     expect(without.textContent).not.toMatch(/\$0\.00|0%/)
   })
 
+  it('labels realized-only P/L as realized', async () => {
+    mockApi({ botList: [{ ...bots[0], performance: { realizedPnl: 7, unrealizedPnl: null, totalPnl: 7 } }, bots[1]] })
+    renderHome()
+    const [first] = await screen.findAllByTestId('bot-card')
+    expect(within(first).getByTestId('bot-pnl')).toHaveTextContent('+$7.00 realized')
+  })
+
   it('shows last activity per bot, and says when activity is unavailable', async () => {
     mockApi({
       events: { bot_1: [{ id: 'ev1', type: 'signal_hold', detail: 'No signal', metadata: { ticker: 'AAPL' }, createdAt: '2026-11-20T15:00:00Z' }] },

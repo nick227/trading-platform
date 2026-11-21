@@ -128,6 +128,7 @@
 .timeline-item--signal .timeline-dot { background: var(--color-accent); }
 .timeline-item--risk .timeline-dot   { background: var(--color-warning); }
 .timeline-item--error .timeline-dot  { background: var(--color-negative); }
+.timeline-item--control .timeline-dot { background: var(--color-text); }
 
 .timeline-head {
   display: flex;

@@ -80,7 +80,9 @@ function lastActivityText(bot) {
 /** Name, status, allocation, P/L (when supplied), last activity, one control. */
 function BotCard({ bot, busy, error, onToggle }) {
   const control = bot.stopped ? null : bot.running ? 'Pause' : 'Resume'
-  const pnl = bot.performance?.total ?? null
+  // Total only when the backend knows unrealized P/L; otherwise realized, labeled as such.
+  const pnlIsTotal = bot.performance?.total !== null && bot.performance?.total !== undefined
+  const pnl = pnlIsTotal ? bot.performance.total : bot.performance?.realized ?? null
   return (
     <li className="card card-pad-sm home-bot" data-testid="bot-card">
       <div className="home-bot-row">
@@ -88,7 +90,7 @@ function BotCard({ bot, busy, error, onToggle }) {
           <span className="home-bot-name">{bot.name}</span>
           <span className="home-bot-meta muted">
             <span>{bot.allocation !== null ? `${fmtMoney(bot.allocation)} simulated` : 'Capital not set'}</span>
-            {pnl !== null && <span className={toneClass(pnl)} data-testid="bot-pnl">{fmtSignedMoney(pnl)}</span>}
+            {pnl !== null && <span className={toneClass(pnl)} data-testid="bot-pnl">{fmtSignedMoney(pnl)}{pnlIsTotal ? '' : ' realized'}</span>}
           </span>
           <span className="home-bot-last muted" data-testid="bot-last-activity">{lastActivityText(bot)}</span>
         </Link>

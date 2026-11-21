@@ -48,8 +48,12 @@ export function normalizePerformance(raw) {
   if (!raw || typeof raw !== 'object') return null
   const realized = toNumberOrNull(raw.realizedPnl ?? raw.realized_pnl)
   const unrealized = toNumberOrNull(raw.unrealizedPnl ?? raw.unrealized_pnl)
-  const total = toNumberOrNull(raw.totalPnl ?? raw.total_pnl) ?? (realized !== null && unrealized !== null ? realized + unrealized : null)
-  if (realized === null && unrealized === null && total === null) return null
+  // A total is only meaningful when unrealized P/L is known; the backend currently
+  // sends totalPnl === realizedPnl with unrealizedPnl: null, which would overstate it.
+  const total = unrealized === null
+    ? null
+    : toNumberOrNull(raw.totalPnl ?? raw.total_pnl) ?? (realized !== null ? realized + unrealized : null)
+  if (realized === null && unrealized === null) return null
   return {
     realized,
     unrealized,
@@ -76,6 +80,7 @@ export function normalizeBot(raw) {
     maxPerOrder: toNumberOrNull(config.maxOrderNotional),
     config,
     performance: normalizePerformance(raw.performance),
+    // null from the backend means "not accurately attributable" → shown as unavailable.
     capitalInUse: toNumberOrNull(raw.capitalInUse ?? raw.capital_in_use),
     createdAt: raw.createdAt ?? null,
     updatedAt: raw.updatedAt ?? null,
@@ -109,6 +114,7 @@ const SKIP_REASONS = {
   missing_direction: { title: 'Skipped — no direction', text: () => 'The bot couldn’t tell whether to buy or sell.' },
   invalid_direction: { title: 'Skipped — no direction', text: () => 'The signal had no valid buy or sell direction.' },
   missing_user_context: { title: 'Skipped — account unavailable', text: () => 'The bot couldn’t confirm which account to use.' },
+  no_rules_configured: { title: 'Skipped — no rules', text: () => 'This bot has no rules to evaluate.' },
   market_closed: { title: 'Waiting — market closed', text: () => 'This bot only trades during market hours.' },
   time_window_outside: { title: 'Waiting — outside trading window', text: () => 'This bot only trades during its set time window.' },
   cooldown_active: { title: 'Waiting — cooldown', text: (s) => `The bot traded ${s} recently and is waiting before trading it again.` },
@@ -193,6 +199,12 @@ export function eventToItem(e) {
     case 'strategy_error':
     case 'error_occurred':
       return { ...base, category: 'error', title: 'Strategy error', explanation: 'The bot couldn’t evaluate its strategy. See details.' }
+    case 'bot_paused':
+      return { ...base, category: 'control', title: 'Paused', explanation: 'The bot stopped placing new orders.' }
+    case 'bot_resumed':
+      return { ...base, category: 'control', title: 'Resumed', explanation: 'The bot is running in paper trading.' }
+    case 'bot_stopped':
+      return { ...base, category: 'control', title: 'Stopped', explanation: 'The bot was stopped for good.' }
     default:
       return { ...base, category: 'other', title: String(e.type ?? 'Event').replace(/_/g, ' '), explanation: e.detail || '' }
   }
