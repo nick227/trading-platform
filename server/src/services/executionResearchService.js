@@ -17,9 +17,12 @@ function matchesDecision(event, execution) {
     event.portfolioId === execution.portfolioId &&
     event.executionId === execution.id &&
     meta?.decision === 'accepted' &&
-    !!execution.predictionId &&
-    meta.predictionId === execution.predictionId &&
-    source?.predictionId === execution.predictionId &&
+    !!meta?.predictionId &&
+    source?.predictionId === meta.predictionId &&
+    meta.researchEvidence?.predictionId === meta.predictionId &&
+    // Alpha research IDs are not foreign keys into TradeLoom's Prediction table.
+    // When an execution explicitly links a local prediction, it must agree.
+    (!execution.predictionId || execution.predictionId === meta.predictionId) &&
     String(source?.ticker || '').toUpperCase() === String(execution.ticker).toUpperCase() &&
     (String(execution.direction).toLowerCase() === 'buy' ? 
       ['buy', 'up'].includes(String(meta.researchEvidence?.direction).toLowerCase()) :
@@ -41,8 +44,9 @@ export async function linkResearchDecisionToExecution({ userId, decisionEventId,
     const event = await tx.botEvent.findUnique({ where: { id: decisionEventId } })
     if (!event || event.botId !== execution.botId || event.portfolioId !== execution.portfolioId ||
         event.type !== 'decision_made' || event.metadata?.decision !== 'accepted' ||
-        event.metadata?.predictionId !== execution.predictionId ||
-        !execution.predictionId ||
+        !event.metadata?.predictionId ||
+        event.metadata?.researchSource?.predictionId !== event.metadata.predictionId ||
+        (execution.predictionId && event.metadata.predictionId !== execution.predictionId) ||
         String(event.metadata?.researchSource?.ticker || '').toUpperCase() !== String(execution.ticker).toUpperCase() ||
         String(event.metadata?.researchEvidence?.predictionId || '') !== execution.predictionId ||
         !(
@@ -83,7 +87,7 @@ export async function getExecutionResearch({ userId, executionId }) {
   if (!execution || execution.userId !== userId) {
     throw error('NOT_FOUND', 'Execution not found')
   }
-  if (!execution.botId || !execution.predictionId || execution.origin !== 'bot') {
+  if (!execution.botId || execution.origin !== 'bot') {
     return { ...missing, executionId }
   }
   const events = await prisma.botEvent.findMany({
@@ -105,7 +109,7 @@ export async function getExecutionResearch({ userId, executionId }) {
     executionId,
     botId: execution.botId,
     decisionEventId: event.id,
-    predictionId: execution.predictionId,
+    predictionId: event.metadata.predictionId,
     researchTrace: event.metadata.researchTrace,
     evidence: event.metadata.researchEvidence,
     decision: event.metadata.decision,

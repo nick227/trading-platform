@@ -46,6 +46,23 @@ describe('execution research correlation', () => {
     expect(found.decisionEventId).toBe('event1')
     expect(found.predictionId).toBe('p1')
   })
+  it('links verified external Alpha research when the execution has no local prediction FK', async () => {
+    prisma.execution.findUnique.mockResolvedValue({ ...execution, predictionId: null })
+    const found = await getExecutionResearch({ userId: 'u1', executionId: 'ex1' })
+    expect(found.status).toBe('verified_digest')
+    expect(found.predictionId).toBe('p1')
+  })
+  it('rejects conflicting local prediction when a FK is populated', async () => {
+    prisma.execution.findUnique.mockResolvedValue({ ...execution, predictionId: 'other' })
+    expect((await getExecutionResearch({ userId: 'u1', executionId: 'ex1' })).status).toBe('mismatch')
+  })
+  it('links a verified Alpha prediction without requiring a local prediction row', async () => {
+    prisma.execution.findUnique.mockResolvedValue({ ...execution, predictionId: null })
+    prisma.botEvent.findUnique.mockResolvedValueOnce({ ...event, executionId: null }).mockResolvedValueOnce(event)
+    const linked = await linkResearchDecisionToExecution({ userId: 'u1', decisionEventId: 'event1', executionId: 'ex1' })
+    expect(linked.id).toBe('event1')
+    expect(prisma.botEvent.updateMany).toHaveBeenCalledTimes(1)
+  })
   it('does not reveal another users execution', async () => {
     await expect(getExecutionResearch({ userId: 'other', executionId: 'ex1' })).rejects.toMatchObject({ code: 'NOT_FOUND' })
     expect(prisma.botEvent.findMany).not.toHaveBeenCalled()
