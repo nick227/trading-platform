@@ -53,7 +53,10 @@ export default async function executionsRoutes(app) {
         additionalProperties: false,
         required: ['ticker', 'direction', 'quantity', 'price', 'portfolioId'],
         properties: {
-          ticker: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9.\\-]{0,19}
+          ticker: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9.-]{0,19}$' },
+          direction: { type: 'string', enum: ['buy', 'sell'] },
+          quantity: { type: 'number', exclusiveMinimum: 0 },
+          price: { type: 'number', exclusiveMinimum: 0 },
           portfolioId: { type: 'string', minLength: 1 }
         }
       }
