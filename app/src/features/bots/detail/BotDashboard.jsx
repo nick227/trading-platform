@@ -55,7 +55,9 @@ function CapitalCard({ bot, buyingPower }) {
         </div>
         <div>
           <dt>In use</dt>
-          <dd className="muted" data-testid="capital-in-use">Not available yet</dd>
+          <dd className={bot.capitalInUse !== null ? '' : 'muted'} data-testid="capital-in-use">
+            {bot.capitalInUse !== null ? fmtMoney(bot.capitalInUse) : 'Not available yet'}
+          </dd>
         </div>
         <div>
           <dt>Paper buying power</dt>

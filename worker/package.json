@@ -7,7 +7,8 @@
     "dev": "nodemon --watch src src/worker.js --ignore data --ignore logs --ignore node_modules",
     "start": "node src/worker.js",
     "db:generate": "prisma generate",
-    "simulate": "node src/simulate.js"
+    "simulate": "node src/simulate.js",
+    "test": "echo 'worker tests run in server test suite'"
   },
   "prisma": {
     "schema": "../server/prisma/schema.prisma"

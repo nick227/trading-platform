@@ -1,34 +1,22 @@
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
+import { computeBotAccounting } from './botAccountingService.js'
 
 async function computeBotPerformance(botId) {
   try {
-    const fills = await prisma.execution.findMany({
-      where: { botId, status: 'filled' },
-      select: { pnl: true, fees: true, filledPrice: true, filledQuantity: true, direction: true, filledAt: true }
-    })
-
-    if (!fills || fills.length === 0) {
-      return null
-    }
-
-    let realizedPnl = 0
-    let fees = 0
-    for (const f of fills) {
-      realizedPnl += Number(f.pnl ?? 0)
-      fees += Number(f.fees ?? 0)
-    }
-
+    const accounting = await computeBotAccounting(botId)
     return {
-      realizedPnl,
-      unrealizedPnl: null,
-      totalPnl: realizedPnl,
-      fees,
-      asOf: new Date().toISOString()
+      performance: accounting.performance,
+      capitalInUse: accounting.capitalInUse,
+      openPositions: accounting.openPositions
     }
   } catch {
-    return null
+    return {
+      performance: null,
+      capitalInUse: null,
+      openPositions: {}
+    }
   }
 }
 
@@ -172,11 +160,11 @@ export default {
     const total = await prisma.bot.count({ where })
 
     const data = await Promise.all(bots.map(async (bot) => {
-      const performance = await computeBotPerformance(bot.id)
+      const { performance, capitalInUse } = await computeBotPerformance(bot.id)
       return {
         ...bot,
         performance,
-        capitalInUse: null
+        capitalInUse
       }
     }))
 
@@ -201,11 +189,11 @@ export default {
     })
     if (!bot) return null
 
-    const performance = await computeBotPerformance(id)
+    const { performance, capitalInUse } = await computeBotPerformance(id)
     return {
       ...bot,
       performance,
-      capitalInUse: null
+      capitalInUse
     }
   },
 
@@ -242,11 +230,11 @@ export default {
       }
     }
 
-    const performance = await computeBotPerformance(id)
+    const { performance, capitalInUse } = await computeBotPerformance(id)
     return {
       ...updated,
       performance,
-      capitalInUse: null
+      capitalInUse
     }
   },
 

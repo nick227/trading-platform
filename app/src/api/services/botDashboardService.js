@@ -76,6 +76,7 @@ export function normalizeBot(raw) {
     maxPerOrder: toNumberOrNull(config.maxOrderNotional),
     config,
     performance: normalizePerformance(raw.performance),
+    capitalInUse: toNumberOrNull(raw.capitalInUse ?? raw.capital_in_use),
     createdAt: raw.createdAt ?? null,
     updatedAt: raw.updatedAt ?? null,
   }

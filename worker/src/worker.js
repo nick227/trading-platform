@@ -2,6 +2,7 @@ import 'dotenv/config'
 import os from 'os'
 import prisma from './db/prisma.js'
 import { AlpacaClient } from './broker/alpacaClient.js'
+import { getMarketDataCredentials } from './market/marketCredentials.js'
 import { startOrderWorker, stopOrderWorker, setInflightMap } from './queues/orderWorker.js'
 import { initDataStream, onQuote, disconnect, ensureConnected, isConnected } from './market/dataStream.js'
 import { startQuoteSync, checkSubscriptionRequests, expireOldSubscriptions } from './market/quoteSync.js'
@@ -52,41 +53,52 @@ async function main() {
   // Start the heartbeat
   startHeartbeat()
 
-  // Market data stream uses any valid broker account for authentication.
-  // Alpaca's streaming API is market-level (not account-specific), so one
-  // connection serves all users. The bot engine fetches per-user positions
-  // independently via getBrokerClient(userId) when evaluating position_limit rules.
-  const account = await prisma.brokerAccount.findFirst()
+  // Market data uses an explicit service-level credential for shared price streaming.
+  // Never use an arbitrary customer account (brokerAccount.findFirst) for shared infrastructure.
+  const marketCreds = getMarketDataCredentials()
 
-  if (!account) {
-    log.warn('no broker account found — market data and bot engine disabled')
+  if (!marketCreds) {
+    log.warn('no service-level market data credentials configured (ALPACA_MARKET_DATA_KEY/SECRET) — live stream disabled')
+    healthState.alpacaWs = 'disabled'
+    healthState.alpacaRest = 'disabled'
+    // In dev / test, still start the bot engine and order worker for simulated ticks
+    await startBotEngine()
+    healthState.calendar = 'simulated'
+    healthState.orderWorker = 'up'
     return
   }
 
-  streamClient = new AlpacaClient({
-    apiKey:    decrypt(account.apiKey),
-    apiSecret: decrypt(account.apiSecret),
-    paper:     account.paper
-  })
+  try {
+    streamClient = new AlpacaClient({
+      apiKey:    marketCreds.apiKey,
+      apiSecret: marketCreds.apiSecret,
+      paper:     marketCreds.paper
+    })
 
-  // Initialize market data stream — single WS connection for all tickers
-  initDataStream(streamClient.raw)
-  onQuote((ticker) => onPriceTick(ticker))
-  healthState.alpacaWs = isConnected() ? 'up' : 'starting'
+    // Initialize market data stream — single WS connection for all tickers
+    initDataStream(streamClient.raw)
+    onQuote((ticker) => onPriceTick(ticker))
+    healthState.alpacaWs = isConnected() ? 'up' : 'starting'
 
-  // Initialize market calendar and schedule engine start/stop
-  const { isOpen, msUntilOpen, msUntilClose } = await initCalendar(streamClient)
-  healthState.alpacaRest = 'up'
-  healthState.calendar = 'ready'
-  healthState.orderWorker = 'up'
+    // Initialize market calendar and schedule engine start/stop
+    const { isOpen, msUntilOpen, msUntilClose } = await initCalendar(streamClient)
+    healthState.alpacaRest = 'up'
+    healthState.calendar = 'ready'
+    healthState.orderWorker = 'up'
 
-  if (isOpen) {
-    log.info('market_open_at_boot')
+    if (isOpen) {
+      log.info('market_open_at_boot')
+      await startBotEngine()
+      onMarketClose(msUntilClose, handleMarketClose)
+    } else {
+      log.info('market_closed_at_boot')
+      onMarketOpen(msUntilOpen, handleMarketOpen)
+    }
+  } catch (err) {
+    log.error({ err: err.message }, 'failed_to_initialize_market_data_stream')
+    healthState.alpacaWs = 'failed'
+    healthState.alpacaRest = 'failed'
     await startBotEngine()
-    onMarketClose(msUntilClose, handleMarketClose)
-  } else {
-    log.info('market_closed_at_boot')
-    onMarketOpen(msUntilOpen, handleMarketOpen)
   }
 }
 

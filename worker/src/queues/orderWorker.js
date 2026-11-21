@@ -6,6 +6,7 @@ import { recordExecutionAudit } from '../audit/executionAudit.js'
 import { evaluateRiskCaps } from '../risk/riskCaps.js'
 import { log } from '../logger.js'
 import metricsService from '../../../server/src/services/metricsService.js'
+import { calculateFillPnl } from '../../../server/src/services/botAccountingService.js'
 
 const WORKER_ID      = `${os.hostname()}-${process.pid}`
 const MAX_ATTEMPTS   = 3
@@ -235,6 +236,32 @@ async function processExecution(job) {
 
 // ─── Fill polling ─────────────────────────────────────────────────────────────
 
+async function prepareFillData(execution, order) {
+  const filledPrice = order.filledAvgPrice
+  const filledQuantity = order.filledQty
+  const filledAt = order.filledAt ?? new Date()
+  let pnl = 0
+
+  if (execution.direction === 'sell' && execution.botId) {
+    try {
+      pnl = await calculateFillPnl({
+        execution,
+        fillPrice: filledPrice ?? execution.price,
+        fillQty: filledQuantity ?? execution.quantity
+      })
+    } catch (err) {
+      log.warn({ err: err.message, executionId: execution.id }, 'calculate_fill_pnl_failed')
+    }
+  }
+
+  return {
+    filledAt,
+    filledPrice,
+    filledQuantity,
+    pnl
+  }
+}
+
 async function handleCancelRequested(execution, broker) {
   // If we have not submitted to the broker yet, cancel locally immediately.
   if (!execution.brokerOrderId && !execution.submittedAt) {
@@ -251,11 +278,8 @@ async function handleCancelRequested(execution, broker) {
 
   // Too late: already filled.
   if (order.status === 'filled') {
-    await terminate(execution, 'filled', null, {
-      filledAt:       order.filledAt ?? new Date(),
-      filledPrice:    order.filledAvgPrice,
-      filledQuantity: order.filledQty
-    })
+    const fillData = await prepareFillData(execution, order)
+    await terminate(execution, 'filled', null, fillData)
     return
   }
 
@@ -279,11 +303,8 @@ async function handleCancelRequested(execution, broker) {
     }
 
     if (snapshot.status === 'filled') {
-      await terminate(execution, 'filled', null, {
-        filledAt:       snapshot.filledAt ?? new Date(),
-        filledPrice:    snapshot.filledAvgPrice,
-        filledQuantity: snapshot.filledQty
-      })
+      const fillData = await prepareFillData(execution, snapshot)
+      await terminate(execution, 'filled', null, fillData)
       return
     }
 
@@ -328,11 +349,8 @@ async function pollUntilFilled(execution, broker) {
     }
 
     if (order.status === 'filled') {
-      await terminate(execution, 'filled', null, {
-        filledAt:       order.filledAt ?? new Date(),
-        filledPrice:    order.filledAvgPrice,
-        filledQuantity: order.filledQty
-      })
+      const fillData = await prepareFillData(execution, order)
+      await terminate(execution, 'filled', null, fillData)
       return
     }
 
