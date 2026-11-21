@@ -1,6 +1,7 @@
 // Risk Gate Service
 // Handles execution approval and basic risk checks
 
+import { brokerAccountSnapshot } from '../accountSnapshot.js'
 import prisma from '../../db/prisma.js'
 import { redisRiskCache } from '../redisCache.js'
 import { riskDecisionMatrix } from './RiskDecisionMatrix.js'
@@ -460,8 +461,8 @@ export class RiskGateService {
   }
 
   async getBrokerAccountData(portfolioId) {
-    // Placeholder for broker account data
-    return { cash: 10000, equity: 12000 }
+    // The owner's real (or, in simulator mode, simulated) account; never placeholder balances.
+    return brokerAccountSnapshot(portfolioId)
   }
 
   getDefaultRiskSettings() {

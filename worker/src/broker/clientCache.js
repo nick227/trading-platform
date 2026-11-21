@@ -1,6 +1,8 @@
 import { AlpacaClient } from './alpacaClient.js'
 import prisma from '../db/prisma.js'
 import { decrypt } from '../../../server/src/utils/encryption.js'
+import { simulationConfig } from '../../../server/src/services/simulationService.js'
+import { getSimulatedBroker } from './simulatedBroker.js'
 
 // Per-user AlpacaClient cache.
 // Shared by the order worker and the bot engine — single source of truth for broker clients.
@@ -11,6 +13,8 @@ const CREDENTIAL_CHECK_INTERVAL_MS = 60_000
 
 export async function getBrokerClient(userId) {
   if (!userId) return null
+  // Simulator mode: only the internal replay simulator, never an Alpaca client.
+  if (simulationConfig().enabled) return getSimulatedBroker(userId)
 
   const cached = cache.get(userId)
   if (cached && Date.now() - cached.checkedAt < CREDENTIAL_CHECK_INTERVAL_MS) {

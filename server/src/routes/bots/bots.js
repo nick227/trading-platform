@@ -2,8 +2,11 @@ import botsService from '../../services/botsService.js'
 import { getEmergencyStop } from '../../services/emergencyStopService.js'
 import prisma from '../../loaders/prisma.js'
 import { getUserAlpacaCredentialsOrThrow } from '../../services/alpacaClockService.js'
+import { simulationConfig } from '../../services/simulationService.js'
 
 async function ensureBrokerConnectedOrReply(userId, reply) {
+  // Simulator mode needs no broker: orders are filled by the internal replay simulator.
+  if (simulationConfig().enabled) return true
   try {
     await getUserAlpacaCredentialsOrThrow(userId)
     return true

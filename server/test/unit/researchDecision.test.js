@@ -12,7 +12,8 @@ import { verifyResearchTrace } from '../../src/services/researchTraceService.js'
 const { traces } = JSON.parse(readFileSync(new URL('../fixtures/alpha-engine/traces.json', import.meta.url), 'utf8'))
 const now = new Date('2026-11-20T15:00:00Z') // 30 minutes after the fixtures were observed
 const fullRun = { run: { intelligenceConfidenceTier: 'full', rankedUnderDegradedRun: false, runStatus: 'SUCCESS' } }
-const policy = { ...RESEARCH_POLICY_DEFAULTS }
+// Legacy fixtures predate publications (no evaluation evidence), so edge is tested separately.
+const policy = { ...RESEARCH_POLICY_DEFAULTS, requireEdgeOverBaseline: false }
 const decide = (id, over = {}) => evaluateResearchDecision({ trace: traces[id], located: fullRun, policy, price: traces[id].evidence.snapshot.entryPrice, now, ...over })
 
 describe('Alpha Engine fixtures', () => {
@@ -118,3 +119,24 @@ describe('seeded bot templates', () => {
     }
   })
 })
+
+describe('edge over baseline', () => {
+  const withEval = (edge) => {
+    const t = structuredClone(traces.pred_spy_buy)
+    t.evidence.snapshot.ranking = { evaluation: { edgeOverBaseline: edge, genuineOutOfSample: false } }
+    return t
+  }
+  const strict = { ...RESEARCH_POLICY_DEFAULTS }
+  it('is required by default and read from the verified evidence', () => {
+    expect(strict.requireEdgeOverBaseline).toBe(true)
+    expect(evaluateResearchDecision({ trace: withEval(false), located: fullRun, policy: strict, price: 540, now })).toMatchObject({ decision: 'rejected', reason: 'no_edge_over_baseline' })
+    expect(evaluateResearchDecision({ trace: traces.pred_spy_buy, located: fullRun, policy: strict, price: 540, now })).toMatchObject({ decision: 'rejected', reason: 'no_edge_over_baseline' })
+    expect(evaluateResearchDecision({ trace: withEval(true), located: fullRun, policy: strict, price: 540, now })).toMatchObject({ decision: 'accepted', context: { edgeOverBaseline: true, genuineOutOfSample: false } })
+  })
+  it('can be switched off explicitly, and the evidence is still recorded', () => {
+    const r = evaluateResearchDecision({ trace: withEval(false), located: fullRun, policy: { ...strict, requireEdgeOverBaseline: false }, price: 540, now })
+    expect(r).toMatchObject({ decision: 'accepted', context: { edgeOverBaseline: false } })
+    expect(resolveResearchPolicy({ research: { requireEdgeOverBaseline: 'no' } })).toEqual({ ok: false, reason: 'invalid_requireEdgeOverBaseline' })
+  })
+})
+

@@ -128,7 +128,7 @@ export class ExecutionConfidenceService {
       if (!botId) return 50
 
       // Get recent bot performance
-      const recentTrades = await prisma.trade.findMany({
+      const recentTrades = await prisma.execution.findMany({
         where: {
           botId,
           portfolioId,
@@ -197,7 +197,7 @@ export class ExecutionConfidenceService {
     try {
       const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
       
-      const trades = await prisma.trade.findMany({
+      const trades = await prisma.execution.findMany({
         where: {
           portfolioId,
           createdAt: { gte: cutoff },

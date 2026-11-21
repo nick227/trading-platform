@@ -21,6 +21,16 @@ import { engineClient } from '../../../server/src/clients/engine.js'
 import { fetchVerifiedResearchTrace, recordResearchDecision } from '../../../server/src/services/researchTraceService.js'
 import { linkResearchDecisionToExecution } from '../../../server/src/services/executionResearchService.js'
 import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
+import { simulationConfig } from '../../../server/src/services/simulationService.js'
+
+// Simulator (historical replay): locate the replay session's publication and judge it at
+// that session's close. Only research decisions use this clock; throttles use real time.
+function researchContext() {
+  const sim = simulationConfig()
+  return sim.enabled
+    ? { locate: { mode: 'historical_replay', session: sim.session }, now: sim.clock, simulation: { mode: sim.mode, session: sim.session } }
+    : { locate: {}, now: botEngineConfig.now(), simulation: null }
+}
 
 // Injectable for deterministic tests (mirrors orderWorkerConfig).
 export const botEngineConfig = {
@@ -603,7 +613,7 @@ async function evaluateResearchSignal(bot, ticker, tick) {
     cached = null
     let located
     try {
-      located = await engineClient.locateResearchPrediction(ticker, policy.tenantId)
+      located = await engineClient.locateResearchPrediction(ticker, policy.tenantId, researchContext().locate)
     } catch (err) {
       await logResearchOnce(bot, ticker, 'unavailable', 'execution_skipped', `Alpha research unavailable for ${ticker}`, { reason: 'research_unavailable', error: err.message })
       return null
@@ -635,12 +645,14 @@ async function evaluateResearchSignal(bot, ticker, tick) {
   }
 
   const { located, trace } = cached
+  const rc = researchContext()
   const outcome = evaluateResearchDecision({
     trace, located, policy,
     price: tick?.last ?? tick?.ask,
     configDirection: bot.config?.direction === 'buy' || bot.config?.direction === 'sell' ? bot.config.direction : null,
-    now
+    now: rc.now
   })
+  if (rc.simulation) outcome.context = { ...outcome.context, simulation: rc.simulation }
   if (outcome.decision !== 'accepted') {
     await logResearchOnce(bot, ticker, `decision:${trace.source.predictionId}:${outcome.decision}:${outcome.reason}`, 'decision_made', null, {
       userId: bot.userId, botId: bot.id, tenantId: policy.tenantId, trace,

@@ -1,6 +1,7 @@
 // Portfolio Risk Service
 // Handles portfolio state calculation and risk monitoring
 
+import { brokerAccountSnapshot } from '../accountSnapshot.js'
 import prisma from '../../db/prisma.js'
 import { redisRiskCache } from '../redisCache.js'
 
@@ -134,18 +135,8 @@ export class PortfolioRiskService {
 
   // Get broker account data
   async getBrokerAccountData(portfolioId) {
-    try {
-      // This would integrate with broker API
-      // For now, return placeholder data
-      return {
-        cash: 10000,
-        equity: 12000,
-        buyingPower: 20000
-      }
-    } catch (error) {
-      console.error('Failed to get broker account data:', error)
-      return null
-    }
+    // The owner's real (or, in simulator mode, simulated) account; never placeholder balances.
+    return brokerAccountSnapshot(portfolioId)
   }
 
   // Get portfolio risk metrics
