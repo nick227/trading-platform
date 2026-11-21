@@ -48,7 +48,7 @@ export async function linkResearchDecisionToExecution({ userId, decisionEventId,
         event.metadata?.researchSource?.predictionId !== event.metadata.predictionId ||
         (execution.predictionId && event.metadata.predictionId !== execution.predictionId) ||
         String(event.metadata?.researchSource?.ticker || '').toUpperCase() !== String(execution.ticker).toUpperCase() ||
-        String(event.metadata?.researchEvidence?.predictionId || '') !== execution.predictionId ||
+        event.metadata?.researchEvidence?.predictionId !== event.metadata.predictionId ||
         !(
           String(execution.direction).toLowerCase() === 'buy'
             ? ['buy', 'up'].includes(String(event.metadata?.researchEvidence?.direction || '').toLowerCase())

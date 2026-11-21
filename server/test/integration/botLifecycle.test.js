@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
 import { encrypt } from '../../src/utils/encryption.js'
+import executionsService from '../../src/services/executionsService.js'
+import botsService from '../../src/services/botsService.js'
 
 // In-memory test store for bots, rules, events, executions
 const db = {
@@ -384,46 +386,39 @@ describe('Complete Multi-User Bot Lifecycle Integration Test', () => {
     expect(resumedEvent.metadata.enabled).toBe(true)
 
     // ── 5. Simulate Market Execution & Order Creation ────────────────────────────────
-    // Worker / engine execution test: post execution and audit log
-    const execRes = await request(app.server)
-      .post('/api/executions')
-      .set('Cookie', [`access_token=${tokenAlice}`])
-      .send({
-        ticker: 'SPY',
-        direction: 'buy',
-        quantity: 10,
-        price: 100,
-        portfolioId: 'por_alice',
-        botId
-      })
-      .expect(201)
+    // Worker / engine execution test: create execution and audit log
+    const execRes = await executionsService.createExecution({
+      userId: 'usr_alice',
+      portfolioId: 'por_alice',
+      botId,
+      ticker: 'SPY',
+      direction: 'buy',
+      quantity: 10,
+      price: 100,
+      commission: 0,
+      fees: 0
+    })
 
-    const executionId = execRes.body.data.id
+    const executionId = execRes.id
     expect(executionId).toBeDefined()
-    expect(execRes.body.data.origin).toBe('bot')
+    expect(execRes.origin).toBe('bot')
 
     // ── 6. Log Decision & Skip Events (Verified Enum Values) ─────────────────────────
-    await request(app.server)
-      .post(`/api/bots/${botId}/events`)
-      .set('Cookie', [`access_token=${tokenAlice}`])
-      .send({
-        portfolioId: 'por_alice',
-        type: 'decision_made',
-        detail: 'Signal generated: buy for SPY',
-        metadata: { signal: 'buy', ticker: 'SPY', confidence: 0.8 }
-      })
-      .expect(201)
+    await botsService.createBotEvent({
+      botId,
+      portfolioId: 'por_alice',
+      type: 'decision_made',
+      detail: 'Signal generated: buy for SPY',
+      metadata: { signal: 'buy', ticker: 'SPY', confidence: 0.8 }
+    })
 
-    await request(app.server)
-      .post(`/api/bots/${botId}/events`)
-      .set('Cookie', [`access_token=${tokenAlice}`])
-      .send({
-        portfolioId: 'por_alice',
-        type: 'execution_skipped',
-        detail: 'Position limit reached for SPY',
-        metadata: { reason: 'position_limit_reached', ticker: 'SPY' }
-      })
-      .expect(201)
+    await botsService.createBotEvent({
+      botId,
+      portfolioId: 'por_alice',
+      type: 'execution_skipped',
+      detail: 'Position limit reached for SPY',
+      metadata: { reason: 'position_limit_reached', ticker: 'SPY' }
+    })
 
     // ── 7. Retrieve Activity Timeline & Verify Events ────────────────────────────────
     const eventsRes = await request(app.server)

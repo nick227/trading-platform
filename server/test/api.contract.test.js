@@ -36,6 +36,11 @@ vi.mock('../src/loaders/prisma.js', () => ({
     bot: {
       count: vi.fn()
     },
+    portfolio: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn()
+    },
     user: {
       findUnique: vi.fn()
     },
@@ -164,6 +169,7 @@ describe('API contract tests', () => {
   it('creates an execution and returns 201', async () => {
     const user = { id: 'usr_1', email: 't@example.com', fullName: 'Test User', subscription: { status: 'ACTIVE' } }
     prisma.user.findUnique.mockResolvedValue(user)
+    prisma.portfolio.findFirst.mockResolvedValue({ id: 'port_1' })
 
     const execution = {
       id: 'exec_1',
@@ -173,7 +179,6 @@ describe('API contract tests', () => {
       quantity: 1,
       price: 500,
       portfolioId: 'port_1',
-      strategyId: 'str_1',
       status: 'queued',
       clientOrderId: 'tp_exec_1'
     }
@@ -189,8 +194,7 @@ describe('API contract tests', () => {
         direction: 'buy',
         quantity: 1,
         price: 500,
-        portfolioId: 'port_1',
-        strategyId: 'str_1'
+        portfolioId: 'port_1'
       })
       .set('Cookie', [`access_token=${token}`])
       .expect(201)
@@ -203,7 +207,6 @@ describe('API contract tests', () => {
         quantity: 1,
         price: 500,
         portfolioId: 'port_1',
-        strategyId: 'str_1',
         status: 'queued',
         clientOrderId: expect.stringMatching(/^tp_exe_/)
       })
@@ -228,6 +231,7 @@ describe('API contract tests', () => {
 
     const user = { id: 'usr_1', email: 't@example.com', fullName: 'Test User', subscription: { status: 'ACTIVE' } }
     prisma.user.findUnique.mockResolvedValue(user)
+    prisma.portfolio.findFirst.mockResolvedValue({ id: 'port_1' })
 
     const token = app.jwt.sign({ sub: user.id })
 
@@ -238,8 +242,7 @@ describe('API contract tests', () => {
         direction: 'buy',
         quantity: 1,
         price: 500,
-        portfolioId: 'port_1',
-        strategyId: 'str_1'
+        portfolioId: 'port_1'
       })
       .set('Cookie', [`access_token=${token}`])
       .expect(409)
