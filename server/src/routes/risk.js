@@ -8,6 +8,18 @@ import { operationalRiskService } from '../../../worker/src/risk/services/Operat
 import { riskDecisionMatrix } from '../../../worker/src/risk/services/RiskDecisionMatrix.js'
 import { botControlService } from '../../../worker/src/risk/services/BotControlService.js'
 import prisma from '../loaders/prisma.js'
+import { authenticate } from '../middleware/authenticate.js'
+import { activateEmergencyStop, clearEmergencyStop, getEmergencyStop } from '../services/emergencyStopService.js'
+
+/** Portfolio-scoped risk mutations only act on the caller's own portfolio. */
+async function ownsPortfolio(request, reply, portfolioId) {
+  const portfolio = portfolioId ? await prisma.portfolio.findUnique({ where: { id: portfolioId } }) : null
+  if (!portfolio || portfolio.userId !== request.user.id) {
+    reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Portfolio not found' } })
+    return false
+  }
+  return true
+}
 
 // Human-readable reason taxonomy
 const reasonTaxonomy = {
@@ -34,6 +46,9 @@ function getHumanReadableReason(reason) {
 }
 
 export default async function riskRoutes(app) {
+  // Every risk endpoint acts on a user's own trading state.
+  app.addHook('preHandler', authenticate)
+
   // POST /api/risk/size - Smart Position Size API
   app.post('/size', {
     schema: {
@@ -460,6 +475,7 @@ export default async function riskRoutes(app) {
   }, async (request, reply) => {
     try {
       const { portfolioId, reason, actor = 'user', idempotencyKey } = request.body
+      if (!(await ownsPortfolio(request, reply, portfolioId))) return
 
       // Check idempotency if key provided
       if (idempotencyKey) {
@@ -507,6 +523,7 @@ export default async function riskRoutes(app) {
   }, async (request, reply) => {
     try {
       const { portfolioId, actor = 'user', idempotencyKey } = request.body
+      if (!(await ownsPortfolio(request, reply, portfolioId))) return
 
       // Check idempotency if key provided
       if (idempotencyKey) {
@@ -556,6 +573,7 @@ export default async function riskRoutes(app) {
   }, async (request, reply) => {
     try {
       const { portfolioId, reason, duration, actor = 'user', idempotencyKey } = request.body
+      if (!(await ownsPortfolio(request, reply, portfolioId))) return
 
       // Check idempotency if key provided
       if (idempotencyKey) {
@@ -587,52 +605,37 @@ export default async function riskRoutes(app) {
     }
   })
 
-  // POST /api/risk/kill-switch - Emergency stop all trading
+  // Emergency stop (user-scoped). Disables all of the caller's bots, requests cancellation of
+  // every active execution, and makes the order worker refuse all submissions until cleared.
+  app.get('/kill-switch', async (request, reply) => {
+    return reply.send({ data: await getEmergencyStop(request.user.id) })
+  })
+
   app.post('/kill-switch', {
     schema: {
       body: {
         type: 'object',
-        required: ['portfolioId', 'reason'],
+        required: ['reason'],
         properties: {
-          portfolioId: { type: 'string' },
-          reason: { type: 'string' },
-          actor: { type: 'string', enum: ['user', 'admin', 'system'], default: 'user' },
-          idempotencyKey: { type: 'string' }
+          reason: { type: 'string', minLength: 1, maxLength: 500 },
+          portfolioId: { type: 'string' } // accepted for compatibility; scope is always the caller
         }
       }
     }
   }, async (request, reply) => {
     try {
-      const { portfolioId, reason, actor = 'user', idempotencyKey } = request.body
-
-      // Check idempotency if key provided
-      if (idempotencyKey) {
-        const existing = await prisma.botEvent.findFirst({
-          where: {
-            portfolioId,
-            type: 'bots_paused',
-            metadata: { path: ['idempotencyKey'], equals: idempotencyKey }
-          }
-        })
-        if (existing) {
-          return reply.send({
-            data: {
-              success: true,
-              action: 'skipped',
-              message: 'Kill switch already activated',
-              eventId: existing.id
-            }
-          })
-        }
-      }
-
-      // Kill switch = pause all bots with admin actor override
-      const result = await botControlService.pauseAllBots(portfolioId, `KILL_SWITCH: ${reason}`, { idempotencyKey, killSwitch: true }, 'admin')
-
+      const { portfolioId, reason } = request.body
+      if (portfolioId && !(await ownsPortfolio(request, reply, portfolioId))) return
+      const result = await activateEmergencyStop(request.user.id, reason)
       return reply.send({ data: result })
     } catch (error) {
-      console.error('Failed to activate kill switch:', error)
-      return reply.code(500).send({ error: { message: error.message } })
+      request.log?.error?.({ err: error }, 'kill_switch_failed')
+      return reply.code(500).send({ error: { message: 'Failed to activate emergency stop' } })
     }
+  })
+
+  // Clearing never resumes bots; each bot is resumed explicitly by its owner.
+  app.delete('/kill-switch', async (request, reply) => {
+    return reply.send({ data: await clearEmergencyStop(request.user.id) })
   })
 }

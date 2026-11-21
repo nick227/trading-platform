@@ -34,30 +34,59 @@ export function verifyResearchTrace(trace, { predictionId, tenantId } = {}) {
   return evidenceIsValid(trace.evidence.canonicalJson, trace.evidence.snapshot, trace.evidence.sha256)
 }
 
-/** Trusted bot decision writer only. This is not a trading or authorization API. */
-export async function captureResearchDecision({ userId, botId, tenantId = 'default', predictionId, decision, detail }) {
-  if (!userId || !botId || !predictionId || !['accepted', 'rejected', 'suppressed'].includes(decision)) {
+const DECISIONS = ['accepted', 'rejected', 'suppressed']
+
+function codedError(code, message) {
+  const err = new Error(message)
+  err.code = code
+  return err
+}
+
+/**
+ * Fetch the stored Alpha Engine trace and verify it before anything decides on it.
+ * Throws RESEARCH_EVIDENCE_UNAVAILABLE when unreachable, missing, or not verifiable.
+ */
+export async function fetchVerifiedResearchTrace(predictionId, tenantId = 'default') {
+  if (!predictionId) throw codedError('RESEARCH_EVIDENCE_UNAVAILABLE', 'predictionId is required')
+  let trace
+  try {
+    trace = await engineClient.getPredictionTrace(predictionId, tenantId)
+  } catch (err) {
+    const e = codedError('RESEARCH_EVIDENCE_UNAVAILABLE', 'Alpha Engine research evidence is unavailable')
+    e.cause = err
+    throw e
+  }
+  if (!verifyResearchTrace(trace, { predictionId, tenantId })) {
+    throw codedError('RESEARCH_EVIDENCE_UNAVAILABLE', 'Alpha Engine research evidence could not be verified')
+  }
+  return trace
+}
+
+/**
+ * Persist a decision together with the exact verified trace it was made on.
+ * `client` may be a transaction so the decision commits atomically with its execution.
+ * Trusted bot decision writer only. This is not a trading or authorization API.
+ */
+export async function recordResearchDecision({ userId, botId, tenantId = 'default', trace, decision, detail, context, client = prisma }) {
+  const predictionId = trace?.source?.predictionId
+  if (!userId || !botId || !predictionId || !DECISIONS.includes(decision)) {
     throw new Error('Valid user, bot, prediction and decision are required')
   }
-  const bot = await prisma.bot.findFirst({ where: { id: botId, userId, deletedAt: null } })
-  if (!bot) {
-    const err = new Error('Bot not found')
-    err.code = 'NOT_FOUND'
-    throw err
-  }
-  const trace = await engineClient.getPredictionTrace(predictionId, tenantId)
+  // Defense in depth: never persist evidence that does not verify, even from a caller.
   if (!verifyResearchTrace(trace, { predictionId, tenantId })) {
-    const err = new Error('Alpha Engine research evidence could not be verified')
-    err.code = 'RESEARCH_EVIDENCE_UNAVAILABLE'
-    throw err
+    throw codedError('RESEARCH_EVIDENCE_UNAVAILABLE', 'Alpha Engine research evidence could not be verified')
   }
-  return prisma.botEvent.create({
+  const bot = await client.bot.findFirst({ where: { id: botId, userId, deletedAt: null } })
+  if (!bot) throw codedError('NOT_FOUND', 'Bot not found')
+  return client.botEvent.create({
     data: {
       id: generateId(ID_PREFIXES.EVENT),
       botId: bot.id, portfolioId: bot.portfolioId, type: 'decision_made',
       detail: detail || ('Bot ' + decision + ' ' + trace.source.ticker),
       metadata: {
+        ticker: trace.source.ticker,
         decision, predictionId,
+        ...(context ? { decisionContext: context } : {}),
         researchTrace: trace.decisionReference,
         researchEvidence: trace.evidence.snapshot,
         researchCanonicalJson: trace.evidence.canonicalJson,
@@ -67,6 +96,18 @@ export async function captureResearchDecision({ userId, botId, tenantId = 'defau
       }
     }
   })
+}
+
+/** Trusted bot decision writer only. This is not a trading or authorization API. */
+export async function captureResearchDecision({ userId, botId, tenantId = 'default', predictionId, decision, detail }) {
+  if (!userId || !botId || !predictionId || !DECISIONS.includes(decision)) {
+    throw new Error('Valid user, bot, prediction and decision are required')
+  }
+  // Ownership first: never fetch research for a bot the caller does not own.
+  const bot = await prisma.bot.findFirst({ where: { id: botId, userId, deletedAt: null } })
+  if (!bot) throw codedError('NOT_FOUND', 'Bot not found')
+  const trace = await fetchVerifiedResearchTrace(predictionId, tenantId)
+  return recordResearchDecision({ userId, botId, tenantId, trace, decision, detail })
 }
 
 /** Verify archived snapshot without consulting mutable current research. */

@@ -30,13 +30,33 @@ function matchesDecision(event, execution) {
 }
 
 /**
+ * Pure check of an execution's linked research decision, given the decision_made events
+ * linked to it (query with take: 2 so duplicates are detectable). Used by trade history
+ * and by the final order-eligibility boundary.
+ * Returns { status: 'verified_digest', event } or { status, reason }.
+ */
+export function assessLinkedResearch(execution, events) {
+  if (!events?.length) return { status: 'unavailable', reason: 'no_linked_research_decision' }
+  if (events.length !== 1 || !matchesDecision(events[0], execution)) {
+    return { status: 'mismatch', reason: 'research_decision_link_inconsistent' }
+  }
+  const integrity = verifyCapturedResearch(events[0])
+  if (integrity.status !== 'verified_digest') {
+    return { status: integrity.status, reason: integrity.reason || 'research_digest_mismatch' }
+  }
+  return { status: 'verified_digest', event: events[0] }
+}
+
+/**
  * Correlate an existing trusted decision event with an already-created execution.
  * The decision must be captured and accepted first. Never submits a broker order.
  * Not exposed as a public route: call only from the trusted decision writer.
+ * Pass `tx` to link inside the caller's transaction (atomic with execution creation).
  */
-export async function linkResearchDecisionToExecution({ userId, decisionEventId, executionId }) {
+export async function linkResearchDecisionToExecution({ userId, decisionEventId, executionId, tx: outerTx }) {
   if (!userId || !decisionEventId || !executionId) throw error('INVALID_LINK', 'IDs are required')
-  return prisma.$transaction(async (tx) => {
+  const run = outerTx ? (fn) => fn(outerTx) : (fn) => prisma.$transaction(fn)
+  return run(async (tx) => {
     const execution = await tx.execution.findUnique({ where: { id: executionId } })
     if (!execution || execution.userId !== userId || !execution.botId || execution.origin !== 'bot') {
       throw error('NOT_FOUND', 'Execution not found')
@@ -95,15 +115,11 @@ export async function getExecutionResearch({ userId, executionId }) {
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     take: 2
   })
-  if (!events.length) return { ...missing, executionId }
-  if (events.length !== 1 || !matchesDecision(events[0], execution)) {
-    return { status: 'mismatch', reason: 'research_decision_link_inconsistent', executionId }
+  const assessed = assessLinkedResearch(execution, events)
+  if (assessed.status !== 'verified_digest') {
+    return { status: assessed.status, reason: assessed.reason, executionId }
   }
-  const event = events[0]
-  const integrity = verifyCapturedResearch(event)
-  if (integrity.status !== 'verified_digest') {
-    return { status: integrity.status, reason: integrity.reason || 'research_digest_mismatch', executionId }
-  }
+  const { event } = assessed
   return {
     status: 'verified_digest',
     executionId,

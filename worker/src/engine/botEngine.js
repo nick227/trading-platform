@@ -4,6 +4,7 @@ import { log } from '../logger.js'
 import { getBrokerClient } from '../broker/clientCache.js'
 import { priceCache } from '../market/priceCache.js'
 import { subscribe, unsubscribe } from '../market/dataStream.js'
+import { ACTIVE_EXECUTION_STATUSES } from '../queues/executionStatus.js'
 import { evaluateMarketHours }    from './rules/marketHours.js'
 import { evaluatePriceThreshold } from './rules/priceThreshold.js'
 import { evaluateCooldown }       from './rules/cooldown.js'
@@ -16,6 +17,22 @@ import { increment as metricsIncrement } from '../metrics/counters.js'
 import { withInflightLock } from '../utils/inflightGuard.js'
 import { executeRuleBasedStrategy, executeStrategyBasedAlgorithm } from './predefinedStrategies.js'
 import { riskManager } from '../risk/riskManagement.js'
+import { engineClient } from '../../../server/src/clients/engine.js'
+import { fetchVerifiedResearchTrace, recordResearchDecision } from '../../../server/src/services/researchTraceService.js'
+import { linkResearchDecisionToExecution } from '../../../server/src/services/executionResearchService.js'
+import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
+
+// Injectable for deterministic tests (mirrors orderWorkerConfig).
+export const botEngineConfig = {
+  now: () => new Date(),
+  // How long a located + verified trace is reused before Alpha Engine is consulted again.
+  researchRecheckMs: Number(process.env.BOT_RESEARCH_RECHECK_MS ?? 60_000),
+}
+
+// Research state (per process). The DB remains authoritative for "already acted".
+const researchCache = new Map()        // `${botId}:${ticker}` → { at, located, trace }
+const actedPredictions = new Set()     // `${botId}:${predictionId}` with an accepted, executed decision
+const lastResearchEventAt = new Map()  // throttle key → ms
 
 // In-memory state
 const botRegistry  = new Map()  // botId → bot (with rules)
@@ -37,7 +54,6 @@ const positionCacheByUser = new Map()
 const RELOAD_INTERVAL_MS         = Number(process.env.BOT_RELOAD_INTERVAL_MS ?? 10_000)
 const POSITION_CACHE_MAX_MS      = 60_000
 const POSITION_CACHE_MAX_USERS   = 500   // LRU eviction threshold
-const ACTIVE_EXECUTION_STATUSES  = ['queued', 'processing', 'submitted', 'partially_filled']
 const SKIP_EVENT_WINDOW_MS       = 60_000
 
 // Rules sorted cheapest-first so fast in-memory checks short-circuit before any DB/broker call.
@@ -88,6 +104,12 @@ export function stopBotEngine() {
   botRegistry.clear()
   tickerIndex.clear()
   dbCheckedKeys.clear()
+  researchCache.clear()
+  actedPredictions.clear()
+  lastResearchEventAt.clear()
+  positionCacheByUser.clear()
+  lastSkipEventAt.clear()
+  lastRuleBlockEventAt.clear()
   if (previousTickers.size > 0) {
     unsubscribe([...previousTickers])
   }
@@ -97,7 +119,7 @@ export function stopBotEngine() {
 
 // ─── Bot registry reload ──────────────────────────────────────────────────────
 
-async function reloadBots() {
+export async function reloadBots() {
   try {
     const bots = await prisma.bot.findMany({
       where: { enabled: true, deletedAt: null },
@@ -156,7 +178,7 @@ export async function onPriceTick(ticker) {
 
 // ─── Bot evaluation ───────────────────────────────────────────────────────────
 
-async function evaluateBot(bot, ticker) {
+export async function evaluateBot(bot, ticker) {
   const inflightKey = `${bot.id}:${ticker}`
 
   // Primary guard: in-memory (no DB hit on every tick)
@@ -208,7 +230,16 @@ async function evaluateBot(bot, ticker) {
   let evaluationResult
 
   if (bot.botType === 'rule_based') {
-    side = deriveDirection(bot)
+    // Research-driven bots take direction and confidence from verified Alpha research;
+    // configured rules still gate when the bot may act on it.
+    let research = null
+    if (isResearchDriven(bot)) {
+      research = await evaluateResearchSignal(bot, ticker, tick)
+      if (!research) return
+      side = research.signal
+    } else {
+      side = deriveDirection(bot)
+    }
     context.side = side
 
     // Require an explicit, valid trading direction before proceeding
@@ -221,7 +252,7 @@ async function evaluateBot(bot, ticker) {
       return
     }
 
-    if (!bot.rules || bot.rules.length === 0) {
+    if (!research && (!bot.rules || bot.rules.length === 0)) {
       await logBotEvent(bot, 'execution_skipped', `Bot has no configured rules`, ticker, {
         reason: 'no_rules_configured'
       })
@@ -229,7 +260,7 @@ async function evaluateBot(bot, ticker) {
     }
 
     // Run rule pipeline - first failure short-circuits
-    for (const rule of bot.rules) {
+    for (const rule of bot.rules ?? []) {
       if (rule.type === 'position_limit' || rule.type === 'trend_filter') {
         await ensurePositionsLoaded()
       }
@@ -242,12 +273,17 @@ async function evaluateBot(bot, ticker) {
     }
 
     // If we get here, all rules passed - continue with execution
-    evaluationResult = { signal: side, confidence: 0.8, reason: 'All configured rules passed' }
-    await logBotEvent(bot, 'decision_made', `Signal generated: ${side} for ${ticker}`, ticker, {
-      signal: side,
-      confidence: 0.8,
-      reason: evaluationResult.reason
-    })
+    if (research) {
+      // The accepted decision (with its evidence) is written atomically with the execution.
+      evaluationResult = { signal: side, confidence: research.confidence, reason: 'Alpha research accepted; configured rules passed', research }
+    } else {
+      evaluationResult = { signal: side, confidence: 0.8, reason: 'All configured rules passed' }
+      await logBotEvent(bot, 'decision_made', `Signal generated: ${side} for ${ticker}`, ticker, {
+        signal: side,
+        confidence: 0.8,
+        reason: evaluationResult.reason
+      })
+    }
   } else if (bot.botType === 'strategy_based') {
     await logBotEvent(bot, 'execution_skipped', `Strategy-based algorithms are not yet supported for bot ${bot.id}`, ticker, {
       reason: 'strategy_based_unsupported',
@@ -280,6 +316,14 @@ async function evaluateBot(bot, ticker) {
   context.side = side
 
   // Validate signal against current position
+  if (evaluationResult.signal === 'sell' && currentQty <= 0 && evaluationResult.research) {
+    // SELL research for an unheld ticker is routine: throttle instead of logging every tick.
+    const predictionId = evaluationResult.research.trace.source.predictionId
+    await logResearchOnce(bot, ticker, `no_position:${predictionId}`, 'execution_skipped', `No position to sell for ${ticker}`, {
+      reason: 'no_position', side: 'sell', signal: 'sell', predictionId
+    })
+    return
+  }
   if (evaluationResult.signal === 'sell' && currentQty <= 0) {
     await logBotEvent(bot, 'execution_skipped', `No position to sell for ${ticker}`, ticker, {
       reason: 'no_position',
@@ -295,8 +339,9 @@ async function evaluateBot(bot, ticker) {
 
 // Helper function to create execution
 async function createExecution(bot, ticker, evaluationResult, tick, context) {
-  const { signal, confidence, reason, metadata } = evaluationResult
+  const { signal, confidence, reason, metadata, research } = evaluationResult
   const { currentQty } = context
+  const researchRef = research ? researchReference(research) : null
 
   // Enforce valid user and portfolio context
   if (!bot.userId || !bot.portfolioId) {
@@ -361,20 +406,16 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   }
 
   if (!riskEvaluation.approved) {
+    // No execution exists yet, so the block is recorded on the bot timeline only
+    // (ExecutionAudit rows require an existing execution).
     await logBotEvent(bot, 'execution_blocked_by_risk', `Risk management blocked execution for ${ticker}`, ticker, {
       signal,
       confidence,
       reason,
       riskScore: riskEvaluation.riskScore,
       failedChecks: riskEvaluation.failedChecks,
-      recommendations: riskEvaluation.recommendations
-    })
-    await recordExecutionAudit(executionId, 'risk_blocked', {
-      botId: bot.id,
-      botType: bot.botType,
-      signal,
-      confidence,
-      riskEvaluation
+      recommendations: riskEvaluation.recommendations,
+      ...(researchRef ? { research: researchRef } : {})
     })
     return
   }
@@ -398,25 +439,43 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   dbCheckedKeys.delete(inflightKey)
 
   let execution
+  let decisionEvent = null
   try {
     await withInflightLock(inflightMap, inflightKey, async () => {
-      execution = await prisma.execution.create({
-        data: {
-          id:            executionId,
-          userId:        bot.userId,
-          portfolioId:   bot.portfolioId,
-          strategyId:    bot.strategyId ?? null,
-          botId:         bot.id,
-          ticker,
-          direction,
-          quantity,
-          price:         tick.last,
-          origin:        'bot',
-          status:        'queued',
-          clientOrderId: `tp_${executionId}`,
-          activeIntentKey,
-          signalScore:   confidence,
-          pnl:           0
+      // One transaction: an execution from research never exists without its verified,
+      // linked decision, and an accepted decision never exists without its execution.
+      await prisma.$transaction(async (tx) => {
+        execution = await tx.execution.create({
+          data: {
+            id:            executionId,
+            userId:        bot.userId,
+            portfolioId:   bot.portfolioId,
+            strategyId:    bot.strategyId ?? null,
+            botId:         bot.id,
+            ticker,
+            direction,
+            quantity,
+            price:         tick.last,
+            origin:        'bot',
+            status:        'queued',
+            clientOrderId: `tp_${executionId}`,
+            activeIntentKey,
+            signalScore:   confidence,
+            pnl:           0
+          }
+        })
+        if (research) {
+          decisionEvent = await recordResearchDecision({
+            userId: bot.userId,
+            botId: bot.id,
+            tenantId: research.policy.tenantId,
+            trace: research.trace,
+            decision: 'accepted',
+            detail: `Bot accepted Alpha research: ${direction} ${ticker}`,
+            context: { ...research.context, executionId },
+            client: tx
+          })
+          await linkResearchDecisionToExecution({ userId: bot.userId, decisionEventId: decisionEvent.id, executionId, tx })
         }
       })
     }, { keepLockOn: isActiveIntentConflict })
@@ -436,7 +495,10 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     return
   }
 
-  log.info({ executionId: execution.id, botId: bot.id, ticker, direction, qty: quantity, confidence }, 'execution_queued')
+  if (research) actedPredictions.add(`${bot.id}:${research.trace.source.predictionId}`)
+  const linkedResearch = decisionEvent ? { ...researchRef, decisionEventId: decisionEvent.id } : null
+
+  log.info({ executionId: execution.id, botId: bot.id, ticker, direction, qty: quantity, confidence, predictionId: researchRef?.predictionId }, 'execution_queued')
 
   await logBotEvent(bot, 'execution_created', `Created ${direction} execution for ${ticker}`, ticker, {
     executionId: execution.id,
@@ -447,20 +509,148 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     confidence,
     reason,
     metadata,
-    riskScore: riskEvaluation.riskScore
+    riskScore: riskEvaluation.riskScore,
+    ...(linkedResearch ? { research: linkedResearch } : {})
   })
 
-  await recordExecutionAudit(executionId, 'created', {
-    botId:      bot.id,
-    botType:    bot.botType,
-    strategyId: bot.strategyId,
-    templateId: bot.templateId,
-    signal,
-    confidence,
-    reason,
-    metadata,
-    riskEvaluation
+  await recordExecutionAudit({
+    executionId,
+    userId: bot.userId,
+    eventType: 'execution_created',
+    detail: `Bot ${bot.id} created ${direction} ${quantity} ${ticker}`,
+    metadata: {
+      botId:      bot.id,
+      botType:    bot.botType,
+      strategyId: bot.strategyId ?? null,
+      templateId: bot.templateId ?? null,
+      signal,
+      confidence,
+      reason,
+      riskScore: riskEvaluation.riskScore ?? null,
+      ...(linkedResearch ? { research: linkedResearch } : {})
+    }
   })
+}
+
+// ─── Research-driven signal ───────────────────────────────────────────────────
+
+function researchReference(research) {
+  return {
+    predictionId: research.trace.source.predictionId,
+    traceId: research.trace.traceId,
+    evidenceSha256: research.trace.evidence.sha256,
+    observedAt: research.trace.source.observedAt,
+    tenantId: research.policy.tenantId
+  }
+}
+
+function sameTicker(a, b) {
+  const norm = (s) => String(s ?? '').toUpperCase().replace(/[.\-/]/g, '')
+  return norm(a) === norm(b)
+}
+
+/** Throttled timeline event for research outcomes that do not create an execution. */
+async function logResearchOnce(bot, ticker, key, type, detail, metadata) {
+  const now = botEngineConfig.now().getTime()
+  const throttleKey = `${bot.id}:${ticker}:${key}`
+  if (now - (lastResearchEventAt.get(throttleKey) ?? -Infinity) < SKIP_EVENT_WINDOW_MS) return
+  if (lastResearchEventAt.size > 5000) lastResearchEventAt.delete(lastResearchEventAt.keys().next().value)
+  lastResearchEventAt.set(throttleKey, now)
+  if (type === 'decision_made') {
+    try {
+      await recordResearchDecision(metadata)
+    } catch (err) {
+      log.error({ err: err.message, botId: bot.id, ticker }, 'research_decision_write_error')
+    }
+    return
+  }
+  await logBotEvent(bot, type, detail, ticker, metadata)
+}
+
+async function hasActedOnPrediction(bot, predictionId, policy) {
+  const key = `${bot.id}:${predictionId}`
+  if (actedPredictions.has(key)) return true
+  // Accepted research decisions always carry an executionId (written atomically).
+  // Exact bound: a prediction still young enough to trade was observed within the age
+  // window, so any earlier acceptance of it also falls inside that window.
+  const since = new Date(botEngineConfig.now().getTime() - (policy.maxPredictionAgeHours + 1) * 3_600_000)
+  const linked = await prisma.botEvent.findMany({
+    where: { botId: bot.id, type: 'decision_made', executionId: { not: null }, createdAt: { gte: since } },
+    orderBy: { createdAt: 'desc' }
+  })
+  const acted = linked.some((e) => e.metadata?.decision === 'accepted' && e.metadata?.predictionId === predictionId)
+  if (acted) actedPredictions.add(key)
+  return acted
+}
+
+/**
+ * Locate, verify and evaluate Alpha research for (bot, ticker).
+ * Returns { signal, confidence, trace, policy, context } when accepted, otherwise null
+ * after recording why (no research / unavailable / unverified → skip event;
+ * rejected / suppressed → decision_made with the verified evidence it was judged on).
+ */
+async function evaluateResearchSignal(bot, ticker, tick) {
+  const resolved = resolveResearchPolicy(bot.config)
+  if (!resolved.ok) {
+    await logResearchOnce(bot, ticker, `policy:${resolved.reason}`, 'execution_skipped', `Invalid research policy for bot ${bot.id}`, { reason: 'invalid_research_policy', detail: resolved.reason })
+    return null
+  }
+  const { policy } = resolved
+  const now = botEngineConfig.now()
+  const cacheKey = `${bot.id}:${ticker}`
+  let cached = researchCache.get(cacheKey)
+  if (!cached || now.getTime() - cached.at >= botEngineConfig.researchRecheckMs) {
+    cached = null
+    let located
+    try {
+      located = await engineClient.locateResearchPrediction(ticker, policy.tenantId)
+    } catch (err) {
+      await logResearchOnce(bot, ticker, 'unavailable', 'execution_skipped', `Alpha research unavailable for ${ticker}`, { reason: 'research_unavailable', error: err.message })
+      return null
+    }
+    if (!located) {
+      await logResearchOnce(bot, ticker, 'none', 'execution_skipped', `No ranked Alpha prediction for ${ticker}`, { reason: 'no_research_prediction' })
+      return null
+    }
+    if (await hasActedOnPrediction(bot, located.predictionId, policy)) {
+      await logResearchOnce(bot, ticker, `acted:${located.predictionId}`, 'execution_skipped', `Already acted on Alpha prediction for ${ticker}`, { reason: 'prediction_already_acted', predictionId: located.predictionId })
+      return null
+    }
+    let trace
+    try {
+      trace = await fetchVerifiedResearchTrace(located.predictionId, policy.tenantId)
+    } catch (err) {
+      const reason = err.cause ? 'research_unavailable' : 'research_evidence_unverified'
+      await logResearchOnce(bot, ticker, `${reason}:${located.predictionId}`, 'execution_skipped', `Alpha research evidence not usable for ${ticker}`, { reason, predictionId: located.predictionId })
+      return null
+    }
+    if (!sameTicker(trace.source.ticker, ticker)) {
+      await logResearchOnce(bot, ticker, `ticker:${located.predictionId}`, 'execution_skipped', `Alpha research ticker mismatch for ${ticker}`, { reason: 'research_ticker_mismatch', predictionId: located.predictionId, researchTicker: trace.source.ticker })
+      return null
+    }
+    cached = { at: now.getTime(), located, trace }
+    researchCache.set(cacheKey, cached)
+  } else if (actedPredictions.has(`${bot.id}:${cached.trace.source.predictionId}`)) {
+    return null
+  }
+
+  const { located, trace } = cached
+  const outcome = evaluateResearchDecision({
+    trace, located, policy,
+    price: tick?.last ?? tick?.ask,
+    configDirection: bot.config?.direction === 'buy' || bot.config?.direction === 'sell' ? bot.config.direction : null,
+    now
+  })
+  if (outcome.decision !== 'accepted') {
+    await logResearchOnce(bot, ticker, `decision:${trace.source.predictionId}:${outcome.decision}:${outcome.reason}`, 'decision_made', null, {
+      userId: bot.userId, botId: bot.id, tenantId: policy.tenantId, trace,
+      decision: outcome.decision,
+      detail: `Bot ${outcome.decision} Alpha research for ${ticker}: ${outcome.reason}`,
+      context: outcome.context
+    })
+    return null
+  }
+  return { signal: outcome.signal, confidence: outcome.confidence, trace, policy, context: outcome.context }
 }
 
 // ─── Rule dispatching ─────────────────────────────────────────────────────────

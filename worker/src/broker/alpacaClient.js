@@ -145,12 +145,24 @@ function normalizeOrder(order) {
   }
 }
 
-function wrapError(err) {
+// Statuses where the request may or may not have taken effect at the broker.
+const RETRYABLE_HTTP = new Set([408, 425, 429])
+
+export function wrapError(err) {
   const status = err?.response?.status
-  if (status >= 500 || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
-    return new BrokerNetworkError(err.message)
+  // No HTTP response at all (timeout, connection reset/refused, DNS, abort): the
+  // outcome is unknown — the broker may have accepted the order. Never treat as rejected.
+  if (status == null || status >= 500 || RETRYABLE_HTTP.has(status)) {
+    const e = new BrokerNetworkError(err?.message ?? 'broker request failed')
+    e.httpStatus = status ?? null
+    e.code = err?.code ?? null
+    return e
   }
-  // 403 = forbidden, 422 = unprocessable (bad params / insufficient funds)
+  // 401/403 = credentials, 422 = unprocessable (bad params / insufficient funds)
   const reason = err?.response?.data?.message ?? err.message
-  return new BrokerRejectionError(reason, reason)
+  const rejection = new BrokerRejectionError(reason, reason)
+  rejection.httpStatus = status
+  // Alpaca also uses 403 for "insufficient buying power/shares" — that is not a credential problem.
+  rejection.credentialError = status === 401 || (status === 403 && !/buying power|shares|insufficient/i.test(String(reason)))
+  return rejection
 }

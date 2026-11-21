@@ -1,48 +1,65 @@
 import os from 'os'
+import { randomUUID } from 'crypto'
 import prisma from '../db/prisma.js'
 import { BrokerNetworkError, BrokerRejectionError } from '../broker/alpacaClient.js'
 import { getBrokerClient } from '../broker/clientCache.js'
 import { recordExecutionAudit } from '../audit/executionAudit.js'
-import { evaluateRiskCaps } from '../risk/riskCaps.js'
+import { evaluateOrderEligibility } from '../risk/orderEligibility.js'
+import { BROKER_OPEN_STATUSES, PENDING_BROKER_STATUSES, TERMINAL_BROKER_STATUSES } from './executionStatus.js'
 import { log } from '../logger.js'
 import metricsService from '../../../server/src/services/metricsService.js'
 import { calculateFillPnl } from '../../../server/src/services/botAccountingService.js'
 
-const WORKER_ID      = `${os.hostname()}-${process.pid}`
-const MAX_ATTEMPTS   = 3
-const POLL_IDLE_MS   = 500   // sleep when no jobs are queued
-const STUCK_AFTER_MS = 120_000 // 2 minutes — locked row is considered stuck
-const FILL_POLL_INTERVAL_MS = 2_000  // how often to poll Alpaca for fill status
-const FILL_TIMEOUT_MS       = 30_000 // give up waiting for fill after 30s
+/**
+ * Order lifecycle (paper broker).
+ *
+ * Invariants:
+ * - One writer per execution: every write after a claim is fenced on lockedBy = this worker,
+ *   and is committed together with its audit event.
+ * - A broker submit happens at most once per clientOrderId attempt window: submitAttemptedAt is
+ *   persisted before submitting; an unknown outcome moves the row to `needs_reconciliation`,
+ *   which is only ever resolved by broker lookup. Any resubmit reuses the same clientOrderId,
+ *   which the broker de-duplicates.
+ * - Retry limits apply only to work the broker has never seen. An order known to the broker is
+ *   never marked failed locally; it is reconciled until the broker reports a final state.
+ */
 
-// Hoisted outside polling loops to avoid per-iteration array allocation
-const TERMINAL_BROKER_STATUSES  = new Set(['canceled', 'rejected', 'expired'])
-const PENDING_BROKER_STATUSES   = new Set(['new', 'accepted', 'pending_new', 'accepted_for_bidding', 'pending_replace', 'replaced', 'calculated'])
+export const WORKER_ID = `${os.hostname()}-${process.pid}`
+
+export const orderWorkerConfig = {
+  maxAttempts: 3,
+  pollIdleMs: 500,
+  stuckAfterMs: 120_000,          // a lock older than this belongs to a dead/stalled worker
+  fillPollIntervalMs: 2_000,
+  fillTimeoutMs: 30_000,          // then release; the reconciliation sweep continues
+  reconcileIntervalMs: 15_000,    // min gap between broker lookups for an open order
+  notFoundGraceMs: 60_000,        // a submit not visible at the broker after this is presumed not received
+  cancelPollMs: 10_000,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => new Date(),
+}
+
+class LeaseLostError extends Error {
+  constructor(executionId) {
+    super(`lease lost for execution ${executionId}`)
+    this.name = 'LeaseLostError'
+  }
+}
 
 let running = false
-
-// Called by the bot engine to clear the inflight guard when an order finishes
 let inflightMap = null
 export function setInflightMap(map) { inflightMap = map }
 
 export async function startOrderWorker() {
   running = true
   log.info({ workerId: WORKER_ID }, 'order_worker_start')
-
-  // Run stuck-job recovery in the background every 60s
-  const recoveryInterval = setInterval(recoverStuckJobs, 60_000)
-  recoverStuckJobs() // run once immediately on startup
+  const recoveryInterval = setInterval(() => recoverStuckJobs().catch((err) => log.error({ err: err.message }, 'recover_stuck_failed')), 60_000)
+  await recoverStuckJobs()
 
   while (running) {
-    const job = await claimNextExecution()
-    if (!job) {
-      await sleep(POLL_IDLE_MS)
-      continue
-    }
-    // Job found — process immediately, no sleep
-    await processExecution(job)
+    const worked = await runOnce()
+    if (!worked) await orderWorkerConfig.sleep(orderWorkerConfig.pollIdleMs)
   }
-
   clearInterval(recoveryInterval)
 }
 
@@ -50,537 +67,511 @@ export function stopOrderWorker() {
   running = false
 }
 
-// ─── Claim ──────────────────────────────────────────────────────────────────
+/** One unit of work: new submission first, otherwise one reconciliation. Returns true if it did work. */
+export async function runOnce() {
+  const job = await claimNextExecution()
+  if (job) {
+    await processExecution(job)
+    return true
+  }
+  const open = await claimNextReconciliation()
+  if (open) {
+    await reconcileExecution(open)
+    return true
+  }
+  return false
+}
 
-async function claimNextExecution() {
-  // Step 1 — find oldest unclaimed queued job
+// ─── Claims (atomic: conditional updateMany; count 0 = another worker won) ────
+
+export async function claimNextExecution() {
   const job = await prisma.execution.findFirst({
     where: { status: 'queued', lockedAt: null },
     orderBy: { createdAt: 'asc' }
   })
   if (!job) return null
-
-  // Step 2 — atomic claim via updateMany with same WHERE predicate
-  // If another worker claimed it between step 1 and step 2, count = 0
   const claimed = await prisma.execution.updateMany({
     where: { id: job.id, status: 'queued', lockedAt: null },
-    data: {
-      status:   'processing',
-      lockedAt: new Date(),
-      lockedBy: WORKER_ID,
-      attempts: { increment: 1 }
-    }
+    data: { status: 'processing', lockedAt: orderWorkerConfig.now(), lockedBy: WORKER_ID, attempts: { increment: 1 } }
   })
-
-  if (claimed.count === 0) return null // lost the race
-  return job
+  return claimed.count === 0 ? null : prisma.execution.findUnique({ where: { id: job.id } })
 }
 
-// ─── Process ─────────────────────────────────────────────────────────────────
+export async function claimNextReconciliation() {
+  const now = orderWorkerConfig.now()
+  const due = new Date(now.getTime() - orderWorkerConfig.reconcileIntervalMs)
+  const job = await prisma.execution.findFirst({
+    where: {
+      status: { in: BROKER_OPEN_STATUSES },
+      lockedAt: null,
+      OR: [{ lastBrokerSyncAt: null }, { lastBrokerSyncAt: { lt: due } }]
+    },
+    // Least-recently checked first (never-checked first) so every open order gets a turn.
+    orderBy: [{ lastBrokerSyncAt: 'asc' }, { createdAt: 'asc' }]
+  })
+  if (!job) return null
+  const claimed = await prisma.execution.updateMany({
+    where: { id: job.id, status: job.status, lockedAt: null },
+    data: { lockedAt: now, lockedBy: WORKER_ID, lastBrokerSyncAt: now }
+  })
+  return claimed.count === 0 ? null : prisma.execution.findUnique({ where: { id: job.id } })
+}
 
-async function processExecution(job) {
-  // Reload to get the updated fields after the claim write
-  const execution = await prisma.execution.findUnique({ where: { id: job.id } })
-  log.info({
-    executionId: execution.id,
-    botId: execution.botId,
-    userId: execution.userId,
-    ticker: execution.ticker,
-    direction: execution.direction,
-    qty: execution.quantity
-  }, 'order_claimed')
-  await recordExecutionAudit({
-    executionId: execution.id,
-    userId: execution.userId,
-    workerId: WORKER_ID,
-    eventType: 'claimed',
-    detail: `Execution claimed by ${WORKER_ID}`,
-    metadata: {
-      attempts: execution.attempts ?? 0,
-      status: execution.status
+// ─── Fenced state transitions (state change + audit in one transaction) ───────
+
+async function transition(execution, data, audit = null) {
+  await prisma.$transaction(async (tx) => {
+    const res = await tx.execution.updateMany({ where: { id: execution.id, lockedBy: WORKER_ID }, data })
+    if (res.count === 0) throw new LeaseLostError(execution.id)
+    if (audit) {
+      await tx.executionAudit.create({
+        data: {
+          id: `aud_${randomUUID()}`,
+          executionId: execution.id,
+          userId: execution.userId,
+          workerId: WORKER_ID,
+          eventType: audit.eventType,
+          detail: audit.detail,
+          metadata: audit.metadata ?? null
+        }
+      })
     }
   })
+}
+
+function auditFor(eventType, detail, metadata) {
+  return { eventType, detail, metadata }
+}
+
+// ─── New work ─────────────────────────────────────────────────────────────────
+
+export async function processExecution(execution) {
+  log.info({ executionId: execution.id, botId: execution.botId, userId: execution.userId, ticker: execution.ticker, direction: execution.direction, qty: execution.quantity }, 'order_claimed')
+  await recordExecutionAudit({ executionId: execution.id, userId: execution.userId, workerId: WORKER_ID, eventType: 'claimed', detail: `Execution claimed by ${WORKER_ID}`, metadata: { attempts: execution.attempts ?? 0 } })
 
   try {
-    const broker = await getBrokerClient(execution.userId)
-    if (!broker) {
-      log.error({
-        executionId: execution.id,
-        userId: execution.userId,
-        botId: execution.botId ?? null,
-        reason: 'NO_BROKER'
-      }, 'missing_user_broker_credentials')
-      await terminate(execution, 'cancelled', 'no_broker_account')
+    // Anything that may already be at the broker is reconciled, never resubmitted blindly.
+    if (execution.brokerOrderId || execution.submittedAt || execution.submitAttemptedAt) {
+      await reconcileExecution(execution)
       return
     }
 
-    // Idempotency guard — reconcile previously-submitted work before any new submit
-    // Cancellation intent takes precedence over everything else.
-    // Never submit a new broker order if the user requested cancellation.
+    const broker = await getBrokerClient(execution.userId)
+    if (!broker) {
+      await refuse(execution, 'invalid_credentials', { detail: 'No usable broker credentials for this user' })
+      return
+    }
+
     if (execution.cancelRequestedAt) {
       await handleCancelRequested(execution, broker)
       return
     }
 
-    if (execution.brokerOrderId || execution.submittedAt) {
-      await syncOrderStatus(execution, broker)
+    // Safety net: an order with this clientOrderId already at the broker is adopted, not duplicated.
+    const existing = await broker.getOrderByClientOrderId(execution.clientOrderId)
+    if (existing) {
+      await applyBrokerSnapshot(execution, existing, auditFor('reconciled', 'Existing broker order found by clientOrderId before submit', { brokerOrderId: existing.alpacaOrderId, brokerStatus: existing.status }))
+      await followOrder({ ...execution, brokerOrderId: existing.alpacaOrderId }, broker, existing)
       return
     }
 
-    if (execution.clientOrderId) {
-      const existingOrder = await broker.getOrderByClientOrderId(execution.clientOrderId)
-      if (existingOrder) {
-        await recordExecutionAudit({
-          executionId: execution.id,
-          userId: execution.userId,
-          workerId: WORKER_ID,
-          eventType: 'reconciled',
-          detail: 'Existing Alpaca order found by clientOrderId before submit',
-          metadata: {
-            clientOrderId: execution.clientOrderId,
-            brokerOrderId: existingOrder.alpacaOrderId,
-            brokerStatus: existingOrder.status
-          }
-        })
-        await applyBrokerSnapshot(execution.id, existingOrder)
-        await pollUntilFilled({ ...execution, brokerOrderId: existingOrder.alpacaOrderId }, broker)
+    const decision = await evaluateOrderEligibility(execution, { broker, now: orderWorkerConfig.now() })
+    if (!decision.allowed) {
+      await refuse(execution, decision.reason, decision.metrics)
+      return
+    }
+
+    const clock = await broker.getClock()
+    if (!clock?.is_open) {
+      await finalize(execution, 'cancelled', 'market_closed_at_submission')
+      return
+    }
+
+    const latest = await prisma.execution.findUnique({ where: { id: execution.id }, select: { cancelRequestedAt: true } })
+    if (latest?.cancelRequestedAt) {
+      await handleCancelRequested({ ...execution, cancelRequestedAt: latest.cancelRequestedAt }, broker)
+      return
+    }
+
+    // Durable marker BEFORE the broker call: from here on the outcome may be unknown.
+    const attemptedAt = orderWorkerConfig.now()
+    await transition(execution, { submitAttemptedAt: attemptedAt }, auditFor('submit_attempted', 'Submitting order to broker', {
+      ticker: execution.ticker, direction: execution.direction, quantity: execution.quantity, clientOrderId: execution.clientOrderId
+    }))
+
+    let order
+    try {
+      order = await broker.submitOrder({ ticker: execution.ticker, side: execution.direction, qty: execution.quantity, type: 'market', clientOrderId: execution.clientOrderId })
+    } catch (err) {
+      if (err instanceof BrokerRejectionError && isDuplicateClientOrderId(err)) {
+        await reconcileExecution({ ...execution, submitAttemptedAt: attemptedAt })
         return
       }
-    }
-
-    const riskDecision = await evaluateRiskCaps(execution)
-    if (!riskDecision.allowed) {
-      log.warn({ executionId: execution.id, ticker: execution.ticker, reason: riskDecision.reason }, 'risk_blocked')
-      await recordExecutionAudit({
-        executionId: execution.id,
-        userId: execution.userId,
-        workerId: WORKER_ID,
-        eventType: 'risk_blocked',
-        detail: `Risk cap blocked execution: ${riskDecision.reason}`,
-        metadata: riskDecision.metrics
-      })
-      await terminate(execution, 'cancelled', `risk_cap:${riskDecision.reason}`)
+      if (err instanceof BrokerRejectionError) {
+        // A 4xx is a definitive "not accepted".
+        await finalize(execution, 'cancelled', err.credentialError ? 'invalid_credentials' : `broker_rejected:${err.reason}`, {}, { refusal: err.credentialError })
+        return
+      }
+      // Lost response / timeout: the broker may have the order. Reconcile, never resubmit blindly.
+      await transition(execution, { status: 'needs_reconciliation', lockedAt: null, lockedBy: null },
+        auditFor('reconcile_required', 'Submit outcome unknown; will reconcile by clientOrderId', { error: err?.message ?? String(err), clientOrderId: execution.clientOrderId }))
       return
     }
 
-    const marketOpen = await assertMarketIsOpen(broker, execution)
-    if (!marketOpen) return
-
-    // Last-chance cancellation check before broker submission.
-    const cancelBeforeSubmit = await prisma.execution.findUnique({
-      where: { id: execution.id },
-      select: { cancelRequestedAt: true }
-    })
-    if (cancelBeforeSubmit?.cancelRequestedAt) {
-      await handleCancelRequested(execution, broker)
-      return
-    }
-
-    // Submit to Alpaca
-    await recordExecutionAudit({
-      executionId: execution.id,
-      userId: execution.userId,
-      workerId: WORKER_ID,
-      eventType: 'submit_attempted',
-      detail: 'Submitting order to Alpaca',
-      metadata: {
-        ticker: execution.ticker,
-        direction: execution.direction,
-        quantity: execution.quantity,
-        clientOrderId: execution.clientOrderId
-      }
-    })
-    const order = await broker.submitOrder({
-      ticker:     execution.ticker,
-      side:       execution.direction, // 'buy' | 'sell'
-      qty:        execution.quantity,
-      type:       'market',
-      clientOrderId: execution.clientOrderId
-    })
-
-    await applyBrokerSnapshot(execution.id, order)
-    await recordExecutionAudit({
-      executionId: execution.id,
-      userId: execution.userId,
-      workerId: WORKER_ID,
-      eventType: 'submit_confirmed',
-      detail: 'Alpaca accepted order',
-      metadata: {
-        brokerOrderId: order.alpacaOrderId,
-        clientOrderId: order.clientOrderId ?? execution.clientOrderId,
-        brokerStatus: order.status
-      }
-    })
-
-    // Poll Alpaca until fill or timeout
-    await pollUntilFilled({ ...execution, brokerOrderId: order.alpacaOrderId }, broker)
-
+    await applyBrokerSnapshot(execution, order, auditFor('submit_confirmed', 'Broker accepted order', { brokerOrderId: order.alpacaOrderId, brokerStatus: order.status }))
+    await followOrder({ ...execution, brokerOrderId: order.alpacaOrderId, submitAttemptedAt: attemptedAt }, broker, order)
   } catch (err) {
-    if (err instanceof BrokerRejectionError) {
-      if (shouldReconcileFromRejection(err)) {
-        const broker = await getBrokerClient(execution.userId)
-        if (broker) {
-          await syncOrderStatus(execution, broker)
-          return
-        }
-      }
-      await terminate(execution, 'cancelled', err.reason)
-    } else if (err instanceof BrokerNetworkError) {
-      await releaseForRetry(execution)
-    } else {
-      log.error({ err, executionId: execution.id }, 'order_unexpected_error')
-      await releaseForRetry(execution)
-    }
+    await handleUnexpected(execution, err)
   }
 }
 
-// ─── Fill polling ─────────────────────────────────────────────────────────────
+async function handleUnexpected(execution, err) {
+  if (err instanceof LeaseLostError) {
+    log.warn({ executionId: execution.id, workerId: WORKER_ID }, 'lease_lost')
+    await recordExecutionAudit({ executionId: execution.id, userId: execution.userId, workerId: WORKER_ID, eventType: 'lease_lost', detail: 'Another worker owns this execution; stopped without writing' })
+    return
+  }
+  const fresh = await prisma.execution.findUnique({ where: { id: execution.id } })
+  if (!fresh || fresh.lockedBy !== WORKER_ID) return
+  if (fresh.submitAttemptedAt || fresh.brokerOrderId) {
+    // Possibly at the broker: hand to reconciliation, keeping the broker-facing status.
+    await transition(fresh, {
+      status: fresh.brokerOrderId ? fresh.status === 'processing' ? 'submitted' : fresh.status : 'needs_reconciliation',
+      lockedAt: null,
+      lockedBy: null
+    }, auditFor('reconcile_required', 'Error after submit; will reconcile', { error: err?.message ?? String(err) })).catch(() => {})
+    return
+  }
+  if (err instanceof BrokerRejectionError && err.credentialError) {
+    // Nothing was sent; this user's credentials are unusable. Refuse (other users are unaffected).
+    await refuse(fresh, 'invalid_credentials', { broker: err.reason })
+    return
+  }
+  log.error({ err: err?.message ?? String(err), executionId: execution.id }, 'order_pre_submit_error')
+  await releaseForRetry(fresh, err)
+}
 
-async function prepareFillData(execution, order) {
-  const filledPrice = order.filledAvgPrice
-  const filledQuantity = order.filledQty
-  const filledAt = order.filledAt ?? new Date()
-  let pnl = 0
+async function releaseForRetry(execution, err) {
+  const attempts = execution.attempts ?? 1
+  if (attempts >= orderWorkerConfig.maxAttempts) {
+    await finalize(execution, 'failed', 'max_attempts_exceeded', {}, { error: err?.message })
+    return
+  }
+  await transition(execution, { status: 'queued', lockedAt: null, lockedBy: null },
+    auditFor('retry_scheduled', 'Released for retry (nothing was sent to the broker)', { attempts, maxAttempts: orderWorkerConfig.maxAttempts, error: err?.message ?? null }))
+}
 
-  if (execution.direction === 'sell' && execution.botId) {
+// ─── Reconciliation (restart recovery, unknown outcomes, open orders) ─────────
+
+export async function reconcileExecution(execution) {
+  try {
+    const broker = await getBrokerClient(execution.userId)
+    if (!broker) {
+      // Cannot verify. Never assume failure for something that may be at the broker.
+      await releaseOpen(execution)
+      return
+    }
+
+    let order
     try {
-      pnl = await calculateFillPnl({
-        execution,
-        fillPrice: filledPrice ?? execution.price,
-        fillQty: filledQuantity ?? execution.quantity
+      order = await fetchKnownOrder(execution, broker)
+    } catch (err) {
+      if (err instanceof BrokerNetworkError || err instanceof BrokerRejectionError) {
+        await releaseOpen(execution)
+        return
+      }
+      throw err
+    }
+
+    if (!order) {
+      await handleNotFound(execution)
+      return
+    }
+
+    if (execution.cancelRequestedAt && !isFinal(order) ) {
+      await handleCancelRequested({ ...execution, brokerOrderId: order.alpacaOrderId }, broker)
+      return
+    }
+
+    const known = { ...execution, brokerOrderId: order.alpacaOrderId }
+    // A final broker state is recorded once, by the terminal transition itself.
+    if (await settleIfFinal(known, order)) return
+    await applyBrokerSnapshot(execution, order, statusChanged(execution, order)
+      ? auditFor(order.status === 'partially_filled' ? 'partial_fill' : 'reconciled', 'Reconciled against broker order', { brokerOrderId: order.alpacaOrderId, brokerStatus: order.status, filledQuantity: order.filledQty })
+      : null)
+    await releaseOpen(execution)
+  } catch (err) {
+    if (err instanceof LeaseLostError) return handleUnexpected(execution, err)
+    log.error({ err: err?.message ?? String(err), executionId: execution.id }, 'reconcile_error')
+    await releaseOpen(execution).catch(() => {})
+  }
+}
+
+async function handleNotFound(execution) {
+  const submitted = execution.brokerOrderId || execution.submittedAt
+  if (submitted) {
+    // The broker acknowledged this order before; a miss now is an anomaly, not proof of absence.
+    await releaseOpen(execution)
+    return
+  }
+  const attemptedAt = execution.submitAttemptedAt ? new Date(execution.submitAttemptedAt).getTime() : null
+  if (attemptedAt && orderWorkerConfig.now().getTime() - attemptedAt < orderWorkerConfig.notFoundGraceMs) {
+    await releaseOpen(execution) // too early to conclude
+    return
+  }
+  if (execution.cancelRequestedAt) {
+    await finalize(execution, 'cancelled', 'cancelled_before_broker_ack')
+    return
+  }
+  // Never reached the broker. Safe to try again with the SAME clientOrderId (broker de-duplicates).
+  if ((execution.attempts ?? 1) >= orderWorkerConfig.maxAttempts) {
+    await finalize(execution, 'failed', 'not_received_by_broker')
+    return
+  }
+  await transition(execution, { status: 'queued', submitAttemptedAt: null, lockedAt: null, lockedBy: null },
+    auditFor('retry_scheduled', 'Submit not received by broker; resubmitting with the same clientOrderId', { clientOrderId: execution.clientOrderId, attempts: execution.attempts ?? 1 }))
+}
+
+/** Release the lock without changing broker-facing status (open or unknown orders). */
+async function releaseOpen(execution) {
+  await transition(execution, { lockedAt: null, lockedBy: null })
+}
+
+export async function recoverStuckJobs() {
+  const stuckBefore = new Date(orderWorkerConfig.now().getTime() - orderWorkerConfig.stuckAfterMs)
+  const stuck = await prisma.execution.findMany({
+    where: { status: { in: ['processing', ...BROKER_OPEN_STATUSES] }, lockedAt: { lt: stuckBefore } }
+  })
+  let recovered = 0
+  for (const row of stuck) {
+    const next = row.status !== 'processing'
+      ? row.status
+      : row.brokerOrderId ? 'submitted'
+        : row.submitAttemptedAt ? 'needs_reconciliation'
+          : 'queued'
+    await prisma.$transaction(async (tx) => {
+      const res = await tx.execution.updateMany({
+        where: { id: row.id, lockedBy: row.lockedBy, lockedAt: { lt: stuckBefore } },
+        data: { status: next, lockedAt: null, lockedBy: null }
       })
+      if (res.count === 0) return
+      recovered += 1
+      if (next !== row.status) {
+        await tx.executionAudit.create({
+          data: {
+            id: `aud_${randomUUID()}`, executionId: row.id, userId: row.userId, workerId: WORKER_ID,
+            eventType: next === 'queued' ? 'retry_scheduled' : 'reconcile_required',
+            detail: `Recovered from stalled worker ${row.lockedBy ?? 'unknown'} (${row.status} -> ${next})`,
+            metadata: { previousStatus: row.status, previousWorker: row.lockedBy }
+          }
+        })
+      }
+    })
+  }
+  if (recovered > 0) log.warn({ count: recovered }, 'stuck_jobs_recovered')
+  return recovered
+}
+
+// ─── Following an order at the broker ─────────────────────────────────────────
+
+async function followOrder(execution, broker, order, { poll = true } = {}) {
+  if (await settleIfFinal(execution, order)) return
+  if (!poll) {
+    await releaseOpen(execution)
+    return
+  }
+
+  const deadline = Date.now() + orderWorkerConfig.fillTimeoutMs
+  let last = order
+  while (Date.now() < deadline) {
+    await orderWorkerConfig.sleep(orderWorkerConfig.fillPollIntervalMs)
+    // Renew the lease (fenced) and pick up cancel requests.
+    await transition(execution, { lockedAt: orderWorkerConfig.now() })
+    const latest = await prisma.execution.findUnique({ where: { id: execution.id }, select: { cancelRequestedAt: true } })
+    if (latest?.cancelRequestedAt) {
+      await handleCancelRequested({ ...execution, cancelRequestedAt: latest.cancelRequestedAt }, broker)
+      return
+    }
+    let snapshot
+    try {
+      snapshot = await fetchKnownOrder(execution, broker)
+    } catch (err) {
+      if (err instanceof BrokerNetworkError) break
+      throw err
+    }
+    if (!snapshot) break
+    if (statusChanged(last, snapshot)) {
+      await applyBrokerSnapshot(execution, snapshot, snapshot.status === 'partially_filled'
+        ? auditFor('partial_fill', 'Order partially filled', { brokerOrderId: snapshot.alpacaOrderId, filledQuantity: snapshot.filledQty, filledPrice: snapshot.filledAvgPrice })
+        : null)
+    }
+    last = snapshot
+    if (await settleIfFinal(execution, snapshot)) return
+  }
+  // Still open: keep broker-facing status; the reconciliation sweep continues. Never a local failure.
+  await releaseOpen(execution)
+}
+
+async function settleIfFinal(execution, order) {
+  if (order.status === 'filled') {
+    if (!(order.filledQty > 0 && order.filledAvgPrice > 0)) return false // inconsistent snapshot; check again later
+    await finalize(execution, 'filled', null, await fillDataFrom(execution, order))
+    return true
+  }
+  if (TERMINAL_BROKER_STATUSES.has(order.status)) {
+    // A canceled/expired/rejected order keeps any real partial fill.
+    const reason = execution.cancelRequestedAt && order.status === 'canceled' ? 'broker_cancelled_after_user_request' : `broker_status:${order.status}`
+    await finalize(execution, 'cancelled', reason, order.filledQty > 0 ? await fillDataFrom(execution, order) : { brokerStatus: order.status, filledQuantity: 0 })
+    return true
+  }
+  return false
+}
+
+async function fillDataFrom(execution, order) {
+  let pnl = 0
+  if (String(execution.direction).toLowerCase() === 'sell' && execution.botId && order.filledQty > 0 && order.filledAvgPrice > 0) {
+    try {
+      pnl = await calculateFillPnl({ execution, fillPrice: order.filledAvgPrice, fillQty: order.filledQty })
     } catch (err) {
       log.warn({ err: err.message, executionId: execution.id }, 'calculate_fill_pnl_failed')
     }
   }
-
   return {
-    filledAt,
-    filledPrice,
-    filledQuantity,
+    brokerStatus: order.status,
+    filledPrice: order.filledAvgPrice ?? null,
+    filledQuantity: order.filledQty ?? 0,
+    filledAt: order.filledAt ?? (order.filledQty > 0 ? orderWorkerConfig.now() : null),
     pnl
   }
 }
 
 async function handleCancelRequested(execution, broker) {
-  // If we have not submitted to the broker yet, cancel locally immediately.
-  if (!execution.brokerOrderId && !execution.submittedAt) {
-    await terminate(execution, 'cancelled', 'user_cancel_requested_pre_submit')
+  if (!execution.brokerOrderId && !execution.submittedAt && !execution.submitAttemptedAt) {
+    await finalize(execution, 'cancelled', execution.cancelRequestReason === 'emergency_stop' ? 'emergency_stop_pre_submit' : 'user_cancel_requested_pre_submit')
     return
   }
-
-  // Attempt broker-side cancellation and reconcile to the truth.
-  const order = await fetchKnownOrder(execution, broker)
-  if (!order) {
-    await releaseForRetry(execution)
-    return
+  let order
+  try {
+    order = await fetchKnownOrder(execution, broker)
+  } catch (err) {
+    if (err instanceof BrokerNetworkError) return releaseOpen(execution)
+    throw err
   }
-
-  // Too late: already filled.
-  if (order.status === 'filled') {
-    const fillData = await prepareFillData(execution, order)
-    await terminate(execution, 'filled', null, fillData)
-    return
-  }
+  if (!order) return handleNotFound(execution)
+  if (await settleIfFinal(execution, order)) return
 
   try {
     await broker.cancelOrder(order.alpacaOrderId)
   } catch (err) {
-    if (err instanceof BrokerNetworkError) {
-      await releaseForRetry(execution)
-      return
-    }
-    // For non-network errors (already filled/cancelled/etc), fall through to reconcile.
+    if (err instanceof BrokerNetworkError) return releaseOpen(execution)
+    // Other errors: fall through and reconcile to the broker's truth.
   }
 
-  // Poll briefly for terminal cancel/fill so the UI updates quickly.
-  const deadline = Date.now() + 10_000
+  const deadline = Date.now() + orderWorkerConfig.cancelPollMs
   while (Date.now() < deadline) {
-    const snapshot = await fetchKnownOrder(execution, broker)
-    if (!snapshot) {
-      await releaseForRetry(execution)
-      return
+    let snapshot
+    try {
+      snapshot = await fetchKnownOrder({ ...execution, brokerOrderId: order.alpacaOrderId }, broker)
+    } catch (err) {
+      if (err instanceof BrokerNetworkError) break
+      throw err
     }
-
-    if (snapshot.status === 'filled') {
-      const fillData = await prepareFillData(execution, snapshot)
-      await terminate(execution, 'filled', null, fillData)
-      return
-    }
-
-    if (TERMINAL_BROKER_STATUSES.has(snapshot.status)) {
-      await terminate(execution, 'cancelled', 'broker_cancelled_after_user_request', {
-        brokerStatus: snapshot.status,
-        filledPrice: snapshot.filledAvgPrice ?? undefined,
-        filledQuantity: snapshot.filledQty ?? undefined
-      })
-      return
-    }
-
-    // Keep broker snapshot fresh while waiting.
-    await applyBrokerSnapshot(execution.id, snapshot)
-    await sleep(1_000)
+    if (!snapshot) break
+    if (await settleIfFinal({ ...execution, cancelRequestedAt: execution.cancelRequestedAt ?? orderWorkerConfig.now() }, snapshot)) return
+    await applyBrokerSnapshot(execution, snapshot, null)
+    await orderWorkerConfig.sleep(Math.min(1_000, orderWorkerConfig.fillPollIntervalMs))
   }
-
-  // Not yet terminal â€” release and retry cancellation on next loop.
-  await releaseForRetry(execution)
+  await releaseOpen(execution)
 }
 
-async function pollUntilFilled(execution, broker) {
-  const deadline = Date.now() + FILL_TIMEOUT_MS
-  let lastPartialFillQty = execution.filledQuantity ?? 0
+// ─── Persistence helpers ──────────────────────────────────────────────────────
 
-  while (Date.now() < deadline) {
-    // Renew the lease and check for cancel in one DB write instead of two.
-    const refreshed = await prisma.execution.update({
-      where: { id: execution.id },
-      data:  { lockedAt: new Date() },
-      select: { cancelRequestedAt: true }
-    })
-    if (refreshed.cancelRequestedAt) {
-      await handleCancelRequested(execution, broker)
-      return
-    }
-
-    const order = await fetchKnownOrder(execution, broker)
-    if (!order) {
-      await releaseForRetry(execution)
-      return
-    }
-
-    if (order.status === 'filled') {
-      const fillData = await prepareFillData(execution, order)
-      await terminate(execution, 'filled', null, fillData)
-      return
-    }
-
-    if (order.status === 'partially_filled') {
-      // applyBrokerSnapshot already writes lockedAt — no separate refreshLease needed
-      await applyBrokerSnapshot(execution.id, order)
-      if ((order.filledQty ?? 0) !== lastPartialFillQty) {
-        lastPartialFillQty = order.filledQty ?? 0
-        await recordExecutionAudit({
-          executionId: execution.id,
-          userId: execution.userId,
-          workerId: WORKER_ID,
-          eventType: 'partial_fill',
-          detail: 'Order partially filled',
-          metadata: {
-            brokerOrderId: order.alpacaOrderId,
-            filledQuantity: order.filledQty,
-            filledPrice: order.filledAvgPrice
-          }
-        })
-      }
-    }
-
-    if (TERMINAL_BROKER_STATUSES.has(order.status)) {
-      await terminate(execution, 'cancelled', `broker_status:${order.status}`, {
-        brokerStatus: order.status
-      })
-      return
-    }
-
-    if (PENDING_BROKER_STATUSES.has(order.status)) {
-      await applyBrokerSnapshot(execution.id, order)
-    }
-
-    await sleep(FILL_POLL_INTERVAL_MS)
-  }
-
-  await releaseForRetry(execution)
+async function applyBrokerSnapshot(execution, order, audit) {
+  const now = orderWorkerConfig.now()
+  await transition(execution, {
+    brokerOrderId: order.alpacaOrderId ?? undefined,
+    brokerStatus: order.status,
+    submittedAt: order.submittedAt ?? execution.submittedAt ?? now,
+    lastBrokerSyncAt: now,
+    lockedAt: now,
+    status: order.status === 'partially_filled' ? 'partially_filled' : 'submitted',
+    // Cumulative broker values: overwriting (never adding) keeps repeated updates idempotent.
+    ...(order.filledQty > 0 ? { filledQuantity: order.filledQty } : {}),
+    ...(order.filledAvgPrice > 0 ? { filledPrice: order.filledAvgPrice } : {})
+  }, audit)
 }
 
-// Poll Alpaca for an already-submitted order (idempotency path)
-async function syncOrderStatus(execution, broker) {
-  const existingOrder = await fetchKnownOrder(execution, broker)
-  if (!existingOrder) {
-    await releaseForRetry(execution)
-    return
-  }
-
-  await recordExecutionAudit({
-    executionId: execution.id,
-    userId: execution.userId,
-    workerId: WORKER_ID,
-    eventType: 'reconciled',
-    detail: 'Reconciled execution against existing Alpaca order',
-    metadata: {
-      clientOrderId: execution.clientOrderId,
-      brokerOrderId: existingOrder.alpacaOrderId,
-      brokerStatus: existingOrder.status
-    }
-  })
-  await applyBrokerSnapshot(execution.id, existingOrder)
-  await pollUntilFilled({
-    ...execution,
-    brokerOrderId: existingOrder.alpacaOrderId ?? execution.brokerOrderId
-  }, broker)
+/** Records a refusal: nothing is sent to the broker. */
+async function refuse(execution, reason, metrics = {}) {
+  log.warn({ executionId: execution.id, botId: execution.botId, reason }, 'order_refused')
+  await finalize(execution, 'cancelled', `refused:${reason}`, {}, { refusal: true, metrics })
 }
 
-// ─── Terminal state helpers ───────────────────────────────────────────────────
+async function finalize(execution, status, cancelReason, fillData = {}, { refusal = false, metrics = undefined, error = undefined } = {}) {
+  const eventType = refusal ? 'risk_blocked' : status === 'filled' ? 'filled' : status === 'failed' ? 'failed' : 'cancelled'
+  await transition(execution, {
+    status,
+    lockedAt: null,
+    lockedBy: null,
+    activeIntentKey: null,
+    ...(cancelReason ? { cancelReason } : {}),
+    ...fillData
+  }, auditFor(eventType, `${status}${cancelReason ? ` (${cancelReason})` : ''}`, { cancelReason, ...fillData, ...(metrics ? { metrics } : {}), ...(error ? { error } : {}) }))
 
-async function terminate(execution, status, cancelReason, fillData = {}) {
-  // Update execution with fill data
-  const updatedExecution = await prisma.execution.update({
-    where: { id: execution.id },
-    data: {
-      status,
-      lockedAt: null,
-      lockedBy: null,
-      activeIntentKey: null,
-      cancelReason: cancelReason ?? undefined,
-      ...fillData
-    }
-  })
+  if (refusal && execution.botId) await recordBotRefusal(execution, cancelReason, metrics)
 
-  // Process metrics for filled executions
   if (status === 'filled') {
     try {
-      await metricsService.processExecutionFill(updatedExecution)
-    } catch (metricsError) {
-      log.error({ 
-        executionId: execution.id, 
-        error: metricsError.message 
-      }, 'metrics_processing_failed')
-      // Don't fail the execution processing for metrics errors
+      const updated = await prisma.execution.findUnique({ where: { id: execution.id } })
+      await metricsService.processExecutionFill(updated)
+    } catch (err) {
+      log.error({ executionId: execution.id, error: err.message }, 'metrics_processing_failed')
     }
   }
+  if (execution.botId && inflightMap) inflightMap.delete(`${execution.botId}:${execution.ticker}`)
+  const level = status === 'filled' ? 'info' : status === 'failed' ? 'error' : 'warn'
+  log[level]({ executionId: execution.id, ticker: execution.ticker, status, cancelReason, filledQuantity: fillData.filledQuantity }, `order_${status}`)
+}
 
-  // Clear the bot engine's in-memory inflight guard
-  if (execution.botId && inflightMap) {
-    inflightMap.delete(`${execution.botId}:${execution.ticker}`)
-  }
-
-  const eventType = mapTerminalStatusToAuditEvent(status, cancelReason)
-  if (eventType) {
-    await recordExecutionAudit({
-      executionId: execution.id,
-      userId: execution.userId,
-      workerId: WORKER_ID,
-      eventType,
-      detail: `${status}${cancelReason ? ` (${cancelReason})` : ''}`,
-      metadata: {
-        cancelReason,
-        ...fillData
+async function recordBotRefusal(execution, reason, metrics) {
+  try {
+    await prisma.botEvent.create({
+      data: {
+        id: `evt_${randomUUID()}`,
+        botId: execution.botId,
+        portfolioId: execution.portfolioId,
+        executionId: execution.id,
+        type: 'execution_blocked_by_risk',
+        detail: `Order refused at submission: ${reason}`,
+        metadata: { ticker: execution.ticker, reason: String(reason).replace(/^refused:/, ''), executionId: execution.id, side: execution.direction, ...(metrics ?? {}) }
       }
     })
-  }
-
-  const queuedMs = execution.createdAt ? Date.now() - new Date(execution.createdAt).getTime() : null
-  if (status === 'filled') {
-    log.info({
-      executionId: execution.id,
-      botId: execution.botId,
-      userId: execution.userId,
-      ticker: execution.ticker,
-      direction: execution.direction,
-      qty: execution.quantity,
-      fillPrice: fillData.filledPrice,
-      queuedMs
-    }, 'order_filled')
-  } else if (status === 'failed') {
-    log.error({ executionId: execution.id, ticker: execution.ticker, cancelReason, queuedMs }, 'order_failed')
-  } else {
-    log.warn({ executionId: execution.id, ticker: execution.ticker, cancelReason }, 'order_cancelled')
-  }
-}
-
-async function releaseForRetry(execution) {
-  const nextAttempts = (execution.attempts ?? 1)
-
-  if (nextAttempts >= MAX_ATTEMPTS) {
-    await terminate(execution, 'failed', `max_attempts_exceeded`)
-    return
-  }
-
-  await prisma.execution.update({
-    where: { id: execution.id },
-    data: { status: 'queued', lockedAt: null, lockedBy: null }
-  })
-  await recordExecutionAudit({
-    executionId: execution.id,
-    userId: execution.userId,
-    workerId: WORKER_ID,
-    eventType: 'retry_scheduled',
-    detail: 'Execution released for retry',
-    metadata: {
-      attempts: nextAttempts,
-      maxAttempts: MAX_ATTEMPTS
-    }
-  })
-  log.warn({ executionId: execution.id, attempt: nextAttempts, maxAttempts: MAX_ATTEMPTS }, 'order_retry')
-}
-
-// ─── Stuck-job recovery ────────────────────────────────────────────────────────
-
-async function recoverStuckJobs() {
-  const stuckBefore = new Date(Date.now() - STUCK_AFTER_MS)
-  const { count } = await prisma.execution.updateMany({
-    where: { status: { in: ['processing', 'submitted', 'partially_filled'] }, lockedAt: { lt: stuckBefore } },
-    data:  { status: 'queued', lockedAt: null, lockedBy: null }
-  })
-  if (count > 0) {
-    log.warn({ count }, 'stuck_jobs_recovered')
+  } catch (err) {
+    log.error({ err: err.message, executionId: execution.id }, 'bot_refusal_event_failed')
   }
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 async function fetchKnownOrder(execution, broker) {
-  if (execution.brokerOrderId) {
-    return broker.getOrder(execution.brokerOrderId)
-  }
-  if (execution.clientOrderId) {
-    return broker.getOrderByClientOrderId(execution.clientOrderId)
-  }
+  if (execution.brokerOrderId) return broker.getOrder(execution.brokerOrderId)
+  if (execution.clientOrderId) return broker.getOrderByClientOrderId(execution.clientOrderId)
   return null
 }
 
-async function applyBrokerSnapshot(executionId, order) {
-  await prisma.execution.update({
-    where: { id: executionId },
-    data: {
-      brokerOrderId: order.alpacaOrderId ?? undefined,
-      brokerStatus: order.status,
-      submittedAt: order.submittedAt ?? new Date(),
-      lastBrokerSyncAt: new Date(),
-      lockedAt: new Date(),
-      status: mapBrokerStatusToExecutionStatus(order.status),
-      filledPrice: order.filledAvgPrice ?? undefined,
-      filledQuantity: order.filledQty ?? undefined
-    }
-  })
+function isFinal(order) {
+  return order.status === 'filled' || TERMINAL_BROKER_STATUSES.has(order.status)
 }
 
-function mapBrokerStatusToExecutionStatus(brokerStatus) {
-  if (brokerStatus === 'filled')           return 'filled'
-  if (brokerStatus === 'partially_filled') return 'partially_filled'
-  if (TERMINAL_BROKER_STATUSES.has(brokerStatus)) return 'cancelled'
-  return 'submitted'
+function statusChanged(a, order) {
+  const prevStatus = a?.brokerStatus ?? a?.status ?? null
+  const prevQty = Number(a?.filledQuantity ?? a?.filledQty ?? 0)
+  return prevStatus !== order.status || prevQty !== Number(order.filledQty ?? 0)
 }
 
-async function assertMarketIsOpen(broker, execution) {
-  const clock = await broker.getClock()
-  if (!clock?.is_open) {
-    await terminate(execution, 'cancelled', 'market_closed_at_submission')
-    return false
-  }
-  return true
-}
-
-function shouldReconcileFromRejection(err) {
+function isDuplicateClientOrderId(err) {
   const message = `${err?.message ?? ''} ${err?.reason ?? ''}`.toLowerCase()
   return message.includes('client_order_id') || message.includes('client order id')
 }
 
-function mapTerminalStatusToAuditEvent(status, cancelReason) {
-  if (status === 'filled') return 'filled'
-  if (status === 'failed') return 'failed'
-  if (status === 'cancelled') return 'cancelled'
-  return null
-}
+export { PENDING_BROKER_STATUSES }

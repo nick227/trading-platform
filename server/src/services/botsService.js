@@ -2,6 +2,18 @@ import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
 import { computeBotAccounting } from './botAccountingService.js'
+import { isResearchDriven, resolveResearchPolicy } from '../../../worker/src/engine/researchDecision.js'
+
+/** Research-driven bots must carry a policy the bot engine accepts (it fails closed otherwise). */
+function assertValidResearchConfig(config) {
+  if (!isResearchDriven({ config })) return
+  const resolved = resolveResearchPolicy(config)
+  if (!resolved.ok) {
+    const err = new Error(`Invalid research settings (${resolved.reason})`)
+    err.statusCode = 400
+    throw err
+  }
+}
 
 async function computeBotPerformance(botId) {
   try {
@@ -22,6 +34,7 @@ async function computeBotPerformance(botId) {
 
 export default {
   async createBot(data) {
+    assertValidResearchConfig(data.config)
     if (!data.userId) {
       throw new Error('userId is required to create a bot')
     }
@@ -89,6 +102,7 @@ export default {
       ...(capitalMode ? { capitalMode } : {}),
       riskOnExposure: data.riskOnExposure ?? template.config?.riskOnExposure ?? 1.0,
     }
+    assertValidResearchConfig(config)
 
     return prisma.$transaction(async (tx) => {
       const bot = await tx.bot.create({
@@ -198,6 +212,7 @@ export default {
   },
 
   async updateBot(id, data) {
+    if (data.config !== undefined) assertValidResearchConfig(data.config)
     const existing = await prisma.bot.findUnique({ where: { id } })
     const updated = await prisma.bot.update({
       where: { id },
