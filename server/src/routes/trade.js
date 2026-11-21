@@ -30,16 +30,26 @@ export default async function tradeRoutes(app, opts) {
   // POST /api/trade - Intent endpoint: enqueue an Execution row only.
   // The worker owns broker submission, retries/reconciliation, and auditing.
   app.post('/', {
+    // Fastify may strip additional properties before the handler sees them.
+    // Reject any client attempt to inject bot/order attribution at the boundary.
+    preValidation: async (request, reply) => {
+      const allowed = new Set(['symbol', 'direction', 'quantity', 'price'])
+      if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body) ||
+          Object.keys(request.body).some((key) => !allowed.has(key))) {
+        return reply.code(400).send({ error: 'Unexpected trade fields', code: 'INVALID_TRADE_FIELDS' })
+      }
+    },
     preHandler: [authenticate],
     schema: {
       body: {
         type: 'object',
+        additionalProperties: false,
         required: ['symbol', 'direction', 'quantity', 'price'],
         properties: {
-          symbol: { type: 'string' },
+          symbol: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9.-]{0,19}$' },
           direction: { type: 'string', enum: ['BUY', 'SELL'] },
           quantity: { type: 'number', minimum: 1 },
-          price: { type: 'number', minimum: 0.01 }
+          price: { type: 'number', exclusiveMinimum: 0 }
         }
       }
     }
@@ -69,6 +79,12 @@ export default async function tradeRoutes(app, opts) {
           return reply.code(403).send({ error: err.message })
         }
         throw err
+      }
+
+      // This product is a paper-only pilot. A global live-trading override
+      // must never permit a manual order through this legacy endpoint.
+      if (creds.paper !== true) {
+        return reply.code(403).send({ error: 'Paper trading account required', code: 'PAPER_ONLY' })
       }
 
       const clock = await fetchAlpacaMarketClock(creds)
@@ -219,4 +235,3 @@ export default async function tradeRoutes(app, opts) {
     }
   })
 }
-

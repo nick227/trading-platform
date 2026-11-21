@@ -1,6 +1,8 @@
 // Cache Core - LRU implementation and basic operations
 // Separated for better modularity and testing
 
+import { recordEviction } from './cacheMetrics.js'
+
 // Performance timing with fallback for server-side/SSR
 export const getPerformanceNow = () => {
   if (typeof performance !== 'undefined' && performance.now) {
@@ -32,19 +34,12 @@ export class LRUCache {
   _evictLRU() {
     if (this.cache.size >= this.maxSize) {
       // Find least recently used key
-      let oldestKey = null
-      let oldestTime = Date.now()
+      const oldestKey = this.accessOrder.keys().next().value
       
-      for (const [key, time] of this.accessOrder) {
-        if (time < oldestTime) {
-          oldestTime = time
-          oldestKey = key
-        }
-      }
-      
-      if (oldestKey) {
+      if (oldestKey !== undefined) {
         this.cache.delete(oldestKey)
         this.accessOrder.delete(oldestKey)
+        recordEviction()
         return true
       }
     }
@@ -52,7 +47,9 @@ export class LRUCache {
   }
 
   set(key, value, ttl = 5 * 60_000) {
-    this._evictLRU()
+    if (!this.cache.has(key)) {
+      this._evictLRU()
+    }
     
     const item = {
       data: value,

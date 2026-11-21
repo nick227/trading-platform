@@ -1,17 +1,16 @@
 import portfoliosService from '../services/portfoliosService.js'
 import { authenticate } from '../middleware/authenticate.js'
-import { STUB_USER_ID } from '../utils/auth.js'
 
 export default async function portfoliosRoutes(app) {
-  // GET /api/portfolios/default — returns or creates the user's portfolio.
-  // Requires auth when cookie is present; falls back to stub for legacy unauthenticated calls.
+  // Enforce authentication across all portfolio endpoints
+  app.addHook('preHandler', authenticate)
+
+  // GET /api/portfolios/default — returns or creates the authenticated user's portfolio.
   app.get('/default', async (request, reply) => {
-    // Attempt JWT auth — tolerate failure for unauthenticated callers
-    let userId = STUB_USER_ID
-    try {
-      await request.jwtVerify()
-      userId = request.user?.sub ?? STUB_USER_ID
-    } catch { /* unauthenticated — fall back to stub */ }
+    const userId = request.user?.id
+    if (!userId) {
+      return reply.code(401).send({ error: 'User authentication required' })
+    }
 
     const result = await portfoliosService.getPortfolios({ userId, limit: 1 })
     const existing = result.data?.[0]
@@ -21,40 +20,55 @@ export default async function portfoliosRoutes(app) {
     return reply.code(201).send({ data: created })
   })
 
-  // GET /api/portfolios
+  // GET /api/portfolios — returns portfolios belonging strictly to the authenticated user.
   app.get('/', async (request, reply) => {
-    const result = await portfoliosService.getPortfolios(request.query)
+    const userId = request.user?.id
+    if (!userId) {
+      return reply.code(401).send({ error: 'User authentication required' })
+    }
+
+    const result = await portfoliosService.getPortfolios({
+      ...request.query,
+      userId
+    })
     return reply.send(result)
   })
 
-  // GET /api/portfolios/:id
+  // GET /api/portfolios/:id — verifies user ownership
   app.get('/:id', async (request, reply) => {
     const { id } = request.params
     const portfolio = await portfoliosService.getPortfolio(id)
-    if (!portfolio) {
+    if (!portfolio || portfolio.userId !== request.user.id) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Portfolio not found' } })
     }
     return { data: portfolio }
   })
 
-  // POST /api/portfolios
+  // POST /api/portfolios — creates portfolio for authenticated user
   app.post('/', {
     schema: {
       body: {
         type: 'object',
         required: ['name'],
         properties: {
-          name: { type: 'string', minLength: 1 },
-          userId: { type: 'string' }
+          name: { type: 'string', minLength: 1 }
         }
       }
     }
   }, async (request, reply) => {
-    const portfolio = await portfoliosService.createPortfolio(request.body)
+    const userId = request.user?.id
+    if (!userId) {
+      return reply.code(401).send({ error: 'User authentication required' })
+    }
+
+    const portfolio = await portfoliosService.createPortfolio({
+      name: request.body.name,
+      userId
+    })
     return reply.code(201).send({ data: portfolio })
   })
 
-  // PUT /api/portfolios/:id
+  // PUT /api/portfolios/:id — verifies ownership before updating
   app.put('/:id', {
     schema: {
       body: {
@@ -66,6 +80,11 @@ export default async function portfoliosRoutes(app) {
     }
   }, async (request, reply) => {
     const { id } = request.params
+    const existing = await portfoliosService.getPortfolio(id)
+    if (!existing || existing.userId !== request.user.id) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Portfolio not found' } })
+    }
+
     try {
       const portfolio = await portfoliosService.updatePortfolio(id, request.body)
       return { data: portfolio }
@@ -77,9 +96,14 @@ export default async function portfoliosRoutes(app) {
     }
   })
 
-  // DELETE /api/portfolios/:id
+  // DELETE /api/portfolios/:id — verifies ownership before deleting
   app.delete('/:id', async (request, reply) => {
     const { id } = request.params
+    const existing = await portfoliosService.getPortfolio(id)
+    if (!existing || existing.userId !== request.user.id) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Portfolio not found' } })
+    }
+
     try {
       await portfoliosService.deletePortfolio(id)
       return reply.code(204).send()

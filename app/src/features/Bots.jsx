@@ -193,9 +193,9 @@ export default function Bots() {
             <h2 className="panel-title">Quick Actions</h2>
             <button
               className="btn btn-sm btn-primary"
-              onClick={() => navigate('/templates')}
+              onClick={() => navigate('/bots/new')}
             >
-              Browse Templates
+              Add bot
             </button>
           </div>
 
@@ -207,7 +207,7 @@ export default function Bots() {
               </div>
               <button
                 className="btn btn-sm btn-primary"
-                onClick={() => navigate('/bots/create')}
+                onClick={() => navigate('/bots/new')}
               >
                 Create New Bot
               </button>

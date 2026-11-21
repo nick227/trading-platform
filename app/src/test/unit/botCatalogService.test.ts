@@ -13,10 +13,12 @@ import {
 import { mockBots, mockTemplates, mockBotEvents, mockBotRules } from '../fixtures/botFixtures'
 
 // Mock the API client
-const mockGet = vi.fn()
-const mockPost = vi.fn()
-const mockPut = vi.fn()
-const mockDel = vi.fn()
+const { mockGet, mockPost, mockPut, mockDel } = vi.hoisted(() => ({
+  mockGet: vi.fn(),
+  mockPost: vi.fn(),
+  mockPut: vi.fn(),
+  mockDel: vi.fn()
+}))
 
 vi.mock('../../api/client', () => ({
   get: mockGet,
@@ -60,7 +62,7 @@ describe('Bot Catalog Service', () => {
 
       const result = await getBots()
 
-      expect(mockGet).toHaveBeenCalledWith('/api/bots')
+      expect(mockGet).toHaveBeenCalledWith('/bots')
       expect(result).toEqual(mockBots)
     })
 
@@ -69,7 +71,7 @@ describe('Bot Catalog Service', () => {
       mockGet.mockRejectedValue(error)
 
       await expect(getBots()).rejects.toThrow('API Error')
-      expect(mockGet).toHaveBeenCalledWith('/api/bots')
+      expect(mockGet).toHaveBeenCalledWith('/bots')
     })
   })
 
@@ -81,7 +83,7 @@ describe('Bot Catalog Service', () => {
 
       const result = await getBotById(botId)
 
-      expect(mockGet).toHaveBeenCalledWith(`/api/bots/${botId}`)
+      expect(mockGet).toHaveBeenCalledWith(`/bots/${botId}`)
       expect(result).toEqual(expectedBot)
     })
 
@@ -90,7 +92,7 @@ describe('Bot Catalog Service', () => {
       mockGet.mockRejectedValue(new Error('Bot not found'))
 
       await expect(getBotById(botId)).rejects.toThrow('Bot not found')
-      expect(mockGet).toHaveBeenCalledWith(`/api/bots/${botId}`)
+      expect(mockGet).toHaveBeenCalledWith(`/bots/${botId}`)
     })
   })
 
@@ -103,7 +105,7 @@ describe('Bot Catalog Service', () => {
 
       const result = await updateBot(botId, updateData)
 
-      expect(mockPut).toHaveBeenCalledWith(`/api/bots/${botId}`, updateData)
+      expect(mockPut).toHaveBeenCalledWith(`/bots/${botId}`, updateData)
       expect(result).toEqual(updatedBot)
     })
 
@@ -113,7 +115,7 @@ describe('Bot Catalog Service', () => {
       mockPut.mockRejectedValue(new Error('Update failed'))
 
       await expect(updateBot(botId, updateData)).rejects.toThrow('Update failed')
-      expect(mockPut).toHaveBeenCalledWith(`/api/bots/${botId}`, updateData)
+      expect(mockPut).toHaveBeenCalledWith(`/bots/${botId}`, updateData)
     })
   })
 
@@ -124,7 +126,7 @@ describe('Bot Catalog Service', () => {
 
       const result = await deleteBot(botId)
 
-      expect(mockDel).toHaveBeenCalledWith(`/api/bots/${botId}`)
+      expect(mockDel).toHaveBeenCalledWith(`/bots/${botId}`)
       expect(result).toEqual({ success: true })
     })
 
@@ -133,7 +135,7 @@ describe('Bot Catalog Service', () => {
       mockDel.mockRejectedValue(new Error('Delete failed'))
 
       await expect(deleteBot(botId)).rejects.toThrow('Delete failed')
-      expect(mockDel).toHaveBeenCalledWith(`/api/bots/${botId}`)
+      expect(mockDel).toHaveBeenCalledWith(`/bots/${botId}`)
     })
   })
 
@@ -144,7 +146,7 @@ describe('Bot Catalog Service', () => {
 
       const result = await getBotEvents(botId)
 
-      expect(mockGet).toHaveBeenCalledWith(`/api/bots/${botId}/events`)
+      expect(mockGet).toHaveBeenCalledWith(`/bots/${botId}/events`)
       expect(result).toEqual(mockBotEvents)
     })
 
@@ -169,7 +171,7 @@ describe('Bot Catalog Service', () => {
 
       const result = await getBotRules(botId)
 
-      expect(mockGet).toHaveBeenCalledWith(`/api/bots/${botId}/rules`)
+      expect(mockGet).toHaveBeenCalledWith(`/bots/${botId}/rules`)
       expect(result).toEqual(mockBotRules)
     })
 
@@ -200,7 +202,7 @@ describe('Bot Catalog Service', () => {
 
       const result = await createBotFromTemplate(templateId, config)
 
-      expect(mockPost).toHaveBeenCalledWith('/api/bots/catalog/from-template', {
+      expect(mockPost).toHaveBeenCalledWith('/bots/catalog/from-template', {
         templateId,
         portfolioId: config.portfolioId,
         name: config.name,
@@ -231,7 +233,7 @@ describe('Bot Catalog Service', () => {
 
       const result = await createStrategyBot(strategyId, config)
 
-      expect(mockPost).toHaveBeenCalledWith('/api/bots/strategy-based', {
+      expect(mockPost).toHaveBeenCalledWith('/bots/strategy-based', {
         strategyId,
         portfolioId: config.portfolioId,
         name: config.name,

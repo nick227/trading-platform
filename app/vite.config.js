@@ -113,7 +113,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3001',
+        // Also used by `vite preview` (preview.proxy defaults to server.proxy).
+        // On Railway: API_PROXY_TARGET=http://<api private domain>:<port>.
+        target: process.env.API_PROXY_TARGET || 'http://127.0.0.1:3001',
         changeOrigin: true
       }
     },
@@ -126,7 +128,12 @@ export default defineConfig({
   // Preview server configuration
   preview: {
     port: 4173,
-    host: true
+    host: true,
+    // Comma-separated hosts accepted by `vite preview` (e.g. on Railway:
+    // ".up.railway.app,healthcheck.railway.app"). Unset = Vite's default (localhost only).
+    allowedHosts: process.env.VITE_PREVIEW_ALLOWED_HOSTS
+      ? process.env.VITE_PREVIEW_ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean)
+      : undefined
   },
   
   // Test configuration

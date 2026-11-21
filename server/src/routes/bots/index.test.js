@@ -62,6 +62,15 @@ vi.mock('../../middleware/authenticate.js', () => ({
   })
 }))
 
+vi.mock('../../services/alpacaClockService.js', () => ({
+  getUserAlpacaCredentialsOrThrow: vi.fn().mockResolvedValue({
+    apiKey: 'test-key',
+    apiSecret: 'test-secret',
+    paper: true,
+    baseUrl: 'https://paper-api.alpaca.markets'
+  })
+}))
+
 vi.mock('../../services/botsService.js', () => ({
   default: {
     getBots: vi.fn().mockResolvedValue({
@@ -85,6 +94,16 @@ vi.mock('../../services/botsService.js', () => ({
 
 vi.mock('../../loaders/prisma.js', () => ({
   default: {
+    brokerAccount: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: 'bro_test123',
+        userId: 'usr_test123',
+        apiKey: 'test_key',
+        apiSecret: 'test_secret',
+        paper: true,
+        status: 'active'
+      })
+    },
     portfolio: {
       findUnique: vi.fn().mockResolvedValue(mockPortfolio)
     },
@@ -246,8 +265,8 @@ describe('GET /api/bots/catalog', () => {
   it('returns all templates', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/bots/catalog' })
     expect(res.statusCode).toBe(200)
-    expect(res.json().data).toHaveLength(1)
-    expect(res.json().data[0].id).toBe('tpl_test123')
+    expect(res.json().data.ruleBased).toHaveLength(1)
+    expect(res.json().data.ruleBased[0].id).toBe('tpl_test123')
   })
 })
 
@@ -343,45 +362,29 @@ describe('GET /api/bots/:id/events', () => {
 })
 
 describe('POST /api/bots/:id/events', () => {
-  it('creates an event and returns 201', async () => {
+  it('rejects client-authored system events, including research decision metadata', async () => {
     const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_test123/events',
+      method: 'POST', url: '/api/bots/bot_test123/events',
       payload: {
-        botId: 'bot_test123',
-        portfolioId: 'por_test123',
-        type: 'rule_triggered',
-        detail: 'Rule fired'
+        botId: 'bot_test123', portfolioId: 'por_test123',
+        type: 'decision_made', detail: 'Approved paper order',
+        metadata: { decision: 'accepted', researchIntegrity: { verifiedAtCapture: true } }
       }
     })
-    expect(res.statusCode).toBe(201)
-    expect(res.json().data.id).toBe('evt_test123')
+    expect(res.statusCode).toBe(403)
+    expect(res.json().error.code).toBe('SYSTEM_EVENTS_READ_ONLY')
+    const botsService = (await import('../../services/botsService.js')).default
+    expect(botsService.createBotEvent).not.toHaveBeenCalled()
   })
 
-  it('returns 404 when bot not found', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.bot.findFirst).mockResolvedValueOnce(null)
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_missing/events',
-      payload: {
-        botId: 'bot_missing',
-        portfolioId: 'por_test123',
-        type: 'rule_triggered',
-        detail: 'Rule fired'
-      }
-    })
-    expect(res.statusCode).toBe(404)
-  })
-
-  it('returns 400 when required fields are missing', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_test123/events',
-      payload: { botId: 'bot_test123' }
-    })
-    expect(res.statusCode).toBe(400)
+  it('rejects forged order and risk events', async () => {
+    for (const type of ['execution_created', 'execution_blocked_by_risk', 'rule_triggered']) {
+      const res = await app.inject({
+        method: 'POST', url: '/api/bots/bot_test123/events',
+        payload: { portfolioId: 'por_test123', type, detail: 'Forged' }
+      })
+      expect(res.statusCode).toBe(403)
+    }
   })
 })
 

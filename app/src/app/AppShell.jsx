@@ -1,20 +1,16 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import Nav from '../components/Nav'
 import Landing from '../features/Landing'
+import HomeDashboard from '../features/home/HomeDashboard'
+import Welcome from '../features/home/Welcome'
+import NewBotWizard from '../features/bots/new/NewBotWizard'
 import Asset from '../features/Asset'
 import Bots from '../features/Bots'
-import BotCreate from '../features/BotCreate'
-import RuleBasedBotSetup from '../features/RuleBasedBotSetup'
-import StrategyBasedBotSetup from '../features/StrategyBasedBotSetup'
-import BotDetails from '../features/BotDetails'
-import BotHistory from '../features/BotHistory'
+import BotDashboard from '../features/bots/detail/BotDashboard'
 import StrategyHistory from '../features/StrategyHistory'
-import Templates from '../features/Templates'
-import TemplateDetails from '../features/TemplateDetails'
 import AlphaShowcase from '../features/AlphaShowcase'
 import Opportunities from '../features/Opportunities'
-import BotConfirm from '../features/BotConfirm'
 import OrderConfirm from '../features/OrderConfirm'
 import Profile from '../features/Profile'
 import AccountTab from '../features/profile/AccountTab'
@@ -32,11 +28,24 @@ import pageTitleService from '../services/pageTitleService'
 const Portfolio = lazy(() => import('../features/Portfolio'))
 const AssetsIndex = lazy(() => import('../features/AssetsIndex'))
 const Orders = lazy(() => import('../features/Orders'))
+const TradeHistory = lazy(() => import('../features/history/TradeHistory'))
 
 /** Redirects logged-in users away from auth pages. */
 function AuthScreen() {
   const { user } = useAuth()
   return user ? <Navigate to="/" replace /> : <Auth />
+}
+
+function BotHistoryRedirect() {
+  const { botId } = useParams()
+  return <Navigate to={`/bots/${encodeURIComponent(botId)}`} replace />
+}
+
+/** "/" — bots-first Home for signed-in users, a short welcome otherwise. */
+function HomeRoute() {
+  const { user, sessionLoading } = useAuth()
+  if (sessionLoading) return <PageSkeleton />
+  return user ? <HomeDashboard /> : <Welcome />
 }
 
 /** Redirects unauthenticated users to /auth while session resolves. */
@@ -55,9 +64,11 @@ function AppLayout() {
       '/portfolio': 'Portfolio',
       '/assets': 'Assets',
       '/bots': 'Bots',
-      '/templates': 'Templates',
+      '/bots/new': 'New bot',
       '/orders': 'Orders',
-      '/profile': 'Profile',
+      '/history': 'Trade History',
+      '/profile': 'Account',
+      '/research': 'Research',
       '/opportunities': 'Opportunities',
       '/ops': 'Operations',
       '/auth': 'Authentication',
@@ -87,7 +98,9 @@ export function AppShell() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<HomeRoute />} />
+        {/* Former Landing dashboard; secondary research surface (see TRADELOOM_CONSUMER_UX_PLAN.md M6). */}
+        <Route path="/research" element={<Protected><Landing /></Protected>} />
         <Route
           path="/portfolio"
           element={
@@ -110,21 +123,34 @@ export function AppShell() {
         />
         <Route path="/assets/:ticker" element={<Protected><Asset /></Protected>} />
         <Route path="/bots" element={<Protected><Bots /></Protected>} />
-        <Route path="/bots/create" element={<Protected><BotCreate /></Protected>} />
-        <Route path="/bots/create/rule-based" element={<Protected><RuleBasedBotSetup /></Protected>} />
-        <Route path="/bots/create/strategy-based" element={<Protected><StrategyBasedBotSetup /></Protected>} />
-        <Route path="/bots/confirm" element={<Protected><BotConfirm /></Protected>} />
-        <Route path="/bots/:botId" element={<Protected><BotDetails /></Protected>} />
-        <Route path="/bots/:botId/history" element={<Protected><BotHistory /></Protected>} />
+        {/* One bot-creation flow. Former creation paths redirect here. */}
+        <Route path="/bots/new" element={<Protected><NewBotWizard /></Protected>} />
+        <Route path="/bots/create" element={<Navigate to="/bots/new" replace />} />
+        <Route path="/bots/create/rule-based" element={<Navigate to="/bots/new" replace />} />
+        <Route path="/bots/create/strategy-based" element={<Navigate to="/bots/new" replace />} />
+        <Route path="/bots/confirm" element={<Navigate to="/bots/new" replace />} />
+        <Route path="/bots/:botId" element={<Protected><BotDashboard /></Protected>} />
+        {/* Former mock-data history page; the bot page timeline replaces it. */}
+        <Route path="/bots/:botId/history" element={<BotHistoryRedirect />} />
         <Route path="/strategies/:templateId/history" element={<Protected><StrategyHistory /></Protected>} />
-        <Route path="/templates" element={<Protected><Templates /></Protected>} />
-        <Route path="/templates/:templateSlug" element={<Protected><TemplateDetails /></Protected>} />
+        <Route path="/templates" element={<Navigate to="/bots/new" replace />} />
+        <Route path="/templates/:templateSlug" element={<Navigate to="/bots/new" replace />} />
         <Route
           path="/orders"
           element={
             <Protected>
               <Suspense fallback={<PageSkeleton />}>
                 <Orders />
+              </Suspense>
+            </Protected>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <Protected>
+              <Suspense fallback={<PageSkeleton />}>
+                <TradeHistory />
               </Suspense>
             </Protected>
           }

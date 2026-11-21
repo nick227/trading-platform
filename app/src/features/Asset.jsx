@@ -84,6 +84,7 @@ function fmtAsOf(value) {
 }
 
 function normalizeConfidence(value) {
+  if (value == null || value === '') return null
   const num = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(num)) return null
   if (num <= 1) return Math.round(num * 100)
@@ -307,7 +308,7 @@ export default function Asset() {
   const rec = recommendation?.recommendation ?? recommendation
   const recConfidence = normalizeConfidence(rec?.confidence)
   const recEntry = Array.isArray(rec?.entryZone) ? `${rec.entryZone[0]} – ${rec.entryZone[1]}` : rec?.entryZone
-  const recThesis = Array.isArray(rec?.thesis) ? rec.thesis : typeof rec?.thesis === 'string' ? [rec.thesis] : []
+  const recThesis = Array.isArray(rec?.explanations) ? rec.explanations : Array.isArray(rec?.thesis) ? rec.thesis : typeof rec?.thesis === 'string' ? [rec.thesis] : []
   const recAvoidIf = Array.isArray(rec?.avoidIf) ? rec.avoidIf : typeof rec?.avoidIf === 'string' ? [rec.avoidIf] : []
   const recAsOf = fmtAsOf(rec?.asOf ?? rec?.as_of ?? recommendation?.asOf ?? recommendation?.as_of)
 
@@ -683,7 +684,7 @@ export default function Asset() {
 
                 {recThesis.length ? (
                   <div>
-                    <div className="eyebrow mb-0">Thesis</div>
+                    <div className="eyebrow mb-0">Explanation</div>
                     <ul className="list mt-2">
                       {recThesis.slice(0, 6).map((t, idx) => <li key={idx}>{t}</li>)}
                     </ul>
@@ -776,7 +777,7 @@ export default function Asset() {
 
                 {recThesis.length ? (
                   <div>
-                    <div className="eyebrow mb-0">Thesis</div>
+                    <div className="eyebrow mb-0">Explanation</div>
                     <ul className="list mt-2">
                       {recThesis.slice(0, 6).map((t, idx) => <li key={idx}>{t}</li>)}
                     </ul>
@@ -841,7 +842,7 @@ export default function Asset() {
 
                 {recThesis.length ? (
                   <div>
-                    <div className="eyebrow mb-0">Thesis</div>
+                    <div className="eyebrow mb-0">Explanation</div>
                     <ul className="list mt-2">
                       {recThesis.map((t, idx) => <li key={idx}>{t}</li>)}
                     </ul>

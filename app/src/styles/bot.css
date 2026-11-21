@@ -1,0 +1,304 @@
+/* Bot dashboard, activity timeline, sheet */
+
+.bot-page {
+  max-width: var(--container-content);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-3) var(--space-7);
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.bot-header {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.bot-header-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.bot-title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.bot-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.bot-status--running { color: var(--color-positive); border-color: color-mix(in srgb, var(--color-positive), white 60%); background: color-mix(in srgb, var(--color-positive), white 92%); }
+.bot-status--paused  { color: var(--color-muted); }
+.bot-status--stopped { color: var(--color-text); background: var(--color-surface-soft); }
+.bot-status--error   { color: var(--color-negative); border-color: color-mix(in srgb, var(--color-negative), white 60%); background: color-mix(in srgb, var(--color-negative), white 92%); }
+
+.bot-summary {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 760px) {
+  .bot-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.bot-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-2);
+}
+
+.bot-facts dt {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.bot-facts dd {
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.bot-big {
+  font-size: var(--text-lg);
+}
+
+.bot-advanced summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-semibold);
+}
+
+.bot-config {
+  max-height: 240px;
+  overflow: auto;
+  font-size: var(--text-xs);
+  background: var(--color-surface-soft);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bot-skeleton { min-height: 280px; }
+
+.btn-danger {
+  background: var(--color-negative);
+  color: var(--color-text-inverse);
+  border: 0;
+}
+
+/* Timeline */
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.timeline-item:last-child { border-bottom: 0; }
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--color-border);
+}
+
+.timeline-item--fill .timeline-dot   { background: var(--color-positive); }
+.timeline-item--order .timeline-dot  { background: var(--color-accent); }
+.timeline-item--signal .timeline-dot { background: var(--color-accent); }
+.timeline-item--risk .timeline-dot   { background: var(--color-warning); }
+.timeline-item--error .timeline-dot  { background: var(--color-negative); }
+.timeline-item--control .timeline-dot { background: var(--color-text); }
+
+.timeline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.timeline-title {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-sm);
+}
+
+.timeline-symbol {
+  margin-left: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.timeline-text {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+}
+
+.timeline-diag {
+  margin-top: var(--space-0_5);
+  font-size: var(--text-xs);
+}
+
+.timeline-diag summary {
+  cursor: pointer;
+  color: var(--color-muted);
+}
+
+.timeline-diag dl {
+  display: grid;
+  gap: 2px;
+  margin: var(--space-0_5) 0 0;
+}
+
+.timeline-diag dl div {
+  display: grid;
+  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr);
+  gap: var(--space-1);
+}
+
+.timeline-diag dt { color: var(--color-muted); }
+.timeline-diag dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Sheet */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.sheet {
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding: var(--space-4) var(--space-3);
+}
+
+@media (min-width: 640px) {
+  .sheet-backdrop { align-items: center; }
+  .sheet {
+    max-width: 480px;
+    border-radius: var(--radius-xl);
+    padding: var(--space-5);
+  }
+}
+
+.sheet-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.sheet-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+}
+
+/* Home bot card (M3) */
+.home-bot-link {
+  display: grid;
+  gap: var(--space-0_5);
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.home-bot-link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-md);
+}
+
+.home-bot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.home-bot-last {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-bot-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+/* ── Shared fixes found in phone layout check ─────────────────────────── */
+
+/* Links styled as buttons never show an underline. */
+a.btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.home { gap: var(--space-3); }
+
+.home-activity a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-activity a:hover { text-decoration: underline; }
+
+.bot-facts dd.muted { font-weight: var(--font-weight-regular); }
+
+.mode-badge-short { display: none; }
+
+@media (max-width: 768px) {
+  .nav-inner {
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+  }
+
+  .nav-inner .logo-text { font-size: 22px; }
+  .nav-inner .logo-mark { width: 30px; height: 30px; }
+
+  .mode-badge-full { display: none; }
+  .mode-badge-short { display: inline; }
+
+  .nav-toggle { margin-left: auto; }
+
+  /* Full-width panel below the bar; explicit height because .nav's
+     backdrop-filter makes it the containing block for fixed children. */
+  .nav-menu {
+    width: auto;
+    bottom: auto;
+    height: calc(100dvh - 72px);
+  }
+}

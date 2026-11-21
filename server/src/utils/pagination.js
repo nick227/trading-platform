@@ -7,8 +7,9 @@ export function buildOffsetPagination(query) {
 }
 
 export function buildExecutionWhere(query) {
-  const { portfolioId, strategyId, botId, ticker, direction, status, dateFrom, dateTo, after } = query
+  const { userId, portfolioId, strategyId, botId, ticker, direction, status, dateFrom, dateTo, after } = query
   const where = {}
+  if (userId) where.userId = userId
   if (portfolioId) where.portfolioId = portfolioId
   if (strategyId) where.strategyId = strategyId
   if (botId) where.botId = botId

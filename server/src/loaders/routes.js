@@ -17,6 +17,7 @@ import botRoutes from '../routes/bots/index.js'
 import riskRoutes from '../routes/risk.js'
 import metricsRoutes from '../routes/metrics.js'
 import { authenticate } from '../middleware/authenticate.js'
+import { engineClient } from '../clients/engine.js'
 
 export default async function registerRoutes(app) {
   await app.register(authRoutes,        { prefix: '/api/auth' })
@@ -45,4 +46,34 @@ export default async function registerRoutes(app) {
   await app.register(ordersRoutes,      { prefix: '/api/orders' })
   await app.register(riskRoutes,        { prefix: '/api/risk' })
   await app.register(metricsRoutes,     { prefix: '/api/metrics' })
+
+  // Direct root regime mapping for UI components calling /api/regime/:symbol
+  app.get('/api/regime/:symbol', async (request, reply) => {
+    try {
+      const data = await engineClient.getRegime(request.params.symbol)
+      return reply.send({ success: true, data })
+    } catch (error) {
+      request.log?.warn?.({ err: error, symbol: request.params.symbol }, 'Failed to fetch regime from engine, returning degraded fallback')
+      return reply.send({
+        success: true,
+        data: {
+          symbol: request.params.symbol,
+          marketRegime: 'UNKNOWN',
+          confidence: 0,
+          isDegraded: true,
+          source: 'fallback'
+        }
+      })
+    }
+  })
+
+  // Direct root tickers alias
+  app.get('/tickers', async (request, reply) => {
+    try {
+      const data = await engineClient.getTickers()
+      return reply.send({ success: true, data })
+    } catch (error) {
+      return reply.code(error.status ?? 500).send({ error: error.message })
+    }
+  })
 }

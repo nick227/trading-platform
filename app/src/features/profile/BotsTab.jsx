@@ -64,7 +64,7 @@ export default function BotsTab() {
         ) : bots.length === 0 ? (
           <div className="text-center py-4">
             <p className="muted mb-2">No bots configured.</p>
-            <Link to="/bots/create" className="btn btn-sm btn-primary">
+            <Link to="/bots/new" className="btn btn-sm btn-primary">
               Create Bot
             </Link>
           </div>

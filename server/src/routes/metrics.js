@@ -1,5 +1,5 @@
 import metricsService from '../services/metricsService.js'
-import { STUB_USER_ID } from '../utils/auth.js'
+import { authenticate } from '../middleware/authenticate.js'
 import prisma from '../loaders/prisma.js'
 
 export default async function metricsRoutes(app, opts) {
@@ -60,9 +60,9 @@ export default async function metricsRoutes(app, opts) {
   })
 
   // GET /api/metrics/portfolio/summary
-  app.get('/portfolio/summary', async (request, reply) => {
+  app.get('/portfolio/summary', { preHandler: [authenticate] }, async (request, reply) => {
     try {
-      const userId = STUB_USER_ID
+      const userId = request.user.id
       console.log('[metrics] Portfolio summary requested for userId:', userId)
 
       // Get user's TradeMetricFacts for portfolio KPIs (canonical source)
@@ -134,9 +134,9 @@ export default async function metricsRoutes(app, opts) {
   })
 
   // GET /api/metrics/portfolio/attribution
-  app.get('/portfolio/attribution', async (request, reply) => {
+  app.get('/portfolio/attribution', { preHandler: [authenticate] }, async (request, reply) => {
     try {
-      const userId = STUB_USER_ID
+      const userId = request.user.id
       const { period = '30d' } = request.query
 
       // Calculate period dates

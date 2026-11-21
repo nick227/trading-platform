@@ -11,25 +11,26 @@ import {
   invalidateNamespace,
   invalidateByPattern,
   cachedFetch,
+  clearPendingRequests,
   getCacheMetrics,
   resetMetrics,
   scheduleRefresh,
+  clearRefreshQueues,
   cacheKeys,
   CACHE_NAMESPACES,
   CACHE_CONFIG
 } from '../sharedCache.js'
 
-// Fake timers for deterministic testing
-let fakeTimers
-
 beforeEach(() => {
-  fakeTimers = vi.useFakeTimers()
+  vi.useFakeTimers()
   resetMetrics()
   globalCache.clear()
+  clearPendingRequests()
+  clearRefreshQueues()
 })
 
 afterEach(() => {
-  fakeTimers.useRealTimers()
+  vi.useRealTimers()
 })
 
 describe('Cache Core Functionality', () => {
@@ -53,7 +54,7 @@ describe('Cache Core Functionality', () => {
     expect(getCacheItem(key)).toEqual(data)
     
     // Should expire after TTL
-    fakeTimers.advanceTimeByTime(1100)
+    vi.advanceTimersByTime(1100)
     expect(getCacheItem(key)).toBeNull()
   })
 
@@ -156,7 +157,7 @@ describe('Request Deduplication', () => {
       cachedFetch('TEST', key, fetchFn, 60000)
     ]
     
-    fakeTimers.advanceTimeByTime(150)
+    await vi.advanceTimersByTimeAsync(150)
     
     const results = await Promise.all(promises)
     
@@ -205,11 +206,13 @@ describe('Stale-While-Revalidate', () => {
     const key = cacheKeys.market.quote('AAPL')
     
     // Initial fetch
-    const result1 = await cachedFetch('TEST', key, fetchFn, 1000, { allowStale: true })
+    const p1 = cachedFetch('TEST', key, fetchFn, 1000, { allowStale: true })
+    await vi.advanceTimersByTimeAsync(50)
+    const result1 = await p1
     expect(result1.data).toBe('fresh-1')
     
     // Wait for expiry
-    fakeTimers.advanceTimeByTime(1100)
+    await vi.advanceTimersByTimeAsync(1100)
     
     // Should serve stale data while revalidating
     const result2 = await cachedFetch('TEST', key, fetchFn, 1000, { allowStale: true })
@@ -218,12 +221,12 @@ describe('Stale-While-Revalidate', () => {
     expect(result2._source).toBe('cache')
     
     // Wait for background refresh
-    fakeTimers.advanceTimeByTime(100)
+    await vi.advanceTimersByTimeAsync(100)
     
     // Next request should get fresh data
     const result3 = await cachedFetch('TEST', key, fetchFn, 1000, { allowStale: true })
     expect(result3.data).toBe('fresh-2') // Fresh data
-    expect(result3._cached).toBe(false)
+    expect(result3._cached).toBe(true)
   })
 
   it('should not serve stale data when not allowed', async () => {
@@ -237,7 +240,7 @@ describe('Stale-While-Revalidate', () => {
     await cachedFetch('TEST', key, fetchFn, 1000)
     
     // Wait for expiry
-    fakeTimers.advanceTimeByTime(1100)
+    await vi.advanceTimersByTimeAsync(1100)
     
     // Should not serve stale data when allowStale is false
     const result = await cachedFetch('TEST', key, fetchFn, 1000, { allowStale: false })
@@ -255,11 +258,14 @@ describe('Refresh Batching', () => {
       cacheKeys.orders.executions()
     ]
     
+    // Seed items so we can observe invalidation
+    keys.forEach(key => setCacheItem(key, { seeded: true }, 60000))
+    
     // Schedule refresh for all keys
     keys.forEach(key => scheduleRefresh([key], 'high'))
     
     // Advance time to trigger first batch
-    fakeTimers.advanceTimeByTime(150)
+    await vi.advanceTimersByTimeAsync(150)
     
     // Should have processed first batch of 3 keys
     expect(getCacheItem(keys[0])).toBeNull() // Should be invalidated
@@ -267,7 +273,7 @@ describe('Refresh Batching', () => {
     expect(getCacheItem(keys[2])).toBeNull()
     
     // Fourth key should be in next batch
-    fakeTimers.advanceTimeByTime(100)
+    await vi.advanceTimersByTimeAsync(100)
     expect(getCacheItem(keys[3])).toBeNull()
   })
 
@@ -275,17 +281,21 @@ describe('Refresh Batching', () => {
     const highKeys = [cacheKeys.portfolio.holdings()]
     const normalKeys = [cacheKeys.market.quote('AAPL')]
     
+    // Seed items so we can observe invalidation
+    setCacheItem(highKeys[0], { seeded: true }, 60000)
+    setCacheItem(normalKeys[0], { seeded: true }, 60000)
+    
     // Schedule with different priorities
     scheduleRefresh(highKeys, 'high')
     scheduleRefresh(normalKeys, 'normal')
     
     // High priority should process first
-    fakeTimers.advanceTimeByTime(150)
+    await vi.advanceTimersByTimeAsync(150)
     expect(getCacheItem(highKeys[0])).toBeNull()
     expect(getCacheItem(normalKeys[0])).not.toBeNull() // Not yet processed
     
     // Normal priority should process after delay
-    fakeTimers.advanceTimeByTime(100)
+    await vi.advanceTimersByTimeAsync(100)
     expect(getCacheItem(normalKeys[0])).toBeNull()
   })
 })

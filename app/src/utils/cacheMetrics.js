@@ -12,7 +12,10 @@ export const metrics = {
   evictions: 0,
   totalRequests: 0,
   avgLatency: 0,
-  get hitRate() { return this.totalRequests > 0 ? (this.hits / this.totalRequests) * 100 : 0 }
+  get hitRate() {
+    const lookups = this.hits + this.misses
+    return lookups > 0 ? (this.hits / lookups) * 100 : 0
+  }
 }
 
 export function recordHit() {

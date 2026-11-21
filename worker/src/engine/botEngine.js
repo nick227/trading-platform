@@ -207,29 +207,26 @@ async function evaluateBot(bot, ticker) {
   // Handle different bot types
   let evaluationResult
 
-  if (bot.botType === 'rule_based' && bot.templateId) {
-    // Execute predefined rule-based strategy
-    try {
-      evaluationResult = await executeRuleBasedStrategy(bot, tick, context)
-    } catch (error) {
-      log.error({ err: error.message, botId: bot.id, ticker }, 'strategy_error')
-      await logBotEvent(bot, 'strategy_error', `Rule-based strategy failed: ${error.message}`, ticker)
-      return
-    }
-  } else if (bot.botType === 'strategy_based' && bot.strategyId) {
-    // Execute predefined strategy-based algorithm
-    try {
-      evaluationResult = await executeStrategyBasedAlgorithm(bot, tick, context)
-    } catch (error) {
-      log.error({ err: error.message, botId: bot.id, ticker }, 'strategy_error')
-      await logBotEvent(bot, 'strategy_error', `Strategy-based algorithm failed: ${error.message}`, ticker)
-      return
-    }
-  } else {
-    // Fall back to traditional rule evaluation for custom bots
-    const hasTrendFilter = bot._hasTrendFilter
-    side = hasTrendFilter ? null : deriveDirection(bot)
+  if (bot.botType === 'rule_based') {
+    side = deriveDirection(bot)
     context.side = side
+
+    // Require an explicit, valid trading direction before proceeding
+    // Priority 1 requirement: Never default an absent trading direction to 'buy'
+    if (!side || (side !== 'buy' && side !== 'sell')) {
+      await logBotEvent(bot, 'execution_skipped', `Cannot determine valid trading direction for ${ticker}`, ticker, {
+        reason: 'missing_direction',
+        side
+      })
+      return
+    }
+
+    if (!bot.rules || bot.rules.length === 0) {
+      await logBotEvent(bot, 'execution_skipped', `Bot has no configured rules`, ticker, {
+        reason: 'no_rules_configured'
+      })
+      return
+    }
 
     // Run rule pipeline - first failure short-circuits
     for (const rule of bot.rules) {
@@ -239,18 +236,36 @@ async function evaluateBot(bot, ticker) {
 
       const result = await evaluateRule(rule, bot, ticker, positions ?? [], { side })
       if (!result.pass) {
-        await maybeLogRuleBlock(bot, ticker, side ?? 'buy', rule, result)
+        await maybeLogRuleBlock(bot, ticker, side, rule, result)
         return
       }
     }
 
     // If we get here, all rules passed - continue with execution
-    evaluationResult = { signal: side || 'buy', confidence: 0.8, reason: 'All custom rules passed' }
+    evaluationResult = { signal: side, confidence: 0.8, reason: 'All configured rules passed' }
+    await logBotEvent(bot, 'decision_made', `Signal generated: ${side} for ${ticker}`, ticker, {
+      signal: side,
+      confidence: 0.8,
+      reason: evaluationResult.reason
+    })
+  } else if (bot.botType === 'strategy_based') {
+    await logBotEvent(bot, 'execution_skipped', `Strategy-based algorithms are not yet supported for bot ${bot.id}`, ticker, {
+      reason: 'strategy_based_unsupported',
+      strategyId: bot.strategyId
+    })
+    return
+  } else {
+    await logBotEvent(bot, 'execution_skipped', `Unknown bot type: ${bot.botType}`, ticker, {
+      reason: 'unknown_bot_type',
+      botType: bot.botType
+    })
+    return
   }
 
   // Process evaluation result
   if (evaluationResult.signal === 'hold') {
-    await logBotEvent(bot, 'signal_hold', evaluationResult.reason || 'No trading signal', ticker, {
+    await logBotEvent(bot, 'decision_made', evaluationResult.reason || 'No trading signal', ticker, {
+      signal: 'hold',
       confidence: evaluationResult.confidence || 0,
       metadata: evaluationResult.metadata
     })
@@ -283,8 +298,27 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   const { signal, confidence, reason, metadata } = evaluationResult
   const { currentQty } = context
 
-  const executionId = `exe_${Date.now()}_${randomUUID().slice(0, 8)}`
+  // Enforce valid user and portfolio context
+  if (!bot.userId || !bot.portfolioId) {
+    await logBotEvent(bot, 'execution_skipped', `Bot missing user or portfolio context for ${ticker}`, ticker, {
+      reason: 'missing_user_context',
+      userId: bot.userId,
+      portfolioId: bot.portfolioId
+    })
+    return
+  }
+
+  // Priority 1 requirement: strictly require 'buy' or 'sell'
   const direction = signal
+  if (!direction || (direction !== 'buy' && direction !== 'sell')) {
+    await logBotEvent(bot, 'execution_skipped', `Missing or invalid trading direction for ${ticker}`, ticker, {
+      reason: 'invalid_direction',
+      signal
+    })
+    return
+  }
+
+  const executionId = `exe_${Date.now()}_${randomUUID().slice(0, 8)}`
   const inflightKey = `${bot.id}:${ticker}`
   const activeIntentKey = buildActiveIntentKey(bot.id, ticker, direction)
 
@@ -463,9 +497,11 @@ async function evaluateRule(rule, bot, ticker, positions, ctx = {}) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Derive trade direction from bot config (default to buy for signal bots)
+// Derive trade direction from bot config. Strictly require 'buy' or 'sell'; never default.
 function deriveDirection(bot) {
-  return bot.config?.direction ?? 'buy'
+  const dir = bot.config?.direction
+  if (dir === 'buy' || dir === 'sell') return dir
+  return null
 }
 
 function buildActiveIntentKey(botId, ticker, direction) {
@@ -536,18 +572,20 @@ function getPositionQty(positions, ticker) {
 }
 
 function computeBuyQuantity({ bot, quote }) {
-  const price = Number(quote?.last ?? 0)
+  const price = Number(quote?.last ?? quote?.ask ?? 0)
   if (!Number.isFinite(price) || price <= 0) {
     return 0
   }
 
   // Allocated sizing (Bot #1)
-  const allocated = bot.config?.allocatedAmount
+  const allocated = bot.config?.allocatedAmount ?? bot.config?.capital
   const capitalMode = bot.config?.capitalMode
   if (capitalMode === 'allocated' || allocated != null) {
     const allocatedAmount = Number(allocated ?? 0)
     const riskOnExposure = Number(bot.config?.riskOnExposure ?? 1)
-    const maxOrderNotional = bot.config?.maxOrderNotional != null ? Number(bot.config.maxOrderNotional) : null
+    const maxOrderNotional = bot.config?.maxOrderNotional != null 
+      ? Number(bot.config.maxOrderNotional) 
+      : (bot.config?.maxPerOrder != null ? Number(bot.config.maxPerOrder) : null)
 
     if (!Number.isFinite(allocatedAmount) || allocatedAmount <= 0) return 0
     if (!Number.isFinite(riskOnExposure) || riskOnExposure <= 0) return 0
@@ -568,7 +606,7 @@ function computeBuyQuantity({ bot, quote }) {
 
 async function logBotEvent(bot, type, detail, ticker, metadata = {}) {
   try {
-    await prisma.botEvent.create({
+    return await prisma.botEvent.create({
       data: {
         id:          `evt_${randomUUID()}`,
         botId:       bot.id,
@@ -579,7 +617,8 @@ async function logBotEvent(bot, type, detail, ticker, metadata = {}) {
       }
     })
   } catch (err) {
-    log.error({ err: err.message }, 'bot_event_write_error')
+    log.error({ err: err.message, botId: bot.id, type, ticker }, 'bot_event_write_error')
+    throw err
   }
 }
 

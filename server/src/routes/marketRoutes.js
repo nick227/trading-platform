@@ -24,19 +24,24 @@ export default async function marketRoutes(fastify, opts) {
     return { success: true, data: health }
   }))
 
-  fastify.get('/api/tickers', route(async (request, reply) => {
+  // Handlers registered under both standard paths and /api/* aliases
+  const handleTickers = route(async (request, reply) => {
     const { q = '' } = request.query
     const data = await engineClient.getTickers(q)
     return { success: true, data }
-  }))
+  })
+  fastify.get('/tickers', handleTickers)
+  fastify.get('/api/tickers', handleTickers)
 
-  fastify.get('/api/quote/:symbol', route(async (request, reply) => {
+  const handleQuote = route(async (request, reply) => {
     const { symbol } = request.params
     const data = await engineClient.getQuote(symbol)
     return { success: true, data }
-  }))
+  })
+  fastify.get('/quote/:symbol', handleQuote)
+  fastify.get('/api/quote/:symbol', handleQuote)
 
-  fastify.get('/api/quotes', route(async (request, reply) => {
+  const handleQuotes = route(async (request, reply) => {
     const { symbols } = request.query
     if (!symbols) {
       return reply.code(400).send({ error: 'Symbols query parameter required' })
@@ -65,30 +70,46 @@ export default async function marketRoutes(fastify, opts) {
     })
 
     return { success: true, data: results, count: results.length }
-  }))
+  })
+  fastify.get('/quotes', handleQuotes)
+  fastify.get('/api/quotes', handleQuotes)
 
-  fastify.get('/api/history/:symbol', route(async (request, reply) => {
+  const handleHistory = route(async (request, reply) => {
     const { symbol } = request.params
     const { range = '1Y', interval = '1D' } = request.query
     const data = await engineClient.getHistory(symbol, range, interval)
     return { success: true, data }
-  }))
+  })
+  fastify.get('/history/:symbol', handleHistory)
+  fastify.get('/api/history/:symbol', handleHistory)
 
-  fastify.get('/api/stats/:symbol', route(async (request, reply) => {
+  const handleStats = route(async (request, reply) => {
     const { symbol } = request.params
     const data = await engineClient.getStats(symbol)
     return { success: true, data }
-  }))
+  })
+  fastify.get('/stats/:symbol', handleStats)
+  fastify.get('/api/stats/:symbol', handleStats)
 
-  fastify.get('/api/company/:symbol', route(async (request, reply) => {
+  const handleCompany = route(async (request, reply) => {
     const { symbol } = request.params
     const data = await engineClient.getCompany(symbol)
     return { success: true, data }
-  }))
+  })
+  fastify.get('/company/:symbol', handleCompany)
+  fastify.get('/api/company/:symbol', handleCompany)
 
-  fastify.get('/api/regime/:symbol', route(async (request, reply) => {
+  const handleRegime = route(async (request, reply) => {
     const { symbol } = request.params
     const data = await engineClient.getRegime(symbol)
+    return { success: true, data }
+  })
+  fastify.get('/regime/:symbol', handleRegime)
+  fastify.get('/api/regime/:symbol', handleRegime)
+
+  fastify.get('/ticker/:symbol/explainability', route(async (request, reply) => {
+    const { symbol } = request.params
+    const data = await engineClient.getTickerExplainability(symbol)
     return { success: true, data }
   }))
 
@@ -112,7 +133,7 @@ export default async function marketRoutes(fastify, opts) {
 
   fastify.get('/dashboard/bootstrap', route(async (request, reply) => {
     // Fetch all dashboard data in parallel
-    const [engineData, bots, executions, priceMap] = await Promise.allSettled([
+    const [engineData, bots, executions, priceMap, performanceStats, portfolioSummary] = await Promise.allSettled([
       engineClient.getDashboardData(),
       prisma.bot.findMany({ where: { status: 'running' } }).catch(() => []),
       prisma.execution.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }).catch(() => []),
@@ -120,7 +141,9 @@ export default async function marketRoutes(fastify, opts) {
         const map = {}
         quotes.forEach(q => map[q.ticker] = q)
         return map
-      })
+      }),
+      (prisma.performanceStats?.findFirst ? prisma.performanceStats.findFirst() : Promise.resolve(null)).catch(() => null),
+      (prisma.portfolioSummary?.findFirst ? prisma.portfolioSummary.findFirst() : Promise.resolve(null)).catch(() => null)
     ])
 
     return {
@@ -130,8 +153,8 @@ export default async function marketRoutes(fastify, opts) {
         bots: bots.status === 'fulfilled' ? bots.value : [],
         executions: executions.status === 'fulfilled' ? executions.value : [],
         prices: priceMap.status === 'fulfilled' ? priceMap.value : {},
-        performanceStats: null,
-        portfolioSummary: null,
+        performanceStats: performanceStats.status === 'fulfilled' ? performanceStats.value : null,
+        portfolioSummary: portfolioSummary.status === 'fulfilled' ? portfolioSummary.value : null,
         lastUpdated: new Date().toISOString()
       }
     }

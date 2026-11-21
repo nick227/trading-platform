@@ -267,7 +267,12 @@ async function getDiscoveryFallbackRows({ capNum, mode, targetCount, seen }) {
       action: 'WATCH',
       confidence: null,
       score: null,
-      entryZone: [price, price],
+      entryZone: null,
+      referencePrice: price,
+      actionable: false,
+      successProbability: null,
+      confidenceMethodology: { status: 'unavailable', method: 'not_calibrated' },
+      suppressionReasons: ['RESEARCH_FALLBACK'],
       priceCap: capNum,
       mode,
       asOf: row.quoteUpdatedAt ? new Date(row.quoteUpdatedAt).toISOString() : new Date().toISOString(),
@@ -293,6 +298,13 @@ export const engineClient = {
     } catch (error) {
       return { status: 'unreachable', error: error.message }
     }
+  },
+
+  // Uncached, tenant-specific original Alpha Engine research evidence.
+  async getPredictionTrace(predictionId, tenantId = 'default') {
+    if (!predictionId || typeof predictionId !== 'string') throw new Error('predictionId is required')
+    const params = new URLSearchParams({ tenant_id: tenantId })
+    return engineFetch('/api/predictions/' + encodeURIComponent(predictionId) + '/trace?' + params.toString())
   },
 
   // Rankings endpoints
@@ -676,7 +688,7 @@ export const engineClient = {
         meta: {
           targetCount,
           returnedCount: existing.length,
-          liveOnly: true,
+          liveOnly: normalized.qualityStatus?.status === 'healthy',
           complete: true,
           source: 'engine_native'
         }
@@ -708,12 +720,19 @@ export const engineClient = {
         ticker,
         symbol: ticker,
         action: 'WATCH',
-        confidence: row?.confidence ?? null,
+        confidence: null,
         score: row?.score ?? null,
-        entryZone: [price, price],
+        entryZone: null,
+        referencePrice: price,
+        referencePriceAsOf: row?.asOf ?? row?.timestamp ?? null,
+        actionable: false,
+        successProbability: null,
+        confidenceMethodology: { status: 'unavailable', method: 'not_calibrated' },
+        qualityStatus: { status: 'suppressed', actionable: false, suppressionReasons: ['RESEARCH_FALLBACK'] },
+        suppressionReasons: ['RESEARCH_FALLBACK'],
         priceCap: capNum,
         mode,
-        asOf: row?.asOf ?? new Date().toISOString(),
+        asOf: row?.asOf ?? row?.timestamp ?? null,
         source: 'canonical_rankings'
       })
       seen.add(ticker)
@@ -724,11 +743,12 @@ export const engineClient = {
     const shortfall = Math.max(0, targetCount - returnedCount)
 
     return {
+      ...normalized,
       recommendations: merged,
       meta: {
         targetCount,
         returnedCount,
-        liveOnly: true,
+        liveOnly: false,
         complete: shortfall === 0,
         reason: shortfall > 0 ? 'insufficient_under_cap' : null,
         source: existing.length > 0 ? 'hybrid' : 'canonical_rankings'
@@ -736,34 +756,76 @@ export const engineClient = {
     }
   },
 
-  // Active signals for trading
+  // Active signals for trading derived strictly from verified recommendations.
+  // Priority 1 requirement: Never interpret relative_priority rankings or movers as buy/sell instructions.
+  // Fails closed on degraded, suppressed, or stale intelligence.
   async getActiveSignals() {
-    const [topRankings, movers] = await Promise.all([
-      this.getTopRankings(5),
-      this.getRankingMovers(15)
-    ])
+    let recommendationsPayload
+    try {
+      recommendationsPayload = await this.getRecommendationsLatest(10)
+    } catch (err) {
+      return []
+    }
 
-    // Transform into signal format with safe array handling
-    const topSignals = (topRankings?.rankings || []).slice(0, 3).map(r => ({
-      type: 'ENTRY',
-      symbol: r.symbol,
-      confidence: r.confidence,
-      score: r.score,
-      reasons: r.reasons || [],
-      source: 'top_ranked'
-    }))
-    
-    const moverSignals = (movers?.rankings || []).slice(0, 5).map(r => ({
-      type: r.rank > 0 ? 'ENTRY' : 'EXIT',
-      symbol: r.symbol,
-      confidence: r.confidence,
-      score: r.score,
-      reasons: r.reasons || [],
-      source: 'mover',
-      rankChange: r.rank
-    }))
+    if (!recommendationsPayload || typeof recommendationsPayload !== 'object') {
+      return []
+    }
 
-    return [...topSignals, ...moverSignals].sort((a, b) => b.confidence - a.confidence)
+    // Check intelligence confidence and pipeline gates
+    const tier = recommendationsPayload.intelligenceConfidenceTier
+    const pipelineSignals = recommendationsPayload.pipelineSignals
+    const quality = recommendationsPayload.qualityStatus
+    const evaluatedAt = Date.parse(quality?.evaluatedAt)
+    const qualityAge = Date.now() - evaluatedAt
+    const isHealthy = tier === 'full' && quality?.status === 'healthy' && quality?.actionable === true
+      && quality?.suppressionReasons?.length === 0
+      && pipelineSignals?.predictionPipelineActive === true
+      && pipelineSignals?.serviceMode === 'normal'
+      && pipelineSignals?.rankingsSuppressed !== true
+      && Number.isFinite(qualityAge) && qualityAge >= 0 && qualityAge <= 60_000
+    if (!isHealthy) {
+      return []
+    }
+
+    const recs = Array.isArray(recommendationsPayload.recommendations)
+      ? recommendationsPayload.recommendations
+      : []
+
+    return recs
+      .map(rec => {
+        // Consumer adapter boundary only: uncalibrated research is never an order signal.
+        const probability = rec.successProbability
+        const rowAge = Date.now() - Date.parse(rec.qualityStatus?.evaluatedAt)
+        if (rec.actionable !== true || rec.qualityStatus?.status !== 'healthy'
+          || rec.qualityStatus?.actionable !== true || rec.suppressionReasons?.length !== 0
+          || rec.qualityStatus?.suppressionReasons?.length !== 0
+          || !Number.isFinite(rowAge) || rowAge < 0 || rowAge > 60_000
+          || rec.confidenceMethodology?.status !== 'available'
+          || rec.confidenceMethodology?.method !== 'empirically_calibrated'
+          || typeof probability !== 'number' || !Number.isFinite(probability)
+          || probability < 0 || probability > 1) return null
+        const rawAction = String(rec.action ?? '').toUpperCase().trim()
+        // Never default an absent or ambiguous direction to 'buy'
+        if (rawAction !== 'BUY' && rawAction !== 'SELL') {
+          return null
+        }
+
+        const isBuy = rawAction === 'BUY'
+        return {
+          type: isBuy ? 'ENTRY' : 'EXIT',
+          direction: isBuy ? 'buy' : 'sell',
+          symbol: rec.ticker,
+          confidence: probability,
+          score: Number.isFinite(Number(rec.score)) ? Number(rec.score) : 0,
+          reasons: Array.isArray(rec.thesis) ? rec.thesis : [],
+          source: 'house_recommendation',
+          entryZone: Array.isArray(rec.entryZone) ? rec.entryZone : null,
+          horizon: rec.horizon ?? null,
+          mode: rec.mode ?? 'balanced'
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.confidence - a.confidence)
   },
 
   // Calendar events with distribution support

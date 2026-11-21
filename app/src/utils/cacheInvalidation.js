@@ -15,7 +15,11 @@ const CACHE_NAMESPACES = {
 
 // Thundering herd protection
 const refreshQueue = new Map()
-const REFRESH_DELAY = 100 // 100ms between batches
+const REFRESH_DELAYS = {
+  high: 100,
+  normal: 200,
+  low: 500
+}
 
 export function scheduleRefresh(keys, priority = 'normal') {
   const queueKey = `${priority}_refresh`
@@ -28,7 +32,12 @@ export function scheduleRefresh(keys, priority = 'normal') {
   keys.forEach(key => queue.add(key))
   
   // Process queue with delay to prevent thundering herd
-  setTimeout(() => processRefreshQueue(queueKey), REFRESH_DELAY)
+  const delay = REFRESH_DELAYS[priority] || REFRESH_DELAYS.normal
+  setTimeout(() => processRefreshQueue(queueKey), delay)
+}
+
+export function clearRefreshQueues() {
+  refreshQueue.clear()
 }
 
 function processRefreshQueue(queueKey) {

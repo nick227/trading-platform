@@ -26,8 +26,8 @@ export default async function catalogRoutes(app, opts) {
     return { data: template }
   })
 
-  // POST /api/bots/from-template
-  // Instantiate a bot from a template. Rules are copied into BotRule rows.
+  // POST /api/bots/catalog/from-template
+  // Instantiate a bot from a template atomically. Rules are copied into BotRule rows.
   // The template itself is never mutated — bots own their rules forever.
   app.post('/from-template', {
     schema: {
@@ -35,14 +35,23 @@ export default async function catalogRoutes(app, opts) {
         type: 'object',
         required: ['templateId', 'portfolioId'],
         properties: {
-          templateId:  { type: 'string' },
-          portfolioId: { type: 'string' },
-          strategyId:  { type: 'string' },   // required for strategy_based bots
-          userId:      { type: 'string' },
-          name:        { type: 'string' },
-          tickers:     { type: 'array', items: { type: 'string' } },
-          quantity:    { type: 'number', minimum: 1 },
-          enabled:     { type: 'boolean' }
+          templateId:       { type: 'string' },
+          portfolioId:      { type: 'string' },
+          strategyId:       { type: 'string' },
+          userId:           { type: 'string' },
+          name:             { type: 'string' },
+          tickers:          { type: 'array', items: { type: 'string' } },
+          quantity:         { type: 'number', minimum: 1 },
+          capital:          { type: 'number', minimum: 0.01 },
+          allocatedAmount:  { type: 'number', minimum: 0.01 },
+          maxPerOrder:      { type: 'number', minimum: 0.01 },
+          maxOrderNotional: { type: 'number', minimum: 0.01 },
+          capitalMode:      { type: 'string', enum: ['allocated', 'legacy'] },
+          direction:        { type: 'string', enum: ['buy', 'sell'] },
+          riskOnExposure:   { type: 'number', minimum: 0 },
+          enabled:          { type: 'boolean' },
+          config:           { type: 'object' },
+          rules:            { type: 'array' }
         }
       }
     }
@@ -64,10 +73,17 @@ export default async function catalogRoutes(app, opts) {
       return reply.code(400).send({ error: { code: 'INVALID_PORTFOLIO', message: 'Invalid portfolioId' } })
     }
 
-    const bot = await botsService.createBotFromTemplate({ ...request.body, userId: request.user.id })
-    if (!bot) {
-      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Template not found' } })
+    try {
+      const bot = await botsService.createBotFromTemplate({ ...request.body, userId: request.user.id })
+      if (!bot) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Template not found' } })
+      }
+      return reply.code(201).send({ data: bot })
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return reply.code(400).send({ error: { code: 'INVALID_CONFIG', message: error.message } })
+      }
+      throw error
     }
-    return reply.code(201).send({ data: bot })
   })
 }

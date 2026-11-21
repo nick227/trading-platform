@@ -56,6 +56,18 @@ export default async function predictionsRoutes(app, opts) {
     let rankScore = null
     let rankingContext = null
 
+    try {
+      const rankings = await engineClient.getTopRankings(50)
+      const match = (rankings?.rankings || []).find(r => (r.symbol || r.ticker || '').toUpperCase() === ticker)
+      if (match) {
+        rankScore = match.score ?? null
+        const rc = match.rankContext ?? match.rank_context
+        if (rc) {
+          rankingContext = [...(rc.basis || []), ...(rc.timing || []), ...(rc.risks || [])]
+        }
+      }
+    } catch { /* best effort */ }
+
     const coreTimestamp = prediction.predictedAt ? new Date(prediction.predictedAt).toISOString() : null
     const corePrediction = prediction.direction === 'buy' ? 'UP' : prediction.direction === 'sell' ? 'DOWN' : prediction.direction
 

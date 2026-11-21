@@ -185,8 +185,8 @@ function OpportunityCard({ recommendation, onTrade, onAsset }) {
           </Link>
         </div>
         <div style={{ fontSize: '12px', color: '#666', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span>Confidence: {Math.round(recommendation.confidence * 100)}%</span>
-          <RiskBadge risk={recommendation.risk || 'Medium'} size="small" />
+          <span>{recommendation.confidence == null ? 'Success probability unavailable' : `Confidence: ${Math.round(recommendation.confidence * 100)}%`}</span>
+          <RiskBadge risk={recommendation.risk} size="small" />
           <span>Horizon: {recommendation.horizon || '30d'}</span>
         </div>
       </div>
@@ -194,7 +194,7 @@ function OpportunityCard({ recommendation, onTrade, onAsset }) {
       {/* Thesis */}
       <div style={{ marginBottom: '1rem' }}>
         <div style={{ fontSize: '14px', lineHeight: '1.4', color: '#333' }}>
-          {recommendation.thesis || 'AI analysis suggests this opportunity'}
+          {recommendation.explanations?.join(' ') || 'Explanation unavailable'}
         </div>
       </div>
 

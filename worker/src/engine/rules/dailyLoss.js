@@ -6,11 +6,13 @@ import prisma from '../../db/prisma.js'
 const lossCache = new Map() // portfolioId → { loss, fetchedAt, dayStart }
 const LOSS_CACHE_TTL_MS = 30_000
 
-// config: { maxLoss: number }  — maxLoss is a positive dollar amount e.g. 500
+// config: { maxLoss?: number, maxDailyLoss?: number } — maxLoss is a positive dollar amount e.g. 500
 export async function evaluateDailyLoss(config, portfolioId) {
   const startOfDay = new Date()
   startOfDay.setHours(0, 0, 0, 0)
   const dayKey = startOfDay.getTime()
+
+  const maxLoss = Number(config.maxLoss ?? config.maxDailyLoss ?? Infinity)
 
   const now = Date.now()
   const cached = lossCache.get(portfolioId)
@@ -37,11 +39,11 @@ export async function evaluateDailyLoss(config, portfolioId) {
     lossCache.set(portfolioId, { loss, fetchedAt: now, dayStart: dayKey })
   }
 
-  if (loss >= config.maxLoss) {
+  if (loss >= maxLoss) {
     return {
       pass:   false,
       reason: 'daily_loss_limit_reached',
-      detail: `realized loss $${loss.toFixed(2)} >= limit $${config.maxLoss}`
+      detail: `realized loss $${loss.toFixed(2)} >= limit $${maxLoss}`
     }
   }
 

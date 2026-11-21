@@ -82,6 +82,13 @@ export async function saveBrokerCredentials(apiKey, apiSecret, paper = true) {
   return result
 }
 
+export async function disconnectBroker() {
+  const result = await apiFetch('/account/broker-credentials', { method: 'DELETE' })
+  cachedBrokerStatus = null
+  cachedBrokerStatusExpiry = 0
+  return result
+}
+
 export async function getBrokerStatus() {
   const now = Date.now()
   if (cachedBrokerStatus && now < cachedBrokerStatusExpiry) {
