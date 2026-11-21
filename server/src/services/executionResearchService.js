@@ -42,7 +42,14 @@ export async function linkResearchDecisionToExecution({ userId, decisionEventId,
     if (!event || event.botId !== execution.botId || event.portfolioId !== execution.portfolioId ||
         event.type !== 'decision_made' || event.metadata?.decision !== 'accepted' ||
         event.metadata?.predictionId !== execution.predictionId ||
-        !execution.predictionId || event.metadata?.researchSource?.ticker?.toUpperCase() !== String(execution.ticker).toUpperCase()) {
+        !execution.predictionId ||
+        String(event.metadata?.researchSource?.ticker || '').toUpperCase() !== String(execution.ticker).toUpperCase() ||
+        String(event.metadata?.researchEvidence?.predictionId || '') !== execution.predictionId ||
+        !(
+          String(execution.direction).toLowerCase() === 'buy'
+            ? ['buy', 'up'].includes(String(event.metadata?.researchEvidence?.direction || '').toLowerCase())
+            : ['sell', 'down'].includes(String(event.metadata?.researchEvidence?.direction || '').toLowerCase())
+        )) {
       throw error('INVALID_LINK', 'Research decision does not match execution')
     }
     const integrity = verifyCapturedResearch(event)
