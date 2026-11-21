@@ -44,6 +44,8 @@ enum ExecutionAuditEventType {
   retry_scheduled
   failed
   risk_blocked
+  reconcile_required
+  lease_lost
 }
 
 enum BotRuleType {
@@ -212,6 +214,9 @@ model Execution {
   brokerOrderId  String?   @unique
   brokerStatus   String?
   submittedAt    DateTime?
+  // Set before every broker submit. If a submit's outcome is unknown (lost response),
+  // the row is reconciled by clientOrderId and never counted as a fresh submission.
+  submitAttemptedAt DateTime?
   lastBrokerSyncAt DateTime?
   filledAt       DateTime?
   filledPrice    Float?   // truth: actual fill price from Alpaca

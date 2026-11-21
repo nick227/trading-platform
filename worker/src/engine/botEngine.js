@@ -4,6 +4,7 @@ import { log } from '../logger.js'
 import { getBrokerClient } from '../broker/clientCache.js'
 import { priceCache } from '../market/priceCache.js'
 import { subscribe, unsubscribe } from '../market/dataStream.js'
+import { ACTIVE_EXECUTION_STATUSES } from '../queues/executionStatus.js'
 import { evaluateMarketHours }    from './rules/marketHours.js'
 import { evaluatePriceThreshold } from './rules/priceThreshold.js'
 import { evaluateCooldown }       from './rules/cooldown.js'
@@ -37,7 +38,6 @@ const positionCacheByUser = new Map()
 const RELOAD_INTERVAL_MS         = Number(process.env.BOT_RELOAD_INTERVAL_MS ?? 10_000)
 const POSITION_CACHE_MAX_MS      = 60_000
 const POSITION_CACHE_MAX_USERS   = 500   // LRU eviction threshold
-const ACTIVE_EXECUTION_STATUSES  = ['queued', 'processing', 'submitted', 'partially_filled']
 const SKIP_EVENT_WINDOW_MS       = 60_000
 
 // Rules sorted cheapest-first so fast in-memory checks short-circuit before any DB/broker call.
