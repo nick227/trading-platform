@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest'
 import createApp from '../loaders/fastify.js'
 import tradeRoutes from './trade.js'
 
@@ -88,6 +88,7 @@ beforeAll(async () => {
 })
 
 afterAll(() => app.close())
+beforeEach(() => vi.clearAllMocks())
 
 describe('POST /api/trade', () => {
   it('queues an execution and returns 201', async () => {
