@@ -1,4 +1,5 @@
 import prisma from '../../db/prisma.js'
+import { ACTIVE_EXECUTION_STATUSES } from '../../queues/executionStatus.js'
 
 // Cache last-execution timestamp per (botId, ticker) to avoid a DB query every tick.
 // TTL is half the minimum practical cooldown (30s) — short enough to stay accurate,
@@ -49,7 +50,7 @@ export async function evaluateCooldown(config, botId, ticker) {
         botId,
         ticker,
         OR: [
-          { status: { in: ['queued', 'processing', 'submitted', 'partially_filled'] }, createdAt: { gte: since } },
+          { status: { in: ACTIVE_EXECUTION_STATUSES }, createdAt: { gte: since } },
           { status: 'filled', filledAt: { gte: since } }
         ]
       },

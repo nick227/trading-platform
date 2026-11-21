@@ -21,16 +21,11 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
     }
   }
 
-  // Filter to valid fills
-  const validFills = executions.filter((exec) => {
-    if (!exec) return false
-    const status = String(exec.status ?? 'filled').toLowerCase()
-    const isFillStatus = status === 'filled' || status === 'partially_filled'
-    const qty = Number(exec.filledQuantity ?? exec.quantity ?? 0)
-    const price = Number(exec.filledPrice ?? exec.price ?? 0)
-    const dir = String(exec.direction ?? '').toLowerCase()
-    return isFillStatus && qty > 0 && price > 0 && (dir === 'buy' || dir === 'sell')
-  })
+  // Only broker-reported fills count: filledQuantity/filledPrice are written from broker
+  // snapshots (cumulative per order, so repeated updates never double-count). Status is
+  // deliberately ignored — a canceled/expired order can carry a real partial fill — and the
+  // intended quantity/price are never used as a stand-in for a fill.
+  const validFills = executions.filter(isBrokerFill)
 
   if (validFills.length === 0) {
     return {
@@ -54,13 +49,15 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
   const openLotsByTicker = new Map() // ticker -> Array<{ id, remainingQty, price, filledAt }>
   const perExecutionPnl = new Map()  // executionId -> realizedPnl
   let realizedPnlTotal = 0
+  let realizedNetTotal = 0
   let totalFees = 0
+  const unattributedSellQty = {}
 
   for (const exec of sorted) {
     const ticker = String(exec.ticker).toUpperCase()
     const dir = String(exec.direction).toLowerCase()
-    const qty = Number(exec.filledQuantity ?? exec.quantity)
-    const price = Number(exec.filledPrice ?? exec.price)
+    const qty = Number(exec.filledQuantity)
+    const price = Number(exec.filledPrice)
     const fee = Number(exec.fees ?? 0) + Number(exec.commission ?? 0)
     totalFees += fee
 
@@ -74,6 +71,7 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
         id: exec.id,
         remainingQty: qty,
         price,
+        feePerShare: fee / qty,
         filledAt: exec.filledAt || exec.createdAt
       })
       if (exec.id) {
@@ -82,12 +80,14 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
     } else if (dir === 'sell') {
       let remainingToSell = qty
       let fillRealizedPnl = 0
+      let matchedBuyFees = 0
 
       while (remainingToSell > 1e-7 && lots.length > 0) {
         const lot = lots[0]
         const matchQty = Math.min(remainingToSell, lot.remainingQty)
         const pnlChunk = matchQty * (price - lot.price)
         fillRealizedPnl += pnlChunk
+        matchedBuyFees += matchQty * (lot.feePerShare || 0)
         remainingToSell -= matchQty
         lot.remainingQty -= matchQty
 
@@ -96,7 +96,15 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
         }
       }
 
+      // Never invent a short: quantity sold beyond attributable lots realizes nothing
+      // and is reported so the mismatch is visible.
+      if (remainingToSell > 1e-7) {
+        unattributedSellQty[ticker] = (unattributedSellQty[ticker] ?? 0) + remainingToSell
+      }
+
       realizedPnlTotal += fillRealizedPnl
+      // Net of the sell's own fees and the buy fees of the shares it closed.
+      realizedNetTotal += fillRealizedPnl - matchedBuyFees - fee
       if (exec.id) {
         perExecutionPnl.set(exec.id, Number(fillRealizedPnl.toFixed(2)))
       }
@@ -177,8 +185,50 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
     capitalInUse: Number(totalCapitalInUse.toFixed(2)),
     openPositions,
     perExecutionPnl,
-    fillCount: sorted.length
+    fillCount: sorted.length,
+    // Realized P/L after the fees of the sells and of the buy lots they closed.
+    realizedPnlNetOfFees: Number(realizedNetTotal.toFixed(2)),
+    unattributedSellQuantity: Object.fromEntries(
+      Object.entries(unattributedSellQty).map(([t, q]) => [t, Number(q.toFixed(4))])
+    )
   }
+}
+
+/** A broker-reported fill: positive filled quantity and price, buy or sell. */
+export function isBrokerFill(exec) {
+  if (!exec) return false
+  const qty = Number(exec.filledQuantity)
+  const price = Number(exec.filledPrice)
+  const dir = String(exec.direction ?? '').toLowerCase()
+  return Number.isFinite(qty) && qty > 0 && Number.isFinite(price) && price > 0 && (dir === 'buy' || dir === 'sell')
+}
+
+/** Realized P/L of sells filled at or after `since` (FIFO against the full history). */
+export function realizedPnlSince(executions, since) {
+  const accounting = calculateFifoAccounting(executions)
+  if (!accounting.hasFills) return 0
+  const sinceMs = new Date(since).getTime()
+  let total = 0
+  for (const exec of executions) {
+    if (!isBrokerFill(exec) || String(exec.direction).toLowerCase() !== 'sell') continue
+    const at = new Date(exec.filledAt || exec.createdAt || 0).getTime()
+    if (at >= sinceMs) total += accounting.perExecutionPnl.get(exec.id) ?? 0
+  }
+  return Number(total.toFixed(2))
+}
+
+const BROKER_FILL_WHERE = { filledQuantity: { gt: 0 }, filledPrice: { gt: 0 } }
+
+/** All broker-reported fills for a bot, oldest first. */
+export async function loadBotFills(botId, { prismaClient = prisma, excludeExecutionId = null } = {}) {
+  return prismaClient.execution.findMany({
+    where: {
+      botId,
+      ...BROKER_FILL_WHERE,
+      ...(excludeExecutionId ? { id: { not: excludeExecutionId } } : {})
+    },
+    orderBy: [{ filledAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]
+  })
 }
 
 /**
@@ -197,20 +247,7 @@ export async function computeBotAccounting(botId, { currentPrices = {}, prismaCl
   }
 
   try {
-    const fills = await prismaClient.execution.findMany({
-      where: {
-        botId,
-        status: { in: ['filled', 'partially_filled'] },
-        filledQuantity: { gt: 0 },
-        filledPrice: { gt: 0 }
-      },
-      orderBy: [
-        { filledAt: 'asc' },
-        { createdAt: 'asc' },
-        { id: 'asc' }
-      ]
-    })
-
+    const fills = await loadBotFills(botId, { prismaClient })
     return calculateFifoAccounting(fills, { currentPrices })
   } catch (err) {
     return {
@@ -234,20 +271,7 @@ export async function calculateFillPnl({ execution, fillPrice, fillQty, prismaCl
   if (!execution.botId) return 0
 
   try {
-    const priorFills = await prismaClient.execution.findMany({
-      where: {
-        botId: execution.botId,
-        status: { in: ['filled', 'partially_filled'] },
-        id: { not: execution.id },
-        filledQuantity: { gt: 0 },
-        filledPrice: { gt: 0 }
-      },
-      orderBy: [
-        { filledAt: 'asc' },
-        { createdAt: 'asc' },
-        { id: 'asc' }
-      ]
-    })
+    const priorFills = await loadBotFills(execution.botId, { prismaClient, excludeExecutionId: execution.id })
 
     const syntheticCurrent = {
       ...execution,
@@ -267,5 +291,8 @@ export async function calculateFillPnl({ execution, fillPrice, fillQty, prismaCl
 export default {
   calculateFifoAccounting,
   computeBotAccounting,
-  calculateFillPnl
+  calculateFillPnl,
+  isBrokerFill,
+  realizedPnlSince,
+  loadBotFills
 }

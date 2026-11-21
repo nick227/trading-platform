@@ -1,6 +1,5 @@
 import prisma from '../db/prisma.js'
-
-const ACTIVE_EXECUTION_STATUSES = ['queued', 'processing', 'submitted', 'partially_filled']
+import { ACTIVE_EXECUTION_STATUSES } from '../queues/executionStatus.js'
 
 function envNumber(name, fallback) {
   const raw = process.env[name]

@@ -1,6 +1,6 @@
 import prisma from '../loaders/prisma.js'
 
-const ACTIVE_STATUSES = ['queued', 'processing', 'submitted', 'partially_filled']
+import { ACTIVE_EXECUTION_STATUSES as ACTIVE_STATUSES } from '../../../worker/src/queues/executionStatus.js'
 const WORKER_STALE_AFTER_MS = Number(process.env.WORKER_STALE_AFTER_MS ?? 15_000)
 
 export default {

@@ -1,4 +1,5 @@
 import botsService from '../../services/botsService.js'
+import { getEmergencyStop } from '../../services/emergencyStopService.js'
 import prisma from '../../loaders/prisma.js'
 import { getUserAlpacaCredentialsOrThrow } from '../../services/alpacaClockService.js'
 
@@ -87,6 +88,10 @@ export default async function botsRoutes(app, opts) {
       }
 
       if (request.body?.enabled === true) {
+        const stop = await getEmergencyStop(request.user.id)
+        if (stop.active) {
+          return reply.code(403).send({ error: { code: 'EMERGENCY_STOP_ACTIVE', message: 'Emergency stop is active. Clear it before resuming bots.' } })
+        }
         const connected = await ensureBrokerConnectedOrReply(request.user.id, reply)
         if (!connected) return
       }
