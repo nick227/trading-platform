@@ -14,7 +14,7 @@ const routes = [
 ]
 
 export default function Nav() {
-  const { user, brokerStatus } = useAuth()
+  const { user, brokerStatus, brokerStatusLoading, brokerStatusError } = useAuth()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const close = () => setMobileOpen(false)
@@ -26,7 +26,7 @@ export default function Nav() {
           <Logo />
         </NavLink>
 
-        {user && <ModeBadge brokerStatus={brokerStatus} />}
+        {user && <ModeBadge brokerStatus={brokerStatus} loading={brokerStatusLoading} error={brokerStatusError} />}
 
         <button
           className={`nav-toggle ${mobileOpen ? 'nav-toggle--open' : ''}`}

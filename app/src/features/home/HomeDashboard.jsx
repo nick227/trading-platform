@@ -133,8 +133,8 @@ function ActivityList({ items, error }) {
 }
 
 export default function HomeDashboard() {
-  const { user, brokerStatus } = useAuth()
-  const mode = getTradingMode(brokerStatus)
+  const { user, brokerStatus, brokerStatusLoading, brokerStatusError } = useAuth()
+  const mode = getTradingMode(brokerStatus, { loading: brokerStatusLoading, error: brokerStatusError })
   const [state, setState] = useState({ loading: true, data: null })
   const [busy, setBusy] = useState({})
   const [errors, setErrors] = useState({})

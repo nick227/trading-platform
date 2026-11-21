@@ -61,12 +61,15 @@ function FieldError({ id, message }) {
 }
 
 function ModeNotice({ mode }) {
-  if (mode === 'paper') return null
+  // Nothing to say until the account status is known.
+  if (mode === 'paper' || mode === 'checking') return null
   return (
     <div className="alert alert-warn mb-4" role="status" data-testid="mode-notice">
       {mode === 'live-disabled'
         ? 'Your connected account is a live account. Live trading is disabled, so bots can only be created with a paper account. '
-        : 'Connect a paper trading account to create a bot. You can still look around first. '}
+        : mode === 'unknown'
+          ? 'We couldn’t check your trading account right now. You can look around; starting a bot needs a connected paper account. '
+          : 'Connect a paper trading account to create a bot. You can still look around first. '}
       <Link to="/profile/broker">Go to broker settings</Link>
     </div>
   )
@@ -75,8 +78,8 @@ function ModeNotice({ mode }) {
 export default function NewBotWizard() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { brokerStatus } = useAuth()
-  const mode = getTradingMode(brokerStatus)
+  const { brokerStatus, brokerStatusLoading, brokerStatusError } = useAuth()
+  const mode = getTradingMode(brokerStatus, { loading: brokerStatusLoading, error: brokerStatusError })
 
   const [data, setData] = useState(null) // { templates, catalogError, buyingPower, portfolioId, portfolioError }
   const [form, setForm] = useState({

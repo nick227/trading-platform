@@ -202,3 +202,9 @@
 .mode-badge--none {
   color: var(--color-muted);
 }
+
+.mode-badge--checking,
+.mode-badge--unknown {
+  color: var(--color-muted);
+  border-style: dashed;
+}
