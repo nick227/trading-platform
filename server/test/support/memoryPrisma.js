@@ -124,6 +124,11 @@ function model(store, name) {
       rows().push(row)
       return clone(row)
     },
+    async createMany({ data }) {
+      const items = Array.isArray(data) ? data : [data]
+      for (const item of items) await this.create({ data: item })
+      return { count: items.length }
+    },
     async update({ where, data }) {
       const row = rows().find((r) => matches(r, where))
       if (!row) {

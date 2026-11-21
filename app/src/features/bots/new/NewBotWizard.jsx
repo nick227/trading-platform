@@ -6,11 +6,13 @@ import {
   createAndStartBot,
   defaultCapital,
   defaultMaxPerOrder,
-  describeDirection,
+  describeTemplateAction,
   loadWizardData,
   parseSymbols,
+  RESEARCH_LIMITS,
   validateAllocation,
   validateControls,
+  validateResearch,
 } from './newBotApi'
 
 export const STEPS = [
@@ -55,6 +57,14 @@ function StepHeader({ index }) {
   )
 }
 
+const researchFormValues = (r) => (r ? { minConfidencePct: String(r.minConfidencePct), maxAgeHours: String(r.maxAgeHours), maxDriftPct: String(r.maxDriftPct) } : null)
+
+const RESEARCH_FIELDS = [
+  { key: 'minConfidencePct', label: 'Minimum research confidence', unit: '%', help: 'Alpha Engine’s confidence score for the prediction. It’s a score, not a probability of profit.' },
+  { key: 'maxAgeHours', label: 'Ignore research older than', unit: 'hours', help: 'Older predictions are recorded but never traded.' },
+  { key: 'maxDriftPct', label: 'Skip if price moved more than', unit: '%', help: 'From the price the research was based on.' },
+]
+
 function FieldError({ id, message }) {
   if (!message) return null
   return <div id={id} className="text-negative text-xs mt-1" role="alert">{message}</div>
@@ -88,6 +98,7 @@ export default function NewBotWizard() {
     symbolsText: params.get('ticker') ?? '',
     maxPerOrder: '',
     name: '',
+    research: null,
     confirmed: false,
   })
   const [touched, setTouched] = useState({})
@@ -110,6 +121,7 @@ export default function NewBotWizard() {
   const needsSymbols = Boolean(template) && template.tickers.length === 0
   const capitalNum = form.capital === '' ? null : Number(form.capital)
   const symbols = needsSymbols || form.symbolsEdited ? parseSymbols(form.symbolsText) : template?.tickers ?? []
+  const research = template?.research ? form.research ?? researchFormValues(template.research) : null
 
   const allocationErrors = template
     ? validateAllocation(form, { buyingPower: data?.buyingPower ?? null, templateTickers: template.tickers })
@@ -120,6 +132,7 @@ export default function NewBotWizard() {
         { capital: Number.isFinite(capitalNum) ? capitalNum : null }
       )
     : {}
+  if (research) Object.assign(controlsErrors, validateResearch(research))
   const noBuyingPower = data?.buyingPower !== null && data?.buyingPower !== undefined && data.buyingPower <= 0
 
   // Furthest step whose prerequisites are complete; the URL can't skip past it.
@@ -157,6 +170,7 @@ export default function NewBotWizard() {
       name: '',
       symbolsEdited: false,
       symbolsText: t.tickers.length === 0 ? form.symbolsText : t.tickers.join(', '),
+      research: researchFormValues(t.research),
       confirmed: false,
     })
   }
@@ -173,7 +187,7 @@ export default function NewBotWizard() {
       if (form.name === '') update({ name: template.name })
     }
     if (index === 2) {
-      setTouched((t) => ({ ...t, maxPerOrder: true, name: true, symbols: true }))
+      setTouched((t) => ({ ...t, maxPerOrder: true, name: true, symbols: true, research: true }))
       if (Object.keys(controlsErrors).length > 0) return
     }
     goTo(index + 1)
@@ -190,6 +204,7 @@ export default function NewBotWizard() {
       tickers: symbols,
       capital: capitalNum,
       maxPerOrder: Number(form.maxPerOrder),
+      research,
     })
     setSubmitting(false)
     if (result.ok) {
@@ -241,7 +256,7 @@ export default function NewBotWizard() {
                       <span className="wizard-option-name">{t.name}</span>
                       {t.description && <span className="wizard-option-desc">{t.description}</span>}
                       <span className="wizard-option-meta muted">
-                        {describeDirection(t.direction)}
+                        {describeTemplateAction(t)}
                         {' · '}
                         {t.tickers.length > 0 ? `Trades ${t.tickers.slice(0, 5).join(', ')}${t.tickers.length > 5 ? '…' : ''}` : 'You choose the symbols'}
                       </span>
@@ -322,10 +337,36 @@ export default function NewBotWizard() {
           </div>
           <FieldError id="maxPerOrder-error" message={touched.maxPerOrder ? controlsErrors.maxPerOrder : null} />
 
+          {research && (
+            <fieldset className="wizard-fieldset mt-4" data-testid="research-settings">
+              <legend className="wizard-label">Research settings</legend>
+              {RESEARCH_FIELDS.map(({ key, label, unit, help }) => (
+                <div key={key} className="mt-2">
+                  <label className="text-sm" htmlFor={`research-${key}`}>{label}</label>
+                  <div className="wizard-money">
+                    <input
+                      id={`research-${key}`}
+                      className="form-input"
+                      inputMode="decimal"
+                      value={research[key]}
+                      onChange={(e) => update({ research: { ...research, [key]: e.target.value.replace(/[^0-9.]/g, '') } })}
+                      onBlur={() => setTouched((t) => ({ ...t, research: true }))}
+                      aria-invalid={Boolean(touched.research && controlsErrors[key])}
+                      aria-describedby={`research-${key}-help research-${key}-error`}
+                    />
+                    <span aria-hidden="true">{unit}</span>
+                  </div>
+                  <p id={`research-${key}-help`} className="muted text-xs mt-1 mb-0">{help} ({RESEARCH_LIMITS[key].min}–{RESEARCH_LIMITS[key].max})</p>
+                  <FieldError id={`research-${key}-error`} message={touched.research ? controlsErrors[key] : null} />
+                </div>
+              ))}
+            </fieldset>
+          )}
+
           <dl className="wizard-facts">
             <div>
               <dt>What it can do</dt>
-              <dd>{describeDirection(template.direction)}, in {symbols.join(', ') || '—'}, in your paper account.</dd>
+              <dd>{describeTemplateAction(template)}, in {symbols.join(', ') || '—'}, in your paper account.</dd>
             </div>
             <div>
               <dt>Pausing</dt>
@@ -377,7 +418,10 @@ export default function NewBotWizard() {
             <div><dt>Symbols</dt><dd>{symbols.join(', ')}</dd></div>
             <div><dt>Simulated capital</dt><dd>{fmtMoney(capitalNum)} <span className="muted">(not set aside)</span></dd></div>
             <div><dt>Max per buy order</dt><dd>{fmtMoney(Number(form.maxPerOrder))}</dd></div>
-            <div><dt>Can place</dt><dd>{describeDirection(template.direction)}</dd></div>
+            <div><dt>Can place</dt><dd>{describeTemplateAction(template)}</dd></div>
+            {research && (
+              <div><dt>Research settings</dt><dd>Confidence at least {research.minConfidencePct}% · research under {research.maxAgeHours} hours old · price within {research.maxDriftPct}%</dd></div>
+            )}
             <div><dt>After you start</dt><dd>The bot runs automatically and may place paper orders when its rules are met. Pause it anytime.</dd></div>
           </dl>
 

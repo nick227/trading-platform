@@ -455,3 +455,72 @@ describe('newBotApi helpers', () => {
     expect(put).not.toHaveBeenCalled()
   })
 })
+
+describe('Alpha Research Follower', () => {
+  const research = {
+    id: 'tmpl_alpha_research', name: 'Alpha Research Follower', botType: 'rule_based',
+    description: 'Trades only on current, verified Alpha Engine predictions.',
+    config: { signalSource: 'alpha_research', tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000, research: { minConfidence: 0.6, maxPredictionAgeHours: 96, maxEntryDriftPct: 5, tenantId: 'default' } },
+    rules: [{ type: 'market_hours', config: {} }],
+  }
+  const catalog = { ruleBased: [research, templates.ruleBased[0]], strategyBased: [] }
+
+  async function toControls() {
+    fireEvent.click(await screen.findByTestId('template-tmpl_alpha_research'))
+    fireEvent.click(continueBtn())
+    fireEvent.click(continueBtn())
+    expect(heading()).toHaveTextContent('Controls')
+  }
+
+  it('describes what the research bot does instead of a fixed direction', async () => {
+    mockGets({ catalog })
+    renderWizard()
+    expect(await screen.findByTestId('template-tmpl_alpha_research')).toHaveTextContent('Buys on current Alpha Engine BUY research')
+  })
+
+  it('shows research settings with the template defaults and validates them', async () => {
+    mockGets({ catalog })
+    renderWizard()
+    await toControls()
+    const box = screen.getByTestId('research-settings')
+    expect(within(box).getByLabelText('Minimum research confidence')).toHaveValue('60')
+    expect(within(box).getByLabelText('Ignore research older than')).toHaveValue('96')
+    expect(within(box).getByLabelText('Skip if price moved more than')).toHaveValue('5')
+    expect(box).toHaveTextContent('not a probability')
+
+    fireEvent.change(within(box).getByLabelText('Minimum research confidence'), { target: { value: '150' } })
+    fireEvent.click(continueBtn())
+    expect(heading()).toHaveTextContent('Controls')
+    expect(within(box).getByText('Enter a number from 0 to 100.')).toBeInTheDocument()
+  })
+
+  it('saves the research settings with the bot, keeping template-only keys', async () => {
+    mockGets({ catalog })
+    post.mockResolvedValue({ id: 'bot_r', enabled: false })
+    put.mockResolvedValue({ id: 'bot_r', enabled: true })
+    renderWizard()
+    await toControls()
+    const box = screen.getByTestId('research-settings')
+    fireEvent.change(within(box).getByLabelText('Minimum research confidence'), { target: { value: '75' } })
+    fireEvent.change(within(box).getByLabelText('Ignore research older than'), { target: { value: '48' } })
+    fireEvent.click(continueBtn())
+    expect(screen.getByTestId('review-summary')).toHaveTextContent('Confidence at least 75% · research under 48 hours old · price within 5%')
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
+
+    expect(await screen.findByTestId('bot-page')).toHaveTextContent('bot bot_r created')
+    expect(post).toHaveBeenCalledWith('/bots/catalog/from-template', expect.objectContaining({
+      templateId: 'tmpl_alpha_research', tickers: ['SPY'], enabled: false,
+      config: { research: { tenantId: 'default', minConfidence: 0.75, maxPredictionAgeHours: 48, maxEntryDriftPct: 5 } },
+    }))
+  })
+
+  it('does not show research settings for rule bots', async () => {
+    mockGets({ catalog })
+    renderWizard()
+    fireEvent.click(await screen.findByTestId('template-tmpl_golden_cross'))
+    fireEvent.click(continueBtn())
+    fireEvent.click(continueBtn())
+    expect(screen.queryByTestId('research-settings')).toBeNull()
+  })
+})
