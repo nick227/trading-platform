@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
+import { encrypt } from '../src/utils/encryption.js'
 
 vi.mock('../src/loaders/prisma.js', () => ({
   default: {
@@ -70,7 +71,14 @@ describe('API contract tests', () => {
     process.env.ALPACA_API_SECRET = 'test_secret'
     process.env.ALPACA_PAPER = 'true'
 
-    prisma.brokerAccount.findUnique.mockResolvedValue(null)
+    prisma.brokerAccount.findUnique.mockResolvedValue({
+      id: 'bro_1',
+      userId: 'usr_1',
+      apiKey: encrypt('test_key'),
+      apiSecret: encrypt('test_secret'),
+      paper: true,
+      status: 'active'
+    })
 
     global.fetch = vi.fn(async (url, options) => {
       if (String(url).includes('/v2/clock')) {

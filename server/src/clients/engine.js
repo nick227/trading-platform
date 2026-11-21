@@ -736,34 +736,57 @@ export const engineClient = {
     }
   },
 
-  // Active signals for trading
+  // Active signals for trading derived strictly from verified recommendations.
+  // Priority 1 requirement: Never interpret relative_priority rankings or movers as buy/sell instructions.
+  // Fails closed on degraded, suppressed, or stale intelligence.
   async getActiveSignals() {
-    const [topRankings, movers] = await Promise.all([
-      this.getTopRankings(5),
-      this.getRankingMovers(15)
-    ])
+    let recommendationsPayload
+    try {
+      recommendationsPayload = await this.getRecommendationsLatest(10)
+    } catch (err) {
+      return []
+    }
 
-    // Transform into signal format with safe array handling
-    const topSignals = (topRankings?.rankings || []).slice(0, 3).map(r => ({
-      type: 'ENTRY',
-      symbol: r.symbol,
-      confidence: r.confidence,
-      score: r.score,
-      reasons: r.reasons || [],
-      source: 'top_ranked'
-    }))
-    
-    const moverSignals = (movers?.rankings || []).slice(0, 5).map(r => ({
-      type: r.rank > 0 ? 'ENTRY' : 'EXIT',
-      symbol: r.symbol,
-      confidence: r.confidence,
-      score: r.score,
-      reasons: r.reasons || [],
-      source: 'mover',
-      rankChange: r.rank
-    }))
+    if (!recommendationsPayload || typeof recommendationsPayload !== 'object') {
+      return []
+    }
 
-    return [...topSignals, ...moverSignals].sort((a, b) => b.confidence - a.confidence)
+    // Check intelligence confidence and pipeline gates
+    const tier = recommendationsPayload.intelligenceConfidenceTier
+    const pipelineSignals = recommendationsPayload.pipelineSignals
+    const isDegraded = tier === 'degraded' || pipelineSignals?.rankingsSuppressed === true
+    if (isDegraded) {
+      return []
+    }
+
+    const recs = Array.isArray(recommendationsPayload.recommendations)
+      ? recommendationsPayload.recommendations
+      : []
+
+    return recs
+      .map(rec => {
+        const rawAction = String(rec.action ?? '').toUpperCase().trim()
+        // Never default an absent or ambiguous direction to 'buy'
+        if (rawAction !== 'BUY' && rawAction !== 'SELL') {
+          return null
+        }
+
+        const isBuy = rawAction === 'BUY'
+        return {
+          type: isBuy ? 'ENTRY' : 'EXIT',
+          direction: isBuy ? 'buy' : 'sell',
+          symbol: rec.ticker,
+          confidence: Number.isFinite(Number(rec.confidence)) ? Number(rec.confidence) : 0,
+          score: Number.isFinite(Number(rec.score)) ? Number(rec.score) : 0,
+          reasons: Array.isArray(rec.thesis) ? rec.thesis : [],
+          source: 'house_recommendation',
+          entryZone: Array.isArray(rec.entryZone) ? rec.entryZone : null,
+          horizon: rec.horizon ?? null,
+          mode: rec.mode ?? 'balanced'
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.confidence - a.confidence)
   },
 
   // Calendar events with distribution support

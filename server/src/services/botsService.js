@@ -1,14 +1,16 @@
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
-import { STUB_USER_ID } from '../utils/auth.js'
 import { validateEventMetadata } from '../utils/validation.js'
 
 export default {
   async createBot(data) {
+    if (!data.userId) {
+      throw new Error('userId is required to create a bot')
+    }
     const bot = await prisma.bot.create({
       data: {
         id:          generateId(ID_PREFIXES.BOT),
-        userId:      data.userId || STUB_USER_ID,
+        userId:      data.userId,
         portfolioId: data.portfolioId,
         strategyId:  data.strategyId ?? null,
         templateId:  data.templateId ?? null,
@@ -24,6 +26,9 @@ export default {
   // Create a bot + its rules atomically from a BotTemplate.
   // Callers supply overrides (tickers, quantity) to customise the template defaults.
   async createBotFromTemplate(data) {
+    if (!data.userId) {
+      throw new Error('userId is required to create a bot from template')
+    }
     const template = await prisma.botTemplate.findUnique({ where: { id: data.templateId } })
     if (!template) return null
 
@@ -37,49 +42,45 @@ export default {
       const bot = await tx.bot.create({
         data: {
           id:          generateId(ID_PREFIXES.BOT),
-          userId:      data.userId || STUB_USER_ID,
+          userId:      data.userId,
           portfolioId: data.portfolioId,
           strategyId:  data.strategyId ?? null,
           templateId:  template.id,
           botType:     template.botType,
           name:        data.name ?? template.name,
-          enabled:     data.enabled ?? true,
           config
         }
       })
 
-      const ruleRows = template.rules.map(rule => ({
+      const rules = (template.rules ?? []).map((rule) => ({
         id:      generateId(ID_PREFIXES.RULE),
         botId:   bot.id,
         name:    rule.name,
         type:    rule.type,
-        config:  rule.config,
-        enabled: true
+        config:  rule.config ?? {},
+        enabled: rule.enabled ?? true
       }))
 
-      await tx.botRule.createMany({ data: ruleRows })
+      if (rules.length > 0) {
+        await tx.botRule.createMany({ data: rules })
+      }
 
-      return tx.bot.findUnique({
-        where: { id: bot.id },
-        include: { rules: true }
-      })
+      return {
+        ...bot,
+        rules
+      }
     })
   },
 
-  // ─── Catalog ─────────────────────────────────────────────────────────────────
+  async getBots(query = {}) {
+    const { userId, portfolioId, enabled, offset = 0, limit = 50 } = query
+    if (!userId) {
+      return {
+        data: [],
+        pagination: { total: 0, hasMore: false, nextOffset: null }
+      }
+    }
 
-  async getCatalog(query = {}) {
-    const where = {}
-    if (query.botType) where.botType = query.botType
-    return prisma.botTemplate.findMany({ where, orderBy: { name: 'asc' } })
-  },
-
-  async getCatalogTemplate(id) {
-    return prisma.botTemplate.findUnique({ where: { id } })
-  },
-
-  async getBots(query) {
-    const { userId = STUB_USER_ID, portfolioId, enabled, offset = 0, limit = 50 } = query
     const take = Math.min(parseInt(limit), 100)
     const skip = Math.max(parseInt(offset), 0)
 
@@ -112,15 +113,12 @@ export default {
   },
 
   async getBot(id) {
-    return prisma.bot.findFirst({
-      where: { id, deletedAt: null },
+    return prisma.bot.findUnique({
+      where: { id },
       include: {
         portfolio: true,
         strategy:  true,
-        rules:     { orderBy: { createdAt: 'desc' } },
-        events:    { orderBy: { createdAt: 'desc' }, take: 50 },
-        executions:{ orderBy: { createdAt: 'desc' }, take: 20 },
-        _count:    { select: { executions: true, events: true, rules: true } }
+        rules:     true
       }
     })
   },
@@ -128,49 +126,49 @@ export default {
   async updateBot(id, data) {
     return prisma.bot.update({
       where: { id },
-      data: { ...data, updatedAt: new Date() }
+      data: {
+        ...(data.name       !== undefined ? { name:       data.name }       : {}),
+        ...(data.enabled    !== undefined ? { enabled:    data.enabled }    : {}),
+        ...(data.config     !== undefined ? { config:     data.config }     : {}),
+        ...(data.strategyId !== undefined ? { strategyId: data.strategyId } : {})
+      }
     })
   },
 
   async deleteBot(id) {
     return prisma.bot.update({
       where: { id },
-      data: { deletedAt: new Date(), enabled: false }
+      data:  { deletedAt: new Date() }
     })
   },
 
-  async createBotEvent(data) {
-    validateEventMetadata(data.type, data.metadata)
-    return prisma.botEvent.create({
-      data: {
-        id:          generateId(ID_PREFIXES.EVENT),
-        botId:       data.botId,
-        portfolioId: data.portfolioId,
-        ruleId:      data.ruleId,
-        executionId: data.executionId,
-        type:        data.type,
-        detail:      data.detail,
-        metadata:    data.metadata
-      }
+  async getCatalog(query = {}) {
+    const { botType } = query
+    const where = {}
+    if (botType) where.botType = botType
+
+    return prisma.botTemplate.findMany({
+      where,
+      orderBy: { createdAt: 'asc' }
     })
   },
 
-  async getBotEvents(query) {
-    const { botId, portfolioId, type, offset = 0, limit = 50 } = query
+  async getCatalogTemplate(id) {
+    return prisma.botTemplate.findUnique({
+      where: { id }
+    })
+  },
+
+  async getBotEvents(botId, query = {}) {
+    const { type, offset = 0, limit = 50 } = query
     const take = Math.min(parseInt(limit), 100)
     const skip = Math.max(parseInt(offset), 0)
 
-    const where = {}
-    if (botId)      where.botId      = botId
-    if (portfolioId) where.portfolioId = portfolioId
-    if (type)       where.type       = type
+    const where = { botId }
+    if (type) where.type = type
 
     const events = await prisma.botEvent.findMany({
       where,
-      include: {
-        bot:       { select: { id: true, name: true } },
-        execution: { select: { id: true, ticker: true, direction: true, quantity: true, price: true } }
-      },
       orderBy: { createdAt: 'desc' },
       take,
       skip
@@ -186,5 +184,21 @@ export default {
         nextOffset: skip + take < total ? skip + take : null
       }
     }
+  },
+
+  async createBotEvent(data) {
+    validateEventMetadata(data.metadata)
+    return prisma.botEvent.create({
+      data: {
+        id:          generateId(ID_PREFIXES.EVENT),
+        botId:       data.botId,
+        portfolioId: data.portfolioId,
+        ruleId:      data.ruleId      ?? null,
+        executionId: data.executionId ?? null,
+        type:        data.type,
+        detail:      data.detail,
+        metadata:    data.metadata    ?? {}
+      }
+    })
   }
 }

@@ -1,25 +1,26 @@
 import prisma from '../loaders/prisma.js'
-import { STUB_USER_ID } from '../utils/auth.js'
+import { authenticate } from '../middleware/authenticate.js'
 
 export default async function performanceRoutes(app, opts) {
   // GET /api/performance/stats
-  app.get('/stats', async (request, reply) => {
+  app.get('/stats', { preHandler: [authenticate] }, async (request, reply) => {
     try {
-      return reply.send(await calculatePerformanceStats())
+      return reply.send(await calculatePerformanceStats(request.user.id))
     } catch (error) {
       return reply.code(500).send({ error: error.message })
     }
   })
 
   // GET /api/performance/today
-  app.get('/today', async (request, reply) => {
+  app.get('/today', { preHandler: [authenticate] }, async (request, reply) => {
     try {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
 
+      const userId = request.user.id
       const executions = await prisma.execution.findMany({
         where: {
-          userId:    STUB_USER_ID,
+          userId,
           createdAt: { gte: today }
         }
       })
@@ -52,9 +53,21 @@ export default async function performanceRoutes(app, opts) {
   })
 }
 
-async function calculatePerformanceStats() {
+async function calculatePerformanceStats(userId) {
+  if (!userId) {
+    return {
+      total_trades:       0,
+      win_rate:           0,
+      total_pnl:          0,
+      most_traded_asset:  '—',
+      avg_hold_time:      0,
+      winning_trades:     0,
+      losing_trades:      0
+    }
+  }
+
   const executions = await prisma.execution.findMany({
-    where:   { userId: STUB_USER_ID },
+    where:   { userId },
     orderBy: { createdAt: 'desc' }
   })
 

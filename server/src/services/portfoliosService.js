@@ -1,21 +1,30 @@
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
-import { STUB_USER_ID } from '../utils/auth.js'
 
 export default {
   async createPortfolio(data) {
+    if (!data.userId) {
+      throw new Error('userId is required to create a portfolio')
+    }
     const portfolio = await prisma.portfolio.create({
       data: {
         id: generateId(ID_PREFIXES.PORTFOLIO),
-        userId: data.userId || STUB_USER_ID,
+        userId: data.userId,
         name: data.name
       }
     })
     return portfolio
   },
 
-  async getPortfolios(query) {
-    const { userId = STUB_USER_ID, offset = 0, limit = 50 } = query
+  async getPortfolios(query = {}) {
+    const { userId, offset = 0, limit = 50 } = query
+    if (!userId) {
+      return {
+        data: [],
+        pagination: { total: 0, hasMore: false, nextOffset: null }
+      }
+    }
+
     const take = Math.min(parseInt(limit), 100)
     const skip = Math.max(parseInt(offset), 0)
 

@@ -9,8 +9,24 @@ function buildClientOrderId(executionId) {
 
 export default {
   async createExecution(data) {
+    if (!data || typeof data !== 'object') {
+      throw new Error('Execution data object is required')
+    }
+    if (!data.userId || typeof data.userId !== 'string') {
+      throw new Error('userId is required for execution creation')
+    }
+    if (!data.portfolioId || typeof data.portfolioId !== 'string') {
+      throw new Error('portfolioId is required for execution creation')
+    }
+    if (!data.ticker || typeof data.ticker !== 'string') {
+      throw new Error('ticker is required for execution creation')
+    }
+    const direction = String(data.direction ?? '').toLowerCase().trim()
+    if (direction !== 'buy' && direction !== 'sell') {
+      throw new Error(`Invalid direction: "${data.direction}". Direction must be strictly 'buy' or 'sell'.`)
+    }
+
     const executionId = generateId(ID_PREFIXES.EXECUTION)
-    const direction = data.direction.toLowerCase()
     const execution = await prisma.execution.create({
       data: {
         id: executionId,

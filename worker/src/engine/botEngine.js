@@ -244,8 +244,18 @@ async function evaluateBot(bot, ticker) {
       }
     }
 
+    // Require an explicit, valid trading direction before proceeding
+    // Priority 1 requirement: Never default an absent trading direction to 'buy'
+    if (!side || (side !== 'buy' && side !== 'sell')) {
+      await logBotEvent(bot, 'execution_skipped', `Cannot determine valid trading direction for ${ticker}`, ticker, {
+        reason: 'missing_direction',
+        side
+      })
+      return
+    }
+
     // If we get here, all rules passed - continue with execution
-    evaluationResult = { signal: side || 'buy', confidence: 0.8, reason: 'All custom rules passed' }
+    evaluationResult = { signal: side, confidence: 0.8, reason: 'All custom rules passed' }
   }
 
   // Process evaluation result
@@ -283,8 +293,27 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   const { signal, confidence, reason, metadata } = evaluationResult
   const { currentQty } = context
 
-  const executionId = `exe_${Date.now()}_${randomUUID().slice(0, 8)}`
+  // Enforce valid user and portfolio context
+  if (!bot.userId || !bot.portfolioId) {
+    await logBotEvent(bot, 'execution_skipped', `Bot missing user or portfolio context for ${ticker}`, ticker, {
+      reason: 'missing_user_context',
+      userId: bot.userId,
+      portfolioId: bot.portfolioId
+    })
+    return
+  }
+
+  // Priority 1 requirement: strictly require 'buy' or 'sell'
   const direction = signal
+  if (!direction || (direction !== 'buy' && direction !== 'sell')) {
+    await logBotEvent(bot, 'execution_skipped', `Missing or invalid trading direction for ${ticker}`, ticker, {
+      reason: 'invalid_direction',
+      signal
+    })
+    return
+  }
+
+  const executionId = `exe_${Date.now()}_${randomUUID().slice(0, 8)}`
   const inflightKey = `${bot.id}:${ticker}`
   const activeIntentKey = buildActiveIntentKey(bot.id, ticker, direction)
 

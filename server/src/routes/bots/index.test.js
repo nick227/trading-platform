@@ -62,6 +62,15 @@ vi.mock('../../middleware/authenticate.js', () => ({
   })
 }))
 
+vi.mock('../../services/alpacaClockService.js', () => ({
+  getUserAlpacaCredentialsOrThrow: vi.fn().mockResolvedValue({
+    apiKey: 'test-key',
+    apiSecret: 'test-secret',
+    paper: true,
+    baseUrl: 'https://paper-api.alpaca.markets'
+  })
+}))
+
 vi.mock('../../services/botsService.js', () => ({
   default: {
     getBots: vi.fn().mockResolvedValue({
@@ -85,6 +94,16 @@ vi.mock('../../services/botsService.js', () => ({
 
 vi.mock('../../loaders/prisma.js', () => ({
   default: {
+    brokerAccount: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: 'bro_test123',
+        userId: 'usr_test123',
+        apiKey: 'test_key',
+        apiSecret: 'test_secret',
+        paper: true,
+        status: 'active'
+      })
+    },
     portfolio: {
       findUnique: vi.fn().mockResolvedValue(mockPortfolio)
     },
@@ -246,8 +265,8 @@ describe('GET /api/bots/catalog', () => {
   it('returns all templates', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/bots/catalog' })
     expect(res.statusCode).toBe(200)
-    expect(res.json().data).toHaveLength(1)
-    expect(res.json().data[0].id).toBe('tpl_test123')
+    expect(res.json().data.ruleBased).toHaveLength(1)
+    expect(res.json().data.ruleBased[0].id).toBe('tpl_test123')
   })
 })
 

@@ -1,7 +1,6 @@
 import prisma from '../loaders/prisma.js'
-import { STUB_USER_ID } from '../utils/auth.js'
 import { authenticate } from '../middleware/authenticate.js'
-import { encrypt, decrypt } from '../utils/encryption.js'
+import { encrypt } from '../utils/encryption.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 import { getReconcileStatus, reconcileBrokerActivity } from '../services/brokerReconciliationService.js'
@@ -29,13 +28,17 @@ async function fetchAlpacaAccount(userId) {
 }
 
 export default async function accountRoutes(fastify) {
-  // GET /api/account — account summary
+  // Enforce authentication across all account routes
+  fastify.addHook('preHandler', authenticate)
+
+  // GET /api/account — account summary for authenticated user
   fastify.get('/', async (request, reply) => {
     try {
+      const userId = request.user.id
       const [alpaca, executions] = await Promise.all([
-        fetchAlpacaAccount(request.user?.id || STUB_USER_ID),
+        fetchAlpacaAccount(userId),
         prisma.execution.findMany({
-          where:   { userId: STUB_USER_ID },
+          where:   { userId },
           orderBy: { createdAt: 'desc' }
         })
       ])
@@ -58,11 +61,12 @@ export default async function accountRoutes(fastify) {
     }
   })
 
-  // GET /api/account/positions
+  // GET /api/account/positions — filled positions for authenticated user
   fastify.get('/positions', async (request, reply) => {
     try {
+      const userId = request.user.id
       const executions = await prisma.execution.findMany({
-        where:   { userId: STUB_USER_ID, status: 'filled' },
+        where:   { userId, status: 'filled' },
         orderBy: { createdAt: 'asc' }
       })
 
@@ -96,18 +100,13 @@ export default async function accountRoutes(fastify) {
   })
 
   // POST /api/account/broker-credentials — save or update Alpaca keys for the logged-in user
-  fastify.post('/broker-credentials', {
-    preHandler: [authenticate]
-  }, async (request, reply) => {
+  fastify.post('/broker-credentials', async (request, reply) => {
     const { apiKey, apiSecret, paper = true } = request.body ?? {}
     if (!apiKey || !apiSecret) {
       return reply.code(400).send({ error: 'apiKey and apiSecret are required' })
     }
 
-    const userId = request.user?.id
-    if (!userId) {
-      return reply.code(401).send({ error: 'User authentication required' })
-    }
+    const userId = request.user.id
 
     // Verify credentials against Alpaca before saving
     const base = paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
@@ -145,39 +144,21 @@ export default async function accountRoutes(fastify) {
   })
 
   // GET /api/account/broker-credentials — check if broker account is connected
-  fastify.get('/broker-credentials', {
-    preHandler: [authenticate]
-  }, async (request, reply) => {
-    const userId = request.user?.id
-    if (!userId) {
-      return reply.code(401).send({ error: 'User authentication required' })
-    }
-
+  fastify.get('/broker-credentials', async (request, reply) => {
+    const userId = request.user.id
     const broker = await prisma.brokerAccount.findUnique({ where: { userId: String(userId) } })
     if (!broker) return reply.send({ connected: false })
     return reply.send({ connected: true, paper: broker.paper, status: broker.status, lastVerifiedAt: broker.lastVerifiedAt })
   })
 
-  fastify.get('/reconcile-status', {
-    preHandler: [authenticate]
-  }, async (request, reply) => {
-    const userId = request.user?.id
-    if (!userId) {
-      return reply.code(401).send({ error: 'User authentication required' })
-    }
-
+  fastify.get('/reconcile-status', async (request, reply) => {
+    const userId = request.user.id
     const status = await getReconcileStatus(String(userId))
     return reply.send(status)
   })
 
-  fastify.post('/reconcile', {
-    preHandler: [authenticate]
-  }, async (request, reply) => {
-    const userId = request.user?.id
-    if (!userId) {
-      return reply.code(401).send({ error: 'User authentication required' })
-    }
-
+  fastify.post('/reconcile', async (request, reply) => {
+    const userId = request.user.id
     try {
       const result = await reconcileBrokerActivity(String(userId))
       return reply.send(result)
