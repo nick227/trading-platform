@@ -300,6 +300,13 @@ export const engineClient = {
     }
   },
 
+  // Uncached, tenant-specific original Alpha Engine research evidence.
+  async getPredictionTrace(predictionId, tenantId = 'default') {
+    if (!predictionId || typeof predictionId !== 'string') throw new Error('predictionId is required')
+    const params = new URLSearchParams({ tenant_id: tenantId })
+    return engineFetch('/api/predictions/' + encodeURIComponent(predictionId) + '/trace?' + params.toString())
+  },
+
   // Rankings endpoints
   async getTopRankings(limit = 20, maxFragility = null) {
     // Use base cache key (null) for all requests - filter locally
