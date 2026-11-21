@@ -181,5 +181,32 @@
         "config": { "symbol": "SPY", "confirmationBars": 2, "maxSnapshotAgeHours": 90, "side": "buy" }
       }
     ]
+  },
+  {
+    "id": "tmpl_alpha_research",
+    "name": "Alpha Research Follower",
+    "description": "Trades only when a current, verified Alpha Engine prediction supports it. Direction and confidence come from the stored prediction, which is archived with every order for trade history. Acts once per prediction; stale, low-confidence, degraded-run, or price-drifted research is recorded and not traded. Paper trading only.",
+    "botType": "rule_based",
+    "tags": ["research", "alpha-engine", "evidence"],
+    "config": {
+      "signalSource": "alpha_research",
+      "tickers": ["SPY"],
+      "capitalMode": "allocated",
+      "allocatedAmount": 5000,
+      "maxOrderNotional": 1000,
+      "research": { "minConfidence": 0.6, "maxPredictionAgeHours": 96, "maxEntryDriftPct": 5 }
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": { "allowPremarket": false, "allowAfterHours": false }
+      },
+      {
+        "name": "Position Limit",
+        "type": "position_limit",
+        "config": { "maxShares": 100, "maxQuantity": 100 }
+      }
+    ]
   }
 ]

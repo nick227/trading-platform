@@ -261,6 +261,23 @@ if (size > 500) delete first key      // evict least recently used
 
 Positions are refreshed from Alpaca REST every 60 seconds per user. On Alpaca error, stale positions are returned rather than failing rule evaluation.
 
+### Research-driven bots (`config.signalSource = 'alpha_research'`)
+
+Template: `tmpl_alpha_research` ("Alpha Research Follower"). On each tick, after the inflight guard:
+
+1. **Locate** the latest ranked prediction for the ticker via Alpha Engine `/ranking/top` (an index only; cached `RESEARCH_INDEX_TTL_MS`).
+2. **Skip if already acted on**: one accepted decision per (bot, prediction), checked in the DB within the policy age window.
+3. **Fetch and verify** the stored trace (`/api/predictions/:id/trace`, research-trace/v1, SHA-256 over Alpha Engine's canonical JSON). Unreachable → `research_unavailable`; unverifiable → `research_evidence_unverified`. Nothing is recorded as a decision.
+4. **Decide** (`engine/researchDecision.js`, pure, fail-closed) on that exact snapshot: run tier must be `full` and not degraded; direction BUY/UP → buy, SELL/DOWN → sell; age ≤ `maxPredictionAgeHours`; horizon allow-list; `confidence ≥ minConfidence` (uncalibrated score, not a probability); optional `config.direction` filter; price within `maxEntryDriftPct` of the research entry price.
+   Rejected/suppressed outcomes are written as `decision_made` events with the evidence (throttled) and do not trade.
+5. **Rules** (market hours, position limit, …) still gate the trade, then the portfolio pre-check.
+6. **One transaction**: create the execution (`signalScore` = research confidence), write the accepted `decision_made` event with the verified evidence, and link it (`linkResearchDecisionToExecution`). Either all three commit or none do.
+7. **Final boundary**: `evaluateOrderEligibility` refuses a research-bot order (`research_evidence_unverified`) unless exactly one accepted, digest-verified decision is linked and matches its ticker and direction — in addition to every M6 check.
+
+Trade history reads the archived evidence via `GET /api/executions/:id/research`; it never re-queries Alpha Engine.
+
+Policy (`config.research`): `minConfidence` (0.6), `maxPredictionAgeHours` (96), `maxEntryDriftPct` (5), `allowedHorizons` (any), `tenantId` (`default`).
+
 ---
 
 ## Rule Evaluators
@@ -537,5 +554,9 @@ That's the complete surface area for a new rule. The worker picks it up on the n
 |---|---|---|---|
 | `DATABASE_URL` | Yes | — | MySQL connection string (`mysql://user:pass@host:3306/db`) |
 | `ALLOW_LIVE_TRADING` | No | `false` | Set to `true` to allow non-paper Alpaca accounts |
+| `ENGINE_URL` | For research bots | `http://localhost:8090` | Alpha Engine internal read API (same value as the API server) |
+| `INTERNAL_READ_KEY` | For research bots | — | Alpha Engine internal key (same value as the API server). Without it research bots fail closed (`research_unavailable`) |
+| `BOT_RESEARCH_RECHECK_MS` | No | `60000` | How long a verified trace is reused per (bot, ticker) before Alpha Engine is consulted again |
+| `RESEARCH_INDEX_TTL_MS` | No | `30000` | Cache TTL of the ticker → prediction index |
 
 The worker reads `BrokerAccount` credentials from the database at runtime. API keys are never in environment variables.
