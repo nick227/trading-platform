@@ -21,6 +21,14 @@ enum BotEventType {
   execution_created
   execution_skipped
   error_occurred
+  strategy_error
+  signal_hold
+  execution_blocked_by_risk
+  execution_failed
+  risk_evaluation_failed
+  bot_paused
+  bot_resumed
+  bot_stopped
 }
 
 enum ExecutionAuditEventType {

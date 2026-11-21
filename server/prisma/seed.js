@@ -11,6 +11,8 @@ async function main() {
     readFileSync(join(__dir, 'seeds/bot-templates.json'), 'utf8')
   )
 
+  const activeIds = templates.map(t => t.id)
+
   for (const template of templates) {
     await prisma.botTemplate.upsert({
       where:  { id: template.id },
@@ -20,7 +22,8 @@ async function main() {
         botType:     template.botType,
         config:      template.config,
         rules:       template.rules,
-        tags:        template.tags ?? null
+        tags:        template.tags ?? null,
+        updatedAt:   new Date()
       },
       create: {
         id:          template.id,
@@ -35,7 +38,15 @@ async function main() {
     console.log(`[seed] upserted template: ${template.id}`)
   }
 
-  console.log(`[seed] done — ${templates.length} template(s) seeded`)
+  // Prune any legacy or unsupported templates not in activeIds
+  const deleted = await prisma.botTemplate.deleteMany({
+    where: { id: { notIn: activeIds } }
+  })
+  if (deleted.count > 0) {
+    console.log(`[seed] pruned ${deleted.count} obsolete template(s)`)
+  }
+
+  console.log(`[seed] done — ${templates.length} template(s) active`)
 }
 
 main()

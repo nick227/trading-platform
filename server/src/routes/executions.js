@@ -3,22 +3,28 @@ import { authenticate } from '../middleware/authenticate.js'
 import { fetchAlpacaMarketClock, getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
 export default async function executionsRoutes(app) {
-  // GET /api/executions/summary — must precede /:id
-  app.get('/summary', async (request, reply) => {
-    const summary = await executionsService.getExecutionSummary(request.query)
+  // GET /api/executions/summary — must precede /:id, authenticated and user-scoped
+  app.get('/summary', { preHandler: [authenticate] }, async (request, reply) => {
+    const summary = await executionsService.getExecutionSummary({
+      ...request.query,
+      userId: request.user.id
+    })
     return reply.send({ data: summary })
   })
 
-  // GET /api/executions
-  app.get('/', async (request, reply) => {
-    const result = await executionsService.getExecutions(request.query)
+  // GET /api/executions — authenticated and strictly user-scoped
+  app.get('/', { preHandler: [authenticate] }, async (request, reply) => {
+    const result = await executionsService.getExecutions({
+      ...request.query,
+      userId: request.user.id
+    })
     return reply.send(result)
   })
 
-  // GET /api/executions/:id
-  app.get('/:id', async (request, reply) => {
+  // GET /api/executions/:id — authenticated and strictly user-scoped
+  app.get('/:id', { preHandler: [authenticate] }, async (request, reply) => {
     const execution = await executionsService.getExecution(request.params.id)
-    if (!execution) {
+    if (!execution || execution.userId !== request.user.id) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Execution not found' } })
     }
     return { data: execution }
@@ -88,4 +94,3 @@ export default async function executionsRoutes(app) {
     }
   })
 }
-

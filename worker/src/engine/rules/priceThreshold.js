@@ -1,6 +1,6 @@
 import { priceCache } from '../../market/priceCache.js'
 
-// config: { operator: 'above' | 'below', price: number }
+// config: { operator?: 'above' | 'below', direction?: 'above' | 'below', price: number }
 export function evaluatePriceThreshold(config, ticker) {
   const quote = priceCache.getIfFresh(ticker)
   if (!quote) {
@@ -13,15 +13,18 @@ export function evaluatePriceThreshold(config, ticker) {
     return { pass: false, reason: 'no_price_available' }
   }
 
+  const operator = config.operator || config.direction || 'above'
+  const threshold = Number(config.price ?? 0)
+
   const passes =
-    config.operator === 'above' ? current > config.price :
-    config.operator === 'below' ? current < config.price :
+    operator === 'above' ? current > threshold :
+    operator === 'below' ? current < threshold :
     false
 
   return {
     pass: passes,
-    reason: passes ? null : `price_${config.operator}_threshold_not_met`,
+    reason: passes ? null : `price_${operator}_threshold_not_met`,
     current,
-    threshold: config.price
+    threshold
   }
 }

@@ -16,6 +16,7 @@ async function main() {
   )
 
   console.log(`[seed] Found ${templates.length} templates to process`)
+  const activeIds = templates.map(t => t.id)
 
   for (const template of templates) {
     try {
@@ -46,11 +47,17 @@ async function main() {
     }
   }
 
+  const deleted = await prisma.botTemplate.deleteMany({
+    where: { id: { notIn: activeIds } }
+  })
+  if (deleted.count > 0) {
+    console.log(`[seed] Pruned ${deleted.count} obsolete templates`)
+  }
+
   // Verify templates were seeded
   const count = await prisma.botTemplate.count()
   console.log(`[seed] Complete! Total templates in database: ${count}`)
   
-  // Show template breakdown by type
   const ruleBased = await prisma.botTemplate.count({ where: { botType: 'rule_based' } })
   const strategyBased = await prisma.botTemplate.count({ where: { botType: 'strategy_based' } })
   console.log(`[seed] Rule-based templates: ${ruleBased}`)

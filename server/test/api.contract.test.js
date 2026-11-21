@@ -143,10 +143,14 @@ describe('API contract tests', () => {
   })
 
   it('returns 404 for a missing execution', async () => {
+    const user = { id: 'usr_1', email: 't@example.com', fullName: 'Test User', subscription: { status: 'ACTIVE' } }
+    prisma.user.findUnique.mockResolvedValue(user)
     prisma.execution.findUnique.mockResolvedValue(null)
+    const token = app.jwt.sign({ sub: user.id })
 
     const response = await request(app.server)
       .get('/api/executions/missing-id')
+      .set('Cookie', [`access_token=${token}`])
       .expect(404)
 
     expect(response.body).toEqual({

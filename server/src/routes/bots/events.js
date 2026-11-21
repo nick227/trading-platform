@@ -6,21 +6,21 @@ export default async function botEventsRoutes(app, opts) {
   app.get('/', async (request, reply) => {
     const { id } = request.params
 
-    const bot = await prisma.bot.findFirst({ where: { id, deletedAt: null } })
+    const bot = await prisma.bot.findFirst({ where: { id } })
     if (!bot || bot.userId !== request.user.id) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
     }
 
-    const result = await botsService.getBotEvents({ ...request.query, botId: id })
+    const result = await botsService.getBotEvents(id, request.query)
     return reply.send(result)
   })
 
-  // POST /api/bots/events
+  // POST /api/bots/:id/events
   app.post('/', {
     schema: {
       body: {
         type: 'object',
-        required: ['botId', 'portfolioId', 'type', 'detail'],
+        required: ['portfolioId', 'type', 'detail'],
         properties: {
           botId: { type: 'string' },
           portfolioId: { type: 'string' },
@@ -28,7 +28,21 @@ export default async function botEventsRoutes(app, opts) {
           executionId: { type: 'string' },
           type: { 
             type: 'string', 
-            enum: ['rule_triggered', 'decision_made', 'execution_created', 'execution_skipped', 'error_occurred'] 
+            enum: [
+              'rule_triggered',
+              'decision_made',
+              'execution_created',
+              'execution_skipped',
+              'error_occurred',
+              'strategy_error',
+              'signal_hold',
+              'execution_blocked_by_risk',
+              'execution_failed',
+              'risk_evaluation_failed',
+              'bot_paused',
+              'bot_resumed',
+              'bot_stopped'
+            ] 
           },
           detail: { type: 'string' },
           metadata: { type: 'object' }
@@ -36,12 +50,17 @@ export default async function botEventsRoutes(app, opts) {
       }
     }
   }, async (request, reply) => {
-    const bot = await prisma.bot.findFirst({ where: { id: request.body.botId, deletedAt: null } })
+    const botId = request.body.botId || request.params.id
+    const bot = await prisma.bot.findFirst({ where: { id: botId } })
     if (!bot || bot.userId !== request.user.id) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
     }
 
-    const event = await botsService.createBotEvent(request.body)
+    const event = await botsService.createBotEvent({
+      ...request.body,
+      botId,
+      portfolioId: request.body.portfolioId || bot.portfolioId
+    })
     return reply.code(201).send({ data: event })
   })
 }

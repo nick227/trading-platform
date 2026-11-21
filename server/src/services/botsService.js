@@ -2,6 +2,36 @@ import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
 
+async function computeBotPerformance(botId) {
+  try {
+    const fills = await prisma.execution.findMany({
+      where: { botId, status: 'filled' },
+      select: { pnl: true, fees: true, filledPrice: true, filledQuantity: true, direction: true, filledAt: true }
+    })
+
+    if (!fills || fills.length === 0) {
+      return null
+    }
+
+    let realizedPnl = 0
+    let fees = 0
+    for (const f of fills) {
+      realizedPnl += Number(f.pnl ?? 0)
+      fees += Number(f.fees ?? 0)
+    }
+
+    return {
+      realizedPnl,
+      unrealizedPnl: null,
+      totalPnl: realizedPnl,
+      fees,
+      asOf: new Date().toISOString()
+    }
+  } catch {
+    return null
+  }
+}
+
 export default {
   async createBot(data) {
     if (!data.userId) {
@@ -16,7 +46,7 @@ export default {
         templateId:  data.templateId ?? null,
         botType:     data.botType ?? 'rule_based',
         name:        data.name,
-        enabled:     data.enabled ?? true,
+        enabled:     data.enabled ?? false,
         config:      data.config ?? {}
       }
     })
@@ -24,7 +54,7 @@ export default {
   },
 
   // Create a bot + its rules atomically from a BotTemplate.
-  // Callers supply overrides (tickers, quantity) to customise the template defaults.
+  // Callers supply overrides to customise the template defaults.
   async createBotFromTemplate(data) {
     if (!data.userId) {
       throw new Error('userId is required to create a bot from template')
@@ -32,10 +62,44 @@ export default {
     const template = await prisma.botTemplate.findUnique({ where: { id: data.templateId } })
     if (!template) return null
 
+    // Validate capital / max order notional if provided
+    const rawCapital = data.capital ?? data.allocatedAmount
+    if (rawCapital !== undefined && rawCapital !== null) {
+      const cap = Number(rawCapital)
+      if (!Number.isFinite(cap) || cap <= 0) {
+        const err = new Error('Capital must be greater than 0')
+        err.statusCode = 400
+        throw err
+      }
+    }
+
+    const rawMaxOrder = data.maxOrderNotional ?? data.maxPerOrder
+    if (rawMaxOrder !== undefined && rawMaxOrder !== null) {
+      const maxOrd = Number(rawMaxOrder)
+      if (!Number.isFinite(maxOrd) || maxOrd <= 0) {
+        const err = new Error('Max order notional must be greater than 0')
+        err.statusCode = 400
+        throw err
+      }
+    }
+
+    const allocatedAmount = data.allocatedAmount ?? data.capital ?? template.config?.allocatedAmount ?? null
+    const maxOrderNotional = data.maxOrderNotional ?? data.maxPerOrder ?? template.config?.maxOrderNotional ?? null
+    const capitalMode = data.capitalMode ?? template.config?.capitalMode ?? (allocatedAmount ? 'allocated' : 'legacy')
+    const direction = data.direction ?? template.config?.direction ?? null
+    const tickers = data.tickers ?? template.config?.tickers ?? []
+    const quantity = data.quantity ?? template.config?.quantity ?? (allocatedAmount ? null : 1)
+
     const config = {
       ...template.config,
-      ...(data.tickers  ? { tickers:  data.tickers }  : {}),
-      ...(data.quantity ? { quantity: data.quantity }  : {})
+      ...(data.config ?? {}),
+      tickers,
+      ...(direction ? { direction } : {}),
+      ...(quantity != null ? { quantity } : {}),
+      ...(allocatedAmount != null ? { allocatedAmount: Number(allocatedAmount) } : {}),
+      ...(maxOrderNotional != null ? { maxOrderNotional: Number(maxOrderNotional) } : {}),
+      ...(capitalMode ? { capitalMode } : {}),
+      riskOnExposure: data.riskOnExposure ?? template.config?.riskOnExposure ?? 1.0,
     }
 
     return prisma.$transaction(async (tx) => {
@@ -48,11 +112,16 @@ export default {
           templateId:  template.id,
           botType:     template.botType,
           name:        data.name ?? template.name,
+          enabled:     data.enabled ?? false,
           config
         }
       })
 
-      const rules = (template.rules ?? []).map((rule) => ({
+      const templateRules = Array.isArray(data.rules) && data.rules.length > 0
+        ? data.rules
+        : (template.rules ?? [])
+
+      const rules = templateRules.map((rule) => ({
         id:      generateId(ID_PREFIXES.RULE),
         botId:   bot.id,
         name:    rule.name,
@@ -102,8 +171,17 @@ export default {
 
     const total = await prisma.bot.count({ where })
 
+    const data = await Promise.all(bots.map(async (bot) => {
+      const performance = await computeBotPerformance(bot.id)
+      return {
+        ...bot,
+        performance,
+        capitalInUse: null
+      }
+    }))
+
     return {
-      data: bots,
+      data,
       pagination: {
         total,
         hasMore: skip + take < total,
@@ -113,7 +191,7 @@ export default {
   },
 
   async getBot(id) {
-    return prisma.bot.findUnique({
+    const bot = await prisma.bot.findUnique({
       where: { id },
       include: {
         portfolio: true,
@@ -121,10 +199,19 @@ export default {
         rules:     true
       }
     })
+    if (!bot) return null
+
+    const performance = await computeBotPerformance(id)
+    return {
+      ...bot,
+      performance,
+      capitalInUse: null
+    }
   },
 
   async updateBot(id, data) {
-    return prisma.bot.update({
+    const existing = await prisma.bot.findUnique({ where: { id } })
+    const updated = await prisma.bot.update({
       where: { id },
       data: {
         ...(data.name       !== undefined ? { name:       data.name }       : {}),
@@ -133,13 +220,62 @@ export default {
         ...(data.strategyId !== undefined ? { strategyId: data.strategyId } : {})
       }
     })
+
+    // Persist pause/resume event
+    if (data.enabled !== undefined && existing && existing.enabled !== data.enabled) {
+      const eventType = data.enabled ? 'bot_resumed' : 'bot_paused'
+      const detail = data.enabled ? 'Bot resumed' : 'Bot paused'
+      try {
+        await prisma.botEvent.create({
+          data: {
+            id:          generateId(ID_PREFIXES.EVENT),
+            botId:       id,
+            portfolioId: updated.portfolioId,
+            type:        eventType,
+            detail,
+            metadata:    { enabled: data.enabled, userId: updated.userId }
+          }
+        })
+      } catch (err) {
+        console.error('Failed to persist bot lifecycle event:', err)
+        throw err
+      }
+    }
+
+    const performance = await computeBotPerformance(id)
+    return {
+      ...updated,
+      performance,
+      capitalInUse: null
+    }
   },
 
   async deleteBot(id) {
-    return prisma.bot.update({
+    const bot = await prisma.bot.findUnique({ where: { id } })
+    const deleted = await prisma.bot.update({
       where: { id },
       data:  { deletedAt: new Date() }
     })
+
+    if (bot) {
+      try {
+        await prisma.botEvent.create({
+          data: {
+            id:          generateId(ID_PREFIXES.EVENT),
+            botId:       id,
+            portfolioId: bot.portfolioId,
+            type:        'bot_stopped',
+            detail:      'Bot stopped',
+            metadata:    { stopped: true, userId: bot.userId }
+          }
+        })
+      } catch (err) {
+        console.error('Failed to persist bot_stopped event:', err)
+        throw err
+      }
+    }
+
+    return deleted
   },
 
   async getCatalog(query = {}) {
@@ -159,7 +295,9 @@ export default {
     })
   },
 
-  async getBotEvents(botId, query = {}) {
+  async getBotEvents(arg1, arg2 = {}) {
+    const botId = typeof arg1 === 'string' ? arg1 : (arg1?.botId ?? null)
+    const query = typeof arg1 === 'object' && (!arg2 || Object.keys(arg2).length === 0) ? arg1 : (arg2 ?? {})
     const { type, offset = 0, limit = 50 } = query
     const take = Math.min(parseInt(limit), 100)
     const skip = Math.max(parseInt(offset), 0)
