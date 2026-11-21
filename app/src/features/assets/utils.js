@@ -46,6 +46,7 @@ export function fmtAsOf(value) {
 }
 
 export function normalizeConfidence(value) {
+  if (value == null || value === '') return null
   const num = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(num)) return null
   if (num <= 1) return Math.round(num * 100)
@@ -80,6 +81,7 @@ export function parseEntryZone(value) {
 
 export function deriveRowPrice(row) {
   const raw =
+    row?.referencePrice ??
     row?.price ??
     row?.last ??
     row?.currentPrice ??

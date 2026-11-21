@@ -124,7 +124,7 @@ export function VerdictBadge({ verdict, loading = false, size = 'medium', style 
       />
       {size !== 'small' && (
         <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>
-          {Math.round(verdict.confidence * 100)}% confident
+          {verdict.confidence == null ? 'Success probability unavailable' : `${Math.round(verdict.confidence * 100)}% confident`}
         </div>
       )}
     </div>
@@ -133,6 +133,7 @@ export function VerdictBadge({ verdict, loading = false, size = 'medium', style 
 
 // Confidence meter component
 export function ConfidenceMeter({ confidence, size = 'medium', style = {}, ...props }) {
+  if (confidence == null) return <span style={style}>Success probability unavailable</span>
   const confidenceLevel = getConfidenceLevel(confidence)
   const confidenceColors = getConfidenceColors(confidence)
   const percentage = Math.round((confidence || 0) * 100)
@@ -192,7 +193,8 @@ export function ConfidenceMeter({ confidence, size = 'medium', style = {}, ...pr
 }
 
 // Risk badge component
-export function RiskBadge({ risk = 'Medium', size = 'medium', style = {}, ...props }) {
+export function RiskBadge({ risk = null, size = 'medium', style = {}, ...props }) {
+  if (risk == null) return <span style={style}>Risk estimate unavailable</span>
   const riskMap = {
     'Low': 'LOW_RISK',
     'Medium': 'MEDIUM_RISK', 

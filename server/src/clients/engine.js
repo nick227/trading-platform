@@ -267,7 +267,12 @@ async function getDiscoveryFallbackRows({ capNum, mode, targetCount, seen }) {
       action: 'WATCH',
       confidence: null,
       score: null,
-      entryZone: [price, price],
+      entryZone: null,
+      referencePrice: price,
+      actionable: false,
+      successProbability: null,
+      confidenceMethodology: { status: 'unavailable', method: 'not_calibrated' },
+      suppressionReasons: ['RESEARCH_FALLBACK'],
       priceCap: capNum,
       mode,
       asOf: row.quoteUpdatedAt ? new Date(row.quoteUpdatedAt).toISOString() : new Date().toISOString(),
@@ -676,7 +681,7 @@ export const engineClient = {
         meta: {
           targetCount,
           returnedCount: existing.length,
-          liveOnly: true,
+          liveOnly: normalized.qualityStatus?.status === 'healthy',
           complete: true,
           source: 'engine_native'
         }
@@ -708,12 +713,19 @@ export const engineClient = {
         ticker,
         symbol: ticker,
         action: 'WATCH',
-        confidence: row?.confidence ?? null,
+        confidence: null,
         score: row?.score ?? null,
-        entryZone: [price, price],
+        entryZone: null,
+        referencePrice: price,
+        referencePriceAsOf: row?.asOf ?? row?.timestamp ?? null,
+        actionable: false,
+        successProbability: null,
+        confidenceMethodology: { status: 'unavailable', method: 'not_calibrated' },
+        qualityStatus: { status: 'suppressed', actionable: false, suppressionReasons: ['RESEARCH_FALLBACK'] },
+        suppressionReasons: ['RESEARCH_FALLBACK'],
         priceCap: capNum,
         mode,
-        asOf: row?.asOf ?? new Date().toISOString(),
+        asOf: row?.asOf ?? row?.timestamp ?? null,
         source: 'canonical_rankings'
       })
       seen.add(ticker)
@@ -724,11 +736,12 @@ export const engineClient = {
     const shortfall = Math.max(0, targetCount - returnedCount)
 
     return {
+      ...normalized,
       recommendations: merged,
       meta: {
         targetCount,
         returnedCount,
-        liveOnly: true,
+        liveOnly: false,
         complete: shortfall === 0,
         reason: shortfall > 0 ? 'insufficient_under_cap' : null,
         source: existing.length > 0 ? 'hybrid' : 'canonical_rankings'
@@ -754,8 +767,16 @@ export const engineClient = {
     // Check intelligence confidence and pipeline gates
     const tier = recommendationsPayload.intelligenceConfidenceTier
     const pipelineSignals = recommendationsPayload.pipelineSignals
-    const isDegraded = tier === 'degraded' || pipelineSignals?.rankingsSuppressed === true
-    if (isDegraded) {
+    const quality = recommendationsPayload.qualityStatus
+    const evaluatedAt = Date.parse(quality?.evaluatedAt)
+    const qualityAge = Date.now() - evaluatedAt
+    const isHealthy = tier === 'full' && quality?.status === 'healthy' && quality?.actionable === true
+      && quality?.suppressionReasons?.length === 0
+      && pipelineSignals?.predictionPipelineActive === true
+      && pipelineSignals?.serviceMode === 'normal'
+      && pipelineSignals?.rankingsSuppressed !== true
+      && Number.isFinite(qualityAge) && qualityAge >= 0 && qualityAge <= 60_000
+    if (!isHealthy) {
       return []
     }
 
@@ -765,6 +786,17 @@ export const engineClient = {
 
     return recs
       .map(rec => {
+        // Consumer adapter boundary only: uncalibrated research is never an order signal.
+        const probability = rec.successProbability
+        const rowAge = Date.now() - Date.parse(rec.qualityStatus?.evaluatedAt)
+        if (rec.actionable !== true || rec.qualityStatus?.status !== 'healthy'
+          || rec.qualityStatus?.actionable !== true || rec.suppressionReasons?.length !== 0
+          || rec.qualityStatus?.suppressionReasons?.length !== 0
+          || !Number.isFinite(rowAge) || rowAge < 0 || rowAge > 60_000
+          || rec.confidenceMethodology?.status !== 'available'
+          || rec.confidenceMethodology?.method !== 'empirically_calibrated'
+          || typeof probability !== 'number' || !Number.isFinite(probability)
+          || probability < 0 || probability > 1) return null
         const rawAction = String(rec.action ?? '').toUpperCase().trim()
         // Never default an absent or ambiguous direction to 'buy'
         if (rawAction !== 'BUY' && rawAction !== 'SELL') {
@@ -776,7 +808,7 @@ export const engineClient = {
           type: isBuy ? 'ENTRY' : 'EXIT',
           direction: isBuy ? 'buy' : 'sell',
           symbol: rec.ticker,
-          confidence: Number.isFinite(Number(rec.confidence)) ? Number(rec.confidence) : 0,
+          confidence: probability,
           score: Number.isFinite(Number(rec.score)) ? Number(rec.score) : 0,
           reasons: Array.isArray(rec.thesis) ? rec.thesis : [],
           source: 'house_recommendation',

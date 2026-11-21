@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import alphaEngineService from '../api/services/alphaEngineService.js'
-import { confidenceToSignal } from '../utils/signal.js'
 
 /**
  * Loads all data for a single ticker via the bootstrap endpoint.
@@ -71,34 +70,25 @@ export function useOrderBootstrap(symbol, range = '1Y', setSelectedStock = null)
         const explainability = data.alpha && typeof data.alpha === 'object' ? data.alpha : null
         const hasRec = rec && typeof rec === 'object' && (rec.action || rec.confidence != null)
 
-        // alpha explainability uses 0–1 confidence; recommendation uses 0–100
-        const alphaSource = hasRec
-          ? { confidence: rec.confidence ?? 0, action: rec.action, explanation: rec.thesis?.join(' '), _scale: 'percent' }
-          : explainability
-            ? { ...explainability, _scale: 'fraction' }
-            : null
-
-        if (alphaSource) {
-          const confidence = alphaSource._scale === 'fraction'
-            ? Math.round((alphaSource.confidence ?? 0) * 100)
-            : (alphaSource.confidence ?? 0)
-
-          // action gives direction; confidence gives strength — treat independently
-          const action = (alphaSource.action ?? '').toUpperCase()
-          const signal = action === 'BUY'  ? (confidence >= 70 ? 'STRONG_BUY'  : 'BUY')
-                       : action === 'SELL' ? (confidence >= 70 ? 'STRONG_SELL' : 'SELL')
-                       : action === 'HOLD' ? 'HOLD'
-                       : confidenceToSignal(confidence)
-
+        // Research scores and explainability must never become directional order advice.
+        if (hasRec || explainability) {
+          const actionable = rec?.actionable === true && rec?.qualityStatus?.status === 'healthy'
+          const action = actionable ? String(rec.action ?? '').toUpperCase() : 'WATCH'
+          const probability = rec?.successProbability
+          const calibrated = rec?.confidenceMethodology?.method === 'empirically_calibrated'
+            && rec?.confidenceMethodology?.status === 'available'
+            && typeof probability === 'number' && probability >= 0 && probability <= 1
           setAlpha({
-            signal,
-            confidence,
-            timeframe: rec?.horizon ?? explainability?.timeframe ?? '30d',
-            reasoning: explainability?.explanation ?? alphaSource.explanation ?? 'No reasoning available',
-            thesis:    rec?.thesis ?? [],
-            avoidIf:   rec?.avoidIf ?? [],
+            signal: ['BUY', 'SELL', 'HOLD'].includes(action) ? action : 'WATCH',
+            confidence: calibrated ? Math.round(probability * 100) : null,
+            actionable,
+            qualityStatus: rec?.qualityStatus ?? null,
+            timeframe: rec?.horizon ?? null,
+            reasoning: rec?.explanations?.join(' ') ?? explainability?.explanation ?? 'No explanation available',
+            thesis: rec?.explanations ?? [],
+            avoidIf: rec?.avoidIf ?? [],
             entryZone: rec?.entryZone ?? null,
-            risk:      rec?.risk ?? null,
+            risk: rec?.risk ?? null,
           })
         } else {
           setAlpha(null)

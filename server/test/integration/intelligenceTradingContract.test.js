@@ -135,16 +135,21 @@ describe('Integration Contract & Safety Suite (Phase 1)', () => {
     await app.close()
   })
 
-  // ─── Scenario 1: Valid recommendations reaching Trading Platform ─────────────
+  // ─── Scenario 1: Synthetic calibrated contract reaching Trading Platform ─────────────
   it('1. Valid recommendations reach Trading Platform and parse into executable signals', async () => {
     const mockRecs = {
-      intelligenceConfidenceTier: 'high',
-      pipelineSignals: { rankingsSuppressed: false },
+      intelligenceConfidenceTier: 'full',
+      qualityStatus: { status: 'healthy', actionable: true, suppressionReasons: [], evaluatedAt: new Date().toISOString() },
+      pipelineSignals: { rankingsSuppressed: false, predictionPipelineActive: true, serviceMode: 'normal' },
       recommendations: [
         {
           ticker: 'NVDA',
           action: 'BUY',
           confidence: 0.88,
+          successProbability: 0.88,
+          confidenceMethodology: { status: 'available', method: 'empirically_calibrated' },
+          actionable: true, suppressionReasons: [],
+          qualityStatus: { status: 'healthy', actionable: true, suppressionReasons: [], evaluatedAt: new Date().toISOString() },
           score: 85,
           entryZone: [130.50, 132.00],
           reason: 'Strong momentum and consensus'
@@ -153,6 +158,10 @@ describe('Integration Contract & Safety Suite (Phase 1)', () => {
           ticker: 'TSLA',
           action: 'SELL',
           confidence: 0.79,
+          successProbability: 0.79,
+          confidenceMethodology: { status: 'available', method: 'empirically_calibrated' },
+          actionable: true, suppressionReasons: [],
+          qualityStatus: { status: 'healthy', actionable: true, suppressionReasons: [], evaluatedAt: new Date().toISOString() },
           score: -60,
           entryZone: [210.00, 212.00],
           reason: 'Bearish divergence'

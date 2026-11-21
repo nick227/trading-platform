@@ -79,11 +79,11 @@ export default function Home() {
             />
           </div>
           <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.4', marginBottom: '1rem' }}>
-            {housePick.thesis || 'AI-powered recommendation'}
+            {housePick.explanations?.join(' ') || 'Explanation unavailable'}
           </div>
           
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-            <RiskBadge risk={housePick.risk || 'Medium'} />
+            <RiskBadge risk={housePick.risk} />
             {housePick.entryZone && (
               <div style={{ 
                 fontSize: '12px', 
@@ -103,7 +103,7 @@ export default function Home() {
       )}
 
       <p className="subhero">
-        {housePick?.thesis || 'Start from one calm action. Big type. Big buttons. No visual scrambling.'}
+        {housePick?.explanations?.join(' ') || 'Explore available stock research.'}
       </p>
 
       <div className="actions">
@@ -122,7 +122,7 @@ export default function Home() {
           color: '#999',
           textAlign: 'center'
         }}>
-          Risk: {housePick.risk || 'Medium'} · Horizon: {housePick.horizon || '30d'} · 
+          Risk: {housePick.risk || 'Unavailable'} · Horizon: {housePick.horizon || '30d'} ·
           Mode: {housePick.mode || 'balanced'}
         </div>
       )}
