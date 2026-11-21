@@ -25,7 +25,7 @@ const event = {
   metadata: {
     predictionId: 'p1', decision: 'accepted',
     researchSource: { predictionId: 'p1', ticker: 'SPY' },
-    researchEvidence: { direction: 'buy' },
+    researchEvidence: { direction: 'buy', predictionId: 'p1' },
     researchTrace: { traceId: 'trace1' }
   }
 }
