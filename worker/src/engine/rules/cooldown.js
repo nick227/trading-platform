@@ -37,7 +37,14 @@ export function noteCooldownExecution(botId, ticker, at = Date.now()) {
 }
 
 // config supports: { windowMs } | { cooldownHours } | { minutes }
-export async function evaluateCooldown(config, botId, ticker) {
+/** Test/restart helper: forget every cached cooldown result (as a fresh process would). */
+export function resetCooldownCache() {
+  cooldownCache.clear()
+}
+
+// `fresh: true` skips the cache and asks the database (used right before an order is
+// inserted, so a cached pass can never outlive an order placed by another evaluation).
+export async function evaluateCooldown(config, botId, ticker, { fresh = false } = {}) {
   const windowMs = windowMsFromConfig(config)
   if (!windowMs) {
     return { pass: false, reason: 'cooldown_invalid_config' }
@@ -50,7 +57,7 @@ export async function evaluateCooldown(config, botId, ticker) {
   const cached = cooldownCache.get(cacheKey)
   let lastAt
 
-  if (cached && now - cached.fetchedAt < COOLDOWN_CACHE_TTL_MS) {
+  if (!fresh && cached && now - cached.fetchedAt < COOLDOWN_CACHE_TTL_MS) {
     lastAt = cached.lastAt
   } else {
     const recent = await prisma.execution.findFirst({

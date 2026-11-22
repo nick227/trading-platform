@@ -486,6 +486,18 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   }
   quantity = outcome.quantity
 
+  // Cooldown re-check against the database immediately before inserting. The rule pipeline
+  // may have passed on a cached result while another evaluation (or process) placed — and
+  // possibly already filled — an order for this bot and symbol. Only ever stricter.
+  const cooldownRule = (bot.rules ?? []).find((r) => r.type === 'cooldown')
+  if (cooldownRule) {
+    const recheck = await evaluateCooldown(cooldownRule.config ?? {}, bot.id, ticker, { fresh: true })
+    if (!recheck.pass) {
+      await maybeLogRuleBlock(bot, ticker, direction, cooldownRule, recheck)
+      return
+    }
+  }
+
   // Pre-insert guard: avoids a noisy P2002 in the normal (non-race) case.
   // The DB unique constraint on activeIntentKey remains the hard guarantee.
   const existingIntent = await prisma.execution.findUnique({
