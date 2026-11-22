@@ -138,7 +138,7 @@ export default function Asset() {
     setLoading(true)
     setError(null)
 
-    alphaFetch(`/api/engine/ticker/${encodeURIComponent(symbol)}/dashboard?range=${encodeURIComponent(chartRange)}&interval=1D`)
+    alphaFetch(`/ticker/${encodeURIComponent(symbol)}/dashboard?range=${encodeURIComponent(chartRange)}&interval=1D`)
       .then((data) => {
         if (cancelled) return
         setQuote(data?.quote ?? null)

@@ -1,3 +1,4 @@
+import { getTemplateStats, MIN_CLOSED_FOR_WIN_RATE } from '../services/templateStatsService.js'
 import strategiesService from '../services/strategiesService.js'
 
 export default async function strategiesRoutes(app, opts) {
@@ -7,11 +8,10 @@ export default async function strategiesRoutes(app, opts) {
     return reply.send(result)
   })
 
-  // GET /api/strategies/platform — all BotTemplates with aggregate subscriber + P&L stats
+  // GET /api/strategies/platform — every bot template with site-wide results from actual
+  // bot fills (FIFO, marked at the latest close) and its latest verified research summary.
   app.get('/platform', async (request, reply) => {
-    const { sort, order } = request.query
-    const strategies = await strategiesService.getPlatformStrategies({ sort, order })
-    return reply.send({ data: strategies })
+    return reply.send({ data: await getTemplateStats(), minClosedTradesForWinRate: MIN_CLOSED_FOR_WIN_RATE })
   })
 
   // GET /api/strategies/:id/history — aggregate execution history for a template (no per-user data)

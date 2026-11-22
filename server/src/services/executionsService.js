@@ -1,3 +1,4 @@
+import { ACTIVE_EXECUTION_STATUSES } from '../../../worker/src/queues/executionStatus.js'
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
@@ -86,6 +87,13 @@ export default {
     return execution
   },
 
+  /**
+   * User cancellation. An order no worker has claimed is cancelled outright and releases its
+   * active-intent key (otherwise the bot could never place that order again). An order a
+   * worker has claimed or sent is only marked cancel-requested; the order worker finalizes it
+   * (it checks the request before submitting and cancels at the broker). Atomic, audited with
+   * valid event types. Returns the execution with `cancelOutcome: 'cancelled' | 'requested'`.
+   */
   async cancelExecution(id, userId) {
     const execution = await prisma.execution.findUnique({ where: { id } })
     if (!execution) return null
@@ -96,37 +104,43 @@ export default {
       throw err
     }
 
-    const cancellable = execution.status === 'queued' || execution.status === 'processing'
-    if (!cancellable) {
+    const notCancellable = () => {
       const err = new Error(`Execution not cancellable from status: ${execution.status}`)
       err.code = 'NOT_CANCELLABLE'
-      throw err
+      return err
     }
+    if (!ACTIVE_EXECUTION_STATUSES.includes(execution.status)) throw notCancellable()
 
-    const updated = await prisma.execution.update({
-      where: { id },
-      data: { status: 'cancelled' }
-    })
-
-    await prisma.executionAudit.create({
-      data: {
-        id: generateId('aud'),
-        executionId: updated.id,
-        userId: updated.userId,
-        eventType: 'execution_cancelled',
-        detail: `Execution cancelled for ${updated.ticker}`,
-        metadata: {
-          previousStatus: execution.status,
-          origin: updated.origin,
-          clientOrderId: updated.clientOrderId,
-          quantity: updated.quantity,
-          direction: updated.direction,
-          price: updated.price
+    return prisma.$transaction(async (tx) => {
+      const now = new Date()
+      const audit = (eventType, detail) => tx.executionAudit.create({
+        data: {
+          id: generateId('aud'), executionId: id, userId, eventType, detail,
+          metadata: { previousStatus: execution.status, origin: execution.origin, clientOrderId: execution.clientOrderId, quantity: execution.quantity, direction: execution.direction, price: execution.price, reason: 'user_cancel' }
         }
-      }
-    })
+      })
 
-    return updated
+      const direct = await tx.execution.updateMany({
+        where: { id, userId, status: 'queued', lockedAt: null },
+        data: { status: 'cancelled', activeIntentKey: null, cancelReason: 'user_cancel', cancelRequestedAt: now, cancelRequestedBy: userId, cancelRequestReason: 'user_cancel' }
+      })
+      if (direct.count === 1) {
+        await audit('cancelled', `Cancelled by the user before it was sent (${execution.ticker})`)
+        return { ...(await tx.execution.findUnique({ where: { id } })), cancelOutcome: 'cancelled' }
+      }
+
+      const requested = await tx.execution.updateMany({
+        where: { id, userId, status: { in: ACTIVE_EXECUTION_STATUSES }, cancelRequestedAt: null },
+        data: { cancelRequestedAt: now, cancelRequestedBy: userId, cancelRequestReason: 'user_cancel' }
+      })
+      if (requested.count === 1) {
+        await audit('cancel_requested', `Cancellation requested by the user (${execution.ticker})`)
+        return { ...(await tx.execution.findUnique({ where: { id } })), cancelOutcome: 'requested' }
+      }
+      const current = await tx.execution.findUnique({ where: { id } })
+      if (current?.cancelRequestedAt && ACTIVE_EXECUTION_STATUSES.includes(current.status)) return { ...current, cancelOutcome: 'requested' }
+      throw notCancellable()
+    })
   },
 
   async getExecutions(query) {

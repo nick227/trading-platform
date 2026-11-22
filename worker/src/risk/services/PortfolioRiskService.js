@@ -1,145 +1,40 @@
 // Portfolio Risk Service
 // Handles portfolio state calculation and risk monitoring
 
-import { brokerAccountSnapshot } from '../accountSnapshot.js'
-import prisma from '../../db/prisma.js'
-import { redisRiskCache } from '../redisCache.js'
+import { clearRiskSnapshotCache, portfolioRiskSnapshot } from '../accountSnapshot.js'
+import { valueHistory } from '../../../../server/src/services/portfolioValuationService.js'
+import { riskGateService } from './RiskGateService.js'
 
 export class PortfolioRiskService {
   constructor() {
-    this.stateCache = new Map()
-    this.cacheTtl = 30 * 1000 // 30 seconds cache
   }
 
   // Get comprehensive portfolio state
+  // One portfolio state for every risk consumer: the gate's, built on the shared
+  // user-scoped valuation (same numbers as Home). Throws when anything is unknown.
   async getPortfolioState(portfolioId) {
-    try {
-      const cacheKey = `portfolio:${portfolioId}`
-      const cached = this.stateCache.get(cacheKey)
-      
-      if (cached && (Date.now() - cached.timestamp < this.cacheTtl)) {
-        return cached.state
+    return riskGateService.getPortfolioState(portfolioId)
+  }
+
+  // Daily series from the owner's value history (Home's chart), with running drawdown and
+  // session-over-session P&L. Empty outside the simulator (no broker history is stored).
+  async valueSeries(portfolioId) {
+    const snap = await portfolioRiskSnapshot(portfolioId)
+    const h = await valueHistory(snap.userId)
+    let peak = snap.startingCash ?? 0
+    let prev = snap.startingCash ?? null
+    return h.points.filter((p) => p.value !== null).map((p) => {
+      peak = Math.max(peak, p.value)
+      const row = {
+        date: p.date, equity: p.value, cash: p.cash, totalValue: p.value,
+        drawdown: peak > 0 ? Math.max(0, (peak - p.value) / peak) : 0,
+        dailyPnL: prev !== null ? Number((p.value - prev).toFixed(2)) : 0,
       }
-
-      // Get portfolio data
-      const [portfolio, filledPositions, brokerAccount] = await Promise.all([
-        prisma.portfolio.findUnique({ where: { id: portfolioId } }),
-        this.getFilledPositions(portfolioId),
-        this.getBrokerAccountData(portfolioId)
-      ])
-
-      // Calculate portfolio metrics
-      const state = this.calculatePortfolioState(
-        portfolioId,
-        portfolio,
-        filledPositions,
-        brokerAccount
-      )
-
-      // Cache the state
-      this.stateCache.set(cacheKey, {
-        state,
-        timestamp: Date.now()
-      })
-
-      // Also cache in Redis for other services
-      await redisRiskCache.set(portfolioId, state, 30)
-
-      return state
-    } catch (error) {
-      console.error('Failed to get portfolio state:', error)
-      throw error
-    }
-  }
-
-  // Calculate portfolio state from raw data
-  calculatePortfolioState(portfolioId, portfolio, filledPositions, brokerAccount) {
-    // Group filled positions by ticker using signed holdings ledger
-    const holdingsByTicker = new Map()
-    filledPositions.forEach(pos => {
-      const existing = holdingsByTicker.get(pos.ticker) || { quantity: 0, totalValue: 0, totalCost: 0 }
-      
-      // Apply sign based on direction (buy = +, sell = -)
-      const signedQuantity = pos.direction === 'buy' ? pos.quantity : -pos.quantity
-      const signedValue = pos.direction === 'buy' ? (pos.quantity * pos.filledPrice) : -(pos.quantity * pos.filledPrice)
-      
-      holdingsByTicker.set(pos.ticker, {
-        quantity: existing.quantity + signedQuantity,
-        totalValue: existing.totalValue + signedValue,
-        totalCost: existing.totalCost + Math.abs(signedValue),
-        avgPrice: existing.totalCost > 0 ? (existing.totalCost + Math.abs(signedValue)) / (Math.abs(existing.quantity) + pos.quantity) : pos.filledPrice,
-        pnl: (existing.pnl || 0) + (pos.pnl || 0)
-      })
+      prev = p.value
+      return row
     })
-
-    // Calculate total exposure
-    const totalExposure = Array.from(holdingsByTicker.values())
-      .reduce((sum, holding) => sum + Math.abs(holding.totalValue), 0)
-
-    // Calculate daily loss
-    const today = new Date().setHours(0, 0, 0, 0)
-    const dailyLoss = filledPositions
-      .filter(pos => pos.filledAt >= today)
-      .reduce((sum, pos) => {
-        const pnl = pos.pnl || 0
-        return pnl < 0 ? sum + Math.abs(pnl) : sum
-      }, 0)
-
-    // Get current equity and drawdown
-    const currentEquity = brokerAccount?.equity || portfolio?.totalValue || 0
-    const equityPeak = portfolio?.equityPeak || currentEquity
-    const drawdown = equityPeak > 0 ? (equityPeak - currentEquity) / equityPeak : 0
-
-    // Create positions array (filter out zero-quantity holdings)
-    const positions = Array.from(holdingsByTicker.entries())
-      .filter(([ticker, holding]) => Math.abs(holding.quantity) > 0.001)
-      .map(([ticker, holding]) => ({
-        ticker,
-        quantity: holding.quantity,
-        value: Math.abs(holding.totalValue),
-        avgPrice: holding.avgPrice,
-        pnl: holding.pnl
-      }))
-
-    return {
-      portfolioId,
-      cashBalance: brokerAccount?.cash || portfolio?.cashBalance || 0,
-      totalValue: currentEquity,
-      totalExposure,
-      openPositions: holdingsByTicker.size,
-      dailyLoss,
-      drawdown,
-      equityPeak,
-      currentEquity,
-      positions,
-      updatedAt: new Date()
-    }
   }
 
-  // Get filled positions for portfolio
-  async getFilledPositions(portfolioId) {
-    try {
-      return await prisma.execution.findMany({
-        where: {
-          portfolioId,
-          status: 'filled'
-        },
-        orderBy: { filledAt: 'desc' },
-        take: 200 // Last 200 filled executions
-      })
-    } catch (error) {
-      console.error('Failed to get filled positions:', error)
-      return []
-    }
-  }
-
-  // Get broker account data
-  async getBrokerAccountData(portfolioId) {
-    // The owner's real (or, in simulator mode, simulated) account; never placeholder balances.
-    return brokerAccountSnapshot(portfolioId)
-  }
-
-  // Get portfolio risk metrics
   async getPortfolioRiskMetrics(portfolioId) {
     try {
       const portfolioState = await this.getPortfolioState(portfolioId)
@@ -218,38 +113,17 @@ export class PortfolioRiskService {
     return maxPosition / totalExposure
   }
 
-  // Get max drawdown from history
+  // Largest peak-to-trough decline in the owner's value history (current if no history).
   async getMaxDrawdown(portfolioId) {
-    try {
-      // This would query historical equity data
-      // For now, return current drawdown
-      const portfolioState = await this.getPortfolioState(portfolioId)
-      return portfolioState.drawdown
-    } catch (error) {
-      console.error('Failed to get max drawdown:', error)
-      return 0
-    }
+    const series = await this.valueSeries(portfolioId)
+    if (series.length === 0) return (await this.getPortfolioState(portfolioId)).drawdown
+    return Math.max(...series.map((d) => d.drawdown))
   }
 
-  // Get daily P&L
+  // Change in portfolio value since the previous close (same as Home's one-day change).
   async getDailyPnL(portfolioId) {
-    try {
-      const today = new Date().setHours(0, 0, 0, 0)
-      
-      const executions = await prisma.execution.findMany({
-        where: {
-          portfolioId,
-          status: 'filled',
-          filledAt: { gte: today }
-        },
-        select: { pnl: true }
-      })
-
-      return executions.reduce((sum, exec) => sum + (exec.pnl || 0), 0)
-    } catch (error) {
-      console.error('Failed to get daily P&L:', error)
-      return 0
-    }
+    const series = await this.valueSeries(portfolioId)
+    return series.length ? series[series.length - 1].dailyPnL : 0
   }
 
   // Get largest position
@@ -311,77 +185,19 @@ export class PortfolioRiskService {
     return Math.min(100, riskScore)
   }
 
-  // Get portfolio history
+  // Portfolio history for trends: the owner's value series (the ownerless DailySnapshot
+  // table is never read or written).
   async getPortfolioHistory(portfolioId, days = 30) {
     try {
-      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-      
-      const snapshots = await prisma.dailySnapshot.findMany({
-        where: {
-          portfolioId,
-          snapshotDate: { gte: cutoff }
-        },
-        orderBy: { snapshotDate: 'asc' }
-      })
-
-      return snapshots.map(snapshot => ({
-        date: snapshot.snapshotDate,
-        equity: snapshot.equity,
-        cash: snapshot.cash,
-        totalValue: snapshot.totalValue,
-        drawdown: snapshot.drawdown,
-        dailyPnL: snapshot.dailyPnL
-      }))
+      return (await this.valueSeries(portfolioId)).slice(-days)
     } catch (error) {
       console.error('Failed to get portfolio history:', error)
       return []
     }
   }
 
-  // Update portfolio snapshot
-  async updatePortfolioSnapshot(portfolioId) {
-    try {
-      const portfolioState = await this.getPortfolioState(portfolioId)
-      
-      await prisma.dailySnapshot.upsert({
-        where: {
-          portfolioId_snapshotDate: {
-            portfolioId,
-            snapshotDate: new Date().setHours(0, 0, 0, 0)
-          }
-        },
-        update: {
-          equity: portfolioState.totalValue,
-          cash: portfolioState.cashBalance,
-          totalValue: portfolioState.totalValue,
-          drawdown: portfolioState.drawdown,
-          dailyPnL: portfolioState.dailyLoss
-        },
-        create: {
-          portfolioId,
-          snapshotDate: new Date().setHours(0, 0, 0, 0),
-          equity: portfolioState.totalValue,
-          cash: portfolioState.cashBalance,
-          totalValue: portfolioState.totalValue,
-          drawdown: portfolioState.drawdown,
-          dailyPnL: portfolioState.dailyLoss
-        }
-      })
-
-      return { success: true }
-    } catch (error) {
-      console.error('Failed to update portfolio snapshot:', error)
-      return { success: false, error: error.message }
-    }
-  }
-
-  // Clear portfolio cache
-  clearCache(portfolioId = null) {
-    if (portfolioId) {
-      this.stateCache.delete(`portfolio:${portfolioId}`)
-    } else {
-      this.stateCache.clear()
-    }
+  clearCache() {
+    clearRiskSnapshotCache()
   }
 
   // Get portfolio risk summary

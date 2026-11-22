@@ -1,5 +1,6 @@
 import prisma from '../../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../../utils/idGenerator.js'
+import { ruleConfigError } from '../../utils/ruleConfig.js'
 
 export default async function botRulesRoutes(app, opts) {
   async function assertBotOwned(botId, request, reply) {
@@ -92,6 +93,9 @@ export default async function botRulesRoutes(app, opts) {
     const bot = await assertBotOwned(botId, request, reply)
     if (!bot) return
 
+    const invalid = ruleConfigError(request.body.type, request.body.config)
+    if (invalid) return reply.code(400).send({ error: { code: 'INVALID_RULE', message: invalid } })
+
     const rule = await prisma.botRule.create({
       data: {
         id: generateId(ID_PREFIXES.RULE),
@@ -129,6 +133,9 @@ export default async function botRulesRoutes(app, opts) {
     if (!existing || existing.botId !== botId) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot rule not found' } })
     }
+
+    const invalid = ruleConfigError(request.body.type ?? existing.type, request.body.config ?? existing.config)
+    if (invalid) return reply.code(400).send({ error: { code: 'INVALID_RULE', message: invalid } })
 
     try {
       const rule = await prisma.botRule.update({

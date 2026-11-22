@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { get, put } from '../../../api/client'
+import { del, get, getPage, post, put } from '../../../api/client'
 import HomeDashboard from '../HomeDashboard'
-import { normalizeBot, normalizeAccount, toNumberOrNull } from '../homeApi'
+import { normalizeBot, normalizeValuation, toNumberOrNull } from '../homeApi'
 
 // Global setup stubs react-router-dom without Link/MemoryRouter; use the real module.
 vi.mock('react-router-dom', async () => vi.importActual('react-router-dom'))
@@ -22,6 +22,18 @@ const bots = [
   },
 ]
 
+const valuation = {
+  source: 'simulator', simulated: true, session: '2026-11-19', startingCash: 100000,
+  cash: 98253.95, marketValue: 1712.8, equity: 99966.75, totalPnl: -33.25, totalPnlPct: -0.03,
+  realizedPnl: 0, unrealizedPnl: -33.25, fillCount: 1, valuationComplete: true, unpricedSymbols: [],
+  pricesAsOf: '2026-11-20',
+  positions: [{
+    symbol: 'AAPL', quantity: 5, avgPrice: 349.21, costBasis: 1746.05, price: 342.56, priceSession: '2026-11-20',
+    marketValue: 1712.8, unrealizedPnl: -33.25, unrealizedPct: -1.9, weight: 1.71, bots: [{ botId: 'bot_1', quantity: 5 }],
+  }],
+}
+const history = { source: 'simulator', startingCash: 100000, points: [{ date: '2026-11-19', value: 100000, cash: 98253.95, fills: 1 }, { date: '2026-11-20', value: 99966.75, cash: 98253.95, fills: 0 }] }
+
 function apiError(status, code) {
   const e = new Error(`HTTP ${status}: x`)
   e.status = status
@@ -29,20 +41,13 @@ function apiError(status, code) {
   return e
 }
 
-function mockApi({
-  account = { equity: 10250.5, cash: 4000 },
-  today = { pnl: 12.34, trades: 2 },
-  botList = bots,
-  executions = {},
-  events = {},
-  eventsBroken = false,
-} = {}) {
+function mockApi({ value = valuation, botList = bots, executions = {}, events = {}, eventsBroken = false, transactions = [] } = {}) {
   get.mockImplementation(async (path, params) => {
-    if (path === '/account') {
-      if (account instanceof Error) throw account
-      return account
+    if (path === '/account/valuation') {
+      if (value instanceof Error) throw value
+      return value
     }
-    if (path === '/performance/today') return today
+    if (path === '/account/value-history') return history
     if (path === '/bots') {
       if (botList instanceof Error) throw botList
       return botList
@@ -51,13 +56,15 @@ function mockApi({
     const m = path.match(/^\/bots\/([^/]+)\/events$/)
     if (m) {
       if (eventsBroken) throw apiError(500, null)
-      return events[m[1]] ?? []
+      const rows = events[m[1]] ?? []
+      return params.type === 'execution_skipped' ? rows.filter((e) => e.type === 'execution_skipped') : rows.filter((e) => e.type !== 'execution_skipped')
     }
     throw new Error(`unexpected GET ${path}`)
   })
+  getPage.mockResolvedValue({ data: transactions, pagination: { hasMore: false, nextCursor: null } })
 }
 
-const renderHome = () => render(<MemoryRouter><HomeDashboard /></MemoryRouter>)
+const renderHome = (path = '/') => render(<MemoryRouter initialEntries={[path]}><HomeDashboard /></MemoryRouter>)
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -66,128 +73,142 @@ beforeEach(() => {
 })
 
 describe('HomeDashboard', () => {
-  it('shows balance, bots with status, and a single Add bot action', async () => {
+  it('leads with the reconciled portfolio value, change and composition', async () => {
     mockApi()
     renderHome()
-
-    expect(await screen.findByTestId('balance-equity')).toHaveTextContent('$10,250.50')
-    expect(screen.getByTestId('balance-today')).toHaveTextContent('+$12.34')
-    expect(screen.getByText('Paper account balance')).toBeInTheDocument()
-    expect(screen.getByText('Hi, Ada')).toBeInTheDocument()
-    expect(screen.getByText('1 of 2 bots running')).toBeInTheDocument()
-
-    const cards = screen.getAllByTestId('bot-card')
-    expect(cards).toHaveLength(2)
-    expect(within(cards[0]).getByTestId('bot-status')).toHaveTextContent('Running')
-    expect(within(cards[0]).getByText('$2,500.00 simulated')).toBeInTheDocument()
-    expect(within(cards[1]).getByTestId('bot-status')).toHaveTextContent('Paused')
-    expect(within(cards[1]).getByText('Capital not set')).toBeInTheDocument()
-
-    const addBot = screen.getAllByRole('link', { name: 'Add bot' })
-    expect(addBot).toHaveLength(1)
-    expect(addBot[0]).toHaveAttribute('href', '/bots/new')
+    expect(await screen.findByTestId('balance-equity')).toHaveTextContent('$99,966.75')
+    expect(screen.getByTestId('portfolio-total-pnl')).toHaveTextContent('−$33.25 (−0.03%)')
+    expect(screen.getByText('since you started with $100,000')).toBeInTheDocument()
+    expect(screen.getByTestId('as-of')).toHaveTextContent('Valued at Nov 20 closing prices · simulated fills replay the Nov 19 close')
+    // Two sessions are shown as values, not as a misleading line chart.
+    expect(screen.getByTestId('value-compare')).toHaveTextContent('Nov 19 close$100,000.00')
+    expect(screen.getByText('Simulated portfolio')).toBeInTheDocument()
+    expect(screen.getByText('Cash').nextSibling).toHaveTextContent('$98,253.95')
+    // With only two sessions the one-day change equals the total, so it isn't repeated.
+    expect(screen.queryByTestId('balance-today')).not.toBeInTheDocument()
   })
 
-  it('makes the whole card open the bot and offers exactly one control', async () => {
+  it('lists holdings from the valuation and expands one in place', async () => {
+    mockApi()
+    renderHome()
+    const row = await screen.findByTestId('holding-row')
+    expect(row).toHaveTextContent('AAPL')
+    expect(row).toHaveTextContent('Momentum AAPL')
+    expect(row).toHaveTextContent('−$33.25')
+    fireEvent.click(row)
+    const detail = await screen.findByTestId('holding-detail-AAPL')
+    expect(within(detail).getByRole('link', { name: 'Build a bot for AAPL' })).toHaveAttribute('href', '/bots/new?ticker=AAPL')
+    expect(within(detail).queryByRole('link', { name: /Research AAPL/ })).not.toBeInTheDocument()
+    expect(within(detail).getByRole('button', { name: 'Pause Momentum AAPL' })).toBeInTheDocument()
+  })
+
+  it('shows bots with status, capital and exactly one control each', async () => {
     mockApi()
     renderHome()
     const [running, paused] = await screen.findAllByTestId('bot-card')
+    expect(within(running).getByTestId('bot-status')).toHaveTextContent('Running')
+    expect(within(running).getByText('$2,500 capital')).toBeInTheDocument()
     expect(within(running).getByRole('link', { name: /Momentum AAPL/ })).toHaveAttribute('href', '/bots/bot_1')
     expect(within(running).getAllByRole('button').map((b) => b.textContent)).toEqual(['Pause'])
+    expect(within(paused).getByTestId('bot-status')).toHaveTextContent('Paused')
+    expect(within(paused).getByText('Capital not set')).toBeInTheDocument()
     expect(within(paused).getAllByRole('button').map((b) => b.textContent)).toEqual(['Resume'])
   })
 
-  it('shows actual P/L only when the backend supplies it', async () => {
-    mockApi({ botList: [{ ...bots[0], performance: { realizedPnl: 40, unrealizedPnl: -15.5 } }, bots[1]] })
+  it('shows total P/L only when the backend knows it, never a stand-in zero', async () => {
+    mockApi({ botList: [{ ...bots[0], performance: { realizedPnl: 40, unrealizedPnl: -15.5 } }, { ...bots[1], performance: { realizedPnl: 7, unrealizedPnl: null, totalPnl: 7 } }] })
     renderHome()
-    const [withPnl, without] = await screen.findAllByTestId('bot-card')
+    const [withPnl, realizedOnly] = await screen.findAllByTestId('bot-card')
     expect(within(withPnl).getByTestId('bot-pnl')).toHaveTextContent('+$24.50')
-    expect(within(without).queryByTestId('bot-pnl')).not.toBeInTheDocument()
-    expect(without.textContent).not.toMatch(/\$0\.00|0%/)
+    expect(within(realizedOnly).queryByTestId('bot-pnl')).not.toBeInTheDocument()
+    expect(realizedOnly).toHaveTextContent('P&L pending prices')
   })
 
-  it('labels realized-only P/L as realized', async () => {
-    mockApi({ botList: [{ ...bots[0], performance: { realizedPnl: 7, unrealizedPnl: null, totalPnl: 7 } }, bots[1]] })
-    renderHome()
-    const [first] = await screen.findAllByTestId('bot-card')
-    expect(within(first).getByTestId('bot-pnl')).toHaveTextContent('+$7.00 realized')
-  })
-
-  it('shows last activity per bot, and says when activity is unavailable', async () => {
+  it('shows the latest meaningful activity per bot, past routine checks', async () => {
     mockApi({
-      events: { bot_1: [{ id: 'ev1', type: 'signal_hold', detail: 'No signal', metadata: { ticker: 'AAPL' }, createdAt: '2026-11-20T15:00:00Z' }] },
+      events: {
+        bot_1: [
+          { id: 'ev2', type: 'execution_skipped', detail: 'x', metadata: { ticker: 'AAPL', reason: 'cooldown_active' }, createdAt: '2026-11-20T16:00:00Z' },
+          { id: 'ev1', type: 'bot_resumed', detail: 'x', metadata: {}, createdAt: '2026-11-20T15:00:00Z' },
+        ],
+      },
     })
     renderHome()
     const [first, second] = await screen.findAllByTestId('bot-card')
-    expect(within(first).getByTestId('bot-last-activity')).toHaveTextContent('Checked — no trade · AAPL')
+    expect(within(first).getByTestId('bot-last-activity')).toHaveTextContent('Resumed')
     expect(within(second).getByTestId('bot-last-activity')).toHaveTextContent('No activity yet')
   })
 
   it('marks a running bot whose latest activity is an error', async () => {
-    mockApi({
-      events: { bot_1: [{ id: 'ev1', type: 'strategy_error', detail: 'boom', metadata: { ticker: 'AAPL' }, createdAt: '2026-11-20T15:00:00Z' }] },
-    })
+    mockApi({ events: { bot_1: [{ id: 'ev1', type: 'strategy_error', detail: 'boom', metadata: { ticker: 'AAPL' }, createdAt: '2026-11-20T15:00:00Z' }] } })
     renderHome()
     const [first] = await screen.findAllByTestId('bot-card')
     expect(within(first).getByTestId('bot-status')).toHaveTextContent('Error')
     expect(within(first).getByRole('button', { name: 'Pause Momentum AAPL' })).toBeInTheDocument()
   })
 
-  it('does not render research dashboards by default', async () => {
+  it('does not load research dashboards', async () => {
     mockApi()
     renderHome()
     await screen.findByTestId('balance-equity')
-
-    for (const label of ['Ranked Opportunities', 'Top Movers', 'Market Context', 'Price-Capped Recommendations', 'Live Signals']) {
-      expect(screen.queryByText(label)).not.toBeInTheDocument()
-    }
     const calledPaths = get.mock.calls.map(([p]) => p)
-    expect(calledPaths.some((p) => /rank|recommend|signal|engine|predict/.test(p))).toBe(false)
-    expect(screen.getByRole('link', { name: 'Market research' })).toHaveAttribute('href', '/research')
+    expect(calledPaths.some((p) => /rank|recommend|signal|predict/.test(p))).toBe(false)
+    // The general research dashboard isn't linked while it's being rebuilt.
+    expect(document.querySelector('a[href="/research"]')).toBeNull()
   })
 
-  it('shows unavailable values (not $0) and a connect prompt when no broker is connected', async () => {
+  it('shows unavailable values (not $0) and a connect prompt when no account is connected', async () => {
     authState.brokerStatus = { connected: false }
-    mockApi({ account: { equity: null, cash: null }, today: null })
+    mockApi({ value: { ...valuation, source: 'none', simulated: false, cash: null, equity: null, totalPnl: null, positions: [] } })
     renderHome()
-
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('—')
-    expect(screen.getByTestId('balance-today')).toHaveTextContent('—')
     expect(screen.queryByText(/\$0\.00/)).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Connect a paper account' })).toHaveAttribute('href', '/profile/broker')
+    expect(screen.getByRole('link', { name: 'Connect a paper account' })).toHaveAttribute('href', '/profile')
   })
 
   it('pauses a running bot via PUT /bots/:id', async () => {
     mockApi()
     put.mockResolvedValue({ id: 'bot_1', enabled: false })
     renderHome()
-
     fireEvent.click(await screen.findByRole('button', { name: 'Pause Momentum AAPL' }))
     await waitFor(() => expect(put).toHaveBeenCalledWith('/bots/bot_1', { enabled: false }))
     expect(await screen.findByRole('button', { name: 'Resume Momentum AAPL' })).toBeInTheDocument()
     expect(within(screen.getAllByTestId('bot-card')[0]).getByTestId('bot-status')).toHaveTextContent('Paused')
   })
 
+  it('pauses every running bot with Pause all', async () => {
+    mockApi({ botList: [bots[0], { ...bots[1], enabled: true }] })
+    put.mockResolvedValue({})
+    renderHome()
+    fireEvent.click(await screen.findByRole('button', { name: 'Pause all' }))
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
+    expect(put).toHaveBeenCalledWith('/bots/bot_1', { enabled: false })
+    expect(put).toHaveBeenCalledWith('/bots/bot_2', { enabled: false })
+    expect(await screen.findByRole('button', { name: 'Resume Momentum AAPL' })).toBeInTheDocument()
+  })
+
   it('explains a blocked resume instead of flipping state', async () => {
     mockApi()
     put.mockRejectedValue(apiError(403, 'BROKER_NOT_CONFIGURED'))
     renderHome()
-
     fireEvent.click(await screen.findByRole('button', { name: 'Resume Mean Reversion' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('connect a paper trading account')
     expect(screen.getByRole('button', { name: 'Resume Mean Reversion' })).toBeInTheDocument()
   })
 
-  it('shows an empty state with Add bot when the user has no bots', async () => {
-    mockApi({ botList: [] })
+  it('shows a useful empty state when the user has no bots', async () => {
+    mockApi({ botList: [], value: { ...valuation, cash: 100000, equity: 100000, totalPnl: 0, positions: [], fillCount: 0 } })
     renderHome()
-
     expect(await screen.findByText('You don’t have any bots yet.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Add bot' })).toBeInTheDocument()
-    expect(screen.getByText(/No bot activity yet/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Build a bot' })).toHaveAttribute('href', '/bots')
+    expect(screen.getByTestId('portfolio-all-cash')).toHaveTextContent('All cash — $100,000.00 available to your bots')
+    // Sections with nothing to show stay out of the way.
+    expect(screen.queryByRole('heading', { name: /Holdings/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Recent activity' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Transactions' })).not.toBeInTheDocument()
   })
 
-  it('lists recent bot activity newest first, across bots, from orders when the event log is down', async () => {
+  it('lists activity newest first across bots, from orders when the event log is down', async () => {
     mockApi({
       eventsBroken: true,
       executions: {
@@ -196,33 +217,67 @@ describe('HomeDashboard', () => {
       },
     })
     renderHome()
-
-    const rows = within(await screen.findByTestId('activity-list')).getAllByRole('listitem')
-    expect(rows.map((r) => r.textContent.replace(/\s+/g, ' '))).toEqual([
-      expect.stringContaining('Mean Reversion Paper sell order placed · MSFT'),
-      expect.stringContaining('Momentum AAPL Bought 5 AAPL'),
-      expect.stringContaining('Momentum AAPL Paper buy order placed · AAPL'),
+    const rows = within(await screen.findByTestId('activity-list')).getAllByRole('listitem').filter((li) => li.parentElement.dataset.testid === 'activity-list')
+    // One row per trade: the AAPL order and its fill are a single row with a decision trail.
+    expect(rows.map((r) => r.querySelector('.tl-feed-title').textContent.replace(/\s+/g, ' '))).toEqual([
+      'Sell order placed · MSFT · Mean Reversion',
+      'Bought 5 AAPL · Momentum AAPL',
     ])
-    expect(get).toHaveBeenCalledWith('/executions', { botId: 'bot_1', limit: 10 })
+    expect(within(rows[1]).getByRole('button', { name: /Details/ })).toHaveTextContent('Details2 steps')
+  })
+
+  it('folds routine checks into one summary line', async () => {
+    const skip = (id, at) => ({ id, type: 'execution_skipped', detail: 'x', metadata: { ticker: 'AAPL', reason: 'cooldown_active' }, createdAt: at })
+    mockApi({ events: { bot_1: [skip('s1', '2026-11-20T16:00:00Z'), skip('s2', '2026-11-20T15:00:00Z'), skip('s3', '2026-11-20T14:00:00Z')] } })
+    renderHome()
+    expect(await screen.findByTestId('routine-summary')).toHaveTextContent('3 routine checks without a trade (cooldown)')
+    fireEvent.click(screen.getByRole('button', { name: 'Show them' }))
+    expect(within(screen.getByTestId('activity-list')).getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.getByTestId('activity-list')).toHaveTextContent('×3')
   })
 
   it('keeps the page usable when one source fails', async () => {
-    mockApi({ account: new Error('HTTP 502') })
+    mockApi({ value: new Error('HTTP 502') })
     renderHome()
-
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('—')
+    expect(screen.getAllByRole('alert')[0]).toHaveTextContent('couldn’t be loaded')
     expect(screen.getAllByTestId('bot-card')).toHaveLength(2)
+  })
+})
+
+describe('emergency stop on Home', () => {
+  it('turns on with explicit consequences and a reason, then shows a banner that can clear it', async () => {
+    mockApi()
+    let active = false
+    const base = get.getMockImplementation()
+    get.mockImplementation(async (path, params) => (path === '/risk/kill-switch' ? { active, ...(active ? { activatedAt: '2026-11-22T06:00:00Z', reason: 'Checking a bot' } : {}) } : base(path, params)))
+    post.mockImplementation(async (path, body) => { if (path === '/risk/kill-switch') { active = true; return { active: true, botsPaused: 1 } } throw new Error(path) })
+    del.mockImplementation(async (path) => { if (path === '/risk/kill-switch') { active = false; return { active: false } } throw new Error(path) })
+    renderHome()
+    fireEvent.click(await screen.findByRole('button', { name: 'Emergency stop' }))
+    const dialog = screen.getByRole('dialog', { name: 'Stop everything?' })
+    expect(dialog).toHaveTextContent('Cancellation is requested for every open order.')
+    expect(dialog).toHaveTextContent('New orders are refused until you clear the stop.')
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: 'Checking a bot' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Stop everything' }))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/risk/kill-switch', { reason: 'Checking a bot' }))
+    expect(await screen.findByTestId('emergency-banner')).toHaveTextContent('Emergency stop is on')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear stop' }))
+    await waitFor(() => expect(screen.queryByTestId('emergency-banner')).not.toBeInTheDocument())
+    expect(del).toHaveBeenCalledWith('/risk/kill-switch')
   })
 })
 
 describe('homeApi normalization', () => {
   it('preserves null instead of coercing to zero', () => {
     expect(toNumberOrNull(null)).toBeNull()
-    expect(toNumberOrNull(undefined)).toBeNull()
     expect(toNumberOrNull('')).toBeNull()
     expect(toNumberOrNull('abc')).toBeNull()
     expect(toNumberOrNull(0)).toBe(0)
-    expect(normalizeAccount({ equity: null, cash: undefined })).toEqual({ equity: null, cash: null })
+    const v = normalizeValuation({ equity: null, cash: undefined, positions: [{ symbol: 'X', price: null, marketValue: null }] })
+    expect(v.equity).toBeNull()
+    expect(v.cash).toBeNull()
+    expect(v.positions[0].price).toBeNull()
     expect(normalizeBot({ id: 'b', enabled: false, config: null }).allocation).toBeNull()
     expect(normalizeBot({ id: 'b', enabled: false, config: null }).performance).toBeNull()
   })

@@ -41,9 +41,6 @@ const reasonTaxonomy = {
   'risk_per_trade_limit': 'Risk per trade exceeds limit'
 }
 
-function getHumanReadableReason(reason) {
-  return reasonTaxonomy[reason] || reason
-}
 
 export default async function riskRoutes(app) {
   // Every risk endpoint acts on a user's own trading state.
@@ -124,6 +121,7 @@ export default async function riskRoutes(app) {
   }, async (request, reply) => {
     try {
       const { portfolioId } = request.query
+      if (!(await ownsPortfolio(request, reply, portfolioId))) return
 
       // Calculate all 4 risk scores in parallel
       const [operational, exposure, stress] = await Promise.all([
@@ -195,166 +193,20 @@ export default async function riskRoutes(app) {
   })
 
   // GET /api/risk/decisions/recent - Why Trade Was Blocked API
-  app.get('/decisions/recent', {
-    schema: {
-      querystring: {
-        type: 'object',
-        properties: {
-          portfolioId: { type: 'string' },
-          limit: { type: 'number', default: 20 }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    try {
-      const { portfolioId, limit = 20 } = request.query
-
-      // Query recent risk decision events from botEvent table
-      const events = await prisma.botEvent.findMany({
-        where: {
-          ...(portfolioId && { portfolioId }),
-          type: { in: ['trade_blocked', 'trade_approved', 'trade_restricted'] }
-        },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        select: {
-          id: true,
-          type: true,
-          detail: true,
-          metadata: true,
-          createdAt: true
-        }
-      })
-
-      const decisions = events.map(event => {
-        const metadata = event.metadata || {}
-        const rawReason = metadata.reason || event.detail
-        return {
-          id: event.id,
-          type: event.type,
-          ticker: metadata.ticker,
-          decision: event.type === 'trade_approved' ? 'approved' : 
-                   event.type === 'trade_restricted' ? 'restricted' : 'blocked',
-          reason: getHumanReadableReason(rawReason),
-          failedScore: metadata.failedScore,
-          scores: metadata.scores,
-          whatWouldApprove: metadata.whatWouldApprove,
-          timestamp: event.createdAt
-        }
-      })
-
-      return reply.send({
-        data: {
-          decisions,
-          count: decisions.length
-        }
-      })
-    } catch (error) {
-      console.error('Failed to get recent decisions:', error)
-      return reply.code(500).send({ error: { message: error.message } })
-    }
+  // Not available: the previous query used event types the schema doesn't have and, without
+  // a portfolioId, wasn't scoped to the caller. Unused by the app and never on the order path.
+  app.get('/decisions/recent', async (request, reply) => {
+    if (request.query?.portfolioId && !(await ownsPortfolio(request, reply, request.query.portfolioId))) return
+    return reply.code(501).send({ error: { code: 'NOT_AVAILABLE', message: 'Recent risk decisions are not available yet.' } })
   })
 
-  // GET /api/risk/alerts - Current active issues
-  app.get('/alerts', {
-    schema: {
-      querystring: {
-        type: 'object',
-        required: ['portfolioId'],
-        properties: {
-          portfolioId: { type: 'string' }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    try {
-      const { portfolioId } = request.query
-
-      const alerts = []
-
-      // Check operational health
-      const operational = await operationalRiskService.calculateOperationalRisk(portfolioId)
-      if (operational.score < 60) {
-        alerts.push({
-          type: 'operational',
-          severity: operational.score < 40 ? 'critical' : 'warning',
-          message: operational.score < 40 
-            ? 'System health degraded - trading paused' 
-            : 'System health issues - reduced trading',
-          score: operational.score
-        })
-      }
-
-      // Check exposure
-      const exposure = await portfolioExposureService.calculatePortfolioExposure(portfolioId)
-      if (exposure.score < 50) {
-        const topRisk = exposure.details?.positions?.[0]
-        alerts.push({
-          type: 'exposure',
-          severity: exposure.score < 35 ? 'critical' : 'warning',
-          message: topRisk 
-            ? `${topRisk.ticker} concentration elevated at ${(topRisk.pct * 100).toFixed(1)}%`
-            : 'Portfolio concentration elevated',
-          score: exposure.score
-        })
-      }
-
-      // Check drawdown stress
-      const stress = await drawdownStressService.calculateDrawdownStress(portfolioId)
-      if (stress.score < 50) {
-        alerts.push({
-          type: 'stress',
-          severity: stress.score < 40 ? 'critical' : 'warning',
-          message: stress.score < 40 
-            ? 'Account in recovery mode - minimal trading' 
-            : 'Recent drawdown - half size maximum',
-          score: stress.score,
-          details: {
-            drawdown: stress.details?.drawdown,
-            losingStreak: stress.details?.losingStreak
-          }
-        })
-      }
-
-      // Check bot status
-      const botStatus = await prisma.bot.findMany({
-        where: { portfolioId },
-        select: { status: true, riskMode: true }
-      })
-
-      const throttledBots = botStatus.filter(b => b.riskMode === 'throttled').length
-      if (throttledBots > 0) {
-        alerts.push({
-          type: 'bot_status',
-          severity: 'warning',
-          message: `${throttledBots} bot(s) throttled due to risk controls`
-        })
-      }
-
-      const pausedBots = botStatus.filter(b => b.status === 'paused_risk').length
-      if (pausedBots > 0) {
-        alerts.push({
-          type: 'bot_status',
-          severity: 'warning',
-          message: `${pausedBots} bot(s) paused by risk management`
-        })
-      }
-
-      return reply.send({
-        data: {
-          portfolioId,
-          alerts,
-          count: alerts.length,
-          hasCriticalAlerts: alerts.some(a => a.severity === 'critical')
-        }
-      })
-    } catch (error) {
-      console.error('Failed to get risk alerts:', error)
-      return reply.code(500).send({ error: { message: error.message } })
-    }
+  // Not available: the previous query selected a field the schema doesn't have. Unused by the
+  // app and never on the order path.
+  app.get('/alerts', async (request, reply) => {
+    if (request.query?.portfolioId && !(await ownsPortfolio(request, reply, request.query.portfolioId))) return
+    return reply.code(501).send({ error: { code: 'NOT_AVAILABLE', message: 'Risk alerts are not available yet.' } })
   })
 
-  // GET /api/risk/history - 7d/30d risk history charts
   app.get('/history', {
     schema: {
       querystring: {
@@ -369,6 +221,7 @@ export default async function riskRoutes(app) {
   }, async (request, reply) => {
     try {
       const { portfolioId, days = 7 } = request.query
+      if (!(await ownsPortfolio(request, reply, portfolioId))) return
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
 
       // Query risk-related events from botEvent table

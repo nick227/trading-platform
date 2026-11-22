@@ -101,6 +101,23 @@ async function drain() { for (let i = 0; i < 20; i++) if (!(await worker.runOnce
 const as = () => ({ Authorization: `Bearer ${token}` })
 
 describe('historical-replay simulator', () => {
+  it('keeps a buy bot buying when the owner already holds the ticker through another bot', async () => {
+    // Regression: loading positions (position_limit / trend_filter) used to override the
+    // configured direction with "sell if any shares are held", turning buy bots into sellers.
+    await h.db.execution.create({ data: { id: 'exe_prior', userId: 'usr_a', portfolioId: 'por_a', botId: 'bot_other', ticker: 'SPY', direction: 'buy',
+      quantity: 2, price: 540.25, status: 'filled', filledQuantity: 2, filledPrice: 540.25, fees: 0, commission: 0, origin: 'bot',
+      brokerOrderId: `simreplay_${SESSION}_tp_exe_prior`, createdAt: new Date('2026-11-21T21:00:00Z'), filledAt: new Date('2026-11-21T21:00:00Z') } })
+    await h.db.bot.create({ data: { id: 'bot_b', userId: 'usr_a', portfolioId: 'por_a', name: 'B', enabled: true, botType: 'rule_based',
+      config: { direction: 'buy', tickers: ['SPY'], capitalMode: 'allocated', allocatedAmount: 5_000, maxOrderNotional: 1_000 } } })
+    await h.db.botRule.create({ data: { id: 'rule_pl', botId: 'bot_b', name: 'Position Limit', type: 'position_limit', config: { maxShares: 100, maxQuantity: 100 } } })
+    setMarketOpenState(true)
+    const bot = { ...(await h.db.bot.findUnique({ where: { id: 'bot_b' } })), rules: await h.db.botRule.findMany({ where: { botId: 'bot_b' } }) }
+    await replayTick({ session: SESSION, onTick: async () => engine.evaluateBot(bot, 'SPY') })
+    const created = await h.db.execution.findMany({ where: { botId: 'bot_b' } })
+    expect(created).toHaveLength(1)
+    expect(created[0].direction).toBe('buy')
+  })
+
   it('is enabled only by explicit, complete configuration', () => {
     expect(simulationConfig().enabled).toBe(true)
     expect(simulationConfig({ BROKER_MODE: 'simulated' }).enabled).toBe(false)
@@ -203,3 +220,54 @@ describe('normal risk policy inside the simulator', () => {
   })
 })
 
+
+describe('risk evaluation uses the Home valuation (same user-scoped model and as-of)', () => {
+  it('gate state equals /api/account/valuation, and an unpriced holding fails closed', async () => {
+    await h.db.execution.create({ data: { id: 'exe_v', userId: 'usr_a', portfolioId: 'por_a', botId: 'bot_r', ticker: 'SPY', direction: 'buy',
+      quantity: 9, price: 540.25, status: 'filled', filledQuantity: 9, filledPrice: 540.25, fees: 0, commission: 0, origin: 'bot',
+      brokerOrderId: `simreplay_${SESSION}_tp_exe_v`, createdAt: new Date(), filledAt: new Date() } })
+    const { riskGateService } = await import('../../../worker/src/risk/services/RiskGateService.js')
+    const { clearRiskSnapshotCache } = await import('../../../worker/src/risk/accountSnapshot.js')
+    clearRiskSnapshotCache()
+
+    const home = (await request(app.server).get('/api/account/valuation').set(as())).body.data
+    const state = await riskGateService.getPortfolioState('por_a')
+    expect(state.totalValue).toBeCloseTo(home.equity, 2)          // marked at 545.75, not cost
+    expect(state.totalValue).toBeCloseTo(100000 - 9 * 540.25 + 9 * 545.75, 2)
+    expect(state.cashBalance).toBeCloseTo(home.cash, 2)
+    expect(state.totalExposure).toBeCloseTo(home.marketValue, 2)
+    expect(state.positions).toEqual([expect.objectContaining({ ticker: 'SPY', quantity: 9, value: home.positions[0].marketValue })])
+    expect(state.pricesAsOf).toBe(home.pricesAsOf)
+    expect(state.drawdown).toBe(0)                                  // above starting cash
+    expect(state.dailyLoss).toBe(0)
+
+    ae.latest = {}                                                  // no known close any more
+    clearRiskSnapshotCache()
+    await expect(riskGateService.getPortfolioState('por_a')).rejects.toThrow('price_unavailable:SPY')
+    const verdict = await riskGateService.evaluateExecutionRisk({ portfolioId: 'por_a', ticker: 'SPY', direction: 'buy', quantity: 1, price: 545.75, signal: {}, marketData: {} })
+    expect(verdict).toMatchObject({ approved: false, decision: 'reject' })
+  })
+})
+
+describe('unrealized drawdown stays covered by the risk gate (realized-only daily-loss rule is separate)', () => {
+  it('a large unrealized drop fails the gate’s drawdown and session-loss checks at the default thresholds', async () => {
+    await h.db.execution.create({ data: { id: 'exe_dd', userId: 'usr_a', portfolioId: 'por_a', botId: 'bot_r', ticker: 'SPY', direction: 'buy',
+      quantity: 100, price: 540.25, status: 'filled', filledQuantity: 100, filledPrice: 540.25, fees: 0, commission: 0, origin: 'bot',
+      brokerOrderId: `simreplay_${SESSION}_tp_exe_dd`, createdAt: new Date(), filledAt: new Date() } })
+    ae.latest = { SPY: { session: '2026-11-21', close: 300 } }            // −44% on the position, nothing sold
+    const { riskGateService } = await import('../../../worker/src/risk/services/RiskGateService.js')
+    const { clearRiskSnapshotCache } = await import('../../../worker/src/risk/accountSnapshot.js')
+    const { evaluateDailyLoss, resetDailyLossCache } = await import('../../../worker/src/engine/rules/dailyLoss.js')
+    clearRiskSnapshotCache(); resetDailyLossCache()
+
+    const state = await riskGateService.getPortfolioState('por_a')
+    const settings = riskGateService.getDefaultRiskSettings()
+    expect(state.totalValue).toBeCloseTo(100000 - 54025 + 30000, 2)
+    expect(state.drawdown).toBeGreaterThan(settings.maxDrawdown)       // 24% > 15%
+    expect((await riskGateService.checkDrawdown(state, settings)).passed).toBe(false)
+    expect(state.dailyLoss).toBeGreaterThan(settings.maxDailyLoss)     // value lost since the reference close
+    expect((await riskGateService.checkDailyLoss(state, settings)).passed).toBe(false)
+    // …while the bot's daily-loss *rule* stays realized-only: nothing was sold, so it passes.
+    expect(await evaluateDailyLoss({ maxLoss: 500 }, 'por_a')).toEqual({ pass: true, currentLoss: 0 })
+  })
+})

@@ -24,6 +24,7 @@ function matchValue(actual, cond) {
       else if (op === 'notIn') { if (v.includes(actual)) return false }
       else if (op === 'not') { if (v !== null && typeof v === 'object' && !(v instanceof Date) ? matchValue(actual, v) : (v === null ? actual == null : actual === v)) return false }
       else if (op === 'gt') { if (actual == null || cmp(actual, v) <= 0) return false }
+      else if (op === 'startsWith') { if (typeof actual !== 'string' || !actual.startsWith(v)) return false }
       else if (op === 'gte') { if (actual == null || cmp(actual, v) < 0) return false }
       else if (op === 'lt') { if (actual == null || cmp(actual, v) >= 0) return false }
       else if (op === 'lte') { if (actual == null || cmp(actual, v) > 0) return false }

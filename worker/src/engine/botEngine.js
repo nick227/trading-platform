@@ -7,7 +7,7 @@ import { subscribe, unsubscribe } from '../market/dataStream.js'
 import { ACTIVE_EXECUTION_STATUSES } from '../queues/executionStatus.js'
 import { evaluateMarketHours }    from './rules/marketHours.js'
 import { evaluatePriceThreshold } from './rules/priceThreshold.js'
-import { evaluateCooldown }       from './rules/cooldown.js'
+import { evaluateCooldown, noteCooldownExecution } from './rules/cooldown.js'
 import { evaluatePositionLimit }  from './rules/positionLimit.js'
 import { evaluateDailyLoss }      from './rules/dailyLoss.js'
 import { evaluateTrendFilter }   from './rules/trendFilter.js'
@@ -84,6 +84,7 @@ const lastResearchEventAt = new Map()  // throttle key → ms
 // In-memory state
 const botRegistry  = new Map()  // botId → bot (with rules)
 const tickerIndex  = new Map()  // ticker → Set<botId>
+export const REFUSAL_BACKOFF_MS = 15 * 60_000
 export const inflightMap = new Map()  // `${botId}:${ticker}` → true
 const lastSkipEventAt = new Map()
 const lastRuleBlockEventAt = new Map()
@@ -270,7 +271,9 @@ export async function evaluateBot(bot, ticker) {
     if (positions) return
     positions = await getPositions(bot.userId)
     currentQty = getPositionQty(positions, ticker)
-    side = currentQty > 0 ? 'sell' : 'buy'
+    // Loading positions must never override a direction already derived from the bot's
+    // config or research (a buy bot whose owner holds the ticker would otherwise sell).
+    if (side !== 'buy' && side !== 'sell') side = currentQty > 0 ? 'sell' : 'buy'
   }
 
   const context = {
@@ -437,6 +440,18 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     return
   }
 
+  // Back off after a refusal at submission (e.g. allocation or daily notional exceeded):
+  // re-submitting the same order every cycle would only be refused again. Stricter only.
+  const refusedRecently = await prisma.execution.findFirst({
+    where: { botId: bot.id, ticker, direction, status: 'cancelled', cancelReason: { startsWith: 'refused:' }, createdAt: { gte: new Date(Date.now() - REFUSAL_BACKOFF_MS) } },
+    select: { cancelReason: true }
+  })
+  if (refusedRecently) {
+    await maybeLogRuleBlock(bot, ticker, direction, { id: 'refusal_backoff', type: 'refusal_backoff', name: 'Refusal back-off' },
+      { reason: 'refused_recently', detail: refusedRecently.cancelReason })
+    return
+  }
+
   // Evaluate risk before creating execution, with the real signal and real available
   // market data (nothing fabricated: unknown inputs stay unknown).
   const executionRequest = {
@@ -484,6 +499,8 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   }
   quantity = outcome.quantity
 
+  const cooldownRule = (bot.rules ?? []).find((r) => r.type === 'cooldown')
+
   // Pre-insert guard: avoids a noisy P2002 in the normal (non-race) case.
   // The DB unique constraint on activeIntentKey remains the hard guarantee.
   const existingIntent = await prisma.execution.findUnique({
@@ -509,6 +526,14 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
       // One transaction: an execution from research never exists without its verified,
       // linked decision, and an accepted decision never exists without its execution.
       await prisma.$transaction(async (tx) => {
+        // Cooldown eligibility and the insert are atomic across worker processes: the bot's
+        // row is locked for this transaction, then the cooldown is re-read uncached inside it.
+        // A concurrent placement for the same bot waits for this commit and then sees it.
+        if (cooldownRule) {
+          if (typeof tx.$queryRaw === 'function') await tx.$queryRaw`SELECT id FROM Bot WHERE id = ${bot.id} FOR UPDATE`
+          const recheck = await evaluateCooldown(cooldownRule.config ?? {}, bot.id, ticker, { fresh: true, prismaClient: tx })
+          if (!recheck.pass) throw Object.assign(new Error('cooldown_active'), { cooldownBlock: recheck })
+        }
         execution = await tx.execution.create({
           data: {
             id:            executionId,
@@ -546,6 +571,10 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
       })
     }, { keepLockOn: isActiveIntentConflict })
   } catch (err) {
+    if (err?.cooldownBlock) {
+      await maybeLogRuleBlock(bot, ticker, direction, cooldownRule, err.cooldownBlock)
+      return
+    }
     if (isActiveIntentConflict(err)) {
       metricsIncrement('duplicate_race_condition')
       log.warn({ botId: bot.id, ticker, direction, activeIntentKey }, 'duplicate_race_condition')
@@ -564,6 +593,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   if (research) actedPredictions.add(`${bot.id}:${research.trace.source.predictionId}`)
   const linkedResearch = decisionEvent ? { ...researchRef, decisionEventId: decisionEvent.id } : null
 
+  noteCooldownExecution(bot.id, ticker)
   log.info({ executionId: execution.id, botId: bot.id, ticker, direction, qty: quantity, confidence, predictionId: researchRef?.predictionId }, 'execution_queued')
 
   await logBotEvent(bot, 'execution_created', `Created ${direction} execution for ${ticker}`, ticker, {

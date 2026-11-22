@@ -4,11 +4,12 @@ import { encrypt } from '../utils/encryption.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 import { getReconcileStatus, reconcileBrokerActivity } from '../services/brokerReconciliationService.js'
-import { simulationConfig, simulatedAccount } from '../services/simulationService.js'
+import { simulationConfig } from '../services/simulationService.js'
+import { valuePortfolio, valueHistory } from '../services/portfolioValuationService.js'
 
 async function fetchAlpacaAccount(userId) {
-  // Simulator mode never contacts Alpaca: the account is derived from simulator fills.
-  if (simulationConfig().enabled) return simulatedAccount(userId)
+  // Simulator mode never contacts Alpaca.
+  if (simulationConfig().enabled) return null
   let creds
   try {
     creds = await getUserAlpacaCredentialsOrThrow(userId)
@@ -34,69 +35,60 @@ export default async function accountRoutes(fastify) {
   // Enforce authentication across all account routes
   fastify.addHook('preHandler', authenticate)
 
-  // GET /api/account — account summary for authenticated user
+  // GET /api/account — account summary for authenticated user (authoritative valuation)
   fastify.get('/', async (request, reply) => {
     try {
       const userId = request.user.id
-      const [alpaca, executions] = await Promise.all([
-        fetchAlpacaAccount(userId),
-        prisma.execution.findMany({
-          where:   { userId },
-          orderBy: { createdAt: 'desc' }
-        })
-      ])
-
-      const totalPnL      = executions.reduce((s, e) => s + Number(e.pnl ?? 0), 0)
-      const winningTrades = executions.filter(e => Number(e.pnl ?? 0) > 0).length
-      const winRate       = executions.length > 0 ? (winningTrades / executions.length) * 100 : 0
-
+      const v = await valuePortfolio(userId, { fetchBrokerAccount: fetchAlpacaAccount })
       return reply.send({
-        equity:         alpaca ? parseFloat(alpaca.equity)       : null,
-        buying_power:   alpaca ? parseFloat(alpaca.buying_power) : null,
-        cash:           alpaca ? parseFloat(alpaca.cash)         : null,
-        total_pnl:      totalPnL,
-        win_rate:       winRate,
-        total_trades:   executions.length,
-        winning_trades: winningTrades
+        equity:         v.equity,
+        buying_power:   v.cash !== null ? Math.max(0, v.cash) : null,
+        cash:           v.cash,
+        total_pnl:      v.totalPnl,
+        realized_pnl:   v.realizedPnl,
+        unrealized_pnl: v.unrealizedPnl,
+        total_trades:   v.fillCount,
+        source:         v.source,
+        prices_as_of:   v.pricesAsOf,
       })
     } catch (error) {
       return reply.code(500).send({ error: error.message })
     }
   })
 
-  // GET /api/account/positions — filled positions for authenticated user
+  // GET /api/account/valuation — full portfolio valuation (summary + holdings + bot attribution)
+  fastify.get('/valuation', async (request, reply) => {
+    try {
+      return reply.send({ data: await valuePortfolio(request.user.id, { fetchBrokerAccount: fetchAlpacaAccount }) })
+    } catch (error) {
+      return reply.code(500).send({ error: error.message })
+    }
+  })
+
+  // GET /api/account/value-history — the user's own daily portfolio value series
+  fastify.get('/value-history', async (request, reply) => {
+    try {
+      const range = ['1M', '3M', '6M', '1Y'].includes(request.query?.range) ? request.query.range : '3M'
+      return reply.send({ data: await valueHistory(request.user.id, { range }) })
+    } catch (error) {
+      return reply.code(500).send({ error: error.message })
+    }
+  })
+
+  // GET /api/account/positions — open holdings valued at the latest known close
   fastify.get('/positions', async (request, reply) => {
     try {
-      const userId = request.user.id
-      const executions = await prisma.execution.findMany({
-        where:   { userId, status: 'filled' },
-        orderBy: { createdAt: 'asc' }
-      })
-
-      const positions = {}
-      for (const e of executions) {
-        const pos       = positions[e.ticker] ?? { quantity: 0, totalCost: 0 }
-        const fillPrice = e.filledPrice ?? e.price ?? 0
-        if (e.direction === 'buy') {
-          positions[e.ticker] = { quantity: pos.quantity + e.quantity, totalCost: pos.totalCost + fillPrice * e.quantity }
-        } else {
-          const remaining = Math.max(0, pos.quantity - e.quantity)
-          const ratio     = pos.quantity > 0 ? remaining / pos.quantity : 0
-          positions[e.ticker] = { quantity: remaining, totalCost: pos.totalCost * ratio }
-        }
-      }
-
-      return reply.send(
-        Object.entries(positions)
-          .filter(([, pos]) => pos.quantity > 0)
-          .map(([ticker, pos]) => ({
-            symbol:         ticker,
-            quantity:       pos.quantity,
-            avg_price:      pos.quantity > 0 ? pos.totalCost / pos.quantity : 0,
-            cost_basis:     pos.totalCost,
-            unrealized_pnl: 0
-          }))
-      )
+      const v = await valuePortfolio(request.user.id, { fetchBrokerAccount: fetchAlpacaAccount })
+      return reply.send(v.positions.map((p) => ({
+        symbol:         p.symbol,
+        quantity:       p.quantity,
+        avg_price:      p.avgPrice,
+        cost_basis:     p.costBasis,
+        current_price:  p.price,
+        price_session:  p.priceSession,
+        market_value:   p.marketValue,
+        unrealized_pnl: p.unrealizedPnl,
+      })))
     } catch (error) {
       return reply.code(500).send({ error: error.message })
     }
@@ -151,10 +143,10 @@ export default async function accountRoutes(fastify) {
     const userId = request.user.id
     const sim = simulationConfig()
     if (sim.enabled) {
-      const acct = await simulatedAccount(userId)
+      const v = await valuePortfolio(userId)
       return reply.send({
         connected: true, paper: true, simulated: true, mode: sim.mode, session: sim.session, status: 'simulated',
-        lastVerifiedAt: null, accountNumber: null, equity: acct.equity, cash: acct.cash, buyingPower: acct.buying_power,
+        lastVerifiedAt: null, accountNumber: null, equity: v.equity, cash: v.cash, buyingPower: v.cash !== null ? Math.max(0, v.cash) : null,
       })
     }
     const broker = await prisma.brokerAccount.findUnique({ where: { userId: String(userId) } })

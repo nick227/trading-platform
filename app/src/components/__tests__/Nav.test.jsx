@@ -19,10 +19,11 @@ beforeEach(() => {
 })
 
 describe('Nav', () => {
-  it('shows only Home, Bots, Account for signed-in users', () => {
+  it('shows exactly two destinations plus an account link for signed-in users', () => {
     renderNav()
-    const links = screen.getAllByRole('link').filter((a) => a.classList.contains('nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Bots', 'Account'])
+    const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
+    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Bots'])
+    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/profile')
     for (const removed of ['Portfolio', 'Orders', 'Opportunities', 'Templates', 'Profile']) {
       expect(screen.queryByRole('link', { name: removed })).not.toBeInTheDocument()
     }
@@ -69,7 +70,7 @@ describe('simulator badge', () => {
     expect(getTradingMode(authState.brokerStatus)).toBe('paper')
     renderNav()
     const badge = screen.getByTestId('mode-badge')
-    expect(badge).toHaveAttribute('aria-label', 'Simulated · replay of 2026-11-19')
-    expect(badge).toHaveTextContent('Simulated · replay of 2026-11-19')
+    expect(badge).toHaveAttribute('aria-label', 'Simulated · Nov 19 replay')
+    expect(badge).toHaveTextContent('Simulated · Nov 19 replay')
   })
 })

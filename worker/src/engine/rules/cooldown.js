@@ -28,8 +28,23 @@ function windowMsFromConfig(config) {
   return null
 }
 
+/**
+ * Records a just-created execution so the cached cooldown can't let further orders
+ * through before the cache would otherwise refresh. Only ever makes the rule stricter.
+ */
+export function noteCooldownExecution(botId, ticker, at = Date.now()) {
+  cooldownCache.set(`${botId}:${ticker}`, { lastAt: at, fetchedAt: at })
+}
+
 // config supports: { windowMs } | { cooldownHours } | { minutes }
-export async function evaluateCooldown(config, botId, ticker) {
+/** Test/restart helper: forget every cached cooldown result (as a fresh process would). */
+export function resetCooldownCache() {
+  cooldownCache.clear()
+}
+
+// `fresh: true` skips the cache and asks the database (used right before an order is
+// inserted, so a cached pass can never outlive an order placed by another evaluation).
+export async function evaluateCooldown(config, botId, ticker, { fresh = false, prismaClient = prisma } = {}) {
   const windowMs = windowMsFromConfig(config)
   if (!windowMs) {
     return { pass: false, reason: 'cooldown_invalid_config' }
@@ -42,16 +57,19 @@ export async function evaluateCooldown(config, botId, ticker) {
   const cached = cooldownCache.get(cacheKey)
   let lastAt
 
-  if (cached && now - cached.fetchedAt < COOLDOWN_CACHE_TTL_MS) {
+  if (!fresh && cached && now - cached.fetchedAt < COOLDOWN_CACHE_TTL_MS) {
     lastAt = cached.lastAt
   } else {
-    const recent = await prisma.execution.findFirst({
+    const recent = await prismaClient.execution.findFirst({
       where: {
         botId,
         ticker,
         OR: [
           { status: { in: ACTIVE_EXECUTION_STATUSES }, createdAt: { gte: since } },
-          { status: 'filled', filledAt: { gte: since } }
+          { status: 'filled', filledAt: { gte: since } },
+          // An order refused at submission (e.g. a daily notional cap) counts as an attempt,
+          // so the bot backs off for its cooldown instead of re-submitting every cycle.
+          { status: 'cancelled', cancelReason: { startsWith: 'refused:' }, createdAt: { gte: since } }
         ]
       },
       orderBy: { createdAt: 'desc' },

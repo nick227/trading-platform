@@ -80,6 +80,8 @@ export function normalizeBot(raw) {
     allocation: toNumberOrNull(config.allocatedAmount ?? config.allocation),
     maxPerOrder: toNumberOrNull(config.maxOrderNotional),
     config,
+    rules: Array.isArray(raw.rules) ? raw.rules : [],
+    openPositions: raw.openPositions && typeof raw.openPositions === 'object' ? raw.openPositions : {},
     performance: normalizePerformance(raw.performance),
     // null from the backend means "not accurately attributable" → shown as unavailable.
     capitalInUse: toNumberOrNull(raw.capitalInUse ?? raw.capital_in_use),
@@ -125,6 +127,9 @@ const SKIP_REASONS = {
   trend_filter_regime_mismatch: { title: 'Waiting — trend condition not met', text: () => 'The market trend didn’t match this bot’s condition.' },
   trend_filter_missing_snapshot: { title: 'Skipped — trend data missing', text: () => 'Market trend data wasn’t available.' },
   trend_filter_snapshot_stale: { title: 'Skipped — trend data out of date', text: () => 'Market trend data was too old to use.' },
+  prediction_already_acted: { title: 'Waiting — already acted on this research', text: (s) => `The bot already traded the current research for ${s}; it waits for new research.` },
+  refused_recently: { title: 'Waiting — last order was refused', text: (s) => `The last ${s} order was refused before it was sent, so the bot waits 15 minutes before trying again.` },
+  no_research_prediction: { title: 'Waiting — no research', text: (s) => `Alpha Engine has no current ranked research for ${s}.` },
 }
 
 const RISK_REASONS = new Set(['position_limit_reached', 'daily_loss_limit_reached', 'max_slots_reached', 'single_ticker_limit', 'exposure_critical', 'exposure_warning', 'overnight_not_allowed', 'rate_limit_exceeded'])
@@ -139,6 +144,8 @@ const RISK_TEXT = {
   overnight_not_allowed: 'Holding overnight isn’t allowed for this bot.',
   rate_limit_exceeded: 'Too many orders in a short time.',
 }
+
+const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1)
 
 function sideWord(side, past = false) {
   const s = String(side ?? '').toLowerCase()
@@ -201,17 +208,18 @@ export function eventToItem(e) {
     case 'execution_created': {
       const rd = meta.riskDecision
       const side = sideWord(meta.side ?? meta.direction ?? meta.signal)
-      const shares = meta.quantity ? `${meta.quantity} shares of ${sym}.` : `Order for ${sym}.`
+      const shares = meta.quantity ? `${meta.quantity} ${Number(meta.quantity) === 1 ? 'share' : 'shares'} of ${sym}.` : `Order for ${sym}.`
       if (rd?.basis === 'simulator_test_scenario') {
         return { ...base, category: 'order', riskDecision: rd, testScenario: true,
-          title: `Test scenario: simulated ${side} order placed`,
-          explanation: `${shares} Isolated simulator test scenario — the normal risk policy would not place this order (${rd.decision}: ${MATRIX_TEXT[rd.reason] ?? rd.reason ?? 'not approved'}).` }
+          title: `${cap(side)} order placed`,
+          explanation: shares,
+          note: `Isolated simulator test scenario — the normal risk policy would not place this order (${rd.decision}: ${MATRIX_TEXT[rd.reason] ?? rd.reason ?? 'not approved'}).` }
       }
       if (rd?.basis === 'restricted_reduced') {
-        return { ...base, category: 'order', riskDecision: rd, title: `Paper ${side} order placed at reduced size`,
+        return { ...base, category: 'order', riskDecision: rd, title: `${cap(side)} order placed at reduced size`,
           explanation: `${shares} Risk restricted this trade (${MATRIX_TEXT[rd.reason] ?? rd.reason}), so only the reduced size was placed.` }
       }
-      return { ...base, category: 'order', title: `Paper ${side} order placed`, explanation: shares }
+      return { ...base, category: 'order', title: `${cap(side)} order placed`, explanation: shares }
     }
     case 'execution_blocked_by_risk': {
       const rd = meta.riskDecision
@@ -231,7 +239,7 @@ export function eventToItem(e) {
       return { ...base, category: 'skip', title: 'Skipped', explanation: e.detail || 'The bot decided not to trade.' }
     }
     case 'execution_failed':
-      return { ...base, category: 'error', title: 'Order couldn’t be placed', explanation: 'The paper order wasn’t created. See details.' }
+      return { ...base, category: 'error', title: 'Order couldn’t be placed', explanation: 'The order wasn’t created.' }
     case 'risk_evaluation_failed':
       return { ...base, category: 'error', title: 'Risk check failed', explanation: 'The risk check couldn’t run, so no order was placed.' }
     case 'strategy_error':
@@ -240,7 +248,7 @@ export function eventToItem(e) {
     case 'bot_paused':
       return { ...base, category: 'control', title: 'Paused', explanation: 'The bot stopped placing new orders.' }
     case 'bot_resumed':
-      return { ...base, category: 'control', title: 'Resumed', explanation: 'The bot is running in paper trading.' }
+      return { ...base, category: 'control', title: 'Resumed', explanation: 'The bot is running again.' }
     case 'bot_stopped':
       return { ...base, category: 'control', title: 'Stopped', explanation: 'The bot was stopped for good.' }
     default:
@@ -267,6 +275,18 @@ const RESEARCH_REASON_TEXT = {
   degraded_research_run: 'The research run didn’t pass Alpha Engine’s quality gates.',
   research_tier_not_full: 'The research run didn’t pass Alpha Engine’s quality gates.',
   direction_mismatch: 'The research direction didn’t match this bot.',
+}
+
+const sessionLabel = (s) => new Date(`${s}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+
+const CANCEL_TEXT = {
+  'refused:sell_exceeds_attributable_holdings': 'Refused: the bot can only sell shares it bought itself.',
+  emergency_stop: 'Cancelled by the emergency stop.',
+  user_cancel: 'Cancelled by you.',
+}
+export function cancelText(reason) {
+  if (!reason) return 'This order was cancelled.'
+  return CANCEL_TEXT[reason] ?? (reason.startsWith('refused:') ? `Refused before it was sent (${reason.slice(8).replace(/_/g, ' ')}).` : reason)
 }
 
 const REPLAY_ORDER = /^simreplay_(\d{4}-\d{2}-\d{2})_/
@@ -302,8 +322,8 @@ export function executionToItems(x, { hasCreatedEvent }) {
   if (!hasCreatedEvent) {
     items.push({
       id: `exe:${x.id}:created`, at: x.createdAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics,
-      title: `Paper ${sideWord(x.side)} order placed`,
-      explanation: x.quantity !== null ? `${x.quantity} shares of ${sym}.` : `Order for ${sym}.`,
+      title: `${cap(sideWord(x.side))} order placed`,
+      explanation: x.quantity !== null ? `${x.quantity} ${x.quantity === 1 ? 'share' : 'shares'} of ${sym}.` : `Order for ${sym}.`,
     })
   }
   const qty = x.filledQuantity ?? x.quantity
@@ -314,20 +334,20 @@ export function executionToItems(x, { hasCreatedEvent }) {
         id: `exe:${x.id}:fill`, at: x.filledAt ?? x.updatedAt, symbol: x.symbol, category: 'fill', executionId: x.id, diagnostics,
         title: x.status === 'filled' ? `${sideWord(x.side, true)} ${qty ?? ''} ${sym}`.replace(/\s+/g, ' ').trim() : `Partly filled: ${sym}`,
         explanation: x.replaySession
-          ? `Simulated fill at the ${x.replaySession} close${x.filledPrice !== null ? ` (${fmt(x.filledPrice)})` : ''} — historical replay, not a broker execution.`
+          ? `Simulated fill at the ${sessionLabel(x.replaySession)} close${x.filledPrice !== null ? ` (${fmt(x.filledPrice)})` : ''} — historical replay, not a broker execution.`
           : [x.filledPrice !== null ? `at ${fmt(x.filledPrice)}` : null, x.costs > 0 ? `costs ${fmt(x.costs)}` : null].filter(Boolean).join(' · ') || 'Paper fill.',
         simulated: Boolean(x.replaySession),
       })
       break
     case 'failed':
-      items.push({ id: `exe:${x.id}:failed`, at: x.updatedAt, symbol: x.symbol, category: 'error', executionId: x.id, diagnostics, title: 'Order rejected', explanation: x.cancelReason || 'The paper broker rejected this order.' })
+      items.push({ id: `exe:${x.id}:failed`, at: x.updatedAt, symbol: x.symbol, category: 'error', outcome: true, executionId: x.id, diagnostics, title: 'Order rejected', explanation: x.cancelReason || 'The order was rejected.' })
       break
     case 'cancelled':
-      items.push({ id: `exe:${x.id}:cancelled`, at: x.updatedAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics, title: 'Order cancelled', explanation: x.cancelReason || 'This order was cancelled.' })
+      items.push({ id: `exe:${x.id}:cancelled`, at: x.updatedAt, symbol: x.symbol, category: 'order', outcome: true, executionId: x.id, diagnostics, title: 'Order cancelled', explanation: cancelText(x.cancelReason) })
       break
     case 'processing':
     case 'submitted':
-      if (x.submittedAt) items.push({ id: `exe:${x.id}:sent`, at: x.submittedAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics, title: 'Sent to paper broker', explanation: 'Waiting for a fill.' })
+      if (x.submittedAt) items.push({ id: `exe:${x.id}:sent`, at: x.submittedAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics, title: 'Order sent', explanation: 'Waiting for a fill.' })
       break
     default:
       break
@@ -374,11 +394,14 @@ export function summarizeFills(executions) {
 // ── Loaders ─────────────────────────────────────────────────────────────────
 
 export async function loadBotActivity(botId, { limit = ACTIVITY_LIMIT } = {}) {
-  const [events, executions] = await Promise.all([
-    settle(get(`/bots/${botId}/events`, { limit })),
+  // Routine skips are fetched separately so a busy bot's checks never push its
+  // decisions, orders and fills out of the window.
+  const [events, routine, executions] = await Promise.all([
+    settle(get(`/bots/${botId}/events`, { limit, exclude: 'execution_skipped' })),
+    settle(get(`/bots/${botId}/events`, { limit, type: 'execution_skipped' })),
     settle(get('/executions', { botId, limit })),
   ])
-  const eventRows = events.ok ? asArray(events.value) : null
+  const eventRows = events.ok ? [...asArray(events.value), ...(routine.ok ? asArray(routine.value) ?? [] : [])] : null
   const execRows = executions.ok ? asArray(executions.value) : null
   const normalizedExecs = execRows ? execRows.map(normalizeExecution) : null
   return {
@@ -390,10 +413,9 @@ export async function loadBotActivity(botId, { limit = ACTIVITY_LIMIT } = {}) {
 }
 
 export async function loadBotDashboard(botId) {
-  const [bot, activity, account] = await Promise.all([
+  const [bot, activity] = await Promise.all([
     settle(get(`/bots/${botId}`)),
     loadBotActivity(botId),
-    settle(get('/account')),
   ])
   if (!bot.ok) {
     const notFound = bot.error?.status === 404
@@ -404,7 +426,6 @@ export async function loadBotDashboard(botId) {
     bot: normalized,
     status: deriveStatus(normalized, activity.timeline),
     activity,
-    buyingPower: account.ok ? toNumberOrNull(account.value?.buying_power) : null,
     fills: summarizeFills(activity.executions),
   }
 }
@@ -418,6 +439,7 @@ export async function loadBotRules(botId) {
 
 export function controlErrorMessage(error, action) {
   const code = error?.code
+  if (code === 'EMERGENCY_STOP_ACTIVE') return 'The emergency stop is on. Clear it on Home before resuming bots.'
   if (action === 'resume' && (code === 'BROKER_NOT_CONFIGURED' || code === 'BROKER_CREDENTIALS_INVALID' || error?.status === 403)) {
     return code === 'LIVE_TRADING_DISABLED'
       ? 'Can’t resume: your connected account is live, and live trading is disabled.'

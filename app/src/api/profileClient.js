@@ -7,7 +7,9 @@
 async function apiFetch(path, options = {}) {
   const res = await fetch(`/api${path}`, {
     credentials: 'include', // send httpOnly cookie
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    // Only declare a JSON body when there is one: the API rejects an empty JSON body
+    // (which silently broke sign-out and broker disconnect).
+    headers: { ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
     ...options
   })
   const json = await res.json().catch(() => ({}))

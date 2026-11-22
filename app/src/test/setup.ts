@@ -4,6 +4,7 @@ import { vi } from 'vitest'
 // Mock API client
 vi.mock('../api/client', () => ({
   get: vi.fn(),
+  getPage: vi.fn(),
   post: vi.fn(),
   put: vi.fn(),
   del: vi.fn()

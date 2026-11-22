@@ -3,7 +3,8 @@ import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
 import { computeBotAccounting } from './botAccountingService.js'
 import { simulationConfig } from './simulationService.js'
-import { engineClient } from '../clients/engine.js'
+import { loadPriceMarks } from './portfolioValuationService.js'
+import { ruleConfigError } from '../utils/ruleConfig.js'
 import { isResearchDriven, resolveResearchPolicy } from '../../../worker/src/engine/researchDecision.js'
 
 /** Research-driven bots must carry a policy the bot engine accepts (it fails closed otherwise). */
@@ -18,20 +19,13 @@ function assertValidResearchConfig(config) {
 }
 
 /**
- * Simulator only: value open positions at Alpha Engine's latest known daily close
- * (Railway's own prices), labelled with that session. Live/paper valuation is unchanged.
+ * Simulator only: value open positions with the portfolio valuation marks (Alpha Engine's
+ * latest known daily close), so bot P/L and the portfolio always agree.
  */
 async function simulatorValuation(openPositions) {
   if (!simulationConfig().enabled) return null
-  const prices = {}
-  const sessions = {}
-  for (const ticker of Object.keys(openPositions ?? {})) {
-    try {
-      const sc = await engineClient.getSessionClose(ticker)
-      if (Number(sc?.close) > 0) { prices[ticker] = Number(sc.close); sessions[ticker] = sc.session }
-    } catch { /* leave unvalued */ }
-  }
-  return Object.keys(prices).length ? { prices, sessions } : null
+  const marks = await loadPriceMarks(Object.keys(openPositions ?? {}))
+  return Object.keys(marks.prices).length ? marks : null
 }
 
 async function computeBotPerformance(botId) {
@@ -149,6 +143,14 @@ export default {
       const templateRules = Array.isArray(data.rules) && data.rules.length > 0
         ? data.rules
         : (template.rules ?? [])
+      // Caller-supplied rules must be valid; template defaults (e.g. an unset trigger price)
+      // are only accepted when the caller supplied no rules.
+      if (Array.isArray(data.rules) && data.rules.length > 0) {
+        for (const r of data.rules) {
+          const invalid = ruleConfigError(r.type, r.config)
+          if (invalid) { const err = new Error(invalid); err.statusCode = 400; err.code = 'INVALID_RULE'; throw err }
+        }
+      }
 
       const rules = templateRules.map((rule) => ({
         id:      generateId(ID_PREFIXES.RULE),
@@ -191,6 +193,7 @@ export default {
       include: {
         portfolio: { select: { id: true, name: true } },
         strategy:  { select: { id: true, name: true, type: true } },
+        rules:     { where: { enabled: true }, orderBy: { createdAt: 'asc' } },
         _count:    { select: { executions: true, events: true, rules: true } }
       },
       orderBy: { createdAt: 'desc' },
@@ -201,11 +204,12 @@ export default {
     const total = await prisma.bot.count({ where })
 
     const data = await Promise.all(bots.map(async (bot) => {
-      const { performance, capitalInUse } = await computeBotPerformance(bot.id)
+      const { performance, capitalInUse, openPositions } = await computeBotPerformance(bot.id)
       return {
         ...bot,
         performance,
-        capitalInUse
+        capitalInUse,
+        openPositions
       }
     }))
 
@@ -230,11 +234,12 @@ export default {
     })
     if (!bot) return null
 
-    const { performance, capitalInUse } = await computeBotPerformance(id)
+    const { performance, capitalInUse, openPositions } = await computeBotPerformance(id)
     return {
       ...bot,
       performance,
-      capitalInUse
+      capitalInUse,
+      openPositions
     }
   },
 
@@ -328,12 +333,14 @@ export default {
   async getBotEvents(arg1, arg2 = {}) {
     const botId = typeof arg1 === 'string' ? arg1 : (arg1?.botId ?? null)
     const query = typeof arg1 === 'object' && (!arg2 || Object.keys(arg2).length === 0) ? arg1 : (arg2 ?? {})
-    const { type, offset = 0, limit = 50 } = query
+    const { type, exclude, offset = 0, limit = 50 } = query
     const take = Math.min(parseInt(limit), 100)
     const skip = Math.max(parseInt(offset), 0)
 
     const where = { botId }
     if (type) where.type = type
+    // ?exclude=execution_skipped,… — lets clients page meaningful events past routine checks
+    else if (exclude) where.type = { notIn: String(exclude).split(',').map((t) => t.trim()).filter(Boolean) }
 
     const events = await prisma.botEvent.findMany({
       where,

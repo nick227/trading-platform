@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { get, put, del } from '../../../../api/client'
+import { get, post, put, del } from '../../../../api/client'
 import BotDashboard from '../BotDashboard'
 import {
   buildTimeline,
@@ -41,9 +41,15 @@ function mockApi({
   account = { buying_power: 5000 },
   rules = [],
 } = {}) {
-  get.mockImplementation(async (path) => {
+  get.mockImplementation(async (path, params = {}) => {
     if (path === '/bots/bot_1') { if (bot instanceof Error) throw bot; return bot }
-    if (path === '/bots/bot_1/events') { if (events instanceof Error) throw events; return events }
+    if (path === '/bots/bot_1/events') {
+      if (events instanceof Error) throw events
+      // The page fetches routine skips and everything else separately.
+      if (params.type === 'execution_skipped') return events.filter((e) => e.type === 'execution_skipped')
+      if (params.exclude === 'execution_skipped') return events.filter((e) => e.type !== 'execution_skipped')
+      return events
+    }
     if (path === '/executions') { if (executions instanceof Error) throw executions; return executions }
     if (path === '/account') { if (account instanceof Error) throw account; return account }
     if (path === '/bots/bot_1/rules') { if (rules instanceof Error) throw rules; return rules }
@@ -61,6 +67,8 @@ function renderPage(state) {
   )
 }
 
+const rows = async () => within(await screen.findByTestId('timeline')).getAllByRole('listitem').filter((li) => li.parentElement.dataset.testid === 'timeline')
+const titleOf = (li) => li.querySelector('.tl-feed-title').textContent.replace(/\s+/g, ' ').trim()
 const status = () => screen.getByTestId('bot-status')
 const button = (name) => screen.queryByRole('button', { name })
 
@@ -69,15 +77,16 @@ beforeEach(() => {
 })
 
 describe('Statuses', () => {
-  it('Running: Pause, Edit and Stop are available', async () => {
+  it('Running: Pause, Name & capital and Stop are available', async () => {
     mockApi()
     renderPage()
     expect(await screen.findByRole('heading', { level: 1, name: 'Golden Cross' })).toBeInTheDocument()
     expect(status()).toHaveTextContent('Running')
     expect(button('Pause')).toBeInTheDocument()
-    expect(button('Edit')).toBeInTheDocument()
+    expect(button('Name & capital')).toBeInTheDocument()
+    expect(button('Edit rules')).toBeInTheDocument()
     expect(button('Stop')).toBeInTheDocument()
-    expect(screen.getByText(/Paper trading · SPY, QQQ · Buys only/)).toBeInTheDocument()
+    expect(screen.getByText('SPY, QQQ · Rule-based · $1,000 capital')).toBeInTheDocument()
   })
 
   it('Paused: offers Resume', async () => {
@@ -151,60 +160,65 @@ describe('Loading and failures', () => {
   })
 })
 
-describe('Capital and performance', () => {
-  it('shows capital facts and never invents usage', async () => {
-    mockApi()
-    renderPage()
-    expect(await screen.findByTestId('capital-allocation')).toHaveTextContent('$1,000.00')
-    expect(screen.getByText('$250.00')).toBeInTheDocument()
-    expect(screen.getByTestId('capital-in-use')).toHaveTextContent('Not available yet')
-    expect(screen.getByText('$5,000.00')).toBeInTheDocument()
-  })
+describe('What has happened (capital and performance)', () => {
+  const perf = { realizedPnl: 120, unrealizedPnl: -20, fees: 1.5, asOf: '2026-11-20T16:00:00Z' }
 
-  it('says performance is unavailable when the backend supplies none', async () => {
+  it('before any trade: states the limits, never invents usage or P/L', async () => {
     mockApi()
     renderPage()
-    expect(await screen.findByTestId('performance-unavailable')).toHaveTextContent('isn’t available yet')
+    expect(await screen.findByTestId('performance-unavailable')).toHaveTextContent('No trades yet. It may spend up to $1,000.00, at most $250.00 per order.')
+    expect(screen.getByTestId('capital-allocation')).toHaveTextContent('$1,000.00')
     expect(screen.queryByTestId('performance')).not.toBeInTheDocument()
-    expect(screen.getByTestId('fill-summary')).toHaveTextContent('0 filled orders')
+    expect(screen.queryByTestId('capital-in-use')).not.toBeInTheDocument()
+    expect(screen.getByText('Up to $250 per order')).toBeInTheDocument()
   })
 
-  it('shows backend-supplied P/L', async () => {
-    mockApi({ bot: { ...baseBot, performance: { realizedPnl: 120, unrealizedPnl: -20, fees: 1.5, asOf: '2026-11-20T16:00:00Z' } } })
+  it('shows backend-supplied P/L with its realized part', async () => {
+    mockApi({ bot: { ...baseBot, performance: perf, capitalInUse: 640 } })
     renderPage()
-    const perf = await screen.findByTestId('performance')
-    expect(perf).toHaveTextContent('+$100.00')
-    expect(perf).toHaveTextContent('+$120.00')
-    expect(perf).toHaveTextContent('−$20.00')
-    expect(perf).toHaveTextContent('$1.50')
+    const box = await screen.findByTestId('performance')
+    expect(box).toHaveTextContent('P&L+$100.00+$120.00 realized')
+    expect(screen.getByTestId('capital-in-use')).toHaveTextContent('$640.00of $1,000.00')
   })
 
-  it('with realized-only P/L (backend shape: unrealized null), headlines Realized and never Total', async () => {
+  it('with realized-only P/L (unrealized unknown), never shows a total', async () => {
     mockApi({ bot: { ...baseBot, performance: { realizedPnl: -12.5, unrealizedPnl: null, totalPnl: -12.5, fees: 0, asOf: '2026-11-20T16:00:00Z' }, capitalInUse: null } })
     renderPage()
-    const perf = await screen.findByTestId('performance')
-    expect(perf).toHaveTextContent('Realized P/L')
-    expect(perf).toHaveTextContent('−$12.50')
-    expect(perf).not.toHaveTextContent('Total P/L')
-    expect(screen.getByTestId('unrealized-unavailable')).toHaveTextContent('Not available yet')
-    expect(screen.getByTestId('capital-in-use')).toHaveTextContent('Not available yet')
-  })
-
-  it('shows capital in use when the backend supplies it', async () => {
-    mockApi({ bot: { ...baseBot, capitalInUse: 640 } })
-    renderPage()
-    expect(await screen.findByTestId('capital-in-use')).toHaveTextContent('$640.00')
+    const box = await screen.findByTestId('performance')
+    expect(box).toHaveTextContent('P&L—Waiting for a price')
+    expect(box).not.toHaveTextContent('−$12.50')
+    expect(screen.getByTestId('capital-in-use')).toHaveTextContent('—')
   })
 
   it('counts fills and costs from real executions only', async () => {
     mockApi({
+      bot: { ...baseBot, performance: perf },
       executions: [
         { id: 'x1', ticker: 'SPY', direction: 'buy', quantity: 2, filledQuantity: 2, status: 'filled', filledPrice: 500, fees: 0.25, commission: 0.75, createdAt: '2026-11-20T14:00:00Z', filledAt: '2026-11-20T14:00:02Z' },
         { id: 'x2', ticker: 'QQQ', direction: 'buy', quantity: 1, status: 'failed', cancelReason: 'insufficient buying power', fees: 0, commission: 0, createdAt: '2026-11-20T15:00:00Z' },
       ],
     })
     renderPage()
-    expect(await screen.findByTestId('fill-summary')).toHaveTextContent('1 filled order · $1.00 in fees and commissions')
+    expect(await screen.findByTestId('fill-summary')).toHaveTextContent('1 fill$1.00 in fees')
+  })
+
+  it('lists open orders with a working Cancel', async () => {
+    mockApi({ executions: [{ id: 'x9', ticker: 'SPY', direction: 'buy', quantity: 3, status: 'queued', createdAt: '2026-11-20T15:00:00Z' }] })
+    post.mockResolvedValue({ id: 'x9', status: 'cancelled', cancelOutcome: 'cancelled' })
+    renderPage()
+    const pending = await screen.findByTestId('pending-orders')
+    expect(pending).toHaveTextContent('Buy 3 SPY')
+    fireEvent.click(within(pending).getByRole('button', { name: 'Cancel order' }))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/executions/x9/cancel', {}))
+    expect(await screen.findByText('Order cancelled.')).toBeInTheDocument()
+  })
+
+  it('explains when an order can no longer be cancelled', async () => {
+    mockApi({ executions: [{ id: 'x9', ticker: 'SPY', direction: 'buy', quantity: 3, status: 'submitted', createdAt: '2026-11-20T15:00:00Z' }] })
+    post.mockRejectedValue(apiError(409, 'NOT_CANCELLABLE'))
+    renderPage()
+    fireEvent.click(within(await screen.findByTestId('pending-orders')).getByRole('button', { name: 'Cancel order' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too late to cancel')
   })
 })
 
@@ -215,7 +229,7 @@ describe('Activity timeline', () => {
     expect(await screen.findByTestId('activity-empty')).toHaveTextContent('Resume the bot to start it.')
   })
 
-  it('merges decisions and orders chronologically with plain explanations', async () => {
+  it('shows each trade as one row with its decision trail; blocks and waits stay visible', async () => {
     mockApi({
       events: [
         ev('e3', 'execution_created', '2026-11-20T15:00:00Z', { ticker: 'SPY', executionId: 'x1', quantity: 2, direction: 'buy', confidence: 0.8, signal: 'buy' }),
@@ -227,17 +241,17 @@ describe('Activity timeline', () => {
       ],
     })
     renderPage()
-    const items = within(await screen.findByTestId('timeline')).getAllByRole('listitem')
-    expect(items.map((li) => li.querySelector('.timeline-title').textContent)).toEqual([
-      'Bought 2 SPY',
-      'Paper buy order placedSPY',
-      'Blocked by a limitQQQ',
-      'Skipped — order too smallQQQ',
-    ])
+    const items = await rows()
+    expect(items.map(titleOf)).toEqual(['Bought 2 SPY', 'Blocked by a limit · QQQ'])
     expect(items[0]).toHaveTextContent('at $501.25')
-    expect(items[2]).toHaveTextContent('Today’s loss limit was reached')
-    expect(items[3]).toHaveTextContent('too small to buy a single share')
-    expect(items[2].className).toContain('timeline-item--risk')
+    // One disclosure per trade row; the full trail is inside it.
+    expect(items[0]).not.toHaveTextContent('Buy order placed')
+    fireEvent.click(within(items[0]).getByRole('button', { name: /Details/ }))
+    expect(items[0]).toHaveTextContent('Buy order placed — 2 shares of SPY.')
+    expect(items[1]).toHaveTextContent('Today’s loss limit was reached')
+    expect(items[1].dataset.kind).toBe('risk')
+    // The routine skip isn't dropped: it's counted and one click away.
+    expect(screen.getByTestId('routine-summary')).toHaveTextContent('1 routine check without a trade (order too small)')
   })
 
   it('shows persisted pause/resume/stop lifecycle events', async () => {
@@ -249,9 +263,9 @@ describe('Activity timeline', () => {
       ],
     })
     renderPage()
-    const items = within(await screen.findByTestId('timeline')).getAllByRole('listitem')
-    expect(items.map((li) => li.querySelector('.timeline-title').textContent)).toEqual(['Resumed', 'Paused', 'Waiting — market closedSPY'])
-    expect(items[0].className).toContain('timeline-item--control')
+    const items = await rows()
+    expect(items.map(titleOf)).toEqual(['Resumed', 'Paused'])
+    expect(items[0].dataset.kind).toBe('control')
     expect(status()).toHaveTextContent('Running')
   })
 
@@ -264,19 +278,23 @@ describe('Activity timeline', () => {
       ],
     })
     renderPage()
-    const items = within(await screen.findByTestId('timeline')).getAllByRole('listitem')
+    expect(await screen.findByTestId('routine-summary')).toHaveTextContent('3 routine checks without a trade')
+    fireEvent.click(screen.getByRole('button', { name: 'Show them' }))
+    const items = await rows()
     expect(items).toHaveLength(1)
-    expect(items[0]).toHaveTextContent('Repeated 3 times')
+    expect(items[0]).toHaveTextContent('×3')
   })
 
-  it('keeps diagnostics behind an expandable Details control', async () => {
+  it('keeps an error’s raw detail behind an expandable Details control', async () => {
     mockApi({ events: [ev('e1', 'execution_failed', '2026-11-20T15:00:00Z', { ticker: 'SPY' }, 'Failed to create execution: deadlock')] })
     renderPage()
-    const item = within(await screen.findByTestId('timeline')).getByRole('listitem')
-    const details = item.querySelector('details')
-    expect(details).not.toHaveAttribute('open')
-    expect(within(details).getByText('Details')).toBeInTheDocument()
-    expect(details).toHaveTextContent('Failed to create execution: deadlock')
+    const [item] = await rows()
+    const toggle = within(item).getByRole('button', { name: 'Details' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(item).not.toHaveTextContent('deadlock')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(item).toHaveTextContent('Failed to create execution: deadlock')
   })
 
   it('shows orders and says so when the decision log is unavailable', async () => {
@@ -286,7 +304,7 @@ describe('Activity timeline', () => {
     })
     renderPage()
     expect(await screen.findByTestId('events-unavailable')).toBeInTheDocument()
-    expect(within(screen.getByTestId('timeline')).getByText('Paper sell order placed')).toBeInTheDocument()
+    expect((await rows()).map(titleOf)).toEqual(['Sell order placed · SPY'])
   })
 
   it('says activity is unavailable (not empty) when both sources fail, with retry', async () => {
@@ -383,8 +401,8 @@ describe('Controls', () => {
     mockApi()
     put.mockResolvedValue({})
     renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
-    const dialog = screen.getByRole('dialog', { name: 'Edit bot' })
+    fireEvent.click(await screen.findByRole('button', { name: 'Name & capital' }))
+    const dialog = screen.getByRole('dialog', { name: 'Name & capital' })
     expect(within(dialog).getByLabelText('Simulated capital ($)')).toHaveValue('1000')
     fireEvent.change(within(dialog).getByLabelText('Max per buy order ($)'), { target: { value: '5000' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
@@ -399,14 +417,14 @@ describe('Controls', () => {
       config: { ...baseBot.config, capitalMode: 'allocated', allocatedAmount: 1000, riskOnExposure: 1, maxOrderNotional: 300 },
     }))
     expect(await screen.findByRole('heading', { level: 1, name: 'Cross v2' })).toBeInTheDocument()
-    expect(screen.getByText('$300.00')).toBeInTheDocument()
+    expect(screen.getByText('Up to $300 per order')).toBeInTheDocument()
   })
 
   it('failed Edit keeps the sheet open and changes nothing', async () => {
     mockApi()
     put.mockRejectedValue(apiError(500))
     renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Name & capital' }))
     const dialog = screen.getByRole('dialog')
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Nope' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
@@ -415,15 +433,44 @@ describe('Controls', () => {
   })
 })
 
+describe('Editing rules on an existing bot', () => {
+  const ruled = { ...baseBot, rules: [
+    { id: 'r1', name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', direction: 'above', price: 500 } },
+    { id: 'r2', name: 'Cooldown', type: 'cooldown', config: { windowMs: 3_600_000 } },
+  ] }
+
+  it('validates, then updates changed rules, removes switched-off ones and adds new limits', async () => {
+    mockApi({ bot: ruled })
+    put.mockResolvedValue({}); del.mockResolvedValue({}); post.mockResolvedValue({})
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit rules' }))
+    const editor = screen.getByTestId('rule-editor')
+    fireEvent.change(within(editor).getByLabelText('Trigger price'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save rules' }))
+    expect(await within(editor).findByText('Enter the price that should trigger an order.')).toBeInTheDocument()
+    expect(put).not.toHaveBeenCalled()
+
+    fireEvent.change(within(editor).getByLabelText('Trigger price'), { target: { value: '510' } })
+    fireEvent.click(within(editor).getByLabelText('At most one trade per symbol every'))   // switch the cooldown off
+    fireEvent.click(within(editor).getByLabelText('Stop for the day once the account has realized a loss of'))         // add a loss limit
+    fireEvent.change(within(editor).getByLabelText('Daily loss limit in dollars'), { target: { value: '200' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save rules' }))
+    await waitFor(() => expect(post).toHaveBeenCalled())
+    expect(put).toHaveBeenCalledWith('/bots/bot_1/rules/r1', { config: { operator: 'above', direction: 'above', price: 510 } })
+    expect(del).toHaveBeenCalledWith('/bots/bot_1/rules/r2')
+    expect(post).toHaveBeenCalledWith('/bots/bot_1/rules', { name: 'Daily Loss Limit', type: 'daily_loss', config: { maxLoss: 200 } })
+    expect(await screen.findByText(/Rules saved/)).toBeInTheDocument()
+  })
+})
+
 describe('Progressive disclosure', () => {
   it('loads rules only when technical details are opened', async () => {
     mockApi({ rules: [{ id: 'r1', name: 'Market hours', type: 'market_hours', enabled: true }] })
     renderPage()
-    const details = (await screen.findByText('Strategy and technical details')).closest('details')
+    const toggle = await screen.findByRole('button', { name: 'Technical details' })
     expect(get.mock.calls.some(([p]) => p === '/bots/bot_1/rules')).toBe(false)
-    details.open = true
-    fireEvent(details, new Event('toggle'))
-    expect(await within(details).findByTestId('rules-list')).toHaveTextContent('Market hours')
+    fireEvent.click(toggle)
+    expect(await screen.findByTestId('rules-list')).toHaveTextContent('Market hours')
   })
 })
 
@@ -453,7 +500,7 @@ describe('Adapter', () => {
       [ev('e', 'execution_created', '2026-11-20T15:00:00Z', { executionId: 'x', ticker: 'SPY', side: 'buy' })],
       [normalizeExecution({ id: 'x', ticker: 'SPY', direction: 'buy', status: 'queued', createdAt: '2026-11-20T15:00:00Z' })]
     )
-    expect(items.filter((i) => i.title.startsWith('Paper buy order placed'))).toHaveLength(1)
+    expect(items.filter((i) => i.title.startsWith('Buy order placed'))).toHaveLength(1)
   })
 
   it('does not group different symbols', () => {
