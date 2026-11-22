@@ -248,3 +248,26 @@ describe('risk evaluation uses the Home valuation (same user-scoped model and as
     expect(verdict).toMatchObject({ approved: false, decision: 'reject' })
   })
 })
+
+describe('unrealized drawdown stays covered by the risk gate (realized-only daily-loss rule is separate)', () => {
+  it('a large unrealized drop fails the gate’s drawdown and session-loss checks at the default thresholds', async () => {
+    await h.db.execution.create({ data: { id: 'exe_dd', userId: 'usr_a', portfolioId: 'por_a', botId: 'bot_r', ticker: 'SPY', direction: 'buy',
+      quantity: 100, price: 540.25, status: 'filled', filledQuantity: 100, filledPrice: 540.25, fees: 0, commission: 0, origin: 'bot',
+      brokerOrderId: `simreplay_${SESSION}_tp_exe_dd`, createdAt: new Date(), filledAt: new Date() } })
+    ae.latest = { SPY: { session: '2026-11-21', close: 300 } }            // −44% on the position, nothing sold
+    const { riskGateService } = await import('../../../worker/src/risk/services/RiskGateService.js')
+    const { clearRiskSnapshotCache } = await import('../../../worker/src/risk/accountSnapshot.js')
+    const { evaluateDailyLoss, resetDailyLossCache } = await import('../../../worker/src/engine/rules/dailyLoss.js')
+    clearRiskSnapshotCache(); resetDailyLossCache()
+
+    const state = await riskGateService.getPortfolioState('por_a')
+    const settings = riskGateService.getDefaultRiskSettings()
+    expect(state.totalValue).toBeCloseTo(100000 - 54025 + 30000, 2)
+    expect(state.drawdown).toBeGreaterThan(settings.maxDrawdown)       // 24% > 15%
+    expect((await riskGateService.checkDrawdown(state, settings)).passed).toBe(false)
+    expect(state.dailyLoss).toBeGreaterThan(settings.maxDailyLoss)     // value lost since the reference close
+    expect((await riskGateService.checkDailyLoss(state, settings)).passed).toBe(false)
+    // …while the bot's daily-loss *rule* stays realized-only: nothing was sold, so it passes.
+    expect(await evaluateDailyLoss({ maxLoss: 500 }, 'por_a')).toEqual({ pass: true, currentLoss: 0 })
+  })
+})

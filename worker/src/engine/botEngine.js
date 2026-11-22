@@ -486,17 +486,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   }
   quantity = outcome.quantity
 
-  // Cooldown re-check against the database immediately before inserting. The rule pipeline
-  // may have passed on a cached result while another evaluation (or process) placed — and
-  // possibly already filled — an order for this bot and symbol. Only ever stricter.
   const cooldownRule = (bot.rules ?? []).find((r) => r.type === 'cooldown')
-  if (cooldownRule) {
-    const recheck = await evaluateCooldown(cooldownRule.config ?? {}, bot.id, ticker, { fresh: true })
-    if (!recheck.pass) {
-      await maybeLogRuleBlock(bot, ticker, direction, cooldownRule, recheck)
-      return
-    }
-  }
 
   // Pre-insert guard: avoids a noisy P2002 in the normal (non-race) case.
   // The DB unique constraint on activeIntentKey remains the hard guarantee.
@@ -523,6 +513,14 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
       // One transaction: an execution from research never exists without its verified,
       // linked decision, and an accepted decision never exists without its execution.
       await prisma.$transaction(async (tx) => {
+        // Cooldown eligibility and the insert are atomic across worker processes: the bot's
+        // row is locked for this transaction, then the cooldown is re-read uncached inside it.
+        // A concurrent placement for the same bot waits for this commit and then sees it.
+        if (cooldownRule) {
+          if (typeof tx.$queryRaw === 'function') await tx.$queryRaw`SELECT id FROM Bot WHERE id = ${bot.id} FOR UPDATE`
+          const recheck = await evaluateCooldown(cooldownRule.config ?? {}, bot.id, ticker, { fresh: true, prismaClient: tx })
+          if (!recheck.pass) throw Object.assign(new Error('cooldown_active'), { cooldownBlock: recheck })
+        }
         execution = await tx.execution.create({
           data: {
             id:            executionId,
@@ -560,6 +558,10 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
       })
     }, { keepLockOn: isActiveIntentConflict })
   } catch (err) {
+    if (err?.cooldownBlock) {
+      await maybeLogRuleBlock(bot, ticker, direction, cooldownRule, err.cooldownBlock)
+      return
+    }
     if (isActiveIntentConflict(err)) {
       metricsIncrement('duplicate_race_condition')
       log.warn({ botId: bot.id, ticker, direction, activeIntentKey }, 'duplicate_race_condition')

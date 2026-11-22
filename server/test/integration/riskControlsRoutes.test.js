@@ -65,6 +65,18 @@ describe('risk routes', () => {
     expect((await request(app.server).get('/api/risk/kill-switch').set(as(tokenB))).body.data.active).toBe(false)
   })
 
+  it('risk reads are owner-only, and unreliable risk endpoints are not available', async () => {
+    for (const path of ['/api/risk/dashboard?portfolioId=por_usr_b', '/api/risk/history?portfolioId=por_usr_b', '/api/risk/alerts?portfolioId=por_usr_b', '/api/risk/decisions/recent?portfolioId=por_usr_b']) {
+      const res = await request(app.server).get(path).set(as(tokenA))
+      expect([403, 404]).toContain(res.status)
+    }
+    expect((await request(app.server).get('/api/risk/alerts?portfolioId=por_usr_a').set(as(tokenA))).status).toBe(501)
+    // Without a portfolio it never falls back to every user's events.
+    const all = await request(app.server).get('/api/risk/decisions/recent').set(as(tokenA))
+    expect(all.status).toBe(501)
+    expect(JSON.stringify(all.body)).not.toMatch(/por_usr_b|bot_b/)
+  })
+
   it('cannot target another user’s portfolio', async () => {
     const res = await request(app.server).post('/api/risk/kill-switch').set(as(tokenA)).send({ reason: 'x', portfolioId: 'por_usr_b' })
     expect(res.status).toBe(404)

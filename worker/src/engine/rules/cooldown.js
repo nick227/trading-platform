@@ -44,7 +44,7 @@ export function resetCooldownCache() {
 
 // `fresh: true` skips the cache and asks the database (used right before an order is
 // inserted, so a cached pass can never outlive an order placed by another evaluation).
-export async function evaluateCooldown(config, botId, ticker, { fresh = false } = {}) {
+export async function evaluateCooldown(config, botId, ticker, { fresh = false, prismaClient = prisma } = {}) {
   const windowMs = windowMsFromConfig(config)
   if (!windowMs) {
     return { pass: false, reason: 'cooldown_invalid_config' }
@@ -60,7 +60,7 @@ export async function evaluateCooldown(config, botId, ticker, { fresh = false } 
   if (!fresh && cached && now - cached.fetchedAt < COOLDOWN_CACHE_TTL_MS) {
     lastAt = cached.lastAt
   } else {
-    const recent = await prisma.execution.findFirst({
+    const recent = await prismaClient.execution.findFirst({
       where: {
         botId,
         ticker,

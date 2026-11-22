@@ -248,3 +248,80 @@ describe('cooldown integrity (f860c93)', () => {
     expect(await ordersOf('bot_c4')).toHaveLength(2)
   })
 })
+
+describe('multi-worker atomicity (cooldown check + insert in one transaction)', () => {
+  const cooldown = [{ type: 'cooldown', config: { windowMs: HOUR } }]
+  beforeEach(() => setMarketOpenState(true))
+
+  it('blocks when another process places AND fills an order between the pre-checks and the insert', async () => {
+    await mkBot('bot_m1', { direction: 'buy' }, cooldown)
+    // Simulate worker B: just before our transaction starts (at the pre-insert intent check),
+    // another process inserts and fills an order for the same bot, releasing its intent key.
+    const realFindUnique = h.db.execution.findUnique
+    let raced = false
+    h.db.execution.findUnique = async (args) => {
+      if (!raced && args?.where?.activeIntentKey) {
+        raced = true
+        await holding('bot_m1', 1, 'exe_other_worker')
+      }
+      return realFindUnique(args)
+    }
+    try {
+      await tick('bot_m1')
+    } finally {
+      h.db.execution.findUnique = realFindUnique
+    }
+    expect(raced).toBe(true)
+    expect((await ordersOf('bot_m1')).map((o) => o.id)).toEqual(['exe_other_worker'])
+    expect((await eventsOf('bot_m1')).some((e) => e.metadata?.reason === 'cooldown_active')).toBe(true)
+  })
+
+  it('locks the bot row inside the same transaction as the insert, before the cooldown read', async () => {
+    await mkBot('bot_m2', { direction: 'buy' }, cooldown)
+    const calls = []
+    h.db.$queryRaw = async (strings, ...values) => { calls.push(['lock', strings.join('?'), values]); return [] }
+    const realCreate = h.db.execution.create
+    const realFindFirst = h.db.execution.findFirst
+    h.db.execution.findFirst = async (args) => { calls.push(['cooldown-read']); return realFindFirst(args) }
+    h.db.execution.create = async (args) => { calls.push(['insert']); return realCreate(args) }
+    try {
+      await tick('bot_m2')
+    } finally {
+      delete h.db.$queryRaw
+      h.db.execution.create = realCreate
+      h.db.execution.findFirst = realFindFirst
+    }
+    const i = calls.findIndex((c) => c[0] === 'lock')
+    expect(calls[i][1]).toMatch(/SELECT id FROM Bot WHERE id = \? FOR UPDATE/)
+    expect(calls[i][2]).toEqual(['bot_m2'])
+    expect(calls.slice(i).map((c) => c[0])).toEqual(['lock', 'cooldown-read', 'insert'])
+  })
+
+  it('bots without a cooldown are unaffected (no lock, normal placement)', async () => {
+    await mkBot('bot_m3', { direction: 'buy' })
+    let locked = false
+    h.db.$queryRaw = async () => { locked = true; return [] }
+    try { await tick('bot_m3') } finally { delete h.db.$queryRaw }
+    expect(locked).toBe(false)
+    expect(await ordersOf('bot_m3')).toHaveLength(1)
+  })
+})
+
+describe('ownership isolation', () => {
+  beforeEach(() => setMarketOpenState(true))
+
+  it('another user’s holdings never count: a sell bot with no own position places nothing; a buy bot buys', async () => {
+    await h.db.user.create({ data: { id: 'usr_b', email: 'b@example.test', riskSettings: null, subscription: { status: 'ACTIVE' } } })
+    await h.db.portfolio.create({ data: { id: 'por_b', userId: 'usr_b' } })
+    const at = new Date(Date.now() - 60_000)
+    await h.db.execution.create({ data: { id: 'exe_b', userId: 'usr_b', portfolioId: 'por_b', botId: 'bot_of_b', ticker: 'SPY', direction: 'buy', quantity: 50, price: 540.25,
+      status: 'filled', filledQuantity: 50, filledPrice: 540.25, fees: 0, commission: 0, origin: 'bot', brokerOrderId: sessionOrder('exe_b'), createdAt: at, filledAt: at } })
+    await mkBot('bot_sell_a', { direction: 'sell' })
+    await mkBot('bot_buy_a', { direction: 'buy' }, [{ type: 'position_limit', config: { maxShares: 100 } }])
+    await tick('bot_sell_a')
+    await tick('bot_buy_a')
+    expect(await ordersOf('bot_sell_a')).toHaveLength(0)
+    expect((await eventsOf('bot_sell_a', 'execution_skipped')).map((e) => e.metadata.reason)).toContain('no_position')
+    expect((await ordersOf('bot_buy_a')).map((o) => o.direction)).toEqual(['buy'])
+  })
+})
