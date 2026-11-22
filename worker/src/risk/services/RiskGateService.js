@@ -1,9 +1,8 @@
 // Risk Gate Service
 // Handles execution approval and basic risk checks
 
-import { brokerAccountSnapshot } from '../accountSnapshot.js'
+import { portfolioRiskHistory, portfolioRiskSnapshot } from '../accountSnapshot.js'
 import prisma from '../../db/prisma.js'
-import { redisRiskCache } from '../redisCache.js'
 import { riskDecisionMatrix } from './RiskDecisionMatrix.js'
 
 export class RiskGateService {
@@ -267,43 +266,29 @@ export class RiskGateService {
 
   // Get portfolio state (simplified)
   async getPortfolioState(portfolioId) {
-    try {
-      // Check cache first
-      const cached = await redisRiskCache.get(portfolioId)
-      if (cached) {
-        return cached
-      }
-
-      // Get basic portfolio data
-      const [portfolio, filledPositions, brokerAccount] = await Promise.all([
-        prisma.portfolio.findUnique({ where: { id: portfolioId } }),
-        prisma.execution.findMany({
-          where: { portfolioId, status: 'filled' },
-          orderBy: { filledAt: 'desc' },
-          take: 100
-        }),
-        this.getBrokerAccountData(portfolioId)
-      ])
-
-      const state = {
-        portfolioId,
-        cashBalance: brokerAccount?.cash || portfolio?.cashBalance || 0,
-        totalValue: brokerAccount?.equity || portfolio?.totalValue || 0,
-        totalExposure: this.calculateTotalExposure(filledPositions),
-        openPositions: this.calculateOpenPositions(filledPositions),
-        dailyLoss: this.calculateDailyLoss(filledPositions),
-        drawdown: this.calculateDrawdown(portfolioId, brokerAccount?.equity || 0),
-        positions: this.calculatePositions(filledPositions)
-      }
-
-      // Cache for 30 seconds
-      await redisRiskCache.set(portfolioId, state, 30)
-      
-      return state
-    } catch (error) {
-      console.error('Failed to get portfolio state:', error)
-      throw error
+    // Same user-scoped valuation as Home (FIFO holdings marked at the latest close). Throws
+    // when anything is unknown, which evaluateExecutionRisk turns into a rejection.
+    const snap = await portfolioRiskSnapshot(portfolioId)
+    const history = await portfolioRiskHistory(snap)
+    return {
+      portfolioId,
+      cashBalance: snap.cash,
+      totalValue: snap.equity,
+      totalExposure: snap.marketValue,
+      openPositions: snap.positions.length,
+      // Loss since the previous close (simulator value history); realized-only outside it.
+      dailyLoss: history.sessionLoss ?? this.calculateDailyLoss(await this.todaysFills(portfolioId)),
+      drawdown: history.drawdown ?? 0,
+      positions: snap.positions.map((p) => ({ ticker: p.ticker, quantity: p.quantity, value: p.value, avgPrice: p.avgPrice, pnl: p.unrealizedPnl })),
+      pricesAsOf: snap.pricesAsOf,
+      valuationSource: snap.source,
     }
+  }
+
+  async todaysFills(portfolioId) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return prisma.execution.findMany({ where: { portfolioId, status: 'filled', filledAt: { gte: today } } })
   }
 
   // Get risk settings
@@ -403,16 +388,7 @@ export class RiskGateService {
     })
   }
 
-  calculateTotalExposure(filledPositions) {
-    return filledPositions.reduce((sum, pos) => {
-      return sum + Math.abs((pos.quantity || 0) * (pos.filledPrice || 0))
-    }, 0)
-  }
 
-  calculateOpenPositions(filledPositions) {
-    const uniqueTickers = new Set(filledPositions.map(pos => pos.ticker))
-    return uniqueTickers.size
-  }
 
   calculateDailyLoss(filledPositions) {
     const today = new Date().setHours(0, 0, 0, 0)
@@ -424,42 +400,7 @@ export class RiskGateService {
     }, 0)
   }
 
-  calculateDrawdown(portfolioId, currentEquity) {
-    // Simplified drawdown calculation
-    return 0 // Would need historical equity data
-  }
 
-  calculatePositions(filledPositions) {
-    const holdingsByTicker = new Map()
-    
-    filledPositions.forEach(pos => {
-      const existing = holdingsByTicker.get(pos.ticker) || { quantity: 0, totalValue: 0 }
-      const signedQuantity = pos.direction === 'buy' ? pos.quantity : -pos.quantity
-      const signedValue = pos.direction === 'buy' ? (pos.quantity * pos.filledPrice) : -(pos.quantity * pos.filledPrice)
-      
-      holdingsByTicker.set(pos.ticker, {
-        quantity: existing.quantity + signedQuantity,
-        totalValue: existing.totalValue + signedValue,
-        avgPrice: pos.filledPrice,
-        pnl: (existing.pnl || 0) + (pos.pnl || 0)
-      })
-    })
-
-    return Array.from(holdingsByTicker.entries())
-      .filter(([ticker, holding]) => Math.abs(holding.quantity) > 0.001)
-      .map(([ticker, holding]) => ({
-        ticker,
-        quantity: holding.quantity,
-        value: Math.abs(holding.totalValue),
-        avgPrice: holding.avgPrice,
-        pnl: holding.pnl
-      }))
-  }
-
-  async getBrokerAccountData(portfolioId) {
-    // The owner's real (or, in simulator mode, simulated) account; never placeholder balances.
-    return brokerAccountSnapshot(portfolioId)
-  }
 
   getDefaultRiskSettings() {
     return {

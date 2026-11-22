@@ -220,3 +220,31 @@ describe('normal risk policy inside the simulator', () => {
   })
 })
 
+
+describe('risk evaluation uses the Home valuation (same user-scoped model and as-of)', () => {
+  it('gate state equals /api/account/valuation, and an unpriced holding fails closed', async () => {
+    await h.db.execution.create({ data: { id: 'exe_v', userId: 'usr_a', portfolioId: 'por_a', botId: 'bot_r', ticker: 'SPY', direction: 'buy',
+      quantity: 9, price: 540.25, status: 'filled', filledQuantity: 9, filledPrice: 540.25, fees: 0, commission: 0, origin: 'bot',
+      brokerOrderId: `simreplay_${SESSION}_tp_exe_v`, createdAt: new Date(), filledAt: new Date() } })
+    const { riskGateService } = await import('../../../worker/src/risk/services/RiskGateService.js')
+    const { clearRiskSnapshotCache } = await import('../../../worker/src/risk/accountSnapshot.js')
+    clearRiskSnapshotCache()
+
+    const home = (await request(app.server).get('/api/account/valuation').set(as())).body.data
+    const state = await riskGateService.getPortfolioState('por_a')
+    expect(state.totalValue).toBeCloseTo(home.equity, 2)          // marked at 545.75, not cost
+    expect(state.totalValue).toBeCloseTo(100000 - 9 * 540.25 + 9 * 545.75, 2)
+    expect(state.cashBalance).toBeCloseTo(home.cash, 2)
+    expect(state.totalExposure).toBeCloseTo(home.marketValue, 2)
+    expect(state.positions).toEqual([expect.objectContaining({ ticker: 'SPY', quantity: 9, value: home.positions[0].marketValue })])
+    expect(state.pricesAsOf).toBe(home.pricesAsOf)
+    expect(state.drawdown).toBe(0)                                  // above starting cash
+    expect(state.dailyLoss).toBe(0)
+
+    ae.latest = {}                                                  // no known close any more
+    clearRiskSnapshotCache()
+    await expect(riskGateService.getPortfolioState('por_a')).rejects.toThrow('price_unavailable:SPY')
+    const verdict = await riskGateService.evaluateExecutionRisk({ portfolioId: 'por_a', ticker: 'SPY', direction: 'buy', quantity: 1, price: 545.75, signal: {}, marketData: {} })
+    expect(verdict).toMatchObject({ approved: false, decision: 'reject' })
+  })
+})

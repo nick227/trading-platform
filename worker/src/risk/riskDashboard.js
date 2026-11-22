@@ -3,6 +3,7 @@
 
 import { riskManager } from './riskManagement.js'
 import prisma from '../db/prisma.js'
+import { portfolioRiskService } from './services/PortfolioRiskService.js'
 
 export class RiskDashboard {
   // Get comprehensive risk dashboard for a portfolio
@@ -175,7 +176,7 @@ export class RiskDashboard {
       const [blocks, executions, portfolioHistory] = await Promise.all([
         prisma.executionAudit.findMany({
           where: {
-            portfolioId,
+            execution: { portfolioId },
             eventType: 'risk_blocked',
             createdAt: { gte: today }
           }
@@ -187,13 +188,8 @@ export class RiskDashboard {
             filledAt: { gte: today }
           }
         }),
-        prisma.dailySnapshot.findMany({
-          where: {
-            portfolioId,
-            snapshotDate: { gte: new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000) }
-          },
-          orderBy: { snapshotDate: 'asc' }
-        })
+        // Owner's value history (same series as Home), never the ownerless DailySnapshot table.
+        portfolioRiskService.getPortfolioHistory(portfolioId, 30)
       ])
 
       // Calculate risk check frequency

@@ -1,38 +1,16 @@
 // Portfolio Exposure Score Service
 // Measures how structurally risky the portfolio is
 
-import prisma from '../../db/prisma.js'
+import { portfolioRiskSnapshot } from '../accountSnapshot.js'
 
 export class PortfolioExposureService {
   /**
-   * Open holdings for a portfolio from its filled executions (no Position model exists):
-   * net quantity and average cost per ticker, sells reducing cost proportionally.
+   * Open holdings from the shared portfolio valuation (user-scoped FIFO, each holding
+   * marked at the latest close). `value` is market value as of `pricesAsOf`.
    */
   async holdings(portfolioId) {
-    const fills = await prisma.execution.findMany({
-      where: { portfolioId, filledQuantity: { gt: 0 } },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      select: { ticker: true, direction: true, filledQuantity: true, filledPrice: true, price: true }
-    })
-    const book = new Map()
-    for (const f of fills) {
-      const qty = Number(f.filledQuantity) || 0
-      const px = Number(f.filledPrice ?? f.price) || 0
-      const h = book.get(f.ticker) ?? { ticker: f.ticker, quantity: 0, cost: 0 }
-      if (String(f.direction).toLowerCase() === 'sell') {
-        const avg = h.quantity ? h.cost / h.quantity : 0
-        const sold = Math.min(qty, h.quantity)
-        h.quantity -= sold
-        h.cost -= avg * sold
-      } else {
-        h.quantity += qty
-        h.cost += qty * px
-      }
-      book.set(f.ticker, h)
-    }
-    return [...book.values()]
-      .filter((h) => h.quantity > 1e-9)
-      .map((h) => ({ ticker: h.ticker, quantity: h.quantity, avgPrice: h.cost / h.quantity }))
+    const snap = await portfolioRiskSnapshot(portfolioId)
+    return snap.positions.map((p) => ({ ticker: p.ticker, quantity: p.quantity, avgPrice: p.avgPrice, value: p.value }))
   }
 
   constructor() {
@@ -85,12 +63,12 @@ export class PortfolioExposureService {
       if (holdings.length === 0) return 100
 
       // Calculate total portfolio value
-      const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.quantity * h.avgPrice), 0)
+      const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.value), 0)
       
       if (totalValue === 0) return 100
 
       // Find largest position
-      const maxPosition = Math.max(...holdings.map(h => Math.abs(h.quantity * h.avgPrice)))
+      const maxPosition = Math.max(...holdings.map(h => Math.abs(h.value)))
       const maxPct = maxPosition / totalValue
 
       // Score based on concentration
@@ -128,7 +106,7 @@ export class PortfolioExposureService {
       let totalValue = 0
 
       holdings.forEach(h => {
-        const value = Math.abs(h.quantity * h.avgPrice)
+        const value = Math.abs(h.value)
         const sector = sectorMap[h.ticker] || 'other'
         sectorExposure[sector] = (sectorExposure[sector] || 0) + value
         totalValue += value
@@ -157,18 +135,9 @@ export class PortfolioExposureService {
   // Score leverage (0-100)
   async scoreLeverage(portfolioId) {
     try {
-      const portfolio = await prisma.portfolio.findUnique({
-        where: { id: portfolioId },
-        select: {
-          cash: true,
-          totalValue: true
-        }
-      })
-
-      if (!portfolio || portfolio.totalValue === 0) return 100
-
-      // Calculate leverage ratio
-      const leverage = portfolio.totalValue / portfolio.cash
+      const snap = await portfolioRiskSnapshot(portfolioId)
+      // Gross long exposure relative to equity (both from the shared valuation).
+      const leverage = snap.marketValue / snap.equity
 
       // Score based on leverage
       if (leverage <= 1.0) return 100
@@ -226,12 +195,12 @@ export class PortfolioExposureService {
     try {
       const holdings = await this.holdings(portfolioId)
 
-      const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.quantity * h.avgPrice), 0)
+      const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.value), 0)
 
       const positions = holdings.map(h => ({
         ticker: h.ticker,
-        value: Math.abs(h.quantity * h.avgPrice),
-        pct: totalValue > 0 ? Math.abs(h.quantity * h.avgPrice) / totalValue : 0
+        value: Math.abs(h.value),
+        pct: totalValue > 0 ? Math.abs(h.value) / totalValue : 0
       })).sort((a, b) => b.pct - a.pct)
 
       return {
@@ -270,12 +239,12 @@ export class PortfolioExposureService {
       // Get current holdings
       const holdings = await this.holdings(portfolioId)
 
-      const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.quantity * h.avgPrice), 0)
+      const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.value), 0)
       const newTotalValue = totalValue + tradeValue
 
       // Check if this would exceed single ticker limit
       const existingPosition = holdings.find(h => h.ticker === ticker)
-      const existingValue = existingPosition ? Math.abs(existingPosition.quantity * existingPosition.avgPrice) : 0
+      const existingValue = existingPosition ? Math.abs(existingPosition.value) : 0
       const newTickerValue = existingValue + tradeValue
       const newTickerPct = newTickerValue / newTotalValue
 
