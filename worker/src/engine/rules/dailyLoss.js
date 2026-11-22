@@ -1,9 +1,14 @@
 import prisma from '../../db/prisma.js'
+import { realizedPnlSince } from '../../../../server/src/services/botAccountingService.js'
 
 // Cache per-portfolio daily loss to avoid a DB scan on every tick.
 // 30s TTL means worst-case 30s lag before a new fill affects the rule — acceptable
 // given fills are the rare case and the inflight guard prevents over-trading anyway.
 const lossCache = new Map() // portfolioId → { loss, fetchedAt, dayStart }
+
+export function resetDailyLossCache() {
+  lossCache.clear()
+}
 const LOSS_CACHE_TTL_MS = 30_000
 
 // config: { maxLoss?: number, maxDailyLoss?: number } — maxLoss is a positive dollar amount e.g. 500
@@ -20,22 +25,16 @@ export async function evaluateDailyLoss(config, portfolioId) {
   if (cached && cached.dayStart === dayKey && now - cached.fetchedAt < LOSS_CACHE_TTL_MS) {
     loss = cached.loss
   } else {
-    // Aggregate today's filled executions for this portfolio
+    // Realized P/L of today's sells, FIFO against the portfolio's full fill history — the
+    // same accounting as Home. (Previously a buy's cost counted as a "loss", so any bot
+    // with a daily-loss limit stopped buying after a few purchases.)
     const fills = await prisma.execution.findMany({
-      where: {
-        portfolioId,
-        status: 'filled',
-        filledAt: { gte: startOfDay }
-      },
-      select: { direction: true, filledPrice: true, filledQuantity: true }
+      where: { portfolioId, filledQuantity: { gt: 0 }, filledPrice: { gt: 0 } },
+      orderBy: [{ filledAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, ticker: true, direction: true, filledPrice: true, filledQuantity: true, filledAt: true, createdAt: true, fees: true, commission: true }
     })
-
-    let realizedPnL = 0
-    for (const fill of fills) {
-      const value = (fill.filledPrice ?? 0) * (fill.filledQuantity ?? 0)
-      realizedPnL += fill.direction === 'sell' ? value : -value
-    }
-    loss = Math.abs(Math.min(0, realizedPnL))
+    const realizedToday = realizedPnlSince(fills, startOfDay)
+    loss = Math.abs(Math.min(0, realizedToday))
     lossCache.set(portfolioId, { loss, fetchedAt: now, dayStart: dayKey })
   }
 
