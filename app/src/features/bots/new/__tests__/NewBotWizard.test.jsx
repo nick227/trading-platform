@@ -95,16 +95,15 @@ beforeEach(() => {
 })
 
 describe('Step 1 — choose a bot', () => {
-  it('lists templates factually, without performance figures', async () => {
+  it('describes each template in plain language, without performance figures', async () => {
     mockGets()
     renderWizard()
     expect(await screen.findByText('Golden Cross Hunter')).toBeInTheDocument()
     expect(heading()).toHaveTextContent('Choose a bot')
     expect(screen.getByText('Step 1 of 4')).toBeInTheDocument()
     const card = screen.getByTestId('template-tmpl_golden_cross')
-    expect(card).toHaveTextContent('Buy orders only')
-    expect(card).toHaveTextContent('Trades SPY, QQQ, IWM')
-    expect(screen.getByTestId('template-tmpl_momentum_buy')).toHaveTextContent('You choose the symbols')
+    expect(card).toHaveTextContent(/^Golden Cross HunterBuys SPY, QQQ, IWM \(or stocks you pick\)/)
+    expect(screen.getByTestId('template-tmpl_momentum_buy')).toHaveTextContent('Buys the stocks you pick')
     expect(document.body.textContent).not.toMatch(/win rate|return|%/i)
   })
 
@@ -197,7 +196,7 @@ describe('Step 2 — simulated capital', () => {
     fireEvent.change(screen.getByLabelText('Symbols to trade'), { target: { value: 'aapl, msft' } })
     fireEvent.click(continueBtn())
     expect(heading()).toHaveTextContent('Controls')
-    expect(screen.getByText(/in AAPL, MSFT/)).toBeInTheDocument()
+    expect(screen.getByTestId('bot-preview')).toHaveTextContent('Buys AAPL, MSFT')
   })
 
   it('blocks an empty paper account', async () => {
@@ -475,7 +474,7 @@ describe('Alpha Research Follower', () => {
   it('describes what the research bot does instead of a fixed direction', async () => {
     mockGets({ catalog })
     renderWizard()
-    expect(await screen.findByTestId('template-tmpl_alpha_research')).toHaveTextContent('Buys on current Alpha Engine BUY research')
+    expect(await screen.findByTestId('template-tmpl_alpha_research')).toHaveTextContent('when Alpha Engine publishes current, verified BUY research')
   })
 
   it('shows research settings with the template defaults and validates them', async () => {
@@ -551,3 +550,46 @@ describe('Alpha Research Follower', () => {
   })
 })
 
+
+describe('Trigger price (price-threshold templates)', () => {
+  const priced = {
+    id: 'tmpl_momentum_buy', name: 'Momentum Buy', botType: 'rule_based', description: '',
+    config: { direction: 'buy', tickers: ['SPY'] },
+    rules: [
+      { name: 'Market Hours', type: 'market_hours', config: {} },
+      { name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', price: 0 } },
+    ],
+  }
+
+  it('requires a trigger price and sends it in the bot’s rules', async () => {
+    mockGets({ catalog: { ruleBased: [priced], strategyBased: [] } })
+    post.mockResolvedValue({ id: 'bot_7' })
+    put.mockResolvedValue({})
+    renderWizard()
+    fireEvent.click(await screen.findByTestId('template-tmpl_momentum_buy'))
+    fireEvent.click(continueBtn())
+    fireEvent.click(continueBtn())
+    expect(heading()).toHaveTextContent('Controls')
+    fireEvent.click(continueBtn())
+    expect(screen.getByText('Enter the price that should trigger an order.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '725' } })
+    expect(screen.getByTestId('bot-preview')).toHaveTextContent('Buys SPY when the price rises above $725.')
+    fireEvent.click(continueBtn())
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
+    await screen.findByTestId('bot-page')
+    expect(post.mock.calls[0][1].rules).toEqual([
+      { name: 'Market Hours', type: 'market_hours', config: {} },
+      { name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', price: 725 } },
+    ])
+  })
+
+  it('keeps a symbol chosen before the bot (Create a bot for AAPL)', async () => {
+    mockGets({ catalog: { ruleBased: [priced], strategyBased: [] } })
+    renderWizard('/bots/new?ticker=AAPL')
+    fireEvent.click(await screen.findByTestId('template-tmpl_momentum_buy'))
+    fireEvent.click(continueBtn())
+    fireEvent.click(continueBtn())
+    expect(screen.getByTestId('bot-preview')).toHaveTextContent('Buys AAPL')
+  })
+})

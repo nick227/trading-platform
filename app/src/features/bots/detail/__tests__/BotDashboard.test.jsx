@@ -41,9 +41,15 @@ function mockApi({
   account = { buying_power: 5000 },
   rules = [],
 } = {}) {
-  get.mockImplementation(async (path) => {
+  get.mockImplementation(async (path, params = {}) => {
     if (path === '/bots/bot_1') { if (bot instanceof Error) throw bot; return bot }
-    if (path === '/bots/bot_1/events') { if (events instanceof Error) throw events; return events }
+    if (path === '/bots/bot_1/events') {
+      if (events instanceof Error) throw events
+      // The page fetches routine skips and everything else separately.
+      if (params.type === 'execution_skipped') return events.filter((e) => e.type === 'execution_skipped')
+      if (params.exclude === 'execution_skipped') return events.filter((e) => e.type !== 'execution_skipped')
+      return events
+    }
     if (path === '/executions') { if (executions instanceof Error) throw executions; return executions }
     if (path === '/account') { if (account instanceof Error) throw account; return account }
     if (path === '/bots/bot_1/rules') { if (rules instanceof Error) throw rules; return rules }
@@ -77,7 +83,7 @@ describe('Statuses', () => {
     expect(button('Pause')).toBeInTheDocument()
     expect(button('Edit')).toBeInTheDocument()
     expect(button('Stop')).toBeInTheDocument()
-    expect(screen.getByText(/Paper trading · SPY, QQQ · Buys only/)).toBeInTheDocument()
+    expect(screen.getByText(/Rule-based · SPY, QQQ · Buys only/)).toBeInTheDocument()
   })
 
   it('Paused: offers Resume', async () => {
@@ -156,15 +162,14 @@ describe('Capital and performance', () => {
     mockApi()
     renderPage()
     expect(await screen.findByTestId('capital-allocation')).toHaveTextContent('$1,000.00')
-    expect(screen.getByText('$250.00')).toBeInTheDocument()
+    expect(screen.getByText('Up to $250 per order')).toBeInTheDocument()
     expect(screen.getByTestId('capital-in-use')).toHaveTextContent('Not available yet')
-    expect(screen.getByText('$5,000.00')).toBeInTheDocument()
   })
 
   it('says performance is unavailable when the backend supplies none', async () => {
     mockApi()
     renderPage()
-    expect(await screen.findByTestId('performance-unavailable')).toHaveTextContent('isn’t available yet')
+    expect(await screen.findByTestId('performance-unavailable')).toHaveTextContent('No P&L yet')
     expect(screen.queryByTestId('performance')).not.toBeInTheDocument()
     expect(screen.getByTestId('fill-summary')).toHaveTextContent('0 filled orders')
   })
@@ -179,13 +184,12 @@ describe('Capital and performance', () => {
     expect(perf).toHaveTextContent('$1.50')
   })
 
-  it('with realized-only P/L (backend shape: unrealized null), headlines Realized and never Total', async () => {
+  it('with realized-only P/L (backend shape: unrealized null), never shows a Total figure', async () => {
     mockApi({ bot: { ...baseBot, performance: { realizedPnl: -12.5, unrealizedPnl: null, totalPnl: -12.5, fees: 0, asOf: '2026-11-20T16:00:00Z' }, capitalInUse: null } })
     renderPage()
     const perf = await screen.findByTestId('performance')
-    expect(perf).toHaveTextContent('Realized P/L')
-    expect(perf).toHaveTextContent('−$12.50')
-    expect(perf).not.toHaveTextContent('Total P/L')
+    expect(perf).toHaveTextContent('Realized−$12.50')
+    expect(perf).toHaveTextContent('Total P&L—Waiting for a price')
     expect(screen.getByTestId('unrealized-unavailable')).toHaveTextContent('Not available yet')
     expect(screen.getByTestId('capital-in-use')).toHaveTextContent('Not available yet')
   })
@@ -230,13 +234,14 @@ describe('Activity timeline', () => {
     const items = within(await screen.findByTestId('timeline')).getAllByRole('listitem')
     expect(items.map((li) => li.querySelector('.timeline-title').textContent)).toEqual([
       'Bought 2 SPY',
-      'Paper buy order placedSPY',
-      'Blocked by a limitQQQ',
-      'Skipped — order too smallQQQ',
+      'Paper buy order placed · SPY',
+      'Blocked by a limit · QQQ',
+      'Skipped — order too small · QQQ',
     ])
     expect(items[0]).toHaveTextContent('at $501.25')
     expect(items[2]).toHaveTextContent('Today’s loss limit was reached')
-    expect(items[3]).toHaveTextContent('too small to buy a single share')
+    // Routine checks stay in the log, compact, with the reason one hover away.
+    expect(items[3]).toHaveAttribute('title', expect.stringContaining('too small to buy a single share'))
     expect(items[2].className).toContain('timeline-item--risk')
   })
 
@@ -250,7 +255,7 @@ describe('Activity timeline', () => {
     })
     renderPage()
     const items = within(await screen.findByTestId('timeline')).getAllByRole('listitem')
-    expect(items.map((li) => li.querySelector('.timeline-title').textContent)).toEqual(['Resumed', 'Paused', 'Waiting — market closedSPY'])
+    expect(items.map((li) => li.querySelector('.timeline-title').textContent)).toEqual(['Resumed', 'Paused', 'Waiting — market closed · SPY'])
     expect(items[0].className).toContain('timeline-item--control')
     expect(status()).toHaveTextContent('Running')
   })
@@ -286,7 +291,7 @@ describe('Activity timeline', () => {
     })
     renderPage()
     expect(await screen.findByTestId('events-unavailable')).toBeInTheDocument()
-    expect(within(screen.getByTestId('timeline')).getByText('Paper sell order placed')).toBeInTheDocument()
+    expect(within(screen.getByTestId('timeline')).getByRole('listitem')).toHaveTextContent('Paper sell order placed · SPY')
   })
 
   it('says activity is unavailable (not empty) when both sources fail, with retry', async () => {
@@ -399,7 +404,7 @@ describe('Controls', () => {
       config: { ...baseBot.config, capitalMode: 'allocated', allocatedAmount: 1000, riskOnExposure: 1, maxOrderNotional: 300 },
     }))
     expect(await screen.findByRole('heading', { level: 1, name: 'Cross v2' })).toBeInTheDocument()
-    expect(screen.getByText('$300.00')).toBeInTheDocument()
+    expect(screen.getByText('Up to $300 per order')).toBeInTheDocument()
   })
 
   it('failed Edit keeps the sheet open and changes nothing', async () => {

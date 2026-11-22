@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../../app/AuthProvider'
 import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
+import { describeAction, describeGuards, needsTriggerPrice } from '../../../ui/describeBot'
 import {
   createAndStartBot,
   defaultCapital,
@@ -96,6 +97,8 @@ export default function NewBotWizard() {
     templateId: params.get('template') ?? null,
     capital: '',
     symbolsText: params.get('ticker') ?? '',
+    symbolsEdited: Boolean(params.get('ticker')),
+    triggerPrice: '',
     maxPerOrder: '',
     name: '',
     research: null,
@@ -133,6 +136,14 @@ export default function NewBotWizard() {
       )
     : {}
   if (research) Object.assign(controlsErrors, validateResearch(research))
+  const needsTrigger = Boolean(template) && needsTriggerPrice(template.rules)
+  const triggerNum = form.triggerPrice === '' ? null : Number(form.triggerPrice)
+  if (needsTrigger && !(Number.isFinite(triggerNum) && triggerNum > 0)) controlsErrors.triggerPrice = 'Enter the price that should trigger an order.'
+  const rulesForBot = template ? template.rules.map((r) => (r.type === 'price_threshold' && needsTrigger ? { ...r, config: { ...r.config, price: triggerNum } } : r)) : []
+  const preview = template ? {
+    config: { ...template.config, tickers: symbols, allocatedAmount: capitalNum, maxOrderNotional: form.maxPerOrder === '' ? template.config.maxOrderNotional : Number(form.maxPerOrder), ...(research ? { research: { minConfidence: Number(research.minConfidencePct) / 100, maxPredictionAgeHours: Number(research.maxAgeHours), maxEntryDriftPct: Number(research.maxDriftPct), requireEdgeOverBaseline: research.requireEdge } } : {}) },
+    rules: rulesForBot,
+  } : null
   const noBuyingPower = data?.buyingPower !== null && data?.buyingPower !== undefined && data.buyingPower <= 0
 
   // Furthest step whose prerequisites are complete; the URL can't skip past it.
@@ -168,8 +179,10 @@ export default function NewBotWizard() {
       capital: '',
       maxPerOrder: '',
       name: '',
-      symbolsEdited: false,
-      symbolsText: t.tickers.length === 0 ? form.symbolsText : t.tickers.join(', '),
+      // A symbol chosen before the bot (e.g. "Create a bot for AAPL") is kept.
+      symbolsEdited: Boolean(params.get('ticker')) || (form.symbolsEdited && t.tickers.length > 0),
+      symbolsText: params.get('ticker') || form.symbolsEdited || t.tickers.length === 0 ? form.symbolsText : t.tickers.join(', '),
+      triggerPrice: '',
       research: researchFormValues(t.research),
       confirmed: false,
     })
@@ -187,7 +200,7 @@ export default function NewBotWizard() {
       if (form.name === '') update({ name: template.name })
     }
     if (index === 2) {
-      setTouched((t) => ({ ...t, maxPerOrder: true, name: true, symbols: true, research: true }))
+      setTouched((t) => ({ ...t, maxPerOrder: true, name: true, symbols: true, research: true, triggerPrice: true }))
       if (Object.keys(controlsErrors).length > 0) return
     }
     goTo(index + 1)
@@ -205,6 +218,7 @@ export default function NewBotWizard() {
       capital: capitalNum,
       maxPerOrder: Number(form.maxPerOrder),
       research,
+      ...(needsTrigger ? { rules: rulesForBot } : {}),
     })
     setSubmitting(false)
     if (result.ok) {
@@ -216,21 +230,28 @@ export default function NewBotWizard() {
 
   if (!data) {
     return (
-      <main className="page container wizard" aria-busy="true">
+      <main className="tl-page wizard" aria-busy="true">
         <div className="card card-pad-md skeleton-block wizard-skeleton" data-testid="wizard-loading" />
       </main>
     )
   }
 
   return (
-    <main className="page container wizard">
+    <main className="tl-page wizard">
       <StepHeader index={stepIndex} />
       <h1 className="wizard-title" tabIndex={-1} ref={headingRef}>{STEPS[stepIndex].title}</h1>
       <ModeNotice mode={mode} />
+      {preview && step !== 'choose' && (
+        <aside className="wizard-preview" aria-label="What this bot will do" data-testid="bot-preview">
+          <div className="wizard-preview-label">What {form.name.trim() || template.name} will do</div>
+          <p>{describeAction(preview)}</p>
+          <ul>{describeGuards(preview).map((g) => <li key={g}>{g}</li>)}</ul>
+        </aside>
+      )}
 
       {step === 'choose' && (
         <section aria-label="Available bots">
-          <p className="muted mt-0">Each bot follows a fixed set of rules from its template. You can pause it anytime.</p>
+          <p className="muted mt-0">Start from a featured bot. You’ll choose its symbols, capital and limits next, and you can pause it anytime.</p>
           {data.catalogError ? (
             <div className="alert alert-error" role="alert">
               {data.catalogError} <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setData(null); loadWizardData().then(setData) }}>Retry</button>
@@ -254,12 +275,7 @@ export default function NewBotWizard() {
                       data-testid={`template-${t.id}`}
                     >
                       <span className="wizard-option-name">{t.name}</span>
-                      {t.description && <span className="wizard-option-desc">{t.description}</span>}
-                      <span className="wizard-option-meta muted">
-                        {describeTemplateAction(t)}
-                        {' · '}
-                        {t.tickers.length > 0 ? `Trades ${t.tickers.slice(0, 5).join(', ')}${t.tickers.length > 5 ? '…' : ''}` : 'You choose the symbols'}
-                      </span>
+                      <span className="wizard-option-desc">{describeAction(t, { template: true })}</span>
                       {!t.available && <span className="wizard-option-meta text-warning">{t.unavailableReason}</span>}
                     </button>
                   </li>
@@ -267,13 +283,12 @@ export default function NewBotWizard() {
               })}
             </ul>
           )}
-          <p className="muted text-xs">Templates don’t include performance history yet, so none is shown.</p>
+          <p className="muted text-xs">Compare each bot’s rules, research and results on <Link to="/bots">Bots</Link>.</p>
         </section>
       )}
 
       {step === 'allocation' && template && (
         <section>
-          <p className="mt-0"><strong>{template.name}</strong></p>
           <label className="wizard-label" htmlFor="capital">Simulated capital for this bot</label>
           <div className="wizard-money">
             <span aria-hidden="true">$</span>
@@ -290,7 +305,7 @@ export default function NewBotWizard() {
           </div>
           <FieldError id="capital-error" message={touched.capital ? allocationErrors.capital : null} />
           <p className="text-sm mt-2" data-testid="buying-power">
-            Paper buying power: <strong>{fmtMoney(data.buyingPower)}</strong>
+            {isSimulated(brokerStatus) ? 'Simulated cash available' : 'Paper buying power'}: <strong>{fmtMoney(data.buyingPower)}</strong>
             {data.buyingPower === null && <span className="muted"> (unavailable)</span>}
           </p>
           {noBuyingPower && (
@@ -337,6 +352,27 @@ export default function NewBotWizard() {
           </div>
           <FieldError id="maxPerOrder-error" message={touched.maxPerOrder ? controlsErrors.maxPerOrder : null} />
 
+          {needsTrigger && (
+            <>
+              <label className="wizard-label mt-4" htmlFor="triggerPrice">Trigger price</label>
+              <div className="wizard-money">
+                <span aria-hidden="true">$</span>
+                <input
+                  id="triggerPrice"
+                  className="form-input"
+                  inputMode="decimal"
+                  value={form.triggerPrice}
+                  onChange={(e) => update({ triggerPrice: e.target.value.replace(/[^0-9.]/g, '') })}
+                  onBlur={() => setTouched((t) => ({ ...t, triggerPrice: true }))}
+                  aria-invalid={Boolean(touched.triggerPrice && controlsErrors.triggerPrice)}
+                  aria-describedby="triggerPrice-help triggerPrice-error"
+                />
+              </div>
+              <p id="triggerPrice-help" className="muted text-xs mt-1 mb-0">The bot {template.config.direction === 'sell' ? 'sells when the price falls below' : 'buys when the price rises above'} this level.</p>
+              <FieldError id="triggerPrice-error" message={touched.triggerPrice ? controlsErrors.triggerPrice : null} />
+            </>
+          )}
+
           {research && (
             <fieldset className="wizard-fieldset mt-4" data-testid="research-settings">
               <legend className="wizard-label">Research settings</legend>
@@ -373,10 +409,6 @@ export default function NewBotWizard() {
           )}
 
           <dl className="wizard-facts">
-            <div>
-              <dt>What it can do</dt>
-              <dd>{describeTemplateAction(template)}, in {symbols.join(', ') || '—'}, in your paper account.</dd>
-            </div>
             <div>
               <dt>Pausing</dt>
               <dd>Pause anytime from Home or the bot’s page. Pausing stops new orders. It doesn’t cancel orders already sent or sell what the bot bought.</dd>

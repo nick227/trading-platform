@@ -206,7 +206,7 @@ export function friendlyCreateError(error) {
  * If activation fails, the bot already exists, paused, with the confirmed
  * limits; the result says so and links to it rather than retrying creation.
  */
-export async function createAndStartBot({ template, portfolioId, name, tickers, capital, maxPerOrder, research }) {
+export async function createAndStartBot({ template, portfolioId, name, tickers, capital, maxPerOrder, research, rules }) {
   let created
   try {
     created = await post('/bots/catalog/from-template', {
@@ -219,6 +219,7 @@ export async function createAndStartBot({ template, portfolioId, name, tickers, 
       maxOrderNotional: maxPerOrder,
       riskOnExposure: 1,
       enabled: false,
+      ...(Array.isArray(rules) && rules.length ? { rules } : {}),
       ...(template.research && research ? { config: { research: toResearchConfig(research, template.research.base) } } : {}),
     })
   } catch (error) {

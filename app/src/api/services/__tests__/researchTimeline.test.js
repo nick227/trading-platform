@@ -24,7 +24,7 @@ describe('research decisions and replay fills on the bot timeline', () => {
     expect(x.replaySession).toBe('2026-11-19')
     const fill = executionToItems(x, { hasCreatedEvent: true }).find((i) => i.category === 'fill')
     expect(fill.simulated).toBe(true)
-    expect(fill.explanation).toBe('Simulated fill at the 2026-11-19 close ($342.10) — historical replay, not a broker execution.')
+    expect(fill.explanation).toBe('Simulated fill at the Nov 19, 2026 close ($342.10) — historical replay, not a broker execution.')
     const broker = normalizeExecution({ id: 'x2', ticker: 'AAPL', direction: 'buy', quantity: 1, filledQuantity: 1, filledPrice: 10, status: 'filled', brokerOrderId: 'alp_1' })
     expect(executionToItems(broker, { hasCreatedEvent: true }).find((i) => i.category === 'fill').simulated).toBe(false)
   })

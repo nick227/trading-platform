@@ -19,10 +19,11 @@ beforeEach(() => {
 })
 
 describe('Nav', () => {
-  it('shows only Home, Bots, Account for signed-in users', () => {
+  it('shows exactly two destinations plus an account link for signed-in users', () => {
     renderNav()
-    const links = screen.getAllByRole('link').filter((a) => a.classList.contains('nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Bots', 'Account'])
+    const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
+    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Bots'])
+    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/profile')
     for (const removed of ['Portfolio', 'Orders', 'Opportunities', 'Templates', 'Profile']) {
       expect(screen.queryByRole('link', { name: removed })).not.toBeInTheDocument()
     }

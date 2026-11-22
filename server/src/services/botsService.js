@@ -194,11 +194,12 @@ export default {
     const total = await prisma.bot.count({ where })
 
     const data = await Promise.all(bots.map(async (bot) => {
-      const { performance, capitalInUse } = await computeBotPerformance(bot.id)
+      const { performance, capitalInUse, openPositions } = await computeBotPerformance(bot.id)
       return {
         ...bot,
         performance,
-        capitalInUse
+        capitalInUse,
+        openPositions
       }
     }))
 
@@ -223,11 +224,12 @@ export default {
     })
     if (!bot) return null
 
-    const { performance, capitalInUse } = await computeBotPerformance(id)
+    const { performance, capitalInUse, openPositions } = await computeBotPerformance(id)
     return {
       ...bot,
       performance,
-      capitalInUse
+      capitalInUse,
+      openPositions
     }
   },
 
@@ -321,12 +323,14 @@ export default {
   async getBotEvents(arg1, arg2 = {}) {
     const botId = typeof arg1 === 'string' ? arg1 : (arg1?.botId ?? null)
     const query = typeof arg1 === 'object' && (!arg2 || Object.keys(arg2).length === 0) ? arg1 : (arg2 ?? {})
-    const { type, offset = 0, limit = 50 } = query
+    const { type, exclude, offset = 0, limit = 50 } = query
     const take = Math.min(parseInt(limit), 100)
     const skip = Math.max(parseInt(offset), 0)
 
     const where = { botId }
     if (type) where.type = type
+    // ?exclude=execution_skipped,… — lets clients page meaningful events past routine checks
+    else if (exclude) where.type = { notIn: String(exclude).split(',').map((t) => t.trim()).filter(Boolean) }
 
     const events = await prisma.botEvent.findMany({
       where,
