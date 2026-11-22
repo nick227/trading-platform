@@ -28,6 +28,14 @@ function windowMsFromConfig(config) {
   return null
 }
 
+/**
+ * Records a just-created execution so the cached cooldown can't let further orders
+ * through before the cache would otherwise refresh. Only ever makes the rule stricter.
+ */
+export function noteCooldownExecution(botId, ticker, at = Date.now()) {
+  cooldownCache.set(`${botId}:${ticker}`, { lastAt: at, fetchedAt: at })
+}
+
 // config supports: { windowMs } | { cooldownHours } | { minutes }
 export async function evaluateCooldown(config, botId, ticker) {
   const windowMs = windowMsFromConfig(config)

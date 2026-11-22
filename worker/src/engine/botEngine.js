@@ -7,7 +7,7 @@ import { subscribe, unsubscribe } from '../market/dataStream.js'
 import { ACTIVE_EXECUTION_STATUSES } from '../queues/executionStatus.js'
 import { evaluateMarketHours }    from './rules/marketHours.js'
 import { evaluatePriceThreshold } from './rules/priceThreshold.js'
-import { evaluateCooldown }       from './rules/cooldown.js'
+import { evaluateCooldown, noteCooldownExecution } from './rules/cooldown.js'
 import { evaluatePositionLimit }  from './rules/positionLimit.js'
 import { evaluateDailyLoss }      from './rules/dailyLoss.js'
 import { evaluateTrendFilter }   from './rules/trendFilter.js'
@@ -566,6 +566,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   if (research) actedPredictions.add(`${bot.id}:${research.trace.source.predictionId}`)
   const linkedResearch = decisionEvent ? { ...researchRef, decisionEventId: decisionEvent.id } : null
 
+  noteCooldownExecution(bot.id, ticker)
   log.info({ executionId: execution.id, botId: bot.id, ticker, direction, qty: quantity, confidence, predictionId: researchRef?.predictionId }, 'execution_queued')
 
   await logBotEvent(bot, 'execution_created', `Created ${direction} execution for ${ticker}`, ticker, {
