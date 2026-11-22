@@ -234,7 +234,7 @@ describe('Step 3 — rules & start', () => {
     await toRules('tmpl_price')
     fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '700' } })
     fireEvent.click(screen.getByLabelText('At most one trade per symbol every'))
-    fireEvent.click(screen.getByLabelText('Stop for the day after losing'))
+    fireEvent.click(screen.getByLabelText('Stop for the day once the account has realized a loss of'))
     fireEvent.change(screen.getByLabelText('Daily loss limit in dollars'), { target: { value: '300' } })
     fireEvent.click(startBtn())
     await screen.findByTestId('bot-page')

@@ -154,7 +154,7 @@ export default function RuleEditor({ value: d, onChange, errors = {}, direction 
         {errors.positionLimit && <p className="tl-field-error" role="alert">{errors.positionLimit}</p>}
       </div>
       <div className="tl-rule-row">
-        <Toggle id={`${idPrefix}-dl`} checked={d.dailyLoss.on} onChange={(v) => set({ dailyLoss: { ...d.dailyLoss, on: v } })}>Stop for the day after losing</Toggle>
+        <Toggle id={`${idPrefix}-dl`} checked={d.dailyLoss.on} onChange={(v) => set({ dailyLoss: { ...d.dailyLoss, on: v } })}>Stop for the day once the account has realized a loss of</Toggle>
         <NumberInput id={`${idPrefix}-dl-n`} label="Daily loss limit in dollars" prefix="$" value={d.dailyLoss.maxLoss} invalid={Boolean(errors.dailyLoss)} width={88} onChange={(v) => set({ dailyLoss: { ...d.dailyLoss, maxLoss: v, on: true } })} />
         {errors.dailyLoss && <p className="tl-field-error" role="alert">{errors.dailyLoss}</p>}
       </div>

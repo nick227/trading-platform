@@ -448,7 +448,7 @@ describe('Editing rules on an existing bot', () => {
 
     fireEvent.change(within(editor).getByLabelText('Trigger price'), { target: { value: '510' } })
     fireEvent.click(within(editor).getByLabelText('At most one trade per symbol every'))   // switch the cooldown off
-    fireEvent.click(within(editor).getByLabelText('Stop for the day after losing'))         // add a loss limit
+    fireEvent.click(within(editor).getByLabelText('Stop for the day once the account has realized a loss of'))         // add a loss limit
     fireEvent.change(within(editor).getByLabelText('Daily loss limit in dollars'), { target: { value: '200' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save rules' }))
     await waitFor(() => expect(post).toHaveBeenCalled())

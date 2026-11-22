@@ -87,7 +87,9 @@ export function collapseRoutine(items) {
   const out = []
   const seen = new Map()
   for (const item of items) {
-    if (ROUTINE.has(item.category)) {
+    // Routine checks and repeated rule-level blocks (no order involved) collapse into one
+    // counted row; only routine checks are folded away on summary views.
+    if (ROUTINE.has(item.category) || (item.category === 'risk' && !item.executionId && item.kind !== 'trade')) {
       const key = `${item.botId ?? ''}|${item.category}|${item.title}|${item.symbol ?? ''}`
       const prev = seen.get(key)
       if (prev) {

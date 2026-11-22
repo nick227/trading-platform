@@ -46,8 +46,8 @@ export function describeGuards({ config = {}, rules = [] } = {}, { template = fa
   if (pos?.maxPositions === 1) out.push('Holds at most one position')
   else if (isPos(pos?.maxShares)) out.push(`Holds at most ${pos.maxShares} shares per symbol`)
   const loss = findRule(rules, 'daily_loss')?.config
-  if (isPos(loss?.maxLoss)) out.push(`Stops for the day after a ${moneyWhole(loss.maxLoss)} loss`)
-  else if (isPos(loss?.maxDailyLossPct)) out.push(`Stops for the day after a ${loss.maxDailyLossPct}% loss`)
+  if (isPos(loss?.maxLoss)) out.push(`Stops for the day once the account has realized a ${moneyWhole(loss.maxLoss)} loss`)
+  else if (isPos(loss?.maxDailyLossPct)) out.push(`Stops for the day once the account has realized a ${loss.maxDailyLossPct}% loss`)
   if (isResearchBot(config)) {
     const r = config.research ?? {}
     const parts = []
@@ -87,7 +87,7 @@ export function describeAction({ config = {}, rules = [] } = {}, { template = fa
     return `${verb} ${syms} when the price ${op === 'below' ? 'falls below' : 'rises above'} ${level}.`
   }
   if (loss && !sell) {
-    return `Buys ${syms} steadily, and stops for the day once losses reach ${isPos(loss.maxLoss) ? moneyWhole(loss.maxLoss) : 'its limit'}.`
+    return `Buys ${syms} steadily, and stops for the day once the account has realized ${isPos(loss.maxLoss) ? `a ${moneyWhole(loss.maxLoss)} loss` : 'its loss limit'}.`
   }
   if (!sell) {
     return cd ? `Buys ${syms} on a fixed schedule — once every ${cd}, whatever the price.` : `Buys ${syms} at each check.`
