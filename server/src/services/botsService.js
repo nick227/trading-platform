@@ -3,7 +3,7 @@ import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
 import { computeBotAccounting } from './botAccountingService.js'
 import { simulationConfig } from './simulationService.js'
-import { engineClient } from '../clients/engine.js'
+import { loadPriceMarks } from './portfolioValuationService.js'
 import { isResearchDriven, resolveResearchPolicy } from '../../../worker/src/engine/researchDecision.js'
 
 /** Research-driven bots must carry a policy the bot engine accepts (it fails closed otherwise). */
@@ -18,20 +18,13 @@ function assertValidResearchConfig(config) {
 }
 
 /**
- * Simulator only: value open positions at Alpha Engine's latest known daily close
- * (Railway's own prices), labelled with that session. Live/paper valuation is unchanged.
+ * Simulator only: value open positions with the portfolio valuation marks (Alpha Engine's
+ * latest known daily close), so bot P/L and the portfolio always agree.
  */
 async function simulatorValuation(openPositions) {
   if (!simulationConfig().enabled) return null
-  const prices = {}
-  const sessions = {}
-  for (const ticker of Object.keys(openPositions ?? {})) {
-    try {
-      const sc = await engineClient.getSessionClose(ticker)
-      if (Number(sc?.close) > 0) { prices[ticker] = Number(sc.close); sessions[ticker] = sc.session }
-    } catch { /* leave unvalued */ }
-  }
-  return Object.keys(prices).length ? { prices, sessions } : null
+  const marks = await loadPriceMarks(Object.keys(openPositions ?? {}))
+  return Object.keys(marks.prices).length ? marks : null
 }
 
 async function computeBotPerformance(botId) {

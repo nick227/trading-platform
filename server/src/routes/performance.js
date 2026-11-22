@@ -1,5 +1,6 @@
 import prisma from '../loaders/prisma.js'
 import { authenticate } from '../middleware/authenticate.js'
+import { valueHistory } from '../services/portfolioValuationService.js'
 
 export default async function performanceRoutes(app, opts) {
   // GET /api/performance/stats
@@ -39,14 +40,18 @@ export default async function performanceRoutes(app, opts) {
     }
   })
 
-  // GET /api/performance/daily-snapshots
-  app.get('/daily-snapshots', async (request, reply) => {
+  // GET /api/performance/daily-snapshots — the caller's own daily values only.
+  // (The legacy DailySnapshot table is a single global account with no owner, so it is
+  // never served to users.)
+  app.get('/daily-snapshots', { preHandler: [authenticate] }, async (request, reply) => {
     try {
-      const snapshots = await prisma.dailySnapshot.findMany({
-        orderBy: { snapshotDate: 'desc' },
-        take:    30
-      })
-      return reply.send(snapshots)
+      const history = await valueHistory(request.user.id, { range: '1M' })
+      return reply.send(
+        history.points
+          .filter((p) => p.value !== null)
+          .reverse()
+          .map((p) => ({ snapshotDate: p.date, equity: p.value, cash: p.cash, positionsValue: Number((p.value - p.cash).toFixed(2)) }))
+      )
     } catch (error) {
       return reply.code(500).send({ error: error.message })
     }
