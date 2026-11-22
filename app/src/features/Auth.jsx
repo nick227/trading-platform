@@ -124,11 +124,19 @@ export default function Auth() {
         </div>
 
         {error && (
-          <div style={{
-            background: '#fff0f0', border: '1px solid #fcc', borderRadius: '8px',
-            padding: '0.75rem', marginBottom: '1rem', fontSize: '14px', color: '#c0392b',
-            textAlign: 'center'
-          }}>
+          <div
+            role="alert"
+            style={{
+              background: 'var(--tl-neg-soft)',
+              border: '1px solid var(--tl-neg)',
+              borderRadius: 'var(--tl-radius-sm)',
+              padding: '0.75rem',
+              marginBottom: '1rem',
+              fontSize: '14px',
+              color: 'var(--tl-neg)',
+              textAlign: 'center'
+            }}
+          >
             {error}
           </div>
         )}
