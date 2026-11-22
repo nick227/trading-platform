@@ -2,6 +2,8 @@ import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
 import { computeBotAccounting } from './botAccountingService.js'
+import { simulationConfig } from './simulationService.js'
+import { engineClient } from '../clients/engine.js'
 import { isResearchDriven, resolveResearchPolicy } from '../../../worker/src/engine/researchDecision.js'
 
 /** Research-driven bots must carry a policy the bot engine accepts (it fails closed otherwise). */
@@ -15,9 +17,34 @@ function assertValidResearchConfig(config) {
   }
 }
 
+/**
+ * Simulator only: value open positions at Alpha Engine's latest known daily close
+ * (Railway's own prices), labelled with that session. Live/paper valuation is unchanged.
+ */
+async function simulatorValuation(openPositions) {
+  if (!simulationConfig().enabled) return null
+  const prices = {}
+  const sessions = {}
+  for (const ticker of Object.keys(openPositions ?? {})) {
+    try {
+      const sc = await engineClient.getSessionClose(ticker)
+      if (Number(sc?.close) > 0) { prices[ticker] = Number(sc.close); sessions[ticker] = sc.session }
+    } catch { /* leave unvalued */ }
+  }
+  return Object.keys(prices).length ? { prices, sessions } : null
+}
+
 async function computeBotPerformance(botId) {
   try {
-    const accounting = await computeBotAccounting(botId)
+    let accounting = await computeBotAccounting(botId)
+    const valuation = await simulatorValuation(accounting.openPositions)
+    if (valuation) {
+      accounting = await computeBotAccounting(botId, { currentPrices: valuation.prices })
+      accounting.performance = accounting.performance && {
+        ...accounting.performance,
+        valuation: { source: 'alpha-engine daily close (latest known)', sessions: valuation.sessions, simulated: true }
+      }
+    }
     return {
       performance: accounting.performance,
       capitalInUse: accounting.capitalInUse,

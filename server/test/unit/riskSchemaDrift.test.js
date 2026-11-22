@@ -36,3 +36,17 @@ describe('risk engine schema usage', () => {
     }
   })
 })
+
+describe('bot-created executions satisfy the schema', () => {
+  it('supply every required Execution column that has no default', () => {
+    const body = schema.match(/^model Execution \{([\s\S]*?)^\}/m)[1]
+    const required = body.split('\n').map((l) => l.trim()).filter((l) => /^[a-zA-Z]\w*\s+(String|Float|Int|Boolean|DateTime|Decimal|Json)\b(?!\?)/.test(l))
+      .filter((l) => !/@default|@updatedAt|@id/.test(l)).map((l) => l.split(/\s+/)[0])
+    expect(required).toContain('commission')
+    const engine = readFileSync(join(root, 'worker/src/engine/botEngine.js'), 'utf8')
+    const create = engine.slice(engine.indexOf('tx.execution.create({'), engine.indexOf('if (research) {', engine.indexOf('tx.execution.create({')))
+    const missing = required.filter((f) => !new RegExp(`\\b${f}\\s*[:,]`).test(create))
+    expect(missing).toEqual([])
+  })
+})
+

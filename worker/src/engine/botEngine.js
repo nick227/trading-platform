@@ -22,6 +22,43 @@ import { fetchVerifiedResearchTrace, recordResearchDecision } from '../../../ser
 import { linkResearchDecisionToExecution } from '../../../server/src/services/executionResearchService.js'
 import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
 import { simulationConfig } from '../../../server/src/services/simulationService.js'
+import { resolveRiskOutcome, riskPolicyConfig } from '../risk/riskOutcome.js'
+
+const REGIME_MAP = { risk_on: 'bull', risk_off: 'bear' }
+const marketContextCache = new Map() // ticker → { at, value }
+
+/**
+ * Real available market data for risk checks. Daily volume and 20-session average from
+ * Alpha Engine; spread only from a real two-sided quote; regime only outside replay (the
+ * regime read has no as-of date). Anything unavailable is omitted (scored as unknown).
+ */
+export async function marketDataFor(ticker, tick) {
+  const price = Number(tick?.last ?? tick?.ask)
+  const out = { ticker, price }
+  const bid = Number(tick?.bid), ask = Number(tick?.ask)
+  if (bid > 0 && ask > bid) { out.bid = bid; out.ask = ask; out.spread = ask - bid }
+  const sim = simulationConfig()
+  const now = Date.now()
+  let ctx = marketContextCache.get(ticker)
+  if (!ctx || now - ctx.at > 60_000) {
+    const value = {}
+    try {
+      const sc = await engineClient.getSessionClose(ticker, sim.enabled ? sim.session : null)
+      if (Number(sc?.volume) > 0) value.volume = Number(sc.volume)
+      if (Number(sc?.avgVolume20) > 0) value.avgVolume = Number(sc.avgVolume20)
+      if (sc?.session) value.session = sc.session
+    } catch { /* unknown */ }
+    if (!sim.enabled) {
+      try {
+        const r = await engineClient.getRegime(ticker)
+        if (REGIME_MAP[r?.regime]) value.regime = REGIME_MAP[r.regime]
+      } catch { /* unknown */ }
+    }
+    ctx = { at: now, value }
+    marketContextCache.set(ticker, ctx)
+  }
+  return { ...out, ...ctx.value }
+}
 
 // Simulator (historical replay): locate the replay session's publication and judge it at
 // that session's close. Only research decisions use this clock; throttles use real time.
@@ -120,6 +157,7 @@ export function stopBotEngine() {
   positionCacheByUser.clear()
   lastSkipEventAt.clear()
   lastRuleBlockEventAt.clear()
+  lastInflightCheckAt.clear()
   if (previousTickers.size > 0) {
     unsubscribe([...previousTickers])
   }
@@ -191,10 +229,16 @@ export async function onPriceTick(ticker) {
 export async function evaluateBot(bot, ticker) {
   const inflightKey = `${bot.id}:${ticker}`
 
-  // Primary guard: in-memory (no DB hit on every tick)
+  // Primary guard: in-memory (no DB hit on every tick). A key can go stale (e.g. a very
+  // fast fill finalized before the guard was re-set), so confirm it against the DB at most
+  // once per window; the DB unique activeIntentKey still guarantees a single active order.
   if (inflightMap.get(inflightKey)) {
-    await maybeLogInflightSkip(bot, ticker, inflightKey)
-    return
+    if (!(await inflightIsStale(bot, ticker, inflightKey))) {
+      await maybeLogInflightSkip(bot, ticker, inflightKey)
+      return
+    }
+    inflightMap.delete(inflightKey)
+    log.info({ botId: bot.id, ticker }, 'stale_inflight_guard_cleared')
   }
 
   // Fallback guard: one-time DB check per key to cover the startup window before
@@ -377,7 +421,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   const inflightKey = `${bot.id}:${ticker}`
   const activeIntentKey = buildActiveIntentKey(bot.id, ticker, direction)
 
-  const quantity = direction === 'buy'
+  let quantity = direction === 'buy'
     ? computeBuyQuantity({ bot, quote: tick })
     : currentQty
 
@@ -393,13 +437,16 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     return
   }
 
-  // Evaluate risk before creating execution
+  // Evaluate risk before creating execution, with the real signal and real available
+  // market data (nothing fabricated: unknown inputs stay unknown).
   const executionRequest = {
     portfolioId: bot.portfolioId,
     ticker,
     direction,
     quantity,
-    price: tick.last
+    price: tick.last,
+    signal: { ticker, direction, botId: bot.id, ...(research ? { confidence } : {}) },
+    marketData: await marketDataFor(ticker, tick)
   }
 
   let riskEvaluation
@@ -415,13 +462,19 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     return
   }
 
-  if (!riskEvaluation.approved) {
+  const sim = simulationConfig()
+  const outcome = resolveRiskOutcome(riskEvaluation, { quantity, ...riskPolicyConfig(process.env, { simulationEnabled: sim.enabled }) })
+  const riskRecord = { basis: outcome.basis, ...outcome.verdict, marketData: executionRequest.marketData,
+    ...(outcome.testScenario ? { testScenario: { name: outcome.testScenario, mode: sim.mode, session: sim.session,
+      note: 'Isolated simulator test scenario: normal risk policy would not place this order.' } } : {}) }
+  if (!outcome.proceed) {
     // No execution exists yet, so the block is recorded on the bot timeline only
     // (ExecutionAudit rows require an existing execution).
-    await logBotEvent(bot, 'execution_blocked_by_risk', `Risk management blocked execution for ${ticker}`, ticker, {
+    await logBotEvent(bot, 'execution_blocked_by_risk', `Risk management ${outcome.basis === 'restricted_blocked' ? 'restricted' : 'blocked'} execution for ${ticker}`, ticker, {
       signal,
       confidence,
-      reason,
+      reason: outcome.verdict.reason,
+      riskDecision: riskRecord,
       riskScore: riskEvaluation.riskScore,
       failedChecks: riskEvaluation.failedChecks,
       recommendations: riskEvaluation.recommendations,
@@ -429,6 +482,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     })
     return
   }
+  quantity = outcome.quantity
 
   // Pre-insert guard: avoids a noisy P2002 in the normal (non-race) case.
   // The DB unique constraint on activeIntentKey remains the hard guarantee.
@@ -471,7 +525,9 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
             clientOrderId: `tp_${executionId}`,
             activeIntentKey,
             signalScore:   confidence,
-            pnl:           0
+            pnl:           0,
+            commission:    0,  // required columns; fees/commission are recorded on fill
+            fees:          0
           }
         })
         if (research) {
@@ -520,6 +576,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     reason,
     metadata,
     riskScore: riskEvaluation.riskScore,
+    riskDecision: riskRecord,
     ...(linkedResearch ? { research: linkedResearch } : {})
   })
 
@@ -537,6 +594,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
       confidence,
       reason,
       riskScore: riskEvaluation.riskScore ?? null,
+      riskDecision: riskRecord,
       ...(linkedResearch ? { research: linkedResearch } : {})
     }
   })
@@ -814,7 +872,8 @@ async function logBotEvent(bot, type, detail, ticker, metadata = {}) {
         botId:       bot.id,
         portfolioId: bot.portfolioId,
         type,
-        detail,
+        // BotEvent.detail is VARCHAR(191): long error text would make the event itself fail.
+        detail:      String(detail ?? '').slice(0, 190),
         metadata:    { ticker, ...metadata }
       }
     })
@@ -822,6 +881,19 @@ async function logBotEvent(bot, type, detail, ticker, metadata = {}) {
     log.error({ err: err.message, botId: bot.id, type, ticker }, 'bot_event_write_error')
     throw err
   }
+}
+
+const lastInflightCheckAt = new Map()
+
+async function inflightIsStale(bot, ticker, inflightKey) {
+  const now = Date.now()
+  if (now - (lastInflightCheckAt.get(inflightKey) ?? 0) < SKIP_EVENT_WINDOW_MS / 2) return false
+  lastInflightCheckAt.set(inflightKey, now)
+  const active = await prisma.execution.findFirst({
+    where: { botId: bot.id, ticker, status: { in: ACTIVE_EXECUTION_STATUSES } },
+    select: { id: true }
+  })
+  return !active
 }
 
 async function maybeLogInflightSkip(bot, ticker, inflightKey) {

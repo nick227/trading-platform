@@ -175,7 +175,9 @@ describe('prediction → decision → paper execution → broker confirmation �
       decisionContext: { reason: 'research_accepted', signal: 'buy', researchConfidence: 0.82, confidenceIsProbability: false, executionId: exe.id }
     })
     expect(decision.metadata.researchCanonicalJson).toBe(FIXTURES.traces.pred_spy_buy.evidence.canonicalJson)
-    expect(ae.requests).toEqual(['/api/research/latest', '/api/predictions/pred_spy_buy/trace'])
+    // Research is located and verified first; then real market data for the risk check.
+    expect(ae.requests.slice(0, 2)).toEqual(['/api/research/latest', '/api/predictions/pred_spy_buy/trace'])
+    expect(ae.requests.slice(2).sort()).toEqual(['/api/market/session-close', '/api/regime/SPY'])
 
     // Paper execution and broker confirmation (submit, then the reconciliation sweep sees the fill).
     await drain()
@@ -517,6 +519,21 @@ describe('edge over baseline (default policy)', () => {
     expect(await executions({ botId: 'bot_default' })).toHaveLength(0)
     const [d] = await decisions('bot_default')
     expect(d.metadata).toMatchObject({ decision: 'rejected', decisionContext: { reason: 'no_edge_over_baseline', edgeOverBaseline: null } })
+  })
+})
+
+describe('in-flight guard', () => {
+  it('clears a stale in-memory guard when no active execution exists, and keeps a real one', async () => {
+    await researchBot()
+    inflightMap.set('bot_r:SPY', true) // stale: nothing active in the database
+    await tick('bot_r', 'SPY', 540)
+    expect(await executions()).toHaveLength(1)
+
+    // Now a real active order exists: the guard holds and nothing duplicates.
+    advance(61_000)
+    await tick('bot_r', 'SPY', 540)
+    expect(await executions()).toHaveLength(1)
+    expect(inflightMap.get('bot_r:SPY')).toBe(true)
   })
 })
 

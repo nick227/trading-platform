@@ -1,6 +1,7 @@
 // Drawdown Stress Score Service
 // Measures how stressed the account trajectory is
 
+import { brokerAccountSnapshot } from '../accountSnapshot.js'
 import prisma from '../../db/prisma.js'
 
 export class DrawdownStressService {
@@ -51,17 +52,13 @@ export class DrawdownStressService {
   // Score current drawdown (0-100)
   async scoreDrawdown(portfolioId) {
     try {
-      const portfolio = await prisma.portfolio.findUnique({
-        where: { id: portfolioId },
-        select: {
-          currentEquity: true,
-          peakEquity: true
-        }
-      })
+      // Peak from EquityPeak; current equity from the owner's account (simulated in simulator mode).
+      const peakRow = await prisma.equityPeak.findUnique({ where: { portfolioId } })
+      const peak = Number(peakRow?.peakEquity)
+      if (!peakRow || !(peak > 0)) return 100
+      const { equity } = await brokerAccountSnapshot(portfolioId)
 
-      if (!portfolio || !portfolio.peakEquity || portfolio.peakEquity === 0) return 100
-
-      const drawdown = (portfolio.peakEquity - portfolio.currentEquity) / portfolio.peakEquity
+      const drawdown = (peak - equity) / peak
 
       // Score based on drawdown percentage
       if (drawdown <= 0.02) return 100
@@ -96,14 +93,10 @@ export class DrawdownStressService {
 
       const dailyLoss = trades.reduce((sum, t) => sum + Math.min(0, t.pnl), 0)
       
-      const portfolio = await prisma.portfolio.findUnique({
-        where: { id: portfolioId },
-        select: { currentEquity: true }
-      })
+      if (dailyLoss === 0) return 100
+      const { equity } = await brokerAccountSnapshot(portfolioId)
 
-      if (!portfolio || portfolio.currentEquity === 0) return 100
-
-      const dailyLossPct = Math.abs(dailyLoss) / portfolio.currentEquity
+      const dailyLossPct = Math.abs(dailyLoss) / equity
 
       // Score based on daily loss percentage
       if (dailyLossPct <= 0.005) return 100
@@ -206,17 +199,10 @@ export class DrawdownStressService {
   // Get detailed stress information
   async getStressDetails(portfolioId) {
     try {
-      const portfolio = await prisma.portfolio.findUnique({
-        where: { id: portfolioId },
-        select: {
-          currentEquity: true,
-          peakEquity: true
-        }
-      })
-
-      const drawdown = portfolio && portfolio.peakEquity > 0
-        ? (portfolio.peakEquity - portfolio.currentEquity) / portfolio.peakEquity
-        : 0
+      const peakRow = await prisma.equityPeak.findUnique({ where: { portfolioId } })
+      const { equity: currentEquity } = await brokerAccountSnapshot(portfolioId)
+      const peakEquity = Number(peakRow?.peakEquity) || 0
+      const drawdown = peakEquity > 0 ? (peakEquity - currentEquity) / peakEquity : 0
 
       const today = new Date()
       today.setHours(0, 0, 0, 0)
@@ -231,9 +217,7 @@ export class DrawdownStressService {
       })
 
       const dailyLoss = trades.reduce((sum, t) => sum + Math.min(0, t.pnl), 0)
-      const dailyLossPct = portfolio && portfolio.currentEquity > 0
-        ? Math.abs(dailyLoss) / portfolio.currentEquity
-        : 0
+      const dailyLossPct = currentEquity > 0 ? Math.abs(dailyLoss) / currentEquity : 0
 
       const recentTrades = await prisma.execution.findMany({
         where: {
@@ -255,8 +239,8 @@ export class DrawdownStressService {
       }
 
       return {
-        currentEquity: portfolio?.currentEquity || 0,
-        peakEquity: portfolio?.peakEquity || 0,
+        currentEquity,
+        peakEquity,
         drawdown: Math.round(drawdown * 100),
         dailyLoss: Math.round(dailyLossPct * 100),
         losingStreak,
