@@ -244,7 +244,9 @@ describe('Activity timeline', () => {
     const items = await rows()
     expect(items.map(titleOf)).toEqual(['Bought 2 SPY', 'Blocked by a limit · QQQ'])
     expect(items[0]).toHaveTextContent('at $501.25')
-    expect(items[0]).toHaveTextContent('Decision trail · 2 steps')
+    // One disclosure per trade row; the full trail is inside it.
+    expect(items[0]).not.toHaveTextContent('Buy order placed')
+    fireEvent.click(within(items[0]).getByRole('button', { name: /Details/ }))
     expect(items[0]).toHaveTextContent('Buy order placed — 2 shares of SPY.')
     expect(items[1]).toHaveTextContent('Today’s loss limit was reached')
     expect(items[1].dataset.kind).toBe('risk')
@@ -287,10 +289,12 @@ describe('Activity timeline', () => {
     mockApi({ events: [ev('e1', 'execution_failed', '2026-11-20T15:00:00Z', { ticker: 'SPY' }, 'Failed to create execution: deadlock')] })
     renderPage()
     const [item] = await rows()
-    const details = item.querySelector('details')
-    expect(details).not.toHaveAttribute('open')
-    expect(within(details).getByText('Details')).toBeInTheDocument()
-    expect(details).toHaveTextContent('Failed to create execution: deadlock')
+    const toggle = within(item).getByRole('button', { name: 'Details' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(item).not.toHaveTextContent('deadlock')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(item).toHaveTextContent('Failed to create execution: deadlock')
   })
 
   it('shows orders and says so when the decision log is unavailable', async () => {
@@ -463,11 +467,10 @@ describe('Progressive disclosure', () => {
   it('loads rules only when technical details are opened', async () => {
     mockApi({ rules: [{ id: 'r1', name: 'Market hours', type: 'market_hours', enabled: true }] })
     renderPage()
-    const details = (await screen.findByText('Technical details')).closest('details')
+    const toggle = await screen.findByRole('button', { name: 'Technical details' })
     expect(get.mock.calls.some(([p]) => p === '/bots/bot_1/rules')).toBe(false)
-    details.open = true
-    fireEvent(details, new Event('toggle'))
-    expect(await within(details).findByTestId('rules-list')).toHaveTextContent('Market hours')
+    fireEvent.click(toggle)
+    expect(await screen.findByTestId('rules-list')).toHaveTextContent('Market hours')
   })
 })
 

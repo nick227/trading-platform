@@ -62,7 +62,7 @@ export default function HoldingDetail({ position: p, bots, busy, onToggleBot }) 
       ) : (
         <ValueChart points={prices.points} markers={markers} height={180} label={`${sym} daily closes`} />
       )}
-      <p className="tl-chart-caption">Alpha Engine daily closes · dots mark your fills.</p>
+      <p className="tl-chart-caption">Daily closes · dots mark your fills.</p>
 
       <div className="tl-detail-grid" style={{ marginTop: 6 }}>
         <div>
@@ -97,19 +97,15 @@ export default function HoldingDetail({ position: p, bots, busy, onToggleBot }) 
       </div>
 
       {fills && fills.length > 0 && (
-        <details className="tl-evidence tl-evidence--quiet" style={{ marginTop: 14 }}>
-          <summary>{plural(fills.length, 'fill')}</summary>
-          <table className="tl-table tl-small" style={{ marginTop: 6 }}>
-            <tbody>
-              {fills.slice(0, 10).map((f) => (
-                <tr key={f.id}>
-                  <td>{f.side === 'sell' ? 'Sold' : 'Bought'} {shares(f.filledQuantity)} <span className="tl-sub">{botName(f.botId)}</span></td>
-                  <td className="r">{money(f.filledPrice)}<span className="tl-sub">{f.replaySession ? `Replay of ${sessionDate(f.replaySession)}` : sessionDate(f.filledAt)}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
+        <ul className="tl-fill-list" data-testid="holding-fills">
+          {fills.slice(0, 5).map((f) => (
+            <li key={f.id}>
+              {f.side === 'sell' ? 'Sold' : 'Bought'} {shares(f.filledQuantity)} @ {money(f.filledPrice)}
+              <span className="tl-muted"> · {f.replaySession ? `replay of ${sessionDate(f.replaySession)}` : sessionDate(f.filledAt)} · {botName(f.botId)}</span>
+            </li>
+          ))}
+          {fills.length > 5 && <li className="tl-muted">+{fills.length - 5} more in Activity</li>}
+        </ul>
       )}
     </div>
   )

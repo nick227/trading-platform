@@ -703,3 +703,19 @@ select.tl-input--inline { width: auto; padding-right: 4px; }
 }
 
 .tl-page .tl-asof { text-align: left; }
+
+/* ── Progressive disclosure (one pattern everywhere) ─────────────────────── */
+.tl-disc { margin-top: 6px; }
+.tl-disc-toggle { appearance: none; border: 0; background: none; padding: 2px 0; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 540; color: var(--tl-muted); cursor: pointer; border-radius: 4px; }
+.tl-disc-toggle:hover { color: var(--tl-ink); }
+.tl-disc-toggle:focus-visible { outline: 2px solid var(--tl-accent); outline-offset: 2px; }
+.tl-disc-meta { color: var(--tl-faint); font-weight: 450; }
+.tl-disc-body { margin-top: 8px; padding: 12px 14px; border-radius: 8px; background: var(--tl-surface-2); font-size: 13px; animation: tl-disc-in 160ms var(--tl-ease); }
+.tl-disc-body .tl-trail-list { margin: 0; }
+.tl-disc-body .tl-evidence-body { padding: 10px 0 0; background: none; border-top: 1px solid var(--tl-line); margin-top: 10px; }
+.tl-disc-body .tl-evidence-body:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+@keyframes tl-disc-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .tl-disc-body { animation: none; } }
+.tl-featured-name .tl-chevron { color: var(--tl-faint); }
+.tl-fill-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; }
+.sheet.sheet--wide { max-width: 640px; }

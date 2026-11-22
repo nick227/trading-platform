@@ -223,7 +223,7 @@ describe('HomeDashboard', () => {
       'Sell order placed · MSFT · Mean Reversion',
       'Bought 5 AAPL · Momentum AAPL',
     ])
-    expect(rows[1]).toHaveTextContent('Decision trail · 2 steps')
+    expect(within(rows[1]).getByRole('button', { name: /Details/ })).toHaveTextContent('Details2 steps')
   })
 
   it('folds routine checks into one summary line', async () => {

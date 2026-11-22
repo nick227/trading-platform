@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 import ActivityFeed from '../../ui/ActivityFeed'
 import BotRow from '../../ui/BotRow'
 import ValueChart from '../../ui/ValueChart'
-import { EmergencyBanner, SafetyBar, loadRiskSummary, useEmergencyStop } from '../../ui/Safety'
+import { EmergencyBanner, SafetyBar, useEmergencyStop } from '../../ui/Safety'
+import { Chevron } from '../../ui/Disclosure'
 import { useBotControls } from '../../ui/useBotControls'
 import { listJoin, money, moneyWhole, plural, sessionDate, shares, signedMoney, signedPct, tone } from '../../ui/format'
 import HoldingDetail from './HoldingDetail'
@@ -105,12 +106,11 @@ function Portfolio({ valuation, history, error, bots }) {
 
 // ── Holdings ────────────────────────────────────────────────────────────────
 
-function Chevron({ open }) {
-  return (
-    <svg className={`tl-chevron ${open ? 'is-open' : ''}`} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 3.5L10.5 8 6 12.5" />
-    </svg>
-  )
+/** Largest holding's share of invested value — straight from the valuation. */
+function concentration(v) {
+  const top = v?.positions?.[0]
+  if (!top || !v.marketValue || top.marketValue === null) return null
+  return <>Largest holding <strong>{top.symbol}</strong> · {((top.marketValue / v.marketValue) * 100).toFixed(0)}% of invested value</>
 }
 
 function Holdings({ valuation, bots, open, setOpen, busy, onToggleBot }) {
@@ -121,7 +121,7 @@ function Holdings({ valuation, bots, open, setOpen, busy, onToggleBot }) {
     <section className="tl-section" id="holdings" aria-labelledby="holdings-title">
       <div className="tl-section-head">
         <h2 className="tl-section-title" id="holdings-title">Holdings<span className="tl-count">{positions.length}</span></h2>
-        <span className="tl-section-aside tl-muted tl-small tl-hide-sm">Select a holding for its chart, research and bots</span>
+        <span className="tl-section-aside tl-muted tl-small tl-hide-sm">Select a holding for details</span>
       </div>
       <table className="tl-table" data-testid="holdings-table">
         <thead>
@@ -221,7 +221,6 @@ export default function HomeDashboard() {
   const location = useLocation()
   const [state, setState] = useState({ loading: true, data: null })
   const [open, setOpen] = useState(null)
-  const [risk, setRisk] = useState(null)
   const { stop, activate, clear } = useEmergencyStop()
 
   const refresh = useCallback(async () => {
@@ -230,7 +229,6 @@ export default function HomeDashboard() {
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
-  useEffect(() => { loadRiskSummary().then(setRisk) }, [])
 
   const controls = useBotControls((fn) => setState((s) => ({ ...s, data: { ...s.data, bots: fn(s.data.bots) } })))
 
@@ -254,7 +252,7 @@ export default function HomeDashboard() {
       ) : (
         <>
           <Portfolio valuation={data.valuation} history={data.history} error={data.valuationError} bots={data.bots} />
-          {data.bots.length > 0 && <SafetyBar stop={stop} onActivate={onActivate} risk={risk} />}
+          {data.bots.length > 0 && <SafetyBar stop={stop} onActivate={onActivate} fact={concentration(data.valuation)} />}
           {/* New accounts see their bots first; sections without content stay out of the way. */}
           {data.bots.length === 0 && !data.botsError && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
           <Holdings valuation={data.valuation} bots={data.bots} open={open} setOpen={setOpen} busy={controls.busy} onToggleBot={controls.toggle} />
@@ -269,13 +267,13 @@ export default function HomeDashboard() {
                 <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{data.activityError}</div>
               ) : (
                 <ActivityFeed items={data.activity} limit={5} routine="summary" showLensControl={false}
-                  empty="Your bots haven’t done anything yet. Their checks, decisions and trades appear here as they run." />
+                  empty="Nothing yet — your bots’ trades and decisions appear here." />
               )}
             </section>
           )}
           <p className="tl-small tl-faint" style={{ marginTop: 56 }}>
             {data.valuation?.simulated
-              ? 'Simulated money only — live trading is disabled. Fills replay historical closes and are not broker executions. Research is an input you can test, not a recommendation.'
+              ? 'Simulated money · fills replay historical closes, not broker executions · research is an input, not a recommendation.'
               : 'Paper trading only — live trading is disabled.'}
           </p>
         </>

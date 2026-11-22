@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 
 /** Small focused dialog: bottom sheet on phones, centered panel on desktop. */
-export default function Sheet({ title, onClose, children, footer }) {
+export default function Sheet({ title, onClose, children, footer, size }) {
   const titleId = useId()
   const panelRef = useRef(null)
   const onCloseRef = useRef(onClose)
@@ -25,7 +25,7 @@ export default function Sheet({ title, onClose, children, footer }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div
-        className="sheet"
+        className={`sheet ${size === 'wide' ? 'sheet--wide' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

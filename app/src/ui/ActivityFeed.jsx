@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Disclosure from './Disclosure'
 import { Link } from 'react-router-dom'
 import { getExecutionResearch } from '../api/services/botDashboardService'
 import { ago, dateTime, money, ratioPct, sessionDate } from './format'
@@ -145,60 +146,73 @@ export function ResearchLine({ research }) {
   )
 }
 
-/** Archived, digest-verified research for an order — loaded on open. */
-export function ResearchEvidence({ executionId }) {
-  const [state, setState] = useState({ status: 'idle' })
-  const onToggle = async (e) => {
-    if (!e.currentTarget.open || state.status !== 'idle') return
-    setState({ status: 'loading' })
-    try {
-      setState({ status: 'done', data: await getExecutionResearch(executionId) })
-    } catch {
-      setState({ status: 'error' })
-    }
-  }
+/** Archived, digest-verified research for an order — loaded when shown. */
+export function EvidenceBody({ executionId }) {
+  const [state, setState] = useState({ status: 'loading' })
+  useEffect(() => {
+    let live = true
+    getExecutionResearch(executionId)
+      .then((data) => live && setState({ status: 'done', data }))
+      .catch(() => live && setState({ status: 'error' }))
+    return () => { live = false }
+  }, [executionId])
   const d = state.data
   const ev = d?.evidence
   return (
-    <details className="tl-evidence" onToggle={onToggle} data-testid={`research-evidence-${executionId}`}>
-      <summary>Research evidence</summary>
-      <div className="tl-evidence-body">
-        {state.status === 'loading' && <span className="tl-muted">Loading…</span>}
-        {state.status === 'error' && <span className="tl-neg">Couldn’t load the evidence. Try again later.</span>}
-        {state.status === 'done' && d?.status !== 'verified_digest' && (
-          <span role="status">{d?.status === 'unavailable' ? 'No research decision is linked to this order.' : `Evidence check: ${d?.status ?? 'unknown'} — this order’s research can’t be verified.`}</span>
-        )}
-        {state.status === 'done' && d?.status === 'verified_digest' && (
-          <dl>
-            <dt>Integrity</dt><dd><strong className="tl-pos">Verified</strong> — archived evidence matches its SHA-256 digest <span className="tl-muted">(integrity, not accuracy)</span></dd>
-            <dt>Prediction</dt><dd>{ev?.ticker} {ev?.direction} · {ev?.horizon} · observed {sessionDate(ev?.observedAt, { year: true })}</dd>
-            <dt>Entry price</dt><dd>{money(ev?.entryPrice)}</dd>
-            <dt>Model</dt><dd>{ev?.strategyId ?? '—'}</dd>
-            <dt>Publication</dt><dd>{ev?.ranking?.publicationId ?? '—'}{ev?.ranking?.mode === 'historical_replay' ? ' (historical replay)' : ''}</dd>
-            <dt>Digest</dt><dd className="tl-muted">{d.researchTrace?.evidenceSha256}</dd>
-          </dl>
-        )}
-      </div>
-    </details>
+    <div className="tl-evidence-body" data-testid={`research-evidence-${executionId}`}>
+      {state.status === 'loading' && <span className="tl-muted">Loading research evidence…</span>}
+      {state.status === 'error' && <span className="tl-neg">Couldn’t load the research evidence. Try again later.</span>}
+      {state.status === 'done' && d?.status !== 'verified_digest' && (
+        <span role="status">{d?.status === 'unavailable' ? 'No research decision is linked to this order.' : `Evidence check: ${d?.status ?? 'unknown'} — this order’s research can’t be verified.`}</span>
+      )}
+      {state.status === 'done' && d?.status === 'verified_digest' && (
+        <dl>
+          <dt>Evidence</dt><dd><strong className="tl-pos">Verified</strong> — matches its SHA-256 digest <span className="tl-muted">(integrity, not accuracy)</span></dd>
+          <dt>Prediction</dt><dd>{ev?.ticker} {ev?.direction} · {ev?.horizon} · observed {sessionDate(ev?.observedAt, { year: true })}</dd>
+          <dt>Entry price</dt><dd>{money(ev?.entryPrice)}</dd>
+          <dt>Model</dt><dd>{ev?.strategyId ?? '—'}</dd>
+          <dt>Publication</dt><dd>{ev?.ranking?.publicationId ?? '—'}{ev?.ranking?.mode === 'historical_replay' ? ' (historical replay)' : ''}</dd>
+          <dt>Digest</dt><dd className="tl-muted">{d.researchTrace?.evidenceSha256}</dd>
+        </dl>
+      )}
+    </div>
   )
+}
+
+export function ResearchEvidence({ executionId }) {
+  return <Disclosure label="Research evidence"><EvidenceBody executionId={executionId} /></Disclosure>
 }
 
 /** The decision trail of one trade: every recorded step, oldest first. */
 function Trail({ steps }) {
   return (
-    <details className="tl-evidence tl-evidence--quiet tl-trail">
-      <summary>Decision trail · {steps.length} {steps.length === 1 ? 'step' : 'steps'}</summary>
-      <ol className="tl-trail-list">
-        {steps.map((s) => (
-          <li key={s.id}>
-            <span className="tl-trail-when">{dateTime(s.at)}</span>
-            <span className="tl-trail-what"><strong>{s.title}</strong>{s.explanation ? ` — ${s.explanation}` : ''}{s.note ? ` ${s.note}` : ''}</span>
-            <ResearchLine research={s.research} />
-          </li>
-        ))}
-      </ol>
-    </details>
+    <ol className="tl-trail-list">
+      {steps.map((st) => (
+        <li key={st.id}>
+          <span className="tl-trail-when">{dateTime(st.at)}</span>
+          <span className="tl-trail-what"><strong>{st.title}</strong>{st.explanation ? ` — ${st.explanation}` : ''}{st.note ? ` ${st.note}` : ''}</span>
+          <ResearchLine research={st.research} />
+        </li>
+      ))}
+    </ol>
   )
+}
+
+/** One disclosure per row: the trade's decision trail and evidence, or an error's raw detail. */
+function RowDetails({ item }) {
+  if (item.kind === 'trade') {
+    const evidence = item.filled && item.researchBot !== false && item.executionId
+    return (
+      <Disclosure label="Details" meta={`${item.steps.length} ${item.steps.length === 1 ? 'step' : 'steps'}${evidence ? ' · research evidence' : ''}`}>
+        <Trail steps={item.steps} />
+        {evidence && <EvidenceBody executionId={item.executionId} />}
+      </Disclosure>
+    )
+  }
+  if ((item.category === 'error' || item.category === 'risk') && item.diagnostics?.detail) {
+    return <Disclosure label="Details"><p className="tl-feed-text tl-muted m0">{item.diagnostics.detail}</p></Disclosure>
+  }
+  return null
 }
 
 export function FeedRow({ item, showBot = true }) {
@@ -216,11 +230,7 @@ export function FeedRow({ item, showBot = true }) {
         </div>
         {item.explanation && !routine && <p className="tl-feed-text">{item.explanation}</p>}
         {item.kind !== 'trade' && <ResearchLine research={item.research} />}
-        {item.kind === 'trade' && <Trail steps={item.steps} />}
-        {item.kind !== 'trade' && (item.category === 'error' || item.category === 'risk') && item.diagnostics?.detail && (
-          <details className="tl-evidence tl-evidence--quiet"><summary>Details</summary><p className="tl-feed-text tl-muted" style={{ margin: '6px 0 0' }}>{item.diagnostics.detail}</p></details>
-        )}
-        {item.kind === 'trade' && item.filled && item.researchBot !== false && item.executionId && <ResearchEvidence executionId={item.executionId} />}
+        <RowDetails item={item} />
       </div>
       <time className="tl-feed-time" dateTime={item.at ?? undefined} title={dateTime(item.at)}>{ago(item.at)}</time>
     </li>

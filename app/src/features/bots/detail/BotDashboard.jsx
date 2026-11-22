@@ -17,6 +17,7 @@ import {
   updateBotSettings,
 } from '../../../api/services/botDashboardService'
 import ActivityFeed from '../../../ui/ActivityFeed'
+import Disclosure from '../../../ui/Disclosure'
 import ResearchCard from '../../../ui/ResearchCard'
 import RuleEditor, { draftFromBot, saveBotRules, validateDraft } from '../../../ui/RuleEditor'
 import { EmergencyBanner, useEmergencyStop } from '../../../ui/Safety'
@@ -31,14 +32,12 @@ const MAX_WATCHED = 6
 
 // ── 1. What does this bot do? ───────────────────────────────────────────────
 
-function WhatItDoes({ bot, onSaved }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(null)
+function RulesSheet({ bot, onClose, onSaved }) {
+  const [draft, setDraft] = useState(() => draftFromBot(bot))
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const errors = draft ? validateDraft(draft) : {}
-  const start = () => { setDraft(draftFromBot(bot)); setEditing(true); setSubmitted(false); setError(null) }
+  const errors = validateDraft(draft)
   const save = async () => {
     setSubmitted(true)
     if (Object.keys(errors).length) return
@@ -47,32 +46,31 @@ function WhatItDoes({ bot, onSaved }) {
     const r = await saveBotRules({ bot, draft, api: { put, post, del } })
     setSaving(false)
     if (!r.ok) { setError(r.error); return }
-    setEditing(false)
     onSaved()
   }
+  return (
+    <Sheet title="Edit rules" size="wide" onClose={onClose} footer={
+      <>
+        <button type="button" className="tl-btn" onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" className="tl-btn tl-btn--primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save rules'}</button>
+      </>
+    }>
+      <RuleEditor value={draft} onChange={setDraft} errors={submitted ? errors : {}} direction={bot.direction ?? 'buy'} idPrefix="edit" />
+      <p className="tl-help" style={{ marginTop: 14 }}>Changes apply from the bot’s next check.</p>
+      {error && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
+    </Sheet>
+  )
+}
+
+function WhatItDoes({ bot, onEdit }) {
   return (
     <section className="tl-section" id="behavior" aria-labelledby="behavior-title">
       <div className="tl-section-head">
         <h2 className="tl-section-title" id="behavior-title">What it does</h2>
-        {!bot.stopped && !editing && <button type="button" className="tl-link-btn" onClick={start}>Edit rules</button>}
+        {!bot.stopped && <button type="button" className="tl-link-btn" onClick={onEdit}>Edit rules</button>}
       </div>
-      {!editing ? (
-        <>
-          <p className="tl-lead-sentence">{describeAction(bot)}</p>
-          <ul className="tl-rule-list" data-testid="rule-summary">{describeGuards(bot).map((g) => <li key={g}>{g}</li>)}</ul>
-          <p className="tl-section-note">Every condition must pass, then the order passes the account’s risk policy.</p>
-        </>
-      ) : (
-        <div className="tl-edit-panel">
-          <RuleEditor value={draft} onChange={setDraft} errors={submitted ? errors : {}} direction={bot.direction ?? 'buy'} idPrefix="edit" />
-          {error && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
-          <div className="tl-detail-actions">
-            <button type="button" className="tl-btn tl-btn--primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save rules'}</button>
-            <button type="button" className="tl-btn" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
-            <span className="tl-small tl-muted">Changes apply from the bot’s next check.</span>
-          </div>
-        </div>
-      )}
+      <p className="tl-lead-sentence">{describeAction(bot)}</p>
+      <ul className="tl-rule-list" data-testid="rule-summary">{describeGuards(bot).map((g) => <li key={g}>{g}</li>)}</ul>
     </section>
   )
 }
@@ -255,35 +253,26 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
 
 function AdvancedDetails({ bot }) {
   const [rules, setRules] = useState(undefined) // undefined = not loaded, null = unavailable
-  const onToggle = (e) => {
-    if (e.currentTarget.open && rules === undefined) loadBotRules(bot.id).then(setRules)
-  }
   return (
-    <details className="tl-evidence tl-evidence--quiet tl-section" onToggle={onToggle}>
-      <summary>Technical details</summary>
-      <div className="tl-evidence-body">
-      <dl>
-        <dt>Template</dt><dd>{bot.strategyName ?? bot.templateId ?? 'Custom'}</dd>
-        <dt>Type</dt><dd>{bot.botType === 'strategy_based' ? 'Strategy bot' : 'Rule bot'}</dd>
-        <dt>Bot ID</dt><dd>{bot.id}</dd>
-        <dt>Created</dt><dd>{fmtWhen(bot.createdAt) || '—'}</dd>
-      </dl>
-      <h4 style={{ margin: '14px 0 6px' }}>Rules</h4>
-      {rules === undefined ? (
-        <p className="tl-small tl-muted">Loading…</p>
-      ) : rules === null ? (
-        <p className="tl-small tl-muted">Rules are unavailable right now.</p>
-      ) : rules.length === 0 ? (
-        <p className="tl-small tl-muted">This bot has no saved rules.</p>
-      ) : (
-        <ul className="tl-small" data-testid="rules-list">
-          {rules.map((r) => <li key={r.id}>{r.name ?? r.type} {r.enabled === false && <span className="tl-muted">(off)</span>}</li>)}
-        </ul>
-      )}
-      <h4 style={{ margin: '14px 0 6px' }}>Configuration</h4>
-      <pre className="bot-config" style={{ fontSize: 12, overflowX: 'auto', margin: 0 }}>{JSON.stringify(bot.config, null, 2)}</pre>
-      </div>
-    </details>
+    <div className="tl-section" style={{ marginTop: 40 }}>
+      <Disclosure label="Technical details" onOpen={() => loadBotRules(bot.id).then(setRules)} testId="technical-details">
+        <div className="tl-evidence-body">
+          <dl>
+            <dt>Starting point</dt><dd>{bot.strategyName ?? bot.templateId ?? 'Custom'}</dd>
+            <dt>Bot ID</dt><dd>{bot.id}</dd>
+            <dt>Created</dt><dd>{fmtWhen(bot.createdAt) || '—'}</dd>
+            <dt>Rules</dt><dd>
+              {rules === undefined ? 'Loading…' : rules === null ? 'Unavailable right now.' : rules.length === 0 ? 'None saved.' : (
+                <ul className="tl-small m0" style={{ paddingLeft: 16 }} data-testid="rules-list">
+                  {rules.map((r) => <li key={r.id}>{r.name ?? r.type}{r.enabled === false ? ' (off)' : ''}</li>)}
+                </ul>
+              )}
+            </dd>
+          </dl>
+          <pre className="bot-config" style={{ fontSize: 12, overflowX: 'auto', margin: '10px 0 0' }}>{JSON.stringify(bot.config, null, 2)}</pre>
+        </div>
+      </Disclosure>
+    </div>
   )
 }
 
@@ -504,7 +493,7 @@ export default function BotDashboard() {
         </div>
       )}
 
-      <WhatItDoes bot={bot} onSaved={() => { setNotice('Rules saved. They apply from the bot’s next check.'); load() }} />
+      <WhatItDoes bot={bot} onEdit={() => setSheet('rules')} />
       <WhatItSees bot={bot} timeline={activity.timeline} />
       <WhyItActed activity={{ ...activity, researchBot: research }} status={status} onRetry={refreshActivity} />
       <WhatHappened bot={bot} fills={fills} activity={activity} onCancelled={() => { setNotice('Cancellation requested.'); refreshActivity() }} />
@@ -526,6 +515,9 @@ export default function BotDashboard() {
             setNotice('Changes saved.')
           }}
         />
+      )}
+      {sheet === 'rules' && (
+        <RulesSheet bot={bot} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); setNotice('Rules saved. They apply from the bot’s next check.'); load() }} />
       )}
       {sheet === 'stop' && (
         <StopSheet

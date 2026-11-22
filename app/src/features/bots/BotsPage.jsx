@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import ActivityFeed from '../../ui/ActivityFeed'
+import { Chevron } from '../../ui/Disclosure'
 import BotRow from '../../ui/BotRow'
 import { describeAction, describeGuards, isResearchBot, needsTriggerPrice } from '../../ui/describeBot'
 import { EmergencyBanner, useEmergencyStop } from '../../ui/Safety'
@@ -19,14 +20,6 @@ function behaviorTag(f) {
   if (types.has('price_threshold')) return f.config.direction === 'sell' ? 'Price trigger · sell' : 'Price trigger · buy'
   if (types.has('daily_loss')) return 'Loss-limited buying'
   return 'Schedule'
-}
-
-function Chevron() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 3.5L10.5 8 6 12.5" />
-    </svg>
-  )
 }
 
 /** Whether a template's results are enough to judge. Never a performance claim otherwise. */
@@ -87,7 +80,7 @@ function StartingPoint({ f, open, onToggle }) {
     <li id={`featured-${f.id}`} data-testid="featured-bot">
       <button type="button" className="tl-featured-row" aria-expanded={open} onClick={onToggle}>
         <span>
-          <span className="tl-featured-name"><span>{f.name}</span><Chevron /></span>
+          <span className="tl-featured-name"><span>{f.name}</span><Chevron open={open} /></span>
           <span className="tl-featured-sentence" style={{ display: 'block' }}>{describeAction(f, { template: true })}</span>
           <span className="tl-tags">
             <span className="tl-tag">{behaviorTag(f)}</span>
@@ -173,7 +166,7 @@ export default function BotsPage() {
       <header className="tl-header">
         <div>
           <h1 className="tl-title">Bots</h1>
-          <p className="tl-lede">Automate a trading idea with conditions you choose — a price trigger, a schedule, a trend, or Alpha Engine research — and test it on simulated money.</p>
+          <p className="tl-lede">Automate a trading idea with conditions you choose, and test it on simulated money.</p>
         </div>
         <Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot</Link>
       </header>
@@ -217,7 +210,6 @@ export default function BotsPage() {
               <div className="tl-section-head">
                 <h2 className="tl-section-title" id="activity-title">Activity</h2>
               </div>
-              <p className="tl-section-note">Every trade with its decision trail — the signal, the research, the risk check, the order and the fill — plus the checks where your bots waited.</p>
               <ActivityFeed items={d.decisions} limit={12} routine="summary" testId="decision-list" empty="Nothing has happened yet." />
             </section>
           )}

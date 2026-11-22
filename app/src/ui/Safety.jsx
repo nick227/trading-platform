@@ -84,42 +84,17 @@ function StopSheet({ onClose, onConfirm }) {
   )
 }
 
-/** Home's safety line: risk summary + the emergency stop control. */
-export function SafetyBar({ stop, onActivate, risk }) {
+/** Home's safety line: one fact from the valuation + the emergency stop control. */
+export function SafetyBar({ stop, onActivate, fact }) {
   const [open, setOpen] = useState(false)
   if (stop?.loading) return null
   return (
     <div className="tl-safety" data-testid="safety-bar">
-      <span className="tl-safety-text">
-        {risk ? (
-          <>Risk check: <strong className={risk.tone}>{risk.label}</strong>{risk.detail ? <span className="tl-muted"> · {risk.detail}</span> : null}</>
-        ) : (
-          <span className="tl-muted">Every order passes the risk policy before it’s placed.</span>
-        )}
-      </span>
+      <span className="tl-safety-text">{fact ?? <span className="tl-muted">Every order passes the risk policy before it’s placed.</span>}</span>
       {!stop?.active && !stop?.unavailable && (
         <button type="button" className="tl-btn tl-btn--sm tl-btn--danger" onClick={() => setOpen(true)}>Emergency stop</button>
       )}
       {open && <StopSheet onClose={() => setOpen(false)} onConfirm={onActivate} />}
     </div>
   )
-}
-
-/** Compact risk summary from the risk dashboard (same valuation as Home). */
-export async function loadRiskSummary() {
-  try {
-    const pf = await get('/portfolios/default')
-    if (!pf?.id) return null
-    const d = await get('/risk/dashboard', { portfolioId: pf.id })
-    const top = d?.scores?.exposure?.topRisks?.[0]
-    const label = d?.overallLabel ?? null
-    if (!label) return null
-    return {
-      label: label === 'good' ? 'healthy' : label,
-      tone: label === 'good' ? 'tl-pos' : label === 'moderate' ? '' : 'tl-neg',
-      detail: top ? `largest holding ${top.ticker} is ${top.concentration} of invested value` : null,
-    }
-  } catch {
-    return null
-  }
 }
