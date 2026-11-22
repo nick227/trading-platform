@@ -368,3 +368,30 @@ describe('refusal back-off (independent of rules)', () => {
     expect(await ordersOf('bot_nb2')).toHaveLength(2)
   })
 })
+
+describe('refused status (current shape) in cooldown and back-off', () => {
+  beforeEach(() => setMarketOpenState(true))
+  const refusedNew = (botId, id, at) => h.db.execution.create({ data: { id, userId: 'usr_a', portfolioId: 'por_a', botId, ticker: 'SPY', direction: 'buy', quantity: 1, price: 540.25,
+    status: 'refused', refusalReason: 'max_daily_notional', fees: 0, commission: 0, origin: 'bot', createdAt: at } })
+
+  it('cooldown counts a status-"refused" order as an attempt', async () => {
+    await mkBot('bot_rn', { direction: 'buy' }, [{ type: 'cooldown', config: { windowMs: HOUR } }])
+    await refusedNew('bot_rn', 'exe_rn', new Date())
+    await tick('bot_rn')
+    expect((await ordersOf('bot_rn')).map((o) => o.id)).toEqual(['exe_rn'])
+  })
+
+  it('back-off applies to a status-"refused" order without any rules, and lifts after the window', async () => {
+    await mkBot('bot_rn2', { direction: 'buy' })
+    await refusedNew('bot_rn2', 'exe_rn2', new Date(Date.now() - 60_000))
+    await tick('bot_rn2')
+    expect(await ordersOf('bot_rn2')).toHaveLength(1)
+    const [skip] = (await eventsOf('bot_rn2', 'execution_skipped')).filter((e) => e.metadata.reason === 'refused_recently')
+    expect(skip.metadata.detail).toBe('max_daily_notional')
+
+    await mkBot('bot_rn3', { direction: 'buy' })
+    await refusedNew('bot_rn3', 'exe_rn3', new Date(Date.now() - engine.REFUSAL_BACKOFF_MS - 1000))
+    await tick('bot_rn3')
+    expect(await ordersOf('bot_rn3')).toHaveLength(2)
+  })
+})

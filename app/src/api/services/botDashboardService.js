@@ -280,13 +280,43 @@ const RESEARCH_REASON_TEXT = {
 const sessionLabel = (s) => new Date(`${s}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 
 const CANCEL_TEXT = {
-  'refused:sell_exceeds_attributable_holdings': 'Refused: the bot can only sell shares it bought itself.',
   emergency_stop: 'Cancelled by the emergency stop.',
   user_cancel: 'Cancelled by you.',
 }
 export function cancelText(reason) {
   if (!reason) return 'This order was cancelled.'
-  return CANCEL_TEXT[reason] ?? (reason.startsWith('refused:') ? `Refused before it was sent (${reason.slice(8).replace(/_/g, ' ')}).` : reason)
+  return CANCEL_TEXT[reason] ?? reason
+}
+
+// Pre-submission refusals: the order was never sent.
+const REFUSAL_TEXT = {
+  bot_allocation_exceeded: 'Over this bot’s capital limit.',
+  max_daily_notional: 'Over the daily trading limit.',
+  max_symbol_notional: 'Over the per-symbol limit.',
+  max_order_value: 'Over the per-order limit.',
+  max_daily_executions: 'Over the daily order count.',
+  max_daily_loss: 'The daily loss limit was reached.',
+  max_concurrent_active_orders: 'Too many open orders.',
+  insufficient_buying_power: 'Not enough cash.',
+  bot_paused: 'The bot was paused.',
+  bot_stopped: 'The bot was stopped.',
+  missing_price: 'No current price.',
+  stale_price: 'The price was out of date.',
+  emergency_stop: 'The emergency stop is on.',
+  sell_exceeds_attributable_holdings: 'The bot can only sell shares it bought itself.',
+  invalid_credentials: 'Broker credentials aren’t usable.',
+  research_evidence_unverified: 'The research evidence couldn’t be verified.',
+}
+export function refusalText(reason) {
+  if (!reason || reason === 'unknown') return 'Stopped before it was sent.'
+  return REFUSAL_TEXT[reason] ?? `Stopped before it was sent (${reason.replace(/_/g, ' ')}).`
+}
+
+/** Refusal reason in the current shape (status 'refused') or the legacy one (cancelled + 'refused:'). */
+export function refusalReasonOf(x) {
+  if (x.status === 'refused') return x.refusalReason ?? 'unknown'
+  if (x.status === 'cancelled' && typeof x.cancelReason === 'string' && x.cancelReason.startsWith('refused:')) return x.cancelReason.slice(8)
+  return null
 }
 
 const REPLAY_ORDER = /^simreplay_(\d{4}-\d{2}-\d{2})_/
@@ -305,6 +335,7 @@ export function normalizeExecution(x) {
     filledPrice: toNumberOrNull(x.filledPrice),
     status: x.status ?? null,
     cancelReason: x.cancelReason ?? null,
+    refusalReason: x.refusalReason ?? null,
     brokerStatus: x.brokerStatus ?? null,
     costs: (toNumberOrNull(x.fees) ?? 0) + (toNumberOrNull(x.commission) ?? 0),
     createdAt: x.createdAt ?? null,
@@ -317,7 +348,8 @@ export function normalizeExecution(x) {
 /** Order outcome item for an execution (filled / rejected / cancelled / in progress). */
 export function executionToItems(x, { hasCreatedEvent }) {
   const items = []
-  const diagnostics = { source: 'execution', executionId: x.id, status: x.status, brokerStatus: x.brokerStatus, cancelReason: x.cancelReason, intentPrice: x.intentPrice, quantity: x.quantity }
+  const refusal = refusalReasonOf(x)
+  const diagnostics = { source: 'execution', executionId: x.id, status: refusal ? 'refused' : x.status, brokerStatus: x.brokerStatus, cancelReason: x.cancelReason, refusalReason: refusal, intentPrice: x.intentPrice, quantity: x.quantity }
   const sym = x.symbol ?? 'symbol'
   if (!hasCreatedEvent) {
     items.push({
@@ -327,6 +359,10 @@ export function executionToItems(x, { hasCreatedEvent }) {
     })
   }
   const qty = x.filledQuantity ?? x.quantity
+  if (refusal) {
+    items.push({ id: `exe:${x.id}:refused`, at: x.updatedAt, symbol: x.symbol, category: 'order', outcome: true, executionId: x.id, diagnostics, title: 'Order refused', explanation: refusalText(refusal) })
+    return items
+  }
   switch (x.status) {
     case 'filled':
     case 'partially_filled':

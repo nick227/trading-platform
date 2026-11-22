@@ -1,5 +1,5 @@
 import prisma from '../../db/prisma.js'
-import { ACTIVE_EXECUTION_STATUSES } from '../../queues/executionStatus.js'
+import { ACTIVE_EXECUTION_STATUSES, REFUSAL_WHERE } from '../../queues/executionStatus.js'
 
 // Cache last-execution timestamp per (botId, ticker) to avoid a DB query every tick.
 // TTL is half the minimum practical cooldown (30s) — short enough to stay accurate,
@@ -69,7 +69,7 @@ export async function evaluateCooldown(config, botId, ticker, { fresh = false, p
           { status: 'filled', filledAt: { gte: since } },
           // An order refused at submission (e.g. a daily notional cap) counts as an attempt,
           // so the bot backs off for its cooldown instead of re-submitting every cycle.
-          { status: 'cancelled', cancelReason: { startsWith: 'refused:' }, createdAt: { gte: since } }
+          ...REFUSAL_WHERE.map((w) => ({ ...w, createdAt: { gte: since } }))
         ]
       },
       orderBy: { createdAt: 'desc' },

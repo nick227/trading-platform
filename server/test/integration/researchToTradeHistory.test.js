@@ -432,7 +432,7 @@ describe('final order-eligibility boundary for research-driven orders', () => {
     const [d] = await decisions()
     await h.db.botEvent.update({ where: { id: d.id }, data: { metadata: { ...d.metadata, researchEvidence: { ...d.metadata.researchEvidence, confidence: 0.99 } } } })
     await drain()
-    expect(await h.db.execution.findUnique({ where: { id: exe.id } })).toMatchObject({ status: 'cancelled', cancelReason: 'refused:research_evidence_unverified' })
+    expect(await h.db.execution.findUnique({ where: { id: exe.id } })).toMatchObject({ status: 'refused', refusalReason: 'research_evidence_unverified' })
     expect(broker().submitCalls).toBe(0)
     expect((await history(tokenA, exe.id)).body.data.status).toBe('mismatch')
   })
@@ -441,7 +441,7 @@ describe('final order-eligibility boundary for research-driven orders', () => {
     await researchBot()
     await h.db.execution.create({ data: { id: 'exe_unlinked', userId: 'usr_a', portfolioId: 'por_usr_a', botId: 'bot_r', origin: 'bot', ticker: 'SPY', direction: 'buy', quantity: 1, price: 540, status: 'queued', clientOrderId: 'tp_exe_unlinked' } })
     await drain()
-    expect(await h.db.execution.findUnique({ where: { id: 'exe_unlinked' } })).toMatchObject({ status: 'cancelled', cancelReason: 'refused:research_evidence_unverified' })
+    expect(await h.db.execution.findUnique({ where: { id: 'exe_unlinked' } })).toMatchObject({ status: 'refused', refusalReason: 'research_evidence_unverified' })
     expect(broker().submitCalls).toBe(0)
   })
 

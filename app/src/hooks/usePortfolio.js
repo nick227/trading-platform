@@ -163,7 +163,7 @@ export function buildRecentActivity(executions) {
   // Sort by creation time, newest first, but only include completed, failed, or cancelled orders
   const sortedExecutions = executions
     .filter(e => e.createdAt) // Filter out any without timestamps
-    .filter(e => e.status === 'filled' || e.status === 'failed' || e.status === 'cancelled') // Only show completed, failed, or cancelled orders
+    .filter(e => e.status === 'filled' || e.status === 'failed' || e.status === 'cancelled' || e.status === 'refused') // Only show completed, failed, cancelled or refused orders
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   
   return sortedExecutions.slice(0, 5).map(e => {
@@ -183,6 +183,18 @@ export function buildRecentActivity(executions) {
       }
     }
     
+    if (e.status === 'refused') {
+      return {
+        event: `Refused ${isBuy ? 'Buy' : 'Sell'} Order: ${e.ticker}`,
+        value: e.refusalReason || 'Stopped before it was sent',
+        time: formatTimeAgo(e.createdAt),
+        type: 'cancelled',
+        ticker: e.ticker,
+        quantity: e.quantity,
+        price: e.price
+      }
+    }
+
     if (isCancelled) {
       return {
         event: `Cancelled ${isBuy ? 'Buy' : 'Sell'} Order: ${e.ticker}`,
