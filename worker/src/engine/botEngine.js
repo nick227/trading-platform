@@ -4,7 +4,7 @@ import { log } from '../logger.js'
 import { getBrokerClient } from '../broker/clientCache.js'
 import { priceCache } from '../market/priceCache.js'
 import { subscribe, unsubscribe } from '../market/dataStream.js'
-import { ACTIVE_EXECUTION_STATUSES } from '../queues/executionStatus.js'
+import { ACTIVE_EXECUTION_STATUSES, REFUSAL_WHERE, refusalReasonOf } from '../queues/executionStatus.js'
 import { evaluateMarketHours }    from './rules/marketHours.js'
 import { evaluatePriceThreshold } from './rules/priceThreshold.js'
 import { evaluateCooldown, noteCooldownExecution } from './rules/cooldown.js'
@@ -443,12 +443,12 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   // Back off after a refusal at submission (e.g. allocation or daily notional exceeded):
   // re-submitting the same order every cycle would only be refused again. Stricter only.
   const refusedRecently = await prisma.execution.findFirst({
-    where: { botId: bot.id, ticker, direction, status: 'cancelled', cancelReason: { startsWith: 'refused:' }, createdAt: { gte: new Date(Date.now() - REFUSAL_BACKOFF_MS) } },
-    select: { cancelReason: true }
+    where: { botId: bot.id, ticker, direction, createdAt: { gte: new Date(Date.now() - REFUSAL_BACKOFF_MS) }, OR: REFUSAL_WHERE },
+    select: { status: true, cancelReason: true, refusalReason: true }
   })
   if (refusedRecently) {
     await maybeLogRuleBlock(bot, ticker, direction, { id: 'refusal_backoff', type: 'refusal_backoff', name: 'Refusal back-off' },
-      { reason: 'refused_recently', detail: refusedRecently.cancelReason })
+      { reason: 'refused_recently', detail: refusalReasonOf(refusedRecently) })
     return
   }
 

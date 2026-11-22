@@ -5,7 +5,7 @@ import brokerService from '../services/brokerService.js'
 import executionsService from '../services/executionsService.js'
 import { fetchAlpacaMarketClock, getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
-const TERMINAL_STATUSES = new Set(['filled', 'cancelled', 'failed'])
+const TERMINAL_STATUSES = new Set(['filled', 'cancelled', 'failed', 'refused'])
 
 async function getOrCreateDefaultPortfolioId(userId) {
   const existing = await prisma.portfolio.findFirst({
