@@ -25,8 +25,8 @@ export default function ResearchCard({ symbol, compact = false }) {
   }, [symbol])
 
   if (!r) return <span className="tl-skel" style={{ height: compact ? 20 : 64 }} aria-label={`Loading research for ${symbol}`} />
-  if (r.status === 'unavailable') return <p className="tl-small tl-muted m0" data-testid={`research-${symbol}`}>Research for {symbol} is unavailable right now.</p>
-  if (r.status === 'none') return <p className="tl-small tl-muted m0" data-testid={`research-${symbol}`}>Alpha Engine has no current research for {symbol}.</p>
+  if (r.status === 'unavailable') return <p className="tl-small tl-muted m0" data-testid={`research-${symbol}`}>{compact ? 'Unavailable' : `Research for ${symbol} is unavailable right now.`}</p>
+  if (r.status === 'none') return <p className="tl-small tl-muted m0" data-testid={`research-${symbol}`}>{compact ? 'No research' : `Alpha Engine has no current research for ${symbol}.`}</p>
 
   const hit = r.holdout?.hitRate
   const base = r.holdout?.baselineRate

@@ -84,6 +84,7 @@ const lastResearchEventAt = new Map()  // throttle key → ms
 // In-memory state
 const botRegistry  = new Map()  // botId → bot (with rules)
 const tickerIndex  = new Map()  // ticker → Set<botId>
+export const REFUSAL_BACKOFF_MS = 15 * 60_000
 export const inflightMap = new Map()  // `${botId}:${ticker}` → true
 const lastSkipEventAt = new Map()
 const lastRuleBlockEventAt = new Map()
@@ -436,6 +437,18 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
       signal,
       confidence
     })
+    return
+  }
+
+  // Back off after a refusal at submission (e.g. allocation or daily notional exceeded):
+  // re-submitting the same order every cycle would only be refused again. Stricter only.
+  const refusedRecently = await prisma.execution.findFirst({
+    where: { botId: bot.id, ticker, direction, status: 'cancelled', cancelReason: { startsWith: 'refused:' }, createdAt: { gte: new Date(Date.now() - REFUSAL_BACKOFF_MS) } },
+    select: { cancelReason: true }
+  })
+  if (refusedRecently) {
+    await maybeLogRuleBlock(bot, ticker, direction, { id: 'refusal_backoff', type: 'refusal_backoff', name: 'Refusal back-off' },
+      { reason: 'refused_recently', detail: refusedRecently.cancelReason })
     return
   }
 

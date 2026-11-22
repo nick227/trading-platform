@@ -128,6 +128,7 @@ const SKIP_REASONS = {
   trend_filter_missing_snapshot: { title: 'Skipped — trend data missing', text: () => 'Market trend data wasn’t available.' },
   trend_filter_snapshot_stale: { title: 'Skipped — trend data out of date', text: () => 'Market trend data was too old to use.' },
   prediction_already_acted: { title: 'Waiting — already acted on this research', text: (s) => `The bot already traded the current research for ${s}; it waits for new research.` },
+  refused_recently: { title: 'Waiting — last order was refused', text: (s) => `The last ${s} order was refused before it was sent, so the bot waits 15 minutes before trying again.` },
   no_research_prediction: { title: 'Waiting — no research', text: (s) => `Alpha Engine has no current ranked research for ${s}.` },
 }
 

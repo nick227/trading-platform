@@ -347,3 +347,24 @@ describe('refused orders and the cooldown', () => {
     expect(await ordersOf('bot_rf2')).toHaveLength(3)
   })
 })
+
+describe('refusal back-off (independent of rules)', () => {
+  beforeEach(() => setMarketOpenState(true))
+  const refusedAt = (botId, id, at) => h.db.execution.create({ data: { id, userId: 'usr_a', portfolioId: 'por_a', botId, ticker: 'SPY', direction: 'buy', quantity: 1, price: 540.25,
+    status: 'cancelled', cancelReason: 'refused:bot_allocation_exceeded', fees: 0, commission: 0, origin: 'bot', createdAt: at } })
+
+  it('a bot without a cooldown does not re-submit an order refused minutes ago', async () => {
+    await mkBot('bot_nb', { direction: 'buy' })
+    await refusedAt('bot_nb', 'exe_nb_refused', new Date(Date.now() - 60_000))
+    await tick('bot_nb')
+    expect((await ordersOf('bot_nb')).map((o) => o.id)).toEqual(['exe_nb_refused'])
+    expect((await eventsOf('bot_nb', 'execution_skipped')).map((e) => e.metadata.reason)).toContain('refused_recently')
+  })
+
+  it('tries again once the back-off has passed', async () => {
+    await mkBot('bot_nb2', { direction: 'buy' })
+    await refusedAt('bot_nb2', 'exe_nb2_refused', new Date(Date.now() - engine.REFUSAL_BACKOFF_MS - 1000))
+    await tick('bot_nb2')
+    expect(await ordersOf('bot_nb2')).toHaveLength(2)
+  })
+})
