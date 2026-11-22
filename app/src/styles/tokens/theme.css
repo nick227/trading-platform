@@ -1,4 +1,4 @@
 :root {
-  /* Theme/Identity */
-  --signature-gradient: linear-gradient(90deg, #111 0%, #444 100%);
+  /* Theme/Identity — solid tone without decorative complexity */
+  --signature-gradient: var(--tl-ink);
 }

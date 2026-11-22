@@ -1,14 +1,14 @@
 /* Layout tokens (no classes here) */
 :root {
-  --max-width: 720px;
+  --max-width: var(--tl-width);
 
   /* Container sizes */
   --container-sm: 640px;
   --container-md: 768px;
-  --container-content: 1040px;
-  --container-lg: 1200px;
+  --container-content: var(--tl-width);
+  --container-lg: var(--tl-width);
 
   /* Layout gaps */
-  --section-gap: 64px;
-  --block-gap: 32px;
+  --section-gap: var(--tl-space-8);
+  --block-gap: var(--tl-space-7);
 }
