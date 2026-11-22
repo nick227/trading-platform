@@ -379,6 +379,11 @@ export default function BotDashboard() {
   const [notice, setNotice] = useState(location.state?.created ? 'Your bot was created and is running on simulated money. You can pause it anytime.' : null)
   const { stop, clear } = useEmergencyStop()
 
+  // The "created" confirmation is one-time: drop it from history so a reload doesn't repeat it.
+  useEffect(() => {
+    if (location.state?.created) window.history.replaceState({ ...window.history.state, usr: { ...location.state, created: false } }, '')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const load = useCallback(async () => {
     const result = await loadBotDashboard(botId)
     setState({ loading: false, ...result })

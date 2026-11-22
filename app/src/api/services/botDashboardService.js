@@ -321,7 +321,7 @@ export function executionToItems(x, { hasCreatedEvent }) {
     items.push({
       id: `exe:${x.id}:created`, at: x.createdAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics,
       title: `${cap(sideWord(x.side))} order placed`,
-      explanation: x.quantity !== null ? `${x.quantity} shares of ${sym}.` : `Order for ${sym}.`,
+      explanation: x.quantity !== null ? `${x.quantity} ${x.quantity === 1 ? 'share' : 'shares'} of ${sym}.` : `Order for ${sym}.`,
     })
   }
   const qty = x.filledQuantity ?? x.quantity

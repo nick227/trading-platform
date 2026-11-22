@@ -66,7 +66,10 @@ export async function evaluateCooldown(config, botId, ticker, { fresh = false, p
         ticker,
         OR: [
           { status: { in: ACTIVE_EXECUTION_STATUSES }, createdAt: { gte: since } },
-          { status: 'filled', filledAt: { gte: since } }
+          { status: 'filled', filledAt: { gte: since } },
+          // An order refused at submission (e.g. a daily notional cap) counts as an attempt,
+          // so the bot backs off for its cooldown instead of re-submitting every cycle.
+          { status: 'cancelled', cancelReason: { startsWith: 'refused:' }, createdAt: { gte: since } }
         ]
       },
       orderBy: { createdAt: 'desc' },

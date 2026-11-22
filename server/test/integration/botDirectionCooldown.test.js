@@ -325,3 +325,25 @@ describe('ownership isolation', () => {
     expect((await ordersOf('bot_buy_a')).map((o) => o.direction)).toEqual(['buy'])
   })
 })
+
+describe('refused orders and the cooldown', () => {
+  beforeEach(() => setMarketOpenState(true))
+  const refused = (botId, id, at = new Date()) => h.db.execution.create({ data: { id, userId: 'usr_a', portfolioId: 'por_a', botId, ticker: 'SPY', direction: 'buy', quantity: 1, price: 540.25,
+    status: 'cancelled', cancelReason: 'refused:max_daily_notional', fees: 0, commission: 0, origin: 'bot', createdAt: at } })
+
+  it('an order refused at submission counts as an attempt: no re-submission inside the window', async () => {
+    await mkBot('bot_rf', { direction: 'buy' }, [{ type: 'cooldown', config: { windowMs: HOUR } }])
+    await refused('bot_rf', 'exe_refused_1')
+    await tick('bot_rf')
+    expect((await ordersOf('bot_rf')).map((o) => o.id)).toEqual(['exe_refused_1'])
+  })
+
+  it('after the window it tries again; a user-cancelled order does not count', async () => {
+    await mkBot('bot_rf2', { direction: 'buy' }, [{ type: 'cooldown', config: { windowMs: HOUR } }])
+    await refused('bot_rf2', 'exe_refused_old', new Date(Date.now() - HOUR - 1000))
+    await h.db.execution.create({ data: { id: 'exe_user_cancel', userId: 'usr_a', portfolioId: 'por_a', botId: 'bot_rf2', ticker: 'SPY', direction: 'buy', quantity: 1, price: 540.25,
+      status: 'cancelled', cancelReason: null, fees: 0, commission: 0, origin: 'bot', createdAt: new Date() } })
+    await tick('bot_rf2')
+    expect(await ordersOf('bot_rf2')).toHaveLength(3)
+  })
+})
