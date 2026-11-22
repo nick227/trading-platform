@@ -1,3 +1,4 @@
+import { refusalReasonOf, refusalText } from '../api/services/botDashboardService'
 import { useState, useEffect, useCallback } from 'react'
 import executionsService from '../api/services/executionsService.js'
 import pricesService from '../api/services/pricesService.js'
@@ -163,7 +164,7 @@ export function buildRecentActivity(executions) {
   // Sort by creation time, newest first, but only include completed, failed, or cancelled orders
   const sortedExecutions = executions
     .filter(e => e.createdAt) // Filter out any without timestamps
-    .filter(e => e.status === 'filled' || e.status === 'failed' || e.status === 'cancelled') // Only show completed, failed, or cancelled orders
+    .filter(e => e.status === 'filled' || e.status === 'failed' || e.status === 'cancelled' || e.status === 'refused') // Only show completed, failed, cancelled or refused orders
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   
   return sortedExecutions.slice(0, 5).map(e => {
@@ -183,6 +184,19 @@ export function buildRecentActivity(executions) {
       }
     }
     
+    const refusal = refusalReasonOf(e)
+    if (refusal) {
+      return {
+        event: `Refused ${isBuy ? 'Buy' : 'Sell'} Order: ${e.ticker}`,
+        value: refusalText(refusal),
+        time: formatTimeAgo(e.createdAt),
+        type: 'refused',
+        ticker: e.ticker,
+        quantity: e.quantity,
+        price: e.price
+      }
+    }
+
     if (isCancelled) {
       return {
         event: `Cancelled ${isBuy ? 'Buy' : 'Sell'} Order: ${e.ticker}`,

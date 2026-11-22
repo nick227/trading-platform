@@ -203,7 +203,7 @@ model Execution {
   price         Float     // intent price (what was seen at order time)
   origin        String    @default("manual") // 'manual' | 'bot'
   // Queue fields
-  status        String    @default("queued") // queued | processing | partially_filled | filled | cancelled | failed
+  status        String    @default("queued") // queued | processing | submitted | partially_filled | needs_reconciliation | filled | cancelled | failed | refused
   scheduledFor  DateTime? // when this order should execute (UTC)
   lockedAt      DateTime? // = processingStartedAt: when worker claimed this row
   lockedBy      String?   // worker instance ID
@@ -222,6 +222,8 @@ model Execution {
   filledPrice    Float?   // truth: actual fill price from Alpaca
   filledQuantity Float?
   cancelReason   String?
+  // Set with status 'refused': the pre-submission check that stopped the order (never sent).
+  refusalReason  String?
   // Cancellation intent (user requested cancel). Worker attempts broker cancel when applicable.
   cancelRequestedAt DateTime?
   cancelRequestedBy String?

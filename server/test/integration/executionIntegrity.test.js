@@ -298,8 +298,7 @@ describe('final order-eligibility boundary (recorded refusals, nothing sent)', (
   async function expectRefused(execution, reason) {
     await runOnce()
     const row = await exec(execution.id)
-    expect(row.status).toBe('cancelled')
-    expect(row.cancelReason).toBe(`refused:${reason}`)
+    expect(row).toMatchObject({ status: 'refused', refusalReason: reason, cancelReason: null, activeIntentKey: null })
     expect(await audits(execution.id)).toContain('risk_blocked')
     if (execution.botId) {
       const ev = await h.db.botEvent.findMany({ where: { botId: execution.botId, type: 'execution_blocked_by_risk' } })
@@ -360,7 +359,7 @@ describe('final order-eligibility boundary (recorded refusals, nothing sent)', (
     h.brokers.delete('usr_a')
     const e = await queue()
     await runOnce()
-    expect(await exec(e.id)).toMatchObject({ status: 'cancelled', cancelReason: 'refused:invalid_credentials' })
+    expect(await exec(e.id)).toMatchObject({ status: 'refused', refusalReason: 'invalid_credentials' })
   })
 
   it('emergency stop: disables bots, cancels active work, refuses, and blocks nothing for other users', async () => {
@@ -384,7 +383,7 @@ describe('final order-eligibility boundary (recorded refusals, nothing sent)', (
 
     const later = await queue()
     await runOnce()
-    expect(await exec(later.id)).toMatchObject({ status: 'cancelled', cancelReason: 'refused:emergency_stop' })
+    expect(await exec(later.id)).toMatchObject({ status: 'refused', refusalReason: 'emergency_stop' })
     const cleared = await clearEmergencyStop('usr_a')
     expect(cleared).toMatchObject({ active: false, botsResumed: 0 })
     expect((await h.db.bot.findUnique({ where: { id: 'bot1' } })).enabled).toBe(false) // clearing never resumes
@@ -399,7 +398,7 @@ describe('multi-user reliability', () => {
     const a = await queue({ userId: 'usr_a' })
     const b = await queue({ userId: 'usr_b' })
     await drain()
-    expect(await exec(a.id)).toMatchObject({ status: 'cancelled', cancelReason: 'refused:invalid_credentials' })
+    expect(await exec(a.id)).toMatchObject({ status: 'refused', refusalReason: 'invalid_credentials' })
     expect((await exec(b.id)).status).toBe('submitted')
     expect(broker('usr_a').submitCalls).toBe(0)
     expect(broker('usr_b').seenClientOrderIds).toEqual([b.clientOrderId]) // never saw user A's order
@@ -413,14 +412,14 @@ describe('multi-user reliability', () => {
     const b1 = await queue({ botId: 'bot1', quantity: 5, price: 100 })
     await drain()
     expect((await exec(b2.id)).status).toBe('submitted')
-    expect((await exec(b1.id)).cancelReason).toBe('refused:bot_allocation_exceeded')
+    expect((await exec(b1.id)).refusalReason).toBe('bot_allocation_exceeded')
   })
 
   it('a bot order cannot run under another user’s identity', async () => {
     await addBot('bot1', { userId: 'usr_a' })
     const forged = await queue({ userId: 'usr_b', botId: 'bot1' })
     await runOnce()
-    expect((await exec(forged.id)).cancelReason).toBe('refused:bot_owner_mismatch')
+    expect((await exec(forged.id)).refusalReason).toBe('bot_owner_mismatch')
   })
 
   it('ownership and state survive a restart (recovery keeps userId/botId; reconciles with the owner’s broker)', async () => {
@@ -514,4 +513,71 @@ describe('authoritative accounting', () => {
 
 it('worker identity is stable within a process', () => {
   expect(WORKER_ID).toMatch(/-\d+$/)
+})
+
+// ── Refused: a distinct terminal outcome ─────────────────────────────────────────
+
+describe('refused orders (status "refused")', () => {
+  it('a refusal is terminal, never sent, releases its intent key, and keeps its audit and bot event', async () => {
+    await addBot('bot1', { config: { maxOrderNotional: 500 } })
+    const e = await queue({ botId: 'bot1', quantity: 10, price: 100 })
+    await h.db.execution.update({ where: { id: e.id }, data: { activeIntentKey: 'bot:bot1:SPY:buy' } })
+    await runOnce()
+    expect(await exec(e.id)).toMatchObject({ status: 'refused', refusalReason: 'max_order_value', cancelReason: null, activeIntentKey: null, lockedBy: null, brokerOrderId: null })
+    expect(broker().submitCalls).toBe(0)
+    expect(await audits(e.id)).toEqual(expect.arrayContaining(['claimed', 'risk_blocked']))
+    const [evt] = await h.db.botEvent.findMany({ where: { executionId: e.id } })
+    expect(evt).toMatchObject({ type: 'execution_blocked_by_risk' })
+    expect(evt.metadata.reason).toBe('max_order_value')
+  })
+
+  it('restart recovery and reconciliation never touch a refused row, even with a stale lock', async () => {
+    await addBot('bot1', { config: { maxOrderNotional: 500 } })
+    const e = await queue({ botId: 'bot1', quantity: 10, price: 100 })
+    await runOnce()
+    await h.db.execution.update({ where: { id: e.id }, data: { lockedAt: new Date(clock.getTime() - 60 * 60_000), lockedBy: 'dead-worker' } })
+    expect(await recoverStuckJobs()).toBe(0)
+    advance(10 * 60_000)
+    await drain()
+    expect(await exec(e.id)).toMatchObject({ status: 'refused', refusalReason: 'max_order_value' })
+    expect(broker().submitCalls).toBe(0)
+  })
+
+  it('a refused order is never counted as a fill, holding, or pending exposure', async () => {
+    await addBot('bot1', { config: { allocatedAmount: 2_000, maxOrderNotional: 5_000 } })
+    await h.db.execution.create({ data: { id: 'exe_ref', userId: 'usr_a', portfolioId: 'por_usr_a', botId: 'bot1', ticker: 'SPY', direction: 'buy', quantity: 15, price: 100, status: 'refused', refusalReason: 'bot_allocation_exceeded', clientOrderId: 'tp_exe_ref', createdAt: new Date(clock) } })
+    const ok = await queue({ botId: 'bot1', quantity: 15, price: 100 }) // 1,500 ≤ 2,000: the refused 1,500 must not count
+    await runOnce()
+    expect((await exec(ok.id)).status).toBe('submitted')
+    const acct = await computeBotAccounting('bot1', { prismaClient: h.db })
+    expect(acct).toMatchObject({ hasFills: false, fillCount: 0, openPositions: {} })
+  })
+})
+
+describe.each([
+  ['current', { status: 'refused', refusalReason: 'bot_allocation_exceeded', cancelReason: null }],
+  ['legacy', { status: 'cancelled', cancelReason: 'refused:bot_allocation_exceeded' }],
+])('refusal parity (%s shape): recovery and history', (shape, fields) => {
+  const mk = async () => {
+    await addBot('bot1', { config: { allocatedAmount: 2_000, maxOrderNotional: 5_000 } })
+    return h.db.execution.create({ data: { id: `exe_${shape}`, userId: 'usr_a', portfolioId: 'por_usr_a', botId: 'bot1', ticker: 'SPY', direction: 'buy', quantity: 15, price: 100,
+      clientOrderId: `tp_${shape}`, lockedAt: new Date(clock.getTime() - 60 * 60_000), lockedBy: 'dead-worker', createdAt: new Date(clock), ...fields } })
+  }
+
+  it('recovery and reconciliation leave it untouched and nothing is sent', async () => {
+    const e = await mk()
+    expect(await recoverStuckJobs()).toBe(0)
+    advance(10 * 60_000)
+    await drain()
+    expect(await exec(e.id)).toMatchObject(fields)
+    expect(broker().submitCalls).toBe(0)
+  })
+
+  it('history: no fill, no holding, no pending exposure', async () => {
+    await mk()
+    expect(await computeBotAccounting('bot1', { prismaClient: h.db })).toMatchObject({ hasFills: false, fillCount: 0, openPositions: {} })
+    const ok = await queue({ botId: 'bot1', quantity: 15, price: 100 })
+    await runOnce()
+    expect((await exec(ok.id)).status).toBe('submitted')
+  })
 })

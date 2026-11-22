@@ -5,7 +5,7 @@ import { BrokerNetworkError, BrokerRejectionError } from '../broker/alpacaClient
 import { getBrokerClient } from '../broker/clientCache.js'
 import { recordExecutionAudit } from '../audit/executionAudit.js'
 import { evaluateOrderEligibility } from '../risk/orderEligibility.js'
-import { BROKER_OPEN_STATUSES, PENDING_BROKER_STATUSES, TERMINAL_BROKER_STATUSES } from './executionStatus.js'
+import { BROKER_OPEN_STATUSES, PENDING_BROKER_STATUSES, REFUSED_STATUS, TERMINAL_BROKER_STATUSES } from './executionStatus.js'
 import { log } from '../logger.js'
 import metricsService from '../../../server/src/services/metricsService.js'
 import { calculateFillPnl } from '../../../server/src/services/botAccountingService.js'
@@ -504,7 +504,7 @@ async function applyBrokerSnapshot(execution, order, audit) {
 /** Records a refusal: nothing is sent to the broker. */
 async function refuse(execution, reason, metrics = {}) {
   log.warn({ executionId: execution.id, botId: execution.botId, reason }, 'order_refused')
-  await finalize(execution, 'cancelled', `refused:${reason}`, {}, { refusal: true, metrics })
+  await finalize(execution, REFUSED_STATUS, null, { refusalReason: String(reason) }, { refusal: true, metrics })
 }
 
 async function finalize(execution, status, cancelReason, fillData = {}, { refusal = false, metrics = undefined, error = undefined } = {}) {
@@ -516,9 +516,9 @@ async function finalize(execution, status, cancelReason, fillData = {}, { refusa
     activeIntentKey: null,
     ...(cancelReason ? { cancelReason } : {}),
     ...fillData
-  }, auditFor(eventType, `${status}${cancelReason ? ` (${cancelReason})` : ''}`, { cancelReason, ...fillData, ...(metrics ? { metrics } : {}), ...(error ? { error } : {}) }))
+  }, auditFor(eventType, `${status}${cancelReason ? ` (${cancelReason})` : fillData.refusalReason ? ` (${fillData.refusalReason})` : ''}`, { cancelReason, ...fillData, ...(metrics ? { metrics } : {}), ...(error ? { error } : {}) }))
 
-  if (refusal && execution.botId) await recordBotRefusal(execution, cancelReason, metrics)
+  if (refusal && execution.botId) await recordBotRefusal(execution, fillData.refusalReason, metrics)
 
   if (status === 'filled') {
     try {
@@ -530,7 +530,7 @@ async function finalize(execution, status, cancelReason, fillData = {}, { refusa
   }
   if (execution.botId && inflightMap) inflightMap.delete(`${execution.botId}:${execution.ticker}`)
   const level = status === 'filled' ? 'info' : status === 'failed' ? 'error' : 'warn'
-  log[level]({ executionId: execution.id, ticker: execution.ticker, status, cancelReason, filledQuantity: fillData.filledQuantity }, `order_${status}`)
+  log[level]({ executionId: execution.id, ticker: execution.ticker, status, cancelReason, refusalReason: fillData.refusalReason, filledQuantity: fillData.filledQuantity }, `order_${status}`)
 }
 
 async function recordBotRefusal(execution, reason, metrics) {
@@ -543,7 +543,7 @@ async function recordBotRefusal(execution, reason, metrics) {
         executionId: execution.id,
         type: 'execution_blocked_by_risk',
         detail: `Order refused at submission: ${reason}`,
-        metadata: { ticker: execution.ticker, reason: String(reason).replace(/^refused:/, ''), executionId: execution.id, side: execution.direction, ...(metrics ?? {}) }
+        metadata: { ticker: execution.ticker, reason: String(reason), executionId: execution.id, side: execution.direction, ...(metrics ?? {}) }
       }
     })
   } catch (err) {

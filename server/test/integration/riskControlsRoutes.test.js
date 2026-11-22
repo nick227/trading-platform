@@ -63,6 +63,12 @@ describe('order cancellation', () => {
     expect((await h.db.executionAudit.findMany({ where: { executionId: 'exe_a' } })).map((a) => a.eventType)).toEqual(['cancel_requested'])
   })
 
+  it('a refused order cannot be cancelled (it was never sent)', async () => {
+    await h.db.execution.update({ where: { id: 'exe_a' }, data: { status: 'refused', refusalReason: 'max_order_value' } })
+    expect((await request(app.server).post('/api/executions/exe_a/cancel').set(as(tokenA)).send({})).status).toBe(409)
+    expect(await h.db.execution.findUnique({ where: { id: 'exe_a' } })).toMatchObject({ status: 'refused', cancelRequestedAt: null })
+  })
+
   it('refuses finished orders and other users’ orders', async () => {
     await h.db.execution.update({ where: { id: 'exe_a' }, data: { status: 'filled' } })
     expect((await request(app.server).post('/api/executions/exe_a/cancel').set(as(tokenA)).send({})).status).toBe(409)

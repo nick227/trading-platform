@@ -14,6 +14,7 @@ export const STATUS = {
   PARTIALLY_FILLED: 'partially_filled',
   FILLED:           'filled',
   CANCELLED:        'cancelled',
+  REFUSED:          'refused',
   FAILED:           'failed'
 }
 

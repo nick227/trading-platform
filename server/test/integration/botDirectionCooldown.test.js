@@ -368,3 +368,59 @@ describe('refusal back-off (independent of rules)', () => {
     expect(await ordersOf('bot_nb2')).toHaveLength(2)
   })
 })
+
+describe('refused status (current shape) in cooldown and back-off', () => {
+  beforeEach(() => setMarketOpenState(true))
+  const refusedNew = (botId, id, at) => h.db.execution.create({ data: { id, userId: 'usr_a', portfolioId: 'por_a', botId, ticker: 'SPY', direction: 'buy', quantity: 1, price: 540.25,
+    status: 'refused', refusalReason: 'max_daily_notional', fees: 0, commission: 0, origin: 'bot', createdAt: at } })
+
+  it('cooldown counts a status-"refused" order as an attempt', async () => {
+    await mkBot('bot_rn', { direction: 'buy' }, [{ type: 'cooldown', config: { windowMs: HOUR } }])
+    await refusedNew('bot_rn', 'exe_rn', new Date())
+    await tick('bot_rn')
+    expect((await ordersOf('bot_rn')).map((o) => o.id)).toEqual(['exe_rn'])
+  })
+
+  it('back-off applies to a status-"refused" order without any rules, and lifts after the window', async () => {
+    await mkBot('bot_rn2', { direction: 'buy' })
+    await refusedNew('bot_rn2', 'exe_rn2', new Date(Date.now() - 60_000))
+    await tick('bot_rn2')
+    expect(await ordersOf('bot_rn2')).toHaveLength(1)
+    const [skip] = (await eventsOf('bot_rn2', 'execution_skipped')).filter((e) => e.metadata.reason === 'refused_recently')
+    expect(skip.metadata.detail).toBe('max_daily_notional')
+
+    await mkBot('bot_rn3', { direction: 'buy' })
+    await refusedNew('bot_rn3', 'exe_rn3', new Date(Date.now() - engine.REFUSAL_BACKOFF_MS - 1000))
+    await tick('bot_rn3')
+    expect(await ordersOf('bot_rn3')).toHaveLength(2)
+  })
+})
+
+describe.each([
+  ['current', { status: 'refused', refusalReason: 'max_daily_notional', cancelReason: null }],
+  ['legacy', { status: 'cancelled', cancelReason: 'refused:max_daily_notional' }],
+])('refusal parity (%s shape): cooldown and back-off', (shape, fields) => {
+  beforeEach(() => setMarketOpenState(true))
+  const make = (botId, id, at) => h.db.execution.create({ data: { id, userId: 'usr_a', portfolioId: 'por_a', botId, ticker: 'SPY', direction: 'buy', quantity: 1, price: 540.25, fees: 0, commission: 0, origin: 'bot', createdAt: at, ...fields } })
+
+  it('cooldown: blocks inside the window', async () => {
+    await mkBot(`bot_p_${shape}`, { direction: 'buy' }, [{ type: 'cooldown', config: { windowMs: HOUR } }])
+    await make(`bot_p_${shape}`, `exe_p_${shape}`, new Date())
+    await tick(`bot_p_${shape}`)
+    expect(await ordersOf(`bot_p_${shape}`)).toHaveLength(1)
+  })
+
+  it('back-off: blocks for 15 minutes with the same logged reason, then lifts', async () => {
+    await mkBot(`bot_q_${shape}`, { direction: 'buy' })
+    await make(`bot_q_${shape}`, `exe_q_${shape}`, new Date(Date.now() - 60_000))
+    await tick(`bot_q_${shape}`)
+    expect(await ordersOf(`bot_q_${shape}`)).toHaveLength(1)
+    const skip = (await eventsOf(`bot_q_${shape}`, 'execution_skipped')).find((e) => e.metadata.reason === 'refused_recently')
+    expect(skip.metadata.detail).toBe('max_daily_notional')
+
+    await mkBot(`bot_r_${shape}`, { direction: 'buy' })
+    await make(`bot_r_${shape}`, `exe_r_${shape}`, new Date(Date.now() - engine.REFUSAL_BACKOFF_MS - 1000))
+    await tick(`bot_r_${shape}`)
+    expect(await ordersOf(`bot_r_${shape}`)).toHaveLength(2)
+  })
+})
