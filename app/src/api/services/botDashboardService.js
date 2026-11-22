@@ -144,6 +144,8 @@ const RISK_TEXT = {
   rate_limit_exceeded: 'Too many orders in a short time.',
 }
 
+const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1)
+
 function sideWord(side, past = false) {
   const s = String(side ?? '').toLowerCase()
   if (s === 'buy') return past ? 'Bought' : 'buy'
@@ -208,14 +210,15 @@ export function eventToItem(e) {
       const shares = meta.quantity ? `${meta.quantity} ${Number(meta.quantity) === 1 ? 'share' : 'shares'} of ${sym}.` : `Order for ${sym}.`
       if (rd?.basis === 'simulator_test_scenario') {
         return { ...base, category: 'order', riskDecision: rd, testScenario: true,
-          title: `Test scenario: simulated ${side} order placed`,
-          explanation: `${shares} Isolated simulator test scenario — the normal risk policy would not place this order (${rd.decision}: ${MATRIX_TEXT[rd.reason] ?? rd.reason ?? 'not approved'}).` }
+          title: `${cap(side)} order placed`,
+          explanation: shares,
+          note: `Isolated simulator test scenario — the normal risk policy would not place this order (${rd.decision}: ${MATRIX_TEXT[rd.reason] ?? rd.reason ?? 'not approved'}).` }
       }
       if (rd?.basis === 'restricted_reduced') {
-        return { ...base, category: 'order', riskDecision: rd, title: `Paper ${side} order placed at reduced size`,
+        return { ...base, category: 'order', riskDecision: rd, title: `${cap(side)} order placed at reduced size`,
           explanation: `${shares} Risk restricted this trade (${MATRIX_TEXT[rd.reason] ?? rd.reason}), so only the reduced size was placed.` }
       }
-      return { ...base, category: 'order', title: `Paper ${side} order placed`, explanation: shares }
+      return { ...base, category: 'order', title: `${cap(side)} order placed`, explanation: shares }
     }
     case 'execution_blocked_by_risk': {
       const rd = meta.riskDecision
@@ -235,7 +238,7 @@ export function eventToItem(e) {
       return { ...base, category: 'skip', title: 'Skipped', explanation: e.detail || 'The bot decided not to trade.' }
     }
     case 'execution_failed':
-      return { ...base, category: 'error', title: 'Order couldn’t be placed', explanation: 'The paper order wasn’t created. See details.' }
+      return { ...base, category: 'error', title: 'Order couldn’t be placed', explanation: 'The order wasn’t created.' }
     case 'risk_evaluation_failed':
       return { ...base, category: 'error', title: 'Risk check failed', explanation: 'The risk check couldn’t run, so no order was placed.' }
     case 'strategy_error':
@@ -244,7 +247,7 @@ export function eventToItem(e) {
     case 'bot_paused':
       return { ...base, category: 'control', title: 'Paused', explanation: 'The bot stopped placing new orders.' }
     case 'bot_resumed':
-      return { ...base, category: 'control', title: 'Resumed', explanation: 'The bot is running in paper trading.' }
+      return { ...base, category: 'control', title: 'Resumed', explanation: 'The bot is running again.' }
     case 'bot_stopped':
       return { ...base, category: 'control', title: 'Stopped', explanation: 'The bot was stopped for good.' }
     default:
@@ -274,6 +277,15 @@ const RESEARCH_REASON_TEXT = {
 }
 
 const sessionLabel = (s) => new Date(`${s}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+
+const CANCEL_TEXT = {
+  'refused:sell_exceeds_attributable_holdings': 'Refused: the bot can only sell shares it bought itself.',
+  emergency_stop: 'Cancelled by the emergency stop.',
+}
+export function cancelText(reason) {
+  if (!reason) return 'This order was cancelled.'
+  return CANCEL_TEXT[reason] ?? (reason.startsWith('refused:') ? `Refused before it was sent (${reason.slice(8).replace(/_/g, ' ')}).` : reason)
+}
 
 const REPLAY_ORDER = /^simreplay_(\d{4}-\d{2}-\d{2})_/
 
@@ -308,7 +320,7 @@ export function executionToItems(x, { hasCreatedEvent }) {
   if (!hasCreatedEvent) {
     items.push({
       id: `exe:${x.id}:created`, at: x.createdAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics,
-      title: `Paper ${sideWord(x.side)} order placed`,
+      title: `${cap(sideWord(x.side))} order placed`,
       explanation: x.quantity !== null ? `${x.quantity} shares of ${sym}.` : `Order for ${sym}.`,
     })
   }
@@ -326,14 +338,14 @@ export function executionToItems(x, { hasCreatedEvent }) {
       })
       break
     case 'failed':
-      items.push({ id: `exe:${x.id}:failed`, at: x.updatedAt, symbol: x.symbol, category: 'error', executionId: x.id, diagnostics, title: 'Order rejected', explanation: x.cancelReason || 'The paper broker rejected this order.' })
+      items.push({ id: `exe:${x.id}:failed`, at: x.updatedAt, symbol: x.symbol, category: 'error', outcome: true, executionId: x.id, diagnostics, title: 'Order rejected', explanation: x.cancelReason || 'The order was rejected.' })
       break
     case 'cancelled':
-      items.push({ id: `exe:${x.id}:cancelled`, at: x.updatedAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics, title: 'Order cancelled', explanation: x.cancelReason || 'This order was cancelled.' })
+      items.push({ id: `exe:${x.id}:cancelled`, at: x.updatedAt, symbol: x.symbol, category: 'order', outcome: true, executionId: x.id, diagnostics, title: 'Order cancelled', explanation: cancelText(x.cancelReason) })
       break
     case 'processing':
     case 'submitted':
-      if (x.submittedAt) items.push({ id: `exe:${x.id}:sent`, at: x.submittedAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics, title: 'Sent to paper broker', explanation: 'Waiting for a fill.' })
+      if (x.submittedAt) items.push({ id: `exe:${x.id}:sent`, at: x.submittedAt, symbol: x.symbol, category: 'order', executionId: x.id, diagnostics, title: 'Order sent', explanation: 'Waiting for a fill.' })
       break
     default:
       break
@@ -399,10 +411,9 @@ export async function loadBotActivity(botId, { limit = ACTIVITY_LIMIT } = {}) {
 }
 
 export async function loadBotDashboard(botId) {
-  const [bot, activity, account] = await Promise.all([
+  const [bot, activity] = await Promise.all([
     settle(get(`/bots/${botId}`)),
     loadBotActivity(botId),
-    settle(get('/account')),
   ])
   if (!bot.ok) {
     const notFound = bot.error?.status === 404
@@ -413,7 +424,6 @@ export async function loadBotDashboard(botId) {
     bot: normalized,
     status: deriveStatus(normalized, activity.timeline),
     activity,
-    buyingPower: account.ok ? toNumberOrNull(account.value?.buying_power) : null,
     fills: summarizeFills(activity.executions),
   }
 }
@@ -427,6 +437,7 @@ export async function loadBotRules(botId) {
 
 export function controlErrorMessage(error, action) {
   const code = error?.code
+  if (code === 'EMERGENCY_STOP_ACTIVE') return 'The emergency stop is on. Clear it on Home before resuming bots.'
   if (action === 'resume' && (code === 'BROKER_NOT_CONFIGURED' || code === 'BROKER_CREDENTIALS_INVALID' || error?.status === 403)) {
     return code === 'LIVE_TRADING_DISABLED'
       ? 'Can’t resume: your connected account is live, and live trading is disabled.'

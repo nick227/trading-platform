@@ -2,86 +2,67 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../../app/AuthProvider'
 import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
-import { describeAction, describeGuards, needsTriggerPrice } from '../../../ui/describeBot'
+import RuleEditor, { draftFromBot, draftToBot, validateDraft } from '../../../ui/RuleEditor'
+import { describeAction, describeGuards, isResearchBot } from '../../../ui/describeBot'
+import { money, sessionDate } from '../../../ui/format'
 import {
   createAndStartBot,
   defaultCapital,
   defaultMaxPerOrder,
-  describeTemplateAction,
   loadWizardData,
   parseSymbols,
-  RESEARCH_LIMITS,
   validateAllocation,
   validateControls,
-  validateResearch,
 } from './newBotApi'
 
 export const STEPS = [
-  { id: 'choose', title: 'Choose a bot' },
-  { id: 'allocation', title: 'Simulated capital' },
-  { id: 'controls', title: 'Controls' },
-  { id: 'review', title: 'Review & start' },
+  { id: 'choose', title: 'Choose a starting point' },
+  { id: 'setup', title: 'Symbols & capital' },
+  { id: 'rules', title: 'Rules & start' },
 ]
-
-const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
-const fmtMoney = (n) => (n === null || n === undefined || !Number.isFinite(Number(n)) ? '—' : currency.format(Number(n)))
-
-function describeRule(rule) {
-  const c = rule?.config ?? {}
-  switch (rule?.type) {
-    case 'market_hours': return c.allowPremarket || c.allowAfterHours ? 'Trades in regular and extended hours' : 'Trades only during regular market hours'
-    case 'cooldown': {
-      const ms = Number(c.windowMs ?? (c.cooldownHours ? c.cooldownHours * 3_600_000 : c.minutes ? c.minutes * 60_000 : NaN))
-      if (!Number.isFinite(ms)) return 'Waits between trades'
-      const hours = ms / 3_600_000
-      return hours >= 24 ? `Waits ${Math.round(hours / 24)} day(s) between trades in a symbol` : `Waits ${Math.round(hours * 10) / 10} hour(s) between trades in a symbol`
-    }
-    case 'position_limit': return c.maxShares ? `Position limit: ${c.maxShares} shares` : c.maxPositions ? `Position limit: ${c.maxPositions} position(s)` : 'Position limit'
-    case 'daily_loss': return c.maxLoss ? `Daily loss limit: ${fmtMoney(c.maxLoss)}` : c.maxDailyLossPct ? `Daily loss limit: ${c.maxDailyLossPct}%` : 'Daily loss limit'
-    case 'time_window': return c.start && c.end ? `Trades between ${c.start} and ${c.end} ${c.timezone ?? ''}`.trim() : 'Time window'
-    case 'trend_filter': return `Trend filter on ${c.symbol ?? 'SPY'}`
-    case 'price_threshold': return 'Price threshold'
-    default: return rule?.type ?? 'Rule'
-  }
-}
 
 function StepHeader({ index }) {
   return (
     <div className="wizard-progress" aria-label={`Step ${index + 1} of ${STEPS.length}`}>
       <span className="eyebrow mb-0">Step {index + 1} of {STEPS.length}</span>
       <ol className="wizard-dots" aria-hidden="true">
-        {STEPS.map((s, i) => (
-          <li key={s.id} className={i <= index ? 'is-done' : ''} />
-        ))}
+        {STEPS.map((s, i) => <li key={s.id} className={i <= index ? 'is-done' : ''} />)}
       </ol>
     </div>
   )
 }
 
-const researchFormValues = (r) => (r ? { minConfidencePct: String(r.minConfidencePct), maxAgeHours: String(r.maxAgeHours), maxDriftPct: String(r.maxDriftPct), requireEdge: r.requireEdge } : null)
-
-const RESEARCH_FIELDS = [
-  { key: 'minConfidencePct', label: 'Minimum research confidence', unit: '%', help: 'Alpha Engine’s confidence score for the prediction. It’s a score, not a probability of profit.' },
-  { key: 'maxAgeHours', label: 'Ignore research older than', unit: 'hours', help: 'Older predictions are recorded but never traded.' },
-  { key: 'maxDriftPct', label: 'Skip if price moved more than', unit: '%', help: 'From the price the research was based on.' },
-]
-
 function FieldError({ id, message }) {
   if (!message) return null
-  return <div id={id} className="text-negative text-xs mt-1" role="alert">{message}</div>
+  return <p id={id} className="tl-field-error" role="alert">{message}</p>
 }
 
 function ModeNotice({ mode }) {
-  // Nothing to say until the account status is known.
   if (mode === 'paper' || mode === 'checking') return null
   return (
-    <div className="alert alert-warn mb-4" role="status" data-testid="mode-notice">
-      {mode === 'live-disabled'
-        ? 'Your connected account is a live account. Live trading is disabled, so bots can only be created with a paper account. '
-        : mode === 'unknown'
-          ? 'We couldn’t check your trading account right now. You can look around; starting a bot needs a connected paper account. '
-          : 'Connect a paper trading account to create a bot. You can still look around first. '}
-      <Link to="/profile/broker">Go to broker settings</Link>
+    <div className="tl-notice tl-notice--warn" role="status" data-testid="mode-notice" style={{ marginBottom: 18 }}>
+      <span>
+        {mode === 'live-disabled'
+          ? 'Your connected account is a live account. Live trading is disabled, so bots can only run on a paper account. '
+          : mode === 'unknown'
+            ? 'We couldn’t check your trading account right now. You can look around; starting a bot needs a working account. '
+            : 'Connect a paper trading account to start a bot. You can still look around first. '}
+        <Link to="/profile">Account settings</Link>
+      </span>
+    </div>
+  )
+}
+
+function MoneyField({ id, label, value, onChange, onBlur, error, help }) {
+  return (
+    <div className="tl-field">
+      <label className="tl-label" htmlFor={id}>{label}</label>
+      <div className="tl-input-prefix"><span aria-hidden="true">$</span>
+        <input id={id} className="tl-input" inputMode="decimal" value={value} aria-invalid={Boolean(error)} aria-describedby={`${id}-help ${id}-error`}
+          onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ''))} onBlur={onBlur} />
+      </div>
+      {help && <p id={`${id}-help`} className="tl-help">{help}</p>}
+      <FieldError id={`${id}-error`} message={error} />
     </div>
   )
 }
@@ -91,123 +72,87 @@ export default function NewBotWizard() {
   const [params, setParams] = useSearchParams()
   const { brokerStatus, brokerStatusLoading, brokerStatusError } = useAuth()
   const mode = getTradingMode(brokerStatus, { loading: brokerStatusLoading, error: brokerStatusError })
+  const simulated = isSimulated(brokerStatus)
+  const pinnedTicker = params.get('ticker')
 
-  const [data, setData] = useState(null) // { templates, catalogError, buyingPower, portfolioId, portfolioError }
-  const [form, setForm] = useState({
-    templateId: params.get('template') ?? null,
-    capital: '',
-    symbolsText: params.get('ticker') ?? '',
-    symbolsEdited: Boolean(params.get('ticker')),
-    triggerPrice: '',
-    maxPerOrder: '',
-    name: '',
-    research: null,
-    confirmed: false,
-  })
+  const [data, setData] = useState(null)
+  const [form, setForm] = useState({ templateId: params.get('template') ?? null, symbolsText: '', capital: '', maxPerOrder: '', name: '', confirmed: false })
+  const [draft, setDraft] = useState(null)
   const [touched, setTouched] = useState({})
   const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState(null) // { message, botId? }
+  const [submitError, setSubmitError] = useState(null)
   const headingRef = useRef(null)
+  const preselected = useRef(Boolean(params.get('template')))
 
   useEffect(() => {
     let cancelled = false
-    loadWizardData().then((d) => {
-      if (!cancelled) setData(d)
-    })
+    loadWizardData().then((d) => { if (!cancelled) setData(d) })
     return () => { cancelled = true }
   }, [])
 
-  const template = useMemo(
-    () => data?.templates.find((t) => t.id === form.templateId && t.available) ?? null,
-    [data, form.templateId]
-  )
-  const needsSymbols = Boolean(template) && template.tickers.length === 0
+  const template = useMemo(() => data?.templates.find((t) => t.id === form.templateId && t.available) ?? null, [data, form.templateId])
+
+  // Template-dependent defaults, filled once per chosen starting point.
+  useEffect(() => {
+    if (!template || !data) return
+    const symbols = pinnedTicker ? pinnedTicker.toUpperCase() : template.tickers.join(', ')
+    const cap = defaultCapital(template, data.buyingPower ?? null)
+    setForm((f) => ({
+      ...f,
+      symbolsText: symbols,
+      capital: String(cap),
+      maxPerOrder: String(defaultMaxPerOrder(template, cap)),
+      name: `${template.name}${parseSymbols(symbols)[0] ? ` · ${parseSymbols(symbols)[0]}` : ''}`,
+      confirmed: false,
+    }))
+    setDraft(draftFromBot({ config: template.config, rules: template.rules }))
+    setTouched({})
+  }, [template?.id, data]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const symbols = parseSymbols(form.symbolsText)
   const capitalNum = form.capital === '' ? null : Number(form.capital)
-  const symbols = needsSymbols || form.symbolsEdited ? parseSymbols(form.symbolsText) : template?.tickers ?? []
-  const research = template?.research ? form.research ?? researchFormValues(template.research) : null
-
-  const allocationErrors = template
-    ? validateAllocation(form, { buyingPower: data?.buyingPower ?? null, templateTickers: template.tickers })
+  const setupErrors = template
+    ? {
+        ...validateAllocation({ capital: form.capital, symbolsText: form.symbolsText }, { buyingPower: data?.buyingPower ?? null, templateTickers: [] }),
+        ...validateControls({ maxPerOrder: form.maxPerOrder, name: form.name }, { capital: Number.isFinite(capitalNum) ? capitalNum : null }),
+      }
     : {}
-  const controlsErrors = template
-    ? validateControls(
-        { maxPerOrder: form.maxPerOrder, name: form.name, symbolsText: form.symbolsEdited ? form.symbolsText : undefined },
-        { capital: Number.isFinite(capitalNum) ? capitalNum : null }
-      )
-    : {}
-  if (research) Object.assign(controlsErrors, validateResearch(research))
-  const needsTrigger = Boolean(template) && needsTriggerPrice(template.rules)
-  const triggerNum = form.triggerPrice === '' ? null : Number(form.triggerPrice)
-  if (needsTrigger && !(Number.isFinite(triggerNum) && triggerNum > 0)) controlsErrors.triggerPrice = 'Enter the price that should trigger an order.'
-  const rulesForBot = template ? template.rules.map((r) => (r.type === 'price_threshold' && needsTrigger ? { ...r, config: { ...r.config, price: triggerNum } } : r)) : []
-  const preview = template ? {
-    config: { ...template.config, tickers: symbols, allocatedAmount: capitalNum, maxOrderNotional: form.maxPerOrder === '' ? template.config.maxOrderNotional : Number(form.maxPerOrder), ...(research ? { research: { minConfidence: Number(research.minConfidencePct) / 100, maxPredictionAgeHours: Number(research.maxAgeHours), maxEntryDriftPct: Number(research.maxDriftPct), requireEdgeOverBaseline: research.requireEdge } } : {}) },
-    rules: rulesForBot,
-  } : null
-  const noBuyingPower = data?.buyingPower !== null && data?.buyingPower !== undefined && data.buyingPower <= 0
+  const ruleErrors = draft ? validateDraft(draft) : {}
+  const noCash = data?.buyingPower !== null && data?.buyingPower !== undefined && data.buyingPower <= 0
 
-  // Furthest step whose prerequisites are complete; the URL can't skip past it.
-  const reachable = !template
-    ? 0
-    : Object.keys(allocationErrors).length > 0 || noBuyingPower
-      ? 1
-      : Object.keys(controlsErrors).length > 0
-        ? 2
-        : 3
-  const requested = Math.max(0, STEPS.findIndex((s) => s.id === params.get('step')))
+  const reachable = !template ? 0 : Object.keys(setupErrors).length > 0 || noCash ? 1 : 2
+  // A starting point preselected by link (Bots → "Start from this") opens at step 2;
+  // choosing one on step 1 waits for Continue.
+  const requestedId = params.get('step') ?? (preselected.current && template ? 'setup' : 'choose')
+  const requested = Math.max(0, STEPS.findIndex((s) => s.id === requestedId))
   const stepIndex = Math.min(requested, reachable)
   const step = STEPS[stepIndex].id
 
-  useEffect(() => {
-    headingRef.current?.focus()
-  }, [stepIndex])
+  useEffect(() => { headingRef.current?.focus() }, [stepIndex])
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }))
-
   const goTo = (index) => {
     const next = new URLSearchParams(params)
     next.set('step', STEPS[index].id)
     setParams(next)
   }
-
-  const selectTemplate = (t) => {
-    if (!t.available) return
-    if (t.id === form.templateId) return
-    // Template-dependent defaults reset when the bot changes; other answers stay.
-    update({
-      templateId: t.id,
-      capital: '',
-      maxPerOrder: '',
-      name: '',
-      // A symbol chosen before the bot (e.g. "Create a bot for AAPL") is kept.
-      symbolsEdited: Boolean(params.get('ticker')) || (form.symbolsEdited && t.tickers.length > 0),
-      symbolsText: params.get('ticker') || form.symbolsEdited || t.tickers.length === 0 ? form.symbolsText : t.tickers.join(', '),
-      triggerPrice: '',
-      research: researchFormValues(t.research),
-      confirmed: false,
-    })
-  }
+  const selectTemplate = (t) => { if (t.available && t.id !== form.templateId) update({ templateId: t.id }) }
 
   const continueFrom = (index) => {
-    if (index === 0 && template && form.capital === '') {
-      const cap = defaultCapital(template, data?.buyingPower ?? null)
-      update({ capital: String(cap) })
-    }
     if (index === 1) {
-      setTouched((t) => ({ ...t, capital: true, symbols: true }))
-      if (Object.keys(allocationErrors).length > 0 || noBuyingPower) return
-      if (form.maxPerOrder === '') update({ maxPerOrder: String(defaultMaxPerOrder(template, capitalNum)) })
-      if (form.name === '') update({ name: template.name })
-    }
-    if (index === 2) {
-      setTouched((t) => ({ ...t, maxPerOrder: true, name: true, symbols: true, research: true, triggerPrice: true }))
-      if (Object.keys(controlsErrors).length > 0) return
+      setTouched({ capital: true, symbols: true, maxPerOrder: true, name: true })
+      if (Object.keys(setupErrors).length > 0 || noCash) return
     }
     goTo(index + 1)
   }
 
+  const built = template && draft ? draftToBot(draft, { config: { ...template.config, tickers: symbols, allocatedAmount: capitalNum, maxOrderNotional: Number(form.maxPerOrder) }, rules: template.rules }) : null
+  const needsConfirm = !simulated
+
   const submit = async () => {
-    if (!form.confirmed || submitting || mode !== 'paper' || !data?.portfolioId) return
+    setTouched((t) => ({ ...t, rules: true }))
+    if (Object.keys(ruleErrors).length > 0) return
+    if ((needsConfirm && !form.confirmed) || submitting || mode !== 'paper' || !data?.portfolioId) return
     setSubmitting(true)
     setSubmitError(null)
     const result = await createAndStartBot({
@@ -217,21 +162,18 @@ export default function NewBotWizard() {
       tickers: symbols,
       capital: capitalNum,
       maxPerOrder: Number(form.maxPerOrder),
-      research,
-      ...(needsTrigger ? { rules: rulesForBot } : {}),
+      rules: built.rules.map(({ id: _id, ...r }) => r),
+      researchConfig: isResearchBot(template.config) ? built.config.research : undefined,
     })
     setSubmitting(false)
-    if (result.ok) {
-      navigate(`/bots/${result.botId}`, { replace: true, state: { created: true } })
-    } else {
-      setSubmitError({ message: result.message, botId: result.botId ?? null })
-    }
+    if (result.ok) navigate(`/bots/${result.botId}`, { replace: true, state: { created: true, from: 'bots' } })
+    else setSubmitError({ message: result.message, botId: result.botId ?? null })
   }
 
   if (!data) {
     return (
       <main className="tl-page wizard" aria-busy="true">
-        <div className="card card-pad-md skeleton-block wizard-skeleton" data-testid="wizard-loading" />
+        <div className="wizard-skeleton" data-testid="wizard-loading" />
       </main>
     )
   }
@@ -241,247 +183,86 @@ export default function NewBotWizard() {
       <StepHeader index={stepIndex} />
       <h1 className="wizard-title" tabIndex={-1} ref={headingRef}>{STEPS[stepIndex].title}</h1>
       <ModeNotice mode={mode} />
-      {preview && step !== 'choose' && (
-        <aside className="wizard-preview" aria-label="What this bot will do" data-testid="bot-preview">
-          <div className="wizard-preview-label">What {form.name.trim() || template.name} will do</div>
-          <p>{describeAction(preview)}</p>
-          <ul>{describeGuards(preview).map((g) => <li key={g}>{g}</li>)}</ul>
-        </aside>
-      )}
 
       {step === 'choose' && (
-        <section aria-label="Available bots">
-          <p className="muted mt-0">Start from a featured bot. You’ll choose its symbols, capital and limits next, and you can pause it anytime.</p>
+        <section aria-label="Starting points">
+          <p className="tl-muted" style={{ marginTop: 0 }}>Each starting point preloads conditions. You’ll pick the symbols and capital next, and can change every rule before you start.</p>
           {data.catalogError ? (
-            <div className="alert alert-error" role="alert">
-              {data.catalogError} <button type="button" className="btn btn-xs btn-ghost" onClick={() => { setData(null); loadWizardData().then(setData) }}>Retry</button>
+            <div className="tl-notice tl-notice--error" role="alert">
+              {data.catalogError} <button type="button" className="tl-link-btn" onClick={() => { setData(null); loadWizardData().then(setData) }}>Retry</button>
             </div>
-          ) : data.templates.length === 0 ? (
-            <p className="muted">No bots are available right now.</p>
           ) : (
-            <ul className="wizard-options" role="radiogroup" aria-label="Bots">
+            <ul className="wizard-options" role="radiogroup" aria-label="Starting points">
               {data.templates.map((t) => {
                 const selected = t.id === form.templateId && t.available
                 return (
                   <li key={t.id}>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      aria-disabled={!t.available}
-                      disabled={!t.available}
-                      className={`card card-pad-sm wizard-option ${selected ? 'is-selected' : ''}`}
-                      onClick={() => selectTemplate(t)}
-                      data-testid={`template-${t.id}`}
-                    >
+                    <button type="button" role="radio" aria-checked={selected} aria-disabled={!t.available} disabled={!t.available}
+                      className={`wizard-option ${selected ? 'is-selected' : ''}`} onClick={() => selectTemplate(t)} data-testid={`template-${t.id}`}>
                       <span className="wizard-option-name">{t.name}</span>
                       <span className="wizard-option-desc">{describeAction(t, { template: true })}</span>
-                      {!t.available && <span className="wizard-option-meta text-warning">{t.unavailableReason}</span>}
+                      {!t.available && <span className="wizard-option-meta tl-muted">{t.unavailableReason}</span>}
                     </button>
                   </li>
                 )
               })}
             </ul>
           )}
-          <p className="muted text-xs">Compare each bot’s rules, research and results on <Link to="/bots">Bots</Link>.</p>
+          <p className="tl-small tl-muted">See each starting point’s conditions, research and results on <Link to="/bots">Bots</Link>.</p>
         </section>
       )}
 
-      {step === 'allocation' && template && (
+      {step !== 'choose' && template && (
+        <p className="tl-small tl-muted" style={{ margin: '-4px 0 18px' }}>
+          Starting from <strong className="tl-ink">{template.name}</strong> · <button type="button" className="tl-link-btn tl-small" onClick={() => goTo(0)}>Change</button>
+        </p>
+      )}
+
+      {step === 'setup' && template && (
         <section>
-          <label className="wizard-label" htmlFor="capital">Simulated capital for this bot</label>
-          <div className="wizard-money">
-            <span aria-hidden="true">$</span>
-            <input
-              id="capital"
-              className="form-input"
-              inputMode="decimal"
-              value={form.capital}
-              onChange={(e) => update({ capital: e.target.value.replace(/[^0-9.]/g, '') })}
-              onBlur={() => setTouched((t) => ({ ...t, capital: true }))}
-              aria-invalid={Boolean(touched.capital && allocationErrors.capital)}
-              aria-describedby="capital-help capital-error"
-            />
+          <div className="tl-field">
+            <label className="tl-label" htmlFor="symbols">Symbols</label>
+            <input id="symbols" className="tl-input" placeholder="e.g. AAPL, MSFT" value={form.symbolsText}
+              onChange={(e) => update({ symbolsText: e.target.value })} onBlur={() => setTouched((t) => ({ ...t, symbols: true }))}
+              aria-invalid={Boolean(touched.symbols && setupErrors.symbols)} aria-describedby="symbols-help symbols-error" />
+            <p id="symbols-help" className="tl-help">{isResearchBot(template.config) ? 'The bot acts only on symbols that have current Alpha Engine research.' : 'Separate several symbols with commas.'}</p>
+            <FieldError id="symbols-error" message={touched.symbols ? setupErrors.symbols : null} />
           </div>
-          <FieldError id="capital-error" message={touched.capital ? allocationErrors.capital : null} />
-          <p className="text-sm mt-2" data-testid="buying-power">
-            {isSimulated(brokerStatus) ? 'Simulated cash available' : 'Paper buying power'}: <strong>{fmtMoney(data.buyingPower)}</strong>
-            {data.buyingPower === null && <span className="muted"> (unavailable)</span>}
-          </p>
-          {noBuyingPower && (
-            <div className="alert alert-warn" role="alert">Your paper account has no buying power, so this bot couldn’t place buy orders. Reset or fund your paper account with your broker, then come back.</div>
-          )}
-          <p id="capital-help" className="muted text-sm">
-            This money isn’t set aside. The bot sizes each buy order from this amount, so no single order is bigger than this. Several orders can add up to more.
-          </p>
-
-          {needsSymbols && (
-            <>
-              <label className="wizard-label mt-4" htmlFor="symbols">Symbols to trade</label>
-              <input
-                id="symbols"
-                className="form-input"
-                placeholder="e.g. AAPL, MSFT"
-                value={form.symbolsText}
-                onChange={(e) => update({ symbolsText: e.target.value })}
-                onBlur={() => setTouched((t) => ({ ...t, symbols: true }))}
-                aria-invalid={Boolean(touched.symbols && allocationErrors.symbols)}
-                aria-describedby="symbols-error"
-              />
-              <FieldError id="symbols-error" message={touched.symbols ? allocationErrors.symbols : null} />
-            </>
-          )}
-        </section>
-      )}
-
-      {step === 'controls' && template && (
-        <section>
-          <label className="wizard-label" htmlFor="maxPerOrder">Maximum per buy order</label>
-          <div className="wizard-money">
-            <span aria-hidden="true">$</span>
-            <input
-              id="maxPerOrder"
-              className="form-input"
-              inputMode="decimal"
-              value={form.maxPerOrder}
-              onChange={(e) => update({ maxPerOrder: e.target.value.replace(/[^0-9.]/g, '') })}
-              onBlur={() => setTouched((t) => ({ ...t, maxPerOrder: true }))}
-              aria-invalid={Boolean(touched.maxPerOrder && controlsErrors.maxPerOrder)}
-              aria-describedby="maxPerOrder-error"
-            />
+          <MoneyField id="capital" label="Simulated capital for this bot" value={form.capital} onChange={(v) => update({ capital: v })}
+            onBlur={() => setTouched((t) => ({ ...t, capital: true }))} error={touched.capital ? setupErrors.capital : null}
+            help={<span data-testid="buying-power">{simulated ? 'Simulated cash available' : 'Paper buying power'}: {money(data.buyingPower)}. Capital isn’t set aside — it caps what the bot may spend.</span>} />
+          {noCash && <div className="tl-notice tl-notice--warn" role="alert" style={{ marginTop: 12 }}>Your account has no cash available, so this bot couldn’t buy anything.</div>}
+          <MoneyField id="maxPerOrder" label="Most it can spend on one order" value={form.maxPerOrder} onChange={(v) => update({ maxPerOrder: v })}
+            onBlur={() => setTouched((t) => ({ ...t, maxPerOrder: true }))} error={touched.maxPerOrder ? setupErrors.maxPerOrder : null} />
+          <div className="tl-field">
+            <label className="tl-label" htmlFor="name">Bot name</label>
+            <input id="name" className="tl-input" value={form.name} onChange={(e) => update({ name: e.target.value })} onBlur={() => setTouched((t) => ({ ...t, name: true }))} aria-describedby="name-error" />
+            <FieldError id="name-error" message={touched.name ? setupErrors.name : null} />
           </div>
-          <FieldError id="maxPerOrder-error" message={touched.maxPerOrder ? controlsErrors.maxPerOrder : null} />
-
-          {needsTrigger && (
-            <>
-              <label className="wizard-label mt-4" htmlFor="triggerPrice">Trigger price</label>
-              <div className="wizard-money">
-                <span aria-hidden="true">$</span>
-                <input
-                  id="triggerPrice"
-                  className="form-input"
-                  inputMode="decimal"
-                  value={form.triggerPrice}
-                  onChange={(e) => update({ triggerPrice: e.target.value.replace(/[^0-9.]/g, '') })}
-                  onBlur={() => setTouched((t) => ({ ...t, triggerPrice: true }))}
-                  aria-invalid={Boolean(touched.triggerPrice && controlsErrors.triggerPrice)}
-                  aria-describedby="triggerPrice-help triggerPrice-error"
-                />
-              </div>
-              <p id="triggerPrice-help" className="muted text-xs mt-1 mb-0">The bot {template.config.direction === 'sell' ? 'sells when the price falls below' : 'buys when the price rises above'} this level.</p>
-              <FieldError id="triggerPrice-error" message={touched.triggerPrice ? controlsErrors.triggerPrice : null} />
-            </>
-          )}
-
-          {research && (
-            <fieldset className="wizard-fieldset mt-4" data-testid="research-settings">
-              <legend className="wizard-label">Research settings</legend>
-              {RESEARCH_FIELDS.map(({ key, label, unit, help }) => (
-                <div key={key} className="mt-2">
-                  <label className="text-sm" htmlFor={`research-${key}`}>{label}</label>
-                  <div className="wizard-money">
-                    <input
-                      id={`research-${key}`}
-                      className="form-input"
-                      inputMode="decimal"
-                      value={research[key]}
-                      onChange={(e) => update({ research: { ...research, [key]: e.target.value.replace(/[^0-9.]/g, '') } })}
-                      onBlur={() => setTouched((t) => ({ ...t, research: true }))}
-                      aria-invalid={Boolean(touched.research && controlsErrors[key])}
-                      aria-describedby={`research-${key}-help research-${key}-error`}
-                    />
-                    <span aria-hidden="true">{unit}</span>
-                  </div>
-                  <p id={`research-${key}-help`} className="muted text-xs mt-1 mb-0">{help} ({RESEARCH_LIMITS[key].min}–{RESEARCH_LIMITS[key].max})</p>
-                  <FieldError id={`research-${key}-error`} message={touched.research ? controlsErrors[key] : null} />
-                </div>
-              ))}
-              <label className="wizard-confirm mt-2">
-                <input
-                  type="checkbox"
-                  checked={research.requireEdge}
-                  onChange={(e) => update({ research: { ...research, requireEdge: e.target.checked } })}
-                  data-testid="research-require-edge"
-                />
-                <span>Only trade research whose holdout beat the always-up baseline. Turn off to simulate research that hasn’t shown an edge.</span>
-              </label>
-            </fieldset>
-          )}
-
-          <dl className="wizard-facts">
-            <div>
-              <dt>Pausing</dt>
-              <dd>Pause anytime from Home or the bot’s page. Pausing stops new orders. It doesn’t cancel orders already sent or sell what the bot bought.</dd>
-            </div>
-          </dl>
-
-          <details className="wizard-advanced">
-            <summary>Advanced settings</summary>
-            <label className="wizard-label mt-3" htmlFor="name">Bot name</label>
-            <input
-              id="name"
-              className="form-input"
-              value={form.name}
-              onChange={(e) => update({ name: e.target.value })}
-              onBlur={() => setTouched((t) => ({ ...t, name: true }))}
-              aria-describedby="name-error"
-            />
-            <FieldError id="name-error" message={touched.name ? controlsErrors.name : null} />
-
-            <label className="wizard-label mt-3" htmlFor="advSymbols">Symbols</label>
-            <input
-              id="advSymbols"
-              className="form-input"
-              value={form.symbolsEdited || needsSymbols ? form.symbolsText : template.tickers.join(', ')}
-              onChange={(e) => update({ symbolsText: e.target.value, symbolsEdited: true })}
-              aria-describedby="advSymbols-error"
-            />
-            <FieldError id="advSymbols-error" message={controlsErrors.symbols} />
-
-            {template.rules.length > 0 && (
-              <>
-                <div className="wizard-label mt-3">Template rules</div>
-                <ul className="wizard-rules text-sm">
-                  {template.rules.map((r, i) => <li key={`${r.type}-${i}`}>{describeRule(r)}</li>)}
-                </ul>
-                <p className="muted text-xs">These rules are copied to your bot as part of its template. They can’t be edited here.</p>
-              </>
-            )}
-          </details>
         </section>
       )}
 
-      {step === 'review' && template && (
+      {step === 'rules' && template && draft && built && (
         <section>
-          <dl className="wizard-summary card card-pad-md" data-testid="review-summary">
-            <div><dt>Bot</dt><dd>{form.name.trim()} <span className="muted">({template.name})</span></dd></div>
-            <div><dt>Account</dt><dd>{mode !== 'paper' ? 'No paper account connected' : isSimulated(brokerStatus) ? `Simulated — historical replay of ${brokerStatus.session} (no broker orders)` : 'Paper trading (simulated money)'}</dd></div>
-            <div><dt>Symbols</dt><dd>{symbols.join(', ')}</dd></div>
-            <div><dt>Simulated capital</dt><dd>{fmtMoney(capitalNum)} <span className="muted">(not set aside)</span></dd></div>
-            <div><dt>Max per buy order</dt><dd>{fmtMoney(Number(form.maxPerOrder))}</dd></div>
-            <div><dt>Can place</dt><dd>{describeTemplateAction(template)}</dd></div>
-            {research && (
-              <div><dt>Research settings</dt><dd>Confidence at least {research.minConfidencePct}% · research under {research.maxAgeHours} hours old · price within {research.maxDriftPct}% · {research.requireEdge ? 'only research that beat its baseline' : 'includes research without a demonstrated edge'}</dd></div>
-            )}
-            <div><dt>After you start</dt><dd>The bot runs automatically and may place paper orders when its rules are met. Pause it anytime.</dd></div>
-          </dl>
-
-          <label className="wizard-confirm">
-            <input
-              type="checkbox"
-              checked={form.confirmed}
-              onChange={(e) => update({ confirmed: e.target.checked })}
-            />
-            <span>I understand this bot will place orders automatically in my paper account using simulated money.</span>
-          </label>
-
-          {!data.portfolioId && (
-            <div className="alert alert-error mt-3" role="alert">{data.portfolioError ?? 'Your portfolio is unavailable.'} Reload the page to try again.</div>
+          <RuleEditor value={draft} onChange={setDraft} errors={touched.rules ? ruleErrors : {}} direction={template.config.direction ?? 'buy'} idPrefix="new" />
+          <aside className="wizard-preview" aria-label="Summary" data-testid="bot-preview">
+            <div className="wizard-preview-label">{form.name.trim() || template.name} will</div>
+            <p>{describeAction(built)}</p>
+            <ul>{describeGuards(built).map((g) => <li key={g}>{g}</li>)}</ul>
+            <p className="tl-small tl-muted" style={{ margin: '10px 0 0', fontWeight: 450 }} data-testid="review-summary">
+              {mode !== 'paper' ? 'No account connected.' : simulated ? `Simulated money — fills replay the ${sessionDate(brokerStatus.session)} close; no broker orders.` : 'Paper trading (simulated money).'} Pause it anytime from Home or the bot’s page.
+            </p>
+          </aside>
+          {needsConfirm && (
+            <label className="wizard-confirm">
+              <input type="checkbox" checked={form.confirmed} onChange={(e) => update({ confirmed: e.target.checked })} />
+              <span>I understand this bot will place orders automatically in my paper account.</span>
+            </label>
           )}
+          {!data.portfolioId && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{data.portfolioError ?? 'Your portfolio is unavailable.'} Reload the page to try again.</div>}
           {submitError && (
-            <div className="alert alert-error mt-3" role="alert" data-testid="submit-error">
-              {submitError.message}
-              {submitError.botId && <> <Link to={`/bots/${submitError.botId}`}>Open the bot</Link></>}
+            <div className="tl-notice tl-notice--error" role="alert" data-testid="submit-error" style={{ marginTop: 12 }}>
+              <span>{submitError.message}{submitError.botId && <> <Link to={`/bots/${submitError.botId}`}>Open the bot</Link></>}</span>
             </div>
           )}
         </section>
@@ -489,28 +270,17 @@ export default function NewBotWizard() {
 
       <div className="wizard-actions">
         {stepIndex > 0 ? (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => goTo(stepIndex - 1)} disabled={submitting}>
-            Back
-          </button>
+          <button type="button" className="tl-btn" onClick={() => goTo(stepIndex - 1)} disabled={submitting}>Back</button>
         ) : (
-          <Link to="/bots" className="btn btn-sm btn-ghost">Cancel</Link>
+          <Link to="/bots" className="tl-btn">Cancel</Link>
         )}
-        {step === 'review' ? (
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            onClick={submit}
-            disabled={!form.confirmed || submitting || mode !== 'paper' || !data.portfolioId || Boolean(submitError?.botId)}
-          >
-            {submitting ? 'Starting…' : 'Start paper trading'}
+        {step === 'rules' ? (
+          <button type="button" className="tl-btn tl-btn--primary" onClick={submit}
+            disabled={(needsConfirm && !form.confirmed) || submitting || mode !== 'paper' || !data.portfolioId || Boolean(submitError?.botId)}>
+            {submitting ? 'Starting…' : 'Start bot'}
           </button>
         ) : (
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            onClick={() => continueFrom(stepIndex)}
-            disabled={(step === 'choose' && !template) || (step === 'allocation' && noBuyingPower)}
-          >
+          <button type="button" className="tl-btn tl-btn--primary" onClick={() => continueFrom(stepIndex)} disabled={(step === 'choose' && !template) || (step === 'setup' && noCash)}>
             Continue
           </button>
         )}

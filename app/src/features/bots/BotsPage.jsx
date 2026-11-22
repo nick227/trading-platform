@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { STATUS_LABELS } from '../../api/services/botDashboardService'
 import ActivityFeed from '../../ui/ActivityFeed'
+import BotRow from '../../ui/BotRow'
 import { describeAction, describeGuards, isResearchBot, needsTriggerPrice } from '../../ui/describeBot'
-import { listJoin, money, moneyWhole, plural, ratioPct, sessionDate, signedMoney, tone } from '../../ui/format'
+import { EmergencyBanner, useEmergencyStop } from '../../ui/Safety'
+import { useBotControls } from '../../ui/useBotControls'
+import { listJoin, money, plural, ratioPct, sessionDate, signedMoney } from '../../ui/format'
 import { loadBotsPage } from './botsApi'
 
+// Below these, results are an anecdote, not evidence.
+export const MIN_CLOSED_TRADES = 5
+export const MIN_SESSIONS = 5
+
 function behaviorTag(f) {
-  if (isResearchBot(f.config)) return 'Research-driven'
+  if (isResearchBot(f.config)) return 'Research signal'
   const types = new Set(f.rules.map((r) => r.type))
-  if (types.has('trend_filter')) return 'Trend following'
+  if (types.has('trend_filter')) return 'Trend'
   if (types.has('price_threshold')) return f.config.direction === 'sell' ? 'Price trigger · sell' : 'Price trigger · buy'
   if (types.has('daily_loss')) return 'Loss-limited buying'
-  return 'Scheduled buying'
+  return 'Schedule'
 }
 
 function Chevron() {
@@ -23,61 +29,60 @@ function Chevron() {
   )
 }
 
-// ── Featured bots ───────────────────────────────────────────────────────────
+/** Whether a template's results are enough to judge. Never a performance claim otherwise. */
+export function resultsMaturity(r) {
+  if (!r || r.fills === 0) return 'none'
+  const sessions = r.firstSession && r.lastSession ? Math.round((Date.parse(r.lastSession) - Date.parse(r.firstSession)) / 86_400_000) + 1 : 1
+  return r.closedTrades >= MIN_CLOSED_TRADES && sessions >= MIN_SESSIONS ? 'judgeable' : 'early'
+}
 
-function ResultsSummary({ results }) {
-  if (!results) return <><b className="tl-faint">—</b>Results unavailable</>
-  if (results.fills === 0) {
-    return <><b className="tl-faint">No fills yet</b>{results.runningBots ? `${plural(results.runningBots, 'bot')} running` : 'Not running anywhere yet'}</>
-  }
-  return (
-    <>
-      <b className={tone(results.totalPnl)}>{results.totalPnl !== null ? signedMoney(results.totalPnl) : '—'}</b>
-      {plural(results.fills, 'fill')} · {plural(results.runningBots, 'bot')} running
-    </>
-  )
+function period(r) {
+  if (!r.firstSession) return ''
+  return r.firstSession === r.lastSession ? `on ${sessionDate(r.firstSession)}` : `${sessionDate(r.firstSession)} – ${sessionDate(r.lastSession)}`
+}
+
+function ResultsSummary({ results: r }) {
+  if (!r) return <><b className="tl-faint">—</b>Results unavailable</>
+  const m = resultsMaturity(r)
+  if (m === 'none') return <><b className="tl-faint">Not tried yet</b>{r.runningBots ? `${plural(r.runningBots, 'bot')} running` : 'No bots use it yet'}</>
+  if (m === 'early') return <><b className="tl-faint">Too early to judge</b>{plural(r.fills, 'fill')} {period(r)}</>
+  return <><b>{signedMoney(r.totalPnl)}</b>{plural(r.closedTrades, 'closed trade')} · {period(r)}</>
 }
 
 function Research({ research }) {
   const h = research.holdout
-  const hit = h?.hitRate !== null && h?.hitRate !== undefined ? Number(h.hitRate) : null
-  const base = h?.baselineRate !== null && h?.baselineRate !== undefined ? Number(h.baselineRate) : null
+  const gap = h?.hitRate !== null && h?.hitRate !== undefined && h?.baselineRate !== null && h?.baselineRate !== undefined ? (h.hitRate - h.baselineRate) * 100 : null
   return (
     <div data-testid="featured-research">
-      <h4>Research behind it</h4>
-      <p className="tl-small" style={{ margin: '0 0 6px' }}>
+      <h4>Research it uses</h4>
+      <p className="tl-small m0">
         Latest verified publication from <strong>{research.model ?? 'Alpha Engine'}</strong>
-        {research.horizon ? `, ${research.horizon} horizon` : ''}
-        {research.observedAt ? `, observed ${sessionDate(research.observedAt, { year: true })}` : ''}.
+        {research.horizon ? `, ${research.horizon} horizon` : ''}{research.observedAt ? `, ${sessionDate(research.observedAt, { year: true })}` : ''}.
       </p>
-      {hit !== null && base !== null && (
-        <div className="tl-meter">
-          <div className="tl-meter-row"><span>Hit rate (holdout)</span><span className="tl-meter-track"><span className="tl-meter-fill tl-meter-fill--accent" style={{ display: 'block', width: `${hit * 100}%` }} /></span><span className="tl-num">{ratioPct(hit)}</span></div>
-          <div className="tl-meter-row"><span>Always-up baseline</span><span className="tl-meter-track"><span className="tl-meter-fill" style={{ display: 'block', width: `${base * 100}%` }} /></span><span className="tl-num">{ratioPct(base)}</span></div>
-        </div>
+      {gap !== null && (
+        <p className="tl-small" style={{ margin: '6px 0 0' }}>
+          Holdout hit rate {ratioPct(h.hitRate)} vs {ratioPct(h.baselineRate)} always-up baseline <span className={gap >= 0 ? 'tl-pos' : 'tl-neg'}>({gap >= 0 ? '+' : '−'}{Math.abs(gap).toFixed(1)} pts)</span>
+        </p>
       )}
-      <p className="tl-small" style={{ margin: '10px 0 0' }}>
-        {research.edgeOverBaseline === true ? (
-          <span className="tl-verdict tl-verdict--edge">Beat its baseline</span>
-        ) : research.edgeOverBaseline === false ? (
-          <span className="tl-verdict tl-verdict--noedge">No proven edge — by default this bot won’t trade it</span>
-        ) : null}
+      <p className="tl-small" style={{ margin: '6px 0 0' }}>
+        {research.edgeOverBaseline === true ? <span className="tl-verdict tl-verdict--edge">Beat its baseline</span>
+          : research.edgeOverBaseline === false ? <span className="tl-verdict tl-verdict--noedge">No proven edge — by default this bot won’t act on it</span> : null}
       </p>
       <p className="tl-small tl-muted" style={{ margin: '6px 0 0' }}>
         {h?.samples ? `${h.samples.toLocaleString()} holdout samples` : 'Holdout size unknown'}
-        {h?.start && h?.end ? `, ${sessionDate(h.start, { year: true })} – ${sessionDate(h.end, { year: true })}` : ''}
-        {research.genuineOutOfSample === false ? '. Pseudo-out-of-sample: the holdout was already observable when the rule was fixed.' : '.'}
-        {research.mode === 'historical_replay' ? ' Historical replay research — separate from the bot results.' : ''}
-        {research.verified ? ' Evidence is digest-verified.' : ''}
+        {h?.start && h?.end ? `, ${sessionDate(h.start, { year: true })} – ${sessionDate(h.end, { year: true })}` : ''}.
+        {research.genuineOutOfSample === false ? ' Pseudo-out-of-sample.' : ''}
+        {research.mode === 'historical_replay' ? ' Historical replay research, separate from the results above.' : ''}
+        {research.verified ? ' Evidence is digest-verified.' : ''} Research is an input you can test, not a recommendation.
       </p>
     </div>
   )
 }
 
-function FeaturedBot({ f, open, onToggle }) {
+function StartingPoint({ f, open, onToggle }) {
   const guards = describeGuards(f, { template: true })
   const r = f.results
-  const trigger = needsTriggerPrice(f.rules)
+  const m = resultsMaturity(r)
   return (
     <li id={`featured-${f.id}`} data-testid="featured-bot">
       <button type="button" className="tl-featured-row" aria-expanded={open} onClick={onToggle}>
@@ -86,8 +91,7 @@ function FeaturedBot({ f, open, onToggle }) {
           <span className="tl-featured-sentence" style={{ display: 'block' }}>{describeAction(f, { template: true })}</span>
           <span className="tl-tags">
             <span className="tl-tag">{behaviorTag(f)}</span>
-            {f.research?.edgeOverBaseline === false && <span className="tl-tag tl-tag--warn">Latest research: no edge</span>}
-            {f.research?.edgeOverBaseline === true && <span className="tl-tag">Latest research beat baseline</span>}
+            {f.research?.edgeOverBaseline === false && <span className="tl-tag tl-tag--warn">Latest research: no proven edge</span>}
             {!f.available && <span className="tl-tag tl-tag--warn">Not available yet</span>}
           </span>
         </span>
@@ -96,49 +100,45 @@ function FeaturedBot({ f, open, onToggle }) {
       {open && (
         <div className="tl-featured-body">
           <div>
-            <h4>How it works</h4>
+            <h4>Conditions it starts with</h4>
             <ul className="tl-rule-list">
               {guards.map((g) => <li key={g}>{g}</li>)}
-              {trigger && <li>You set the trigger price when you create it</li>}
+              {needsTriggerPrice(f.rules) && <li>You set the trigger price</li>}
             </ul>
             <p className="tl-small tl-muted" style={{ margin: '10px 0 0' }}>
-              You choose the symbols, the simulated capital and the most it can spend per order. Every bot runs under the account’s risk policy.
+              You choose the symbols, capital and per-order limit, and can change every condition — now or later. Every order also passes the risk policy.
             </p>
             <div className="tl-detail-actions">
-              {f.available ? (
-                <Link className="tl-btn tl-btn--primary" to={`/bots/new?template=${encodeURIComponent(f.id)}`}>Use this bot</Link>
-              ) : (
-                <span className="tl-small tl-muted">Strategy-based bots can’t run in the bot engine yet.</span>
-              )}
+              {f.available
+                ? <Link className="tl-btn" to={`/bots/new?template=${encodeURIComponent(f.id)}`}>Start from this</Link>
+                : <span className="tl-small tl-muted">Strategy-based bots can’t run in the bot engine yet.</span>}
             </div>
           </div>
           <div>
             <h4>Results so far</h4>
             {!r ? (
-              <p className="tl-small tl-muted">Results are unavailable right now.</p>
-            ) : r.fills === 0 ? (
-              <p className="tl-small tl-muted" style={{ marginTop: 0 }}>
-                No fills yet{r.runningBots ? ` — ${plural(r.runningBots, 'bot')} running` : ''}. Results appear after the first simulated fill.
+              <p className="tl-small tl-muted m0">Results are unavailable right now.</p>
+            ) : m === 'none' ? (
+              <p className="tl-small tl-muted m0">No simulated trades yet{r.runningBots ? ` — ${plural(r.runningBots, 'bot')} running` : ''}.</p>
+            ) : m === 'early' ? (
+              <p className="tl-small m0" data-testid="featured-results">
+                <strong>Too early to judge.</strong> {plural(r.fills, 'simulated fill')} from {plural(r.bots, 'bot')} {period(r)}, {plural(r.closedTrades, 'closed trade')}
+                {r.totalPnl !== null ? ` (${signedMoney(r.totalPnl)} at the ${sessionDate(r.pricesAsOf)} close)` : ''}. Results are shown once there are {MIN_CLOSED_TRADES} closed trades across {MIN_SESSIONS} sessions.
               </p>
             ) : (
               <>
                 <dl className="tl-facts" data-testid="featured-results">
-                  <dt>P&amp;L at latest close</dt><dd className={tone(r.totalPnl)}>{signedMoney(r.totalPnl)}</dd>
-                  <dt>Unrealized · realized</dt><dd>{signedMoney(r.unrealizedPnl)} · {signedMoney(r.realizedPnl)}</dd>
+                  <dt>P&amp;L at latest close</dt><dd>{signedMoney(r.totalPnl)}</dd>
+                  <dt>Realized</dt><dd>{signedMoney(r.realizedPnl)}</dd>
+                  <dt>Closed trades · win rate</dt><dd>{r.closedTrades} · {r.winRate !== null ? `${r.winRate.toFixed(0)}%` : '—'}</dd>
                   <dt>Capital in use</dt><dd>{money(r.capitalInUse)}</dd>
-                  <dt>Fills · closed trades</dt><dd>{r.fills} · {r.closedTrades}</dd>
-                  <dt>Win rate</dt><dd>{r.winRate !== null ? `${r.winRate.toFixed(0)}% (${r.wins}/${r.closedTrades})` : <span className="tl-muted">Needs 5 closed trades ({r.closedTrades} so far)</span>}</dd>
-                  <dt>Bots · people</dt><dd>{r.bots} · {r.users}</dd>
+                  <dt>Bots</dt><dd>{r.bots}</dd>
                   <dt>Traded</dt><dd>{listJoin(r.symbols, 4) || '—'}</dd>
                 </dl>
-                <p className="tl-small tl-muted" style={{ margin: '10px 0 0' }}>
-                  {r.fillSource === 'simulator' ? 'Actual simulator fills' : 'Actual paper fills'} from every bot built on this template
-                  {r.firstSession ? `, ${r.firstSession === r.lastSession ? sessionDate(r.firstSession) : `${sessionDate(r.firstSession)} – ${sessionDate(r.lastSession)}`}` : ''}
-                  {r.pricesAsOf ? `, valued at the ${sessionDate(r.pricesAsOf)} close` : ''}. Small sample — not a forecast.
-                </p>
+                <p className="tl-small tl-muted" style={{ margin: '8px 0 0' }}>Actual simulated fills from every bot built on this starting point, {period(r)}. Past simulated results don’t predict future ones.</p>
               </>
             )}
-            {f.research && <div style={{ marginTop: 22 }}><Research research={f.research} /></div>}
+            {f.research && <div style={{ marginTop: 20 }}><Research research={f.research} /></div>}
           </div>
         </div>
       )}
@@ -146,37 +146,12 @@ function FeaturedBot({ f, open, onToggle }) {
   )
 }
 
-// ── My bots (behavior context) ──────────────────────────────────────────────
-
-function MyBot({ bot }) {
-  const pnl = bot.performance?.total ?? null
-  return (
-    <li className="tl-bot" data-testid="my-bot">
-      <Link to={`/bots/${bot.id}`} state={{ from: 'bots', focus: 'behavior' }} className="tl-bot-main">
-        <span className="tl-bot-name"><span>{bot.name}</span><span className={`tl-status tl-status--${bot.status}`}>{STATUS_LABELS[bot.status]}</span></span>
-        <span className="tl-bot-sentence" style={{ display: 'block' }}>{describeAction(bot)}</span>
-        <span className="tl-bot-meta">
-          {bot.templateName && <span>From {bot.templateName}</span>}
-          <span>{bot.allocation !== null ? `${moneyWhole(bot.allocation)} capital` : 'Capital not set'}{bot.maxPerOrder !== null ? ` · ≤ ${moneyWhole(bot.maxPerOrder)}/order` : ''}</span>
-          <span>{plural(bot.fillCount, 'fill')}</span>
-        </span>
-      </Link>
-      <div className="tl-bot-side">
-        <div className="tl-bot-figure">
-          {pnl !== null ? <b className={tone(pnl)}>{signedMoney(pnl)}</b> : <b className="tl-faint">—</b>}
-          <span>{pnl !== null ? 'P&L' : 'No fills yet'}</span>
-        </div>
-      </div>
-    </li>
-  )
-}
-
-// ── Page ────────────────────────────────────────────────────────────────────
-
 export default function BotsPage() {
   const location = useLocation()
   const [state, setState] = useState({ loading: true })
   const [open, setOpen] = useState(() => new URLSearchParams(location.search).get('featured'))
+  const { stop, clear } = useEmergencyStop()
+  const controls = useBotControls((fn) => setState((s) => ({ ...s, data: { ...s.data, myBots: fn(s.data.myBots) } })))
 
   useEffect(() => {
     let live = true
@@ -185,17 +160,20 @@ export default function BotsPage() {
   }, [])
 
   useEffect(() => {
-    if (state.loading || !open) return
-    document.getElementById(`featured-${open}`)?.scrollIntoView?.({ block: 'start' })
+    if (state.loading) return
+    const id = open ? `featured-${open}` : location.hash.replace('#', '')
+    if (id) document.getElementById(id)?.scrollIntoView?.({ block: 'start' })
   }, [state.loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const d = state.data
+  const hasBots = d?.myBots?.length > 0
   return (
     <main className="tl-page" aria-busy={state.loading}>
+      <EmergencyBanner stop={stop} onClear={clear} />
       <header className="tl-header">
         <div>
           <h1 className="tl-title">Bots</h1>
-          <p className="tl-lede">Bots trade your simulated portfolio by rules you can read. See what each one does and how it has done, then start your own.</p>
+          <p className="tl-lede">Automate a trading idea with conditions you choose — a price trigger, a schedule, a trend, or Alpha Engine research — and test it on simulated money.</p>
         </div>
         <Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot</Link>
       </header>
@@ -206,10 +184,21 @@ export default function BotsPage() {
         </div>
       ) : (
         <>
+          {(hasBots || d.myBotsError) && (
+            <section className="tl-section" id="mine" aria-labelledby="my-bots-title">
+              <div className="tl-section-head">
+                <h2 className="tl-section-title" id="my-bots-title">My bots<span className="tl-count">{d.myBots.length}</span></h2>
+              </div>
+              {d.myBotsError
+                ? <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.myBotsError}</div>
+                : <ul className="tl-list">{d.myBots.map((b) => <BotRow key={b.id} bot={b} busy={Boolean(controls.busy[b.id])} error={controls.errors[b.id]} onToggle={controls.toggle} from="bots" />)}</ul>}
+            </section>
+          )}
+
           <section className="tl-section" aria-labelledby="featured-title">
             <div className="tl-section-head">
-              <h2 className="tl-section-title" id="featured-title">Featured bots</h2>
-              <span className="tl-section-aside tl-muted tl-small tl-hide-sm">Results: actual simulated fills, all users</span>
+              <h2 className="tl-section-title" id="featured-title">Starting points</h2>
+              <span className="tl-section-aside tl-muted tl-small tl-hide-sm">Preset conditions you can change</span>
             </div>
             {d.featuredError ? (
               <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.featuredError}</div>
@@ -217,34 +206,21 @@ export default function BotsPage() {
               <>
                 {d.resultsError && <div className="tl-notice tl-notice--warn" role="status" style={{ marginTop: 16 }}>{d.resultsError}</div>}
                 <ul className="tl-list tl-featured">
-                  {d.featured.map((f) => <FeaturedBot key={f.id} f={f} open={open === f.id} onToggle={() => setOpen(open === f.id ? null : f.id)} />)}
+                  {d.featured.map((f) => <StartingPoint key={f.id} f={f} open={open === f.id} onToggle={() => setOpen(open === f.id ? null : f.id)} />)}
                 </ul>
               </>
             )}
           </section>
 
-          <section className="tl-section" id="mine" aria-labelledby="my-bots-title">
-            <div className="tl-section-head">
-              <h2 className="tl-section-title" id="my-bots-title">My bots{d.myBots.length > 0 && <span className="tl-count">{d.myBots.length}</span>}</h2>
-            </div>
-            {d.myBotsError ? (
-              <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.myBotsError}</div>
-            ) : d.myBots.length === 0 ? (
-              <div className="tl-empty">
-                <p><strong>You haven’t created a bot yet.</strong> Open a featured bot above to see its rules and results, then choose “Use this bot”.</p>
+          {hasBots && (
+            <section className="tl-section" id="activity" aria-labelledby="activity-title">
+              <div className="tl-section-head">
+                <h2 className="tl-section-title" id="activity-title">Activity</h2>
               </div>
-            ) : (
-              <ul className="tl-list">{d.myBots.map((b) => <MyBot key={b.id} bot={b} />)}</ul>
-            )}
-          </section>
-
-          <section className="tl-section" id="decisions" aria-labelledby="decisions-title">
-            <div className="tl-section-head">
-              <h2 className="tl-section-title" id="decisions-title">Decision history</h2>
-            </div>
-            <p className="tl-section-note">Every check your bots make — what they saw, what they decided, and why — through to the order and fill.</p>
-            <ActivityFeed items={d.decisions} lens="decisions" limit={10} routine="summary" testId="decision-list" empty={d.myBots.length ? 'No decisions recorded yet.' : 'Decisions appear here once you have a bot running.'} />
-          </section>
+              <p className="tl-section-note">Every trade with its decision trail — the signal, the research, the risk check, the order and the fill — plus the checks where your bots waited.</p>
+              <ActivityFeed items={d.decisions} limit={12} routine="summary" testId="decision-list" empty="Nothing has happened yet." />
+            </section>
+          )}
         </>
       )}
     </main>

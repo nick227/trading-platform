@@ -25,7 +25,7 @@ const mockRule = vi.hoisted(() => ({
   botId: 'bot_test123',
   name: 'Test Rule',
   type: 'price_threshold',
-  config: { threshold: 150 },
+  config: { operator: 'above', price: 150 },
   enabled: true,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString()
@@ -442,11 +442,19 @@ describe('GET /api/bots/:id/rules/:ruleId', () => {
 })
 
 describe('POST /api/bots/:id/rules', () => {
+  it('rejects a rule the engine would mis-evaluate (no or zero trigger price)', async () => {
+    for (const config of [{ threshold: 150 }, { operator: 'above', price: 0 }]) {
+      const res = await app.inject({ method: 'POST', url: '/api/bots/bot_test123/rules', payload: { name: 'Price Rule', type: 'price_threshold', config } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.code).toBe('INVALID_RULE')
+    }
+  })
+
   it('creates a rule and returns 201', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bots/bot_test123/rules',
-      payload: { name: 'Price Rule', type: 'price_threshold', config: { threshold: 150 } }
+      payload: { name: 'Price Rule', type: 'price_threshold', config: { operator: 'above', price: 150 } }
     })
     expect(res.statusCode).toBe(201)
     expect(res.json().data.id).toBe('rul_test123')

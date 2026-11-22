@@ -31,6 +31,7 @@ export default function ValueChart({
   formatTick = defaultTick,
   label,
   tone = 'accent',
+  minSpan = 0, // smallest y-range drawn, so small moves look small
 }) {
   const ref = useRef(null)
   const [width, setWidth] = useState(0)
@@ -58,6 +59,7 @@ export default function ValueChart({
     let lo = Math.min(...vals)
     let hi = Math.max(...vals)
     if (hi - lo < 1e-9) { const d = Math.abs(hi) * 0.01 || 1; lo -= d; hi += d }
+    if (minSpan > 0 && hi - lo < minSpan) { const mid = (hi + lo) / 2; lo = mid - minSpan / 2; hi = mid + minSpan / 2 }
     const span = hi - lo
     lo -= span * 0.12
     hi += span * 0.12
@@ -69,7 +71,7 @@ export default function ValueChart({
     const ticks = niceTicks(lo, hi, 3)
     const index = new Map(data.map((p, i) => [p.t, i]))
     return { x, y, path, ticks, index, iw, ih }
-  }, [width, data, baseline, height, spark, pad.l, pad.r, pad.t, pad.b])
+  }, [width, data, baseline, height, spark, minSpan, pad.l, pad.r, pad.t, pad.b])
 
   const onMove = (e) => {
     if (!geo || spark || data.length === 0) return

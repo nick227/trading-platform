@@ -5,8 +5,6 @@ import {
   loadBotActivity,
   normalizeBot as normalizeDashboardBot,
   normalizeExecution,
-  pauseBot,
-  resumeBot,
   toNumberOrNull,
 } from '../../api/services/botDashboardService'
 
@@ -106,11 +104,10 @@ export async function loadTransactions(after = null) {
 }
 
 export async function loadHome() {
-  const [valuation, history, bots, transactions] = await Promise.all([
+  const [valuation, history, bots] = await Promise.all([
     settle(get('/account/valuation')),
     settle(get('/account/value-history', { range: '3M' })),
     settle(get('/bots')),
-    settle(loadTransactions()),
   ])
 
   const rawBots = bots.ok ? asArray(bots.value) : []
@@ -134,18 +131,7 @@ export async function loadHome() {
     botsError: bots.ok ? null : 'Your bots couldn’t be loaded.',
     activity,
     activityError: tracked.length > 0 && !anyActivitySource ? 'Recent activity couldn’t be loaded.' : null,
-    transactions: transactions.ok ? transactions.value : null,
   }
-}
-
-export async function setBotRunning(botId, running) {
-  return running ? resumeBot(botId) : pauseBot(botId)
-}
-
-export async function pauseAllBots(bots) {
-  const targets = bots.filter((b) => b.running)
-  const results = await Promise.all(targets.map((b) => settle(pauseBot(b.id))))
-  return targets.map((b, i) => ({ id: b.id, ok: results[i].ok }))
 }
 
 /** Daily closes for a symbol (Alpha Engine via the API), for the holding chart. */

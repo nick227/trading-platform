@@ -5,12 +5,15 @@ import { ago, dateTime, money, ratioPct, sessionDate } from './format'
 
 /**
  * One activity list for Home, Bots and the bot record. Items come from
- * botDashboardService.buildTimeline (optionally tagged with botId/botName).
+ * botDashboardService.buildTimeline (optionally tagged with botId/botName/researchBot).
+ *
+ * Every trade is ONE row: its signal, research decision, risk verdict, order and fill are
+ * folded into an expandable decision trail — nothing is dropped, so the audit trail stays
+ * complete. Routine checks (waiting, skipped) collapse into counted rows.
  *   lens 'all' | 'trades' | 'decisions'
  */
-const TRADES = new Set(['order', 'fill'])
-const DECISIONS = new Set(['signal', 'evaluation', 'skip', 'risk', 'error'])
 const ROUTINE = new Set(['evaluation', 'skip'])
+const SIGNAL_ATTACH_MS = 15_000
 
 export const LENSES = [
   { id: 'all', label: 'All' },
@@ -19,9 +22,64 @@ export const LENSES = [
 ]
 
 export function inLens(item, lens) {
-  if (lens === 'trades') return TRADES.has(item.category) || (item.category === 'error' && item.executionId)
-  if (lens === 'decisions') return DECISIONS.has(item.category)
+  if (lens === 'trades') return item.kind === 'trade'
+  if (lens === 'decisions') return item.kind !== 'trade' || Boolean(item.steps?.some((s) => s.research || s.category === 'risk' || s.category === 'signal'))
   return true
+}
+
+const ms = (iso) => new Date(iso ?? 0).getTime()
+
+/**
+ * Folds timeline items into trade rows (one per bot + execution) and keeps everything
+ * else as individual rows. Input and output are newest-first.
+ */
+export function groupTrades(items) {
+  const asc = [...(items ?? [])].sort((a, b) => ms(a.at) - ms(b.at))
+  const groups = new Map() // key -> group
+  const rows = []
+  const pendingSignals = [] // rule signals waiting for the order they produced
+
+  for (const item of asc) {
+    const botKey = item.botId ?? ''
+    if (item.executionId && item.category !== 'evaluation' && item.category !== 'skip') {
+      const key = `${botKey}|${item.executionId}`
+      let g = groups.get(key)
+      if (!g) {
+        g = { id: `trade:${key}`, kind: 'trade', botId: item.botId, botName: item.botName, researchBot: item.researchBot, executionId: item.executionId, symbol: item.symbol, steps: [] }
+        groups.set(key, g)
+        rows.push(g)
+        // A rule signal logged just before this order belongs to it.
+        const i = pendingSignals.findIndex((s) => s.botId === item.botId && s.symbol === item.symbol && ms(item.at) - ms(s.at) <= SIGNAL_ATTACH_MS)
+        if (i >= 0) {
+          g.steps.push(pendingSignals[i])
+          rows.splice(rows.indexOf(pendingSignals[i]), 1)
+          pendingSignals.splice(i, 1)
+        }
+      }
+      g.steps.push(item)
+      continue
+    }
+    if (item.category === 'signal' && !item.executionId) pendingSignals.push(item)
+    rows.push(item)
+  }
+
+  for (const g of groups.values()) {
+    // Head row = the trade's outcome: the fill, else cancelled/rejected, else the order.
+    const fill = [...g.steps].reverse().find((s) => s.category === 'fill')
+    const outcome = [...g.steps].reverse().find((s) => s.outcome)
+    const order = [...g.steps].reverse().find((s) => s.category === 'order' || s.category === 'error')
+    const head = fill ?? outcome ?? order ?? g.steps[g.steps.length - 1]
+    g.at = head.at
+    g.category = fill ? 'fill' : head.category
+    g.title = head.title
+    g.symbol = head.symbol ?? g.symbol
+    g.explanation = head.explanation
+    g.simulated = Boolean(fill?.simulated)
+    g.testScenario = g.steps.some((s) => s.testScenario)
+    g.research = g.steps.find((s) => s.research)?.research ?? null
+    g.filled = Boolean(fill)
+  }
+  return rows.sort((a, b) => ms(b.at) - ms(a.at))
 }
 
 /** Collapses repeated routine checks (anywhere in the list) into their newest entry. */
@@ -70,12 +128,13 @@ export function FeedIcon({ item }) {
   )
 }
 
-function ResearchLine({ research }) {
+export function ResearchLine({ research }) {
   if (!research) return null
   const h = research.holdout
   return (
     <p className="tl-feed-text tl-muted">
       {research.direction ?? 'Research'} · {research.horizon ?? 'n/a'} horizon
+      {research.score !== null && research.score !== undefined && <> · research score {Math.round(Number(research.score) * 100)}</>}
       {h && <> · holdout {ratioPct(h.precision)} vs {ratioPct(h.baselineRate)} baseline</>}
       {research.edgeOverBaseline === false && <> · <span className="tl-verdict tl-verdict--noedge">no proven edge</span></>}
       {research.edgeOverBaseline === true && <> · <span className="tl-verdict tl-verdict--edge">beat its baseline</span></>}
@@ -110,7 +169,7 @@ export function ResearchEvidence({ executionId }) {
         {state.status === 'done' && d?.status === 'verified_digest' && (
           <dl>
             <dt>Integrity</dt><dd><strong className="tl-pos">Verified</strong> — archived evidence matches its SHA-256 digest <span className="tl-muted">(integrity, not accuracy)</span></dd>
-            <dt>Prediction</dt><dd>{ev?.ticker} {ev?.direction} · {ev?.horizon} · observed {String(ev?.observedAt ?? '').slice(0, 10)}</dd>
+            <dt>Prediction</dt><dd>{ev?.ticker} {ev?.direction} · {ev?.horizon} · observed {sessionDate(ev?.observedAt, { year: true })}</dd>
             <dt>Entry price</dt><dd>{money(ev?.entryPrice)}</dd>
             <dt>Model</dt><dd>{ev?.strategyId ?? '—'}</dd>
             <dt>Publication</dt><dd>{ev?.ranking?.publicationId ?? '—'}{ev?.ranking?.mode === 'historical_replay' ? ' (historical replay)' : ''}</dd>
@@ -119,6 +178,50 @@ export function ResearchEvidence({ executionId }) {
         )}
       </div>
     </details>
+  )
+}
+
+/** The decision trail of one trade: every recorded step, oldest first. */
+function Trail({ steps }) {
+  return (
+    <details className="tl-evidence tl-evidence--quiet tl-trail">
+      <summary>Decision trail · {steps.length} {steps.length === 1 ? 'step' : 'steps'}</summary>
+      <ol className="tl-trail-list">
+        {steps.map((s) => (
+          <li key={s.id}>
+            <span className="tl-trail-when">{dateTime(s.at)}</span>
+            <span className="tl-trail-what"><strong>{s.title}</strong>{s.explanation ? ` — ${s.explanation}` : ''}{s.note ? ` ${s.note}` : ''}</span>
+            <ResearchLine research={s.research} />
+          </li>
+        ))}
+      </ol>
+    </details>
+  )
+}
+
+export function FeedRow({ item, showBot = true }) {
+  const routine = ROUTINE.has(item.category)
+  return (
+    <li className={`tl-feed-item ${routine ? 'tl-feed-item--routine' : ''}`} title={routine ? item.explanation : undefined} data-kind={item.kind ?? item.category}>
+      <FeedIcon item={item} />
+      <div>
+        <div className="tl-feed-title">
+          {item.title}
+          {item.symbol && !item.title.includes(item.symbol) && <> · {item.symbol}</>}
+          {item.count > 1 && <span className="tl-feed-repeat" title={`Since ${dateTime(item.since)}`}>×{item.count}</span>}
+          {item.testScenario && <span className="tl-tag tl-tag--warn tl-feed-tag">Test scenario</span>}
+          {showBot && item.botName && <> <span className="tl-feed-bot">· <Link to={`/bots/${item.botId}`}>{item.botName}</Link></span></>}
+        </div>
+        {item.explanation && !routine && <p className="tl-feed-text">{item.explanation}</p>}
+        {item.kind !== 'trade' && <ResearchLine research={item.research} />}
+        {item.kind === 'trade' && <Trail steps={item.steps} />}
+        {item.kind !== 'trade' && (item.category === 'error' || item.category === 'risk') && item.diagnostics?.detail && (
+          <details className="tl-evidence tl-evidence--quiet"><summary>Details</summary><p className="tl-feed-text tl-muted" style={{ margin: '6px 0 0' }}>{item.diagnostics.detail}</p></details>
+        )}
+        {item.kind === 'trade' && item.filled && item.researchBot !== false && item.executionId && <ResearchEvidence executionId={item.executionId} />}
+      </div>
+      <time className="tl-feed-time" dateTime={item.at ?? undefined} title={dateTime(item.at)}>{ago(item.at)}</time>
+    </li>
   )
 }
 
@@ -131,11 +234,12 @@ export default function ActivityFeed({
   empty = 'Nothing has happened yet.',
   testId = 'activity-list',
   routine = 'inline', // 'inline' | 'summary' — summary folds routine checks into one line
+  footer = null,
 }) {
   const [lens, setLens] = useState(initialLens)
   const [shown, setShown] = useState(limit)
   const [showRoutine, setShowRoutine] = useState(false)
-  const all = useMemo(() => collapseRoutine((items ?? []).filter((i) => inLens(i, lens))), [items, lens])
+  const all = useMemo(() => collapseRoutine(groupTrades(items).filter((i) => inLens(i, lens))), [items, lens])
   const routineItems = all.filter((i) => ROUTINE.has(i.category))
   const folding = routine === 'summary' && !showRoutine && routineItems.length > 0
   const visible = folding ? all.filter((i) => !ROUTINE.has(i.category)) : all
@@ -155,25 +259,7 @@ export default function ActivityFeed({
         <p className="tl-feed-empty">{lens === 'all' ? empty : lens === 'trades' ? 'No orders or fills yet.' : 'No decisions recorded yet.'}</p>
       ) : (
         <ol className="tl-feed" data-testid={testId}>
-          {visible.slice(0, shown).map((item) => (
-            <li key={`${item.botId ?? ''}:${item.id}`} className="tl-feed-item">
-              <FeedIcon item={item} />
-              <div>
-                <div className="tl-feed-title">
-                  {item.title}
-                  {item.symbol && !item.title.includes(item.symbol) && <> · {item.symbol}</>}
-                  {item.count > 1 && <span className="tl-feed-repeat" title={`Since ${dateTime(item.since)}`}>×{item.count}</span>}
-                  {showBot && item.botName && (
-                    <> <span className="tl-feed-bot">· <Link to={`/bots/${item.botId}`}>{item.botName}</Link></span></>
-                  )}
-                </div>
-                {item.explanation && <p className="tl-feed-text">{item.explanation}</p>}
-                <ResearchLine research={item.research} />
-                {item.executionId && item.category === 'fill' && item.researchBot !== false && <ResearchEvidence executionId={item.executionId} />}
-              </div>
-              <time className="tl-feed-time" dateTime={item.at ?? undefined} title={dateTime(item.at)}>{ago(item.at)}</time>
-            </li>
-          ))}
+          {visible.slice(0, shown).map((item) => <FeedRow key={`${item.botId ?? ''}:${item.id}`} item={item} showBot={showBot} />)}
         </ol>
       )}
       {folding && (
@@ -183,10 +269,13 @@ export default function ActivityFeed({
           <button type="button" className="tl-link-btn tl-small" onClick={() => setShowRoutine(true)}>Show them</button>
         </p>
       )}
-      {visible.length > shown && (
-        <button type="button" className="tl-btn tl-btn--sm tl-feed-more" onClick={() => setShown((n) => n + 12)}>
-          Show more ({visible.length - shown})
-        </button>
+      {(visible.length > shown || footer) && (
+        <div className="tl-feed-more" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {visible.length > shown && (
+            <button type="button" className="tl-btn tl-btn--sm" onClick={() => setShown((n) => n + 12)}>Show more ({visible.length - shown})</button>
+          )}
+          {footer}
+        </div>
       )}
     </div>
   )

@@ -1,200 +1,255 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
+import { del, get, post, put } from '../../../api/client'
 import Sheet from '../../../components/Sheet'
-import { collapseRoutine, FeedIcon, ResearchEvidence } from '../../../ui/ActivityFeed'
-import { describeAction, describeGuards, isResearchBot } from '../../../ui/describeBot'
-import { sessionDate } from '../../../ui/format'
 import {
   controlErrorMessage,
   deriveStatus,
-  STATUS_LABELS,
   loadBotActivity,
   loadBotDashboard,
   loadBotRules,
   pauseBot,
   resumeBot,
+  STATUS_LABELS,
   stopBot,
   summarizeFills,
   toNumberOrNull,
   updateBotSettings,
 } from '../../../api/services/botDashboardService'
+import ActivityFeed from '../../../ui/ActivityFeed'
+import ResearchCard from '../../../ui/ResearchCard'
+import RuleEditor, { draftFromBot, saveBotRules, validateDraft } from '../../../ui/RuleEditor'
+import { EmergencyBanner, useEmergencyStop } from '../../../ui/Safety'
+import { describeAction, describeGuards, isResearchBot } from '../../../ui/describeBot'
+import { ago, dateTime, money, moneyWhole, plural, sessionDate, shares, signedMoney, tone } from '../../../ui/format'
 
 export const REFRESH_MS = 30_000
-const ROUTINE_CATS = new Set(['evaluation', 'skip'])
-const PAGE = 15
+export const fmtMoney = money
+const fmtWhen = dateTime
+const PENDING = new Set(['queued', 'processing', 'submitted', 'partially_filled', 'needs_reconciliation'])
+const MAX_WATCHED = 6
 
-const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
-export const fmtMoney = (n) => (n === null || n === undefined ? '—' : money.format(n))
-const fmtSigned = (n) => (n === null || n === undefined ? '—' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${money.format(Math.abs(n))}`)
-const tone = (n) => (n > 0 ? 'tl-pos' : n < 0 ? 'tl-neg' : '')
-const pct = (v) => (v === null || v === undefined ? '—' : `${(Number(v) * 100).toFixed(1)}%`)
+// ── 1. What does this bot do? ───────────────────────────────────────────────
 
-function fmtWhen(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
-
-function describeDirection(direction) {
-  if (direction === 'buy') return 'Buys only'
-  if (direction === 'sell') return 'Sells only'
-  if (direction === 'both') return 'Buys and sells'
-  return null
-}
-
-// ── Pieces ──────────────────────────────────────────────────────────────────
-
-function Performance({ bot, fills, executionsAvailable }) {
-  const p = bot.performance
-  return (
-    <section className="tl-section" id="impact" aria-labelledby="perf-title">
-      <div className="tl-section-head"><h2 className="tl-section-title" id="perf-title">Performance</h2></div>
-      {p ? (
-        <dl className="tl-stats" data-testid="performance" style={{ borderTop: 0 }}>
-          <div className="tl-stat">
-            <dt>Total P&amp;L</dt>
-            <dd className={tone(p.total)}>{p.total !== null ? fmtSigned(p.total) : '—'}{p.total === null && <small>Waiting for a price</small>}</dd>
-          </div>
-          <div className="tl-stat">
-            <dt>Unrealized</dt>
-            {p.unrealized !== null ? <dd className={tone(p.unrealized)}>{fmtSigned(p.unrealized)}</dd> : <dd className="tl-muted" data-testid="unrealized-unavailable">Not available yet</dd>}
-          </div>
-          <div className="tl-stat"><dt>Realized</dt><dd className={tone(p.realized)}>{fmtSigned(p.realized)}{p.fees ? <small>{fmtMoney(p.fees)} fees</small> : null}</dd></div>
-          <div className="tl-stat">
-            <dt>Capital in use</dt>
-            {bot.capitalInUse !== null ? <dd data-testid="capital-in-use">{fmtMoney(bot.capitalInUse)}<small>of <span data-testid="capital-allocation">{bot.allocation !== null ? fmtMoney(bot.allocation) : 'no set capital'}</span></small></dd> : <dd className="tl-muted" data-testid="capital-in-use">Not available yet<small>of <span data-testid="capital-allocation">{bot.allocation !== null ? fmtMoney(bot.allocation) : 'no set capital'}</span></small></dd>}
-          </div>
-        </dl>
-      ) : (
-        <div className="tl-empty">
-          <p data-testid="performance-unavailable">No P&amp;L yet — it appears after this bot’s first fill.</p>
-          <p className="tl-small tl-muted">Capital <span data-testid="capital-allocation">{bot.allocation !== null ? fmtMoney(bot.allocation) : 'not set'}</span> · in use <span data-testid="capital-in-use">{bot.capitalInUse !== null ? fmtMoney(bot.capitalInUse) : 'Not available yet'}</span></p>
-        </div>
-      )}
-      <p className="tl-section-note">
-        {fills && executionsAvailable && <span data-testid="fill-summary">{fills.filledOrders} filled {fills.filledOrders === 1 ? 'order' : 'orders'}{fills.costs > 0 && <> · {fmtMoney(fills.costs)} in fees and commissions</>}. </span>}
-        {p?.valuation?.simulated && <span data-testid="performance-valuation">Open positions valued at the {[...new Set(Object.values(p.valuation.sessions ?? {}))].map((s) => sessionDate(s)).join(', ')} close (simulated). </span>}
-        Capital isn’t set aside — it caps what this bot may spend.
-      </p>
-    </section>
-  )
-}
-
-function Holdings({ bot }) {
-  const positions = Object.values(bot.openPositions ?? {})
-  if (positions.length === 0) return null
-  return (
-    <section className="tl-section" aria-labelledby="holdings-title">
-      <div className="tl-section-head"><h2 className="tl-section-title" id="holdings-title">Holdings</h2></div>
-      <table className="tl-table" data-testid="bot-holdings-table">
-        <thead><tr><th>Symbol</th><th className="r">Shares</th><th className="r tl-hide-sm">Avg cost</th><th className="r">Last close</th><th className="r">Return</th></tr></thead>
-        <tbody>
-          {positions.map((p) => (
-            <tr key={p.ticker}>
-              <td><Link className="tl-sym" to={`/?holding=${encodeURIComponent(p.ticker)}`}>{p.ticker}</Link></td>
-              <td className="r">{p.quantity}</td>
-              <td className="r tl-hide-sm">{fmtMoney(p.avgPrice)}</td>
-              <td className="r">{fmtMoney(p.currentPrice)}</td>
-              <td className={`r ${tone(p.unrealizedPnl)}`}>{fmtSigned(p.unrealizedPnl)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  )
-}
-
-function Behavior({ bot, onEdit, editable }) {
-  const guards = describeGuards(bot)
+function WhatItDoes({ bot, onSaved }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(null)
+  const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const errors = draft ? validateDraft(draft) : {}
+  const start = () => { setDraft(draftFromBot(bot)); setEditing(true); setSubmitted(false); setError(null) }
+  const save = async () => {
+    setSubmitted(true)
+    if (Object.keys(errors).length) return
+    setSaving(true)
+    setError(null)
+    const r = await saveBotRules({ bot, draft, api: { put, post, del } })
+    setSaving(false)
+    if (!r.ok) { setError(r.error); return }
+    setEditing(false)
+    onSaved()
+  }
   return (
     <section className="tl-section" id="behavior" aria-labelledby="behavior-title">
       <div className="tl-section-head">
-        <h2 className="tl-section-title" id="behavior-title">How it works</h2>
-        {editable && <button type="button" className="tl-link-btn" onClick={onEdit}>Edit limits</button>}
+        <h2 className="tl-section-title" id="behavior-title">What it does</h2>
+        {!bot.stopped && !editing && <button type="button" className="tl-link-btn" onClick={start}>Edit rules</button>}
       </div>
-      <p style={{ margin: '14px 0 6px', fontSize: 15.5 }}>{describeAction(bot)}</p>
-      <ul className="tl-rule-list">{guards.map((g) => <li key={g}>{g}</li>)}</ul>
+      {!editing ? (
+        <>
+          <p className="tl-lead-sentence">{describeAction(bot)}</p>
+          <ul className="tl-rule-list" data-testid="rule-summary">{describeGuards(bot).map((g) => <li key={g}>{g}</li>)}</ul>
+          <p className="tl-section-note">Every condition must pass, then the order passes the account’s risk policy.</p>
+        </>
+      ) : (
+        <div className="tl-edit-panel">
+          <RuleEditor value={draft} onChange={setDraft} errors={submitted ? errors : {}} direction={bot.direction ?? 'buy'} idPrefix="edit" />
+          {error && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
+          <div className="tl-detail-actions">
+            <button type="button" className="tl-btn tl-btn--primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save rules'}</button>
+            <button type="button" className="tl-btn" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+            <span className="tl-small tl-muted">Changes apply from the bot’s next check.</span>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
 
-function Diagnostics({ data }) {
-  const entries = Object.entries(data ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== '')
-  if (entries.length === 0) return null
+// ── 2. What is it seeing? ───────────────────────────────────────────────────
+
+function trendText(r) {
+  if (!r) return null
+  if (r.regime === 'risk_on') return 'Uptrend (above its 200-day average)'
+  if (r.regime === 'risk_off') return 'Downtrend (below its 200-day average)'
+  return r.regime ? String(r.regime).replace(/_/g, ' ') : null
+}
+
+function WhatItSees({ bot, timeline }) {
+  const symbols = bot.tickers.slice(0, MAX_WATCHED)
+  const [regimes, setRegimes] = useState({})
+  useEffect(() => {
+    let live = true
+    Promise.all(symbols.map((s) => get(`/engine/regime/${encodeURIComponent(s)}`).then((d) => [s, d]).catch(() => [s, null])))
+      .then((pairs) => live && setRegimes(Object.fromEntries(pairs)))
+    return () => { live = false }
+  }, [bot.id, symbols.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (symbols.length === 0) return null
+  const latestFor = (s) => timeline.find((i) => i.symbol === s && ['evaluation', 'skip', 'risk', 'signal', 'order', 'fill'].includes(i.category))
+  const research = isResearchBot(bot.config)
   return (
-    <details className="tl-evidence tl-evidence--quiet">
-      <summary>Details</summary>
-      <div className="tl-evidence-body">
-        <dl>
-          {entries.map(([k, v]) => (
-            <Fragment key={k}><dt>{k}</dt><dd>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</dd></Fragment>
-          ))}
-        </dl>
+    <section className="tl-section" aria-labelledby="seeing-title">
+      <div className="tl-section-head">
+        <h2 className="tl-section-title" id="seeing-title">What it’s seeing</h2>
+        <span className="tl-section-aside tl-muted tl-small tl-hide-sm">Latest close and data the bot checks</span>
       </div>
-    </details>
+      <table className="tl-table" data-testid="watching">
+        <thead><tr><th>Symbol</th><th className="r">Last close</th><th className="tl-hide-sm">Trend</th>{research && <th>Research</th>}<th>Latest check</th></tr></thead>
+        <tbody>
+          {symbols.map((s) => {
+            const r = regimes[s]
+            const last = latestFor(s)
+            return (
+              <tr key={s}>
+                <td className="tl-sym">{s}</td>
+                <td className="r">{r?.close ? money(r.close) : '—'}<span className="tl-sub">{r?.asOf ? sessionDate(r.asOf) : ''}</span></td>
+                <td className="tl-hide-sm tl-small">{trendText(r) ?? <span className="tl-muted">—</span>}</td>
+                {research && <td><ResearchCard symbol={s} compact /></td>}
+                <td className="tl-small">{last ? <>{last.title}<span className="tl-sub">{ago(last.at)}</span></> : <span className="tl-muted">Not checked yet</span>}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      {bot.tickers.length > MAX_WATCHED && <p className="tl-section-note">Showing {MAX_WATCHED} of {bot.tickers.length} symbols.</p>}
+    </section>
   )
 }
 
-function ResearchSummary({ research }) {
-  if (!research) return null
-  const h = research.holdout
-  return (
-    <p className="tl-feed-text tl-muted" data-testid="research-summary">
-      {research.direction} · {research.horizon} · observed {research.observedAt ? sessionDate(research.observedAt) : '—'}{research.mode === 'historical_replay' ? ' · historical replay' : ''}
-      {' '}· score {research.score ?? '—'} <span>(not a probability)</span>
-      {h && <> · holdout {pct(h.precision)} vs {pct(h.baselineRate)} baseline ({h.signals} signals) — {research.edgeOverBaseline ? 'beat the baseline' : 'no edge over the baseline'}</>}
-      {research.genuineOutOfSample === false && <> · pseudo-out-of-sample</>}
-    </p>
-  )
-}
+// ── 3. Why did it act or wait? ──────────────────────────────────────────────
 
-function Timeline({ activity, status, onRetry, research }) {
-  const [shown, setShown] = useState(PAGE)
+function WhyItActed({ activity, status, onRetry }) {
   const { timeline, eventsAvailable, executionsAvailable } = activity
-
-  if (!eventsAvailable && !executionsAvailable) {
-    return (
-      <div className="tl-notice tl-notice--warn" role="status" data-testid="activity-unavailable" style={{ marginTop: 14 }}>
-        Activity is unavailable right now. <button type="button" className="tl-link-btn" onClick={onRetry}>Retry</button>
-      </div>
-    )
-  }
-  const items = collapseRoutine(timeline)
   return (
-    <>
-      {!eventsAvailable && <p className="tl-section-note" data-testid="events-unavailable">The bot’s decision log is unavailable right now, so only orders are shown.</p>}
-      {!executionsAvailable && <p className="tl-section-note" data-testid="orders-unavailable">Order history is unavailable right now, so only decisions are shown.</p>}
-      {items.length === 0 ? (
-        <p className="tl-feed-empty" data-testid="activity-empty">
-          No activity yet.{' '}
-          {status === 'paused' ? 'Resume the bot to start it.' : status === 'stopped' ? '' : 'Checks and paper orders will appear here as the bot runs.'}
-        </p>
+    <section className="tl-section" aria-labelledby="activity-title">
+      <div className="tl-section-head">
+        <h2 className="tl-section-title" id="activity-title">Why it acted or waited</h2>
+        <button type="button" className="tl-link-btn" onClick={onRetry}>Refresh</button>
+      </div>
+      {!eventsAvailable && !executionsAvailable ? (
+        <div className="tl-notice tl-notice--warn" role="status" data-testid="activity-unavailable" style={{ marginTop: 14 }}>
+          Activity is unavailable right now. <button type="button" className="tl-link-btn" onClick={onRetry}>Retry</button>
+        </div>
       ) : (
-        <ol className="tl-feed" data-testid="timeline">
-          {items.slice(0, shown).map((item) => (
-            <li key={item.id} className={`tl-feed-item timeline-item--${item.category} ${ROUTINE_CATS.has(item.category) ? 'tl-feed-item--routine' : ''}`} title={ROUTINE_CATS.has(item.category) ? item.explanation : undefined}>
-              <FeedIcon item={item} />
-              <div>
-                <div className="tl-feed-title timeline-title">
-                  {item.title}
-                  {item.symbol && !item.title.includes(item.symbol) && <> · {item.symbol}</>}
-                  {item.count > 1 && <span className="tl-feed-repeat">×{item.count}<span className="tl-visually-hidden"> Repeated {item.count} times since {fmtWhen(item.since)}</span></span>}
-                </div>
-                {item.explanation && !ROUTINE_CATS.has(item.category) && <p className="tl-feed-text">{item.explanation}</p>}
-                <ResearchSummary research={item.research} />
-                {item.executionId && research && (item.category === 'fill' || item.category === 'order') && <ResearchEvidence executionId={item.executionId} />}
-                {!ROUTINE_CATS.has(item.category) && <Diagnostics data={item.diagnostics} />}
-              </div>
-              <time className="tl-feed-time" dateTime={item.at ?? undefined}>{fmtWhen(item.at)}</time>
-            </li>
-          ))}
-        </ol>
+        <>
+          {!eventsAvailable && <p className="tl-section-note" data-testid="events-unavailable">The bot’s decision log is unavailable right now, so only orders are shown.</p>}
+          {!executionsAvailable && <p className="tl-section-note" data-testid="orders-unavailable">Order history is unavailable right now, so only decisions are shown.</p>}
+          {timeline.length === 0 ? (
+            <p className="tl-feed-empty" data-testid="activity-empty">
+              No activity yet. {status === 'paused' ? 'Resume the bot to start it.' : status === 'stopped' ? '' : 'Its checks, decisions and trades appear here as it runs.'}
+            </p>
+          ) : (
+            <ActivityFeed items={timeline.map((i) => ({ ...i, researchBot: activity.researchBot }))} limit={15} routine="summary" showBot={false} testId="timeline" />
+          )}
+        </>
       )}
-      {items.length > shown && (
-        <button type="button" className="tl-btn tl-btn--sm tl-feed-more" onClick={() => setShown((n) => n + PAGE)}>Show older activity</button>
+    </section>
+  )
+}
+
+// ── 4. What has happened? ───────────────────────────────────────────────────
+
+function PendingOrders({ executions, onCancelled }) {
+  const pending = (executions ?? []).filter((x) => PENDING.has(x.status))
+  const [busy, setBusy] = useState({})
+  const [errors, setErrors] = useState({})
+  if (pending.length === 0) return null
+  const cancel = async (x) => {
+    setBusy((b) => ({ ...b, [x.id]: true }))
+    setErrors((e) => ({ ...e, [x.id]: null }))
+    try {
+      await post(`/executions/${encodeURIComponent(x.id)}/cancel`, {})
+      onCancelled()
+    } catch (err) {
+      setErrors((e) => ({ ...e, [x.id]: err?.code === 'NOT_CANCELLABLE' ? 'Too late to cancel — it’s already being filled.' : 'Couldn’t cancel. Try again.' }))
+    } finally {
+      setBusy((b) => ({ ...b, [x.id]: false }))
+    }
+  }
+  return (
+    <div data-testid="pending-orders" style={{ marginTop: 22 }}>
+      <h4 className="tl-rules-head">Open orders</h4>
+      <ul className="tl-list">
+        {pending.map((x) => (
+          <li key={x.id} className="tl-mini-row">
+            <span>
+              <strong>{x.side === 'sell' ? 'Sell' : 'Buy'} {shares(x.quantity)} {x.symbol}</strong>
+              <span className="tl-sub">{x.status === 'needs_reconciliation' ? 'Being checked' : x.status === 'queued' ? 'Waiting to be sent' : 'Sent, waiting for a fill'} · {ago(x.createdAt)}</span>
+              {errors[x.id] && <span className="tl-sub tl-neg" role="alert">{errors[x.id]}</span>}
+            </span>
+            {x.status !== 'needs_reconciliation' && (
+              <button type="button" className="tl-btn tl-btn--sm" onClick={() => cancel(x)} disabled={busy[x.id]}>{busy[x.id] ? 'Cancelling…' : 'Cancel order'}</button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function WhatHappened({ bot, fills, activity, onCancelled }) {
+  const p = bot.performance
+  const positions = Object.values(bot.openPositions ?? {})
+  return (
+    <section className="tl-section" id="impact" aria-labelledby="perf-title">
+      <div className="tl-section-head"><h2 className="tl-section-title" id="perf-title">What has happened</h2></div>
+      {p ? (
+        <dl className="tl-stats tl-stats--3" data-testid="performance" style={{ borderTop: 0 }}>
+          <div className="tl-stat">
+            <dt>P&amp;L</dt>
+            <dd className={tone(p.total)}>{p.total !== null ? signedMoney(p.total) : '—'}<small>{p.total === null ? 'Waiting for a price' : `${signedMoney(p.realized)} realized`}</small></dd>
+          </div>
+          <div className="tl-stat">
+            <dt>Capital in use</dt>
+            <dd data-testid="capital-in-use">{bot.capitalInUse !== null ? money(bot.capitalInUse) : '—'}<small>of <span data-testid="capital-allocation">{bot.allocation !== null ? money(bot.allocation) : 'no set capital'}</span></small></dd>
+          </div>
+          <div className="tl-stat">
+            <dt>Trades</dt>
+            <dd data-testid="fill-summary">{fills ? plural(fills.filledOrders, 'fill') : '—'}<small>{fills?.costs > 0 ? `${money(fills.costs)} in fees` : 'no fees'}</small></dd>
+          </div>
+        </dl>
+      ) : (
+        <p className="tl-section-note" data-testid="performance-unavailable" style={{ fontSize: 14.5 }}>
+          No trades yet. It may spend up to <span data-testid="capital-allocation">{bot.allocation !== null ? money(bot.allocation) : 'its capital'}</span>
+          {bot.maxPerOrder !== null ? `, at most ${money(bot.maxPerOrder)} per order` : ''}.
+          <span data-testid="fill-summary" className="tl-visually-hidden">{fills ? plural(fills.filledOrders, 'fill') : ''}</span>
+        </p>
       )}
-    </>
+      {p?.valuation?.simulated && (
+        <p className="tl-section-note" data-testid="performance-valuation">
+          Holdings valued at the {[...new Set(Object.values(p.valuation.sessions ?? {}))].map((s) => sessionDate(s)).join(', ')} close · simulated fills. Capital isn’t set aside — it caps what this bot may spend.
+        </p>
+      )}
+      {positions.length > 0 && (
+        <table className="tl-table" data-testid="bot-holdings-table" style={{ marginTop: 18 }}>
+          <thead><tr><th>Holding</th><th className="r">Shares</th><th className="r tl-hide-sm">Avg cost</th><th className="r">Last close</th><th className="r">Value</th><th className="r">Return</th></tr></thead>
+          <tbody>
+            {positions.map((x) => (
+              <tr key={x.ticker}>
+                <td><Link className="tl-sym" to={`/?holding=${encodeURIComponent(x.ticker)}`}>{x.ticker}</Link></td>
+                <td className="r">{shares(x.quantity)}</td>
+                <td className="r tl-hide-sm">{money(x.avgPrice)}</td>
+                <td className="r">{money(x.currentPrice)}</td>
+                <td className="r">{x.currentPrice !== null && x.currentPrice !== undefined ? money(x.quantity * x.currentPrice) : '—'}</td>
+                <td className={`r ${tone(x.unrealizedPnl)}`}>{signedMoney(x.unrealizedPnl)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <PendingOrders executions={activity.executions} onCancelled={onCancelled} />
+    </section>
   )
 }
 
@@ -204,8 +259,8 @@ function AdvancedDetails({ bot }) {
     if (e.currentTarget.open && rules === undefined) loadBotRules(bot.id).then(setRules)
   }
   return (
-    <details className="tl-evidence tl-section" onToggle={onToggle}>
-      <summary>Strategy and technical details</summary>
+    <details className="tl-evidence tl-evidence--quiet tl-section" onToggle={onToggle}>
+      <summary>Technical details</summary>
       <div className="tl-evidence-body">
       <dl>
         <dt>Template</dt><dd>{bot.strategyName ?? bot.templateId ?? 'Custom'}</dd>
@@ -215,14 +270,14 @@ function AdvancedDetails({ bot }) {
       </dl>
       <h4 style={{ margin: '14px 0 6px' }}>Rules</h4>
       {rules === undefined ? (
-        <p className="muted text-sm">Loading…</p>
+        <p className="tl-small tl-muted">Loading…</p>
       ) : rules === null ? (
-        <p className="muted text-sm">Rules are unavailable right now.</p>
+        <p className="tl-small tl-muted">Rules are unavailable right now.</p>
       ) : rules.length === 0 ? (
-        <p className="muted text-sm">This bot has no saved rules.</p>
+        <p className="tl-small tl-muted">This bot has no saved rules.</p>
       ) : (
-        <ul className="text-sm" data-testid="rules-list">
-          {rules.map((r) => <li key={r.id}>{r.name ?? r.type} {r.enabled === false && <span className="muted">(off)</span>}</li>)}
+        <ul className="tl-small" data-testid="rules-list">
+          {rules.map((r) => <li key={r.id}>{r.name ?? r.type} {r.enabled === false && <span className="tl-muted">(off)</span>}</li>)}
         </ul>
       )}
       <h4 style={{ margin: '14px 0 6px' }}>Configuration</h4>
@@ -264,7 +319,7 @@ function EditSheet({ bot, onClose, onSaved }) {
 
   return (
     <Sheet
-      title="Edit bot"
+      title="Name & capital"
       onClose={onClose}
       footer={
         <>
@@ -316,7 +371,7 @@ function StopSheet({ bot, onClose, onStopped }) {
         </>
       }
     >
-      <p className="m-0">The bot stops for good and won’t place new orders. Its history stays here.</p>
+      <p style={{ margin: 0 }}>The bot stops for good and won’t place new orders. Its history stays here.</p>
       <p className="tl-help" style={{ marginTop: 8 }}>It doesn’t cancel orders already sent or sell what it bought. If you only want a break, pause it instead.</p>
       {error && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
     </Sheet>
@@ -332,11 +387,8 @@ export default function BotDashboard() {
   const [busy, setBusy] = useState(false)
   const [controlError, setControlError] = useState(null)
   const [sheet, setSheet] = useState(null) // 'edit' | 'stop' | null
-  const [notice, setNotice] = useState(location.state?.created ? 'Your bot was created. You can pause it anytime.' : null)
-
-  useEffect(() => {
-    if (!state.loading && location.state?.focus === 'behavior') document.getElementById('behavior')?.scrollIntoView?.({ block: 'start' })
-  }, [state.loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [notice, setNotice] = useState(location.state?.created ? 'Your bot was created and is running on simulated money. You can pause it anytime.' : null)
+  const { stop, clear } = useEmergencyStop()
 
   const load = useCallback(async () => {
     const result = await loadBotDashboard(botId)
@@ -347,6 +399,10 @@ export default function BotDashboard() {
     setState({ loading: true })
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!state.loading && location.state?.focus === 'behavior') document.getElementById('behavior')?.scrollIntoView?.({ block: 'start' })
+  }, [state.loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshActivity = useCallback(async () => {
     const activity = await loadBotActivity(botId)
@@ -374,7 +430,7 @@ export default function BotDashboard() {
     try {
       await (action === 'pause' ? pauseBot(botId) : resumeBot(botId))
       patchBot({ enabled: action === 'resume' })
-      setNotice(action === 'pause' ? 'Paused. The bot won’t place new orders until you resume it.' : 'Resumed. The bot is running in paper trading.')
+      setNotice(action === 'pause' ? 'Paused. The bot won’t place new orders until you resume it.' : 'Resumed. The bot is running again.')
     } catch (e) {
       setControlError(controlErrorMessage(e, action))
     } finally {
@@ -395,7 +451,7 @@ export default function BotDashboard() {
     )
   }
 
-  const back = location.state?.from === 'bots' ? { to: '/bots', label: 'Bots' } : { to: '/', label: 'Home' }
+  const back = location.state?.from === 'bots' ? { to: '/bots', label: 'Bots' } : location.state?.from === 'home' ? { to: '/', label: 'Home' } : { to: '/bots', label: 'Bots' }
 
   if (!state.bot) {
     return (
@@ -413,11 +469,11 @@ export default function BotDashboard() {
 
   const { bot, status, activity, fills } = state
   const latestError = status === 'error' ? activity.timeline[0] : null
-  const direction = describeDirection(bot.direction)
   const research = isResearchBot(bot.config)
 
   return (
     <main className="tl-page">
+      <EmergencyBanner stop={stop} onClear={clear} />
       <Link to={back.to} className="tl-back">← {back.label}</Link>
 
       <header className="tl-header" style={{ alignItems: 'flex-start' }}>
@@ -426,16 +482,14 @@ export default function BotDashboard() {
             <h1 className="tl-title">{bot.name}</h1>
             <span className={`tl-status tl-status--${status}`} data-testid="bot-status">{STATUS_LABELS[status] ?? status}</span>
           </div>
-          <p className="tl-lede">
-            {research ? 'Research-driven' : 'Rule-based'} · {bot.tickers.length > 0 ? bot.tickers.join(', ') : 'no symbols'}{direction ? ` · ${direction}` : ''}
-          </p>
+          <p className="tl-lede">{bot.tickers.length ? bot.tickers.join(', ') : 'No symbols'} · {research ? 'Research signal' : 'Rule-based'}{bot.allocation !== null ? ` · ${moneyWhole(bot.allocation)} capital` : ''}</p>
         </div>
         {!bot.stopped && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" className={`tl-btn ${bot.enabled ? '' : 'tl-btn--primary'}`} onClick={toggle} disabled={busy} style={{ minWidth: 88 }}>
               {busy ? 'Saving…' : bot.enabled ? 'Pause' : 'Resume'}
             </button>
-            <button type="button" className="tl-btn" onClick={() => setSheet('edit')} disabled={busy}>Edit</button>
+            <button type="button" className="tl-btn" onClick={() => setSheet('edit')} disabled={busy}>Name &amp; capital</button>
             <button type="button" className="tl-btn tl-btn--quiet tl-btn--danger" onClick={() => setSheet('stop')} disabled={busy}>Stop</button>
           </div>
         )}
@@ -450,17 +504,10 @@ export default function BotDashboard() {
         </div>
       )}
 
-      <Performance bot={bot} fills={fills} executionsAvailable={activity.executionsAvailable} />
-      <Holdings bot={bot} />
-      <Behavior bot={bot} editable={!bot.stopped} onEdit={() => setSheet('edit')} />
-
-      <section className="tl-section" aria-labelledby="activity-title">
-        <div className="tl-section-head">
-          <h2 className="tl-section-title" id="activity-title">Activity</h2>
-          <button type="button" className="tl-link-btn" onClick={refreshActivity}>Refresh</button>
-        </div>
-        <Timeline activity={activity} status={status} onRetry={refreshActivity} research={research} />
-      </section>
+      <WhatItDoes bot={bot} onSaved={() => { setNotice('Rules saved. They apply from the bot’s next check.'); load() }} />
+      <WhatItSees bot={bot} timeline={activity.timeline} />
+      <WhyItActed activity={{ ...activity, researchBot: research }} status={status} onRetry={refreshActivity} />
+      <WhatHappened bot={bot} fills={fills} activity={activity} onCancelled={() => { setNotice('Cancellation requested.'); refreshActivity() }} />
 
       <AdvancedDetails bot={bot} />
 

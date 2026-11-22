@@ -14,7 +14,8 @@ import {
 
 vi.mock('react-router-dom', async () => vi.importActual('react-router-dom'))
 
-const authState = { brokerStatus: { connected: true, paper: true } }
+const SIM = { connected: true, paper: true, simulated: true, mode: 'historical_replay', session: '2026-11-19' }
+const authState = { brokerStatus: SIM }
 vi.mock('../../../../app/AuthProvider', () => ({ useAuth: () => authState }))
 
 const templates = {
@@ -72,350 +73,233 @@ function renderWizard(entry = '/bots/new') {
 }
 
 const continueBtn = () => screen.getByRole('button', { name: 'Continue' })
-const back = () => fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+const startBtn = () => screen.getByRole('button', { name: 'Start bot' })
 const heading = () => screen.getByRole('heading', { level: 1 })
 
-async function chooseGoldenCross() {
-  fireEvent.click(await screen.findByTestId('template-tmpl_golden_cross'))
-  fireEvent.click(continueBtn())
-  expect(heading()).toHaveTextContent('Simulated capital')
+const priced = {
+  id: 'tmpl_price', name: 'Momentum Buy', botType: 'rule_based', description: '',
+  config: { direction: 'buy', tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000 },
+  rules: [
+    { name: 'Market Hours', type: 'market_hours', config: { allowPremarket: false, allowAfterHours: false } },
+    { name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', direction: 'above', price: 0 } },
+    { name: 'Cooldown', type: 'cooldown', config: { windowMs: 3_600_000 } },
+  ],
+}
+const research = {
+  id: 'tmpl_alpha_research', name: 'Alpha Research Follower', botType: 'rule_based', description: '',
+  config: { signalSource: 'alpha_research', tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000, research: { minConfidence: 0.6, maxPredictionAgeHours: 96, maxEntryDriftPct: 5, tenantId: 'default' } },
+  rules: [{ name: 'Market Hours', type: 'market_hours', config: {} }],
 }
 
-async function walkToReview() {
-  await chooseGoldenCross()
+async function toSetup(id = 'tmpl_golden_cross') {
+  fireEvent.click(await screen.findByTestId(`template-${id}`))
   fireEvent.click(continueBtn())
-  expect(heading()).toHaveTextContent('Controls')
+  expect(heading()).toHaveTextContent('Symbols & capital')
+}
+async function toRules(id) {
+  await toSetup(id)
   fireEvent.click(continueBtn())
-  expect(heading()).toHaveTextContent('Review & start')
+  expect(heading()).toHaveTextContent('Rules & start')
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  authState.brokerStatus = { connected: true, paper: true }
+  authState.brokerStatus = SIM
 })
 
-describe('Step 1 — choose a bot', () => {
-  it('describes each template in plain language, without performance figures', async () => {
+describe('Step 1 — choose a starting point', () => {
+  it('describes each starting point in plain language, without performance figures', async () => {
     mockGets()
     renderWizard()
     expect(await screen.findByText('Golden Cross Hunter')).toBeInTheDocument()
-    expect(heading()).toHaveTextContent('Choose a bot')
-    expect(screen.getByText('Step 1 of 4')).toBeInTheDocument()
-    const card = screen.getByTestId('template-tmpl_golden_cross')
-    expect(card).toHaveTextContent(/^Golden Cross HunterBuys SPY, QQQ, IWM \(or stocks you pick\)/)
-    expect(screen.getByTestId('template-tmpl_momentum_buy')).toHaveTextContent('Buys the stocks you pick')
+    expect(heading()).toHaveTextContent('Choose a starting point')
+    expect(screen.getByText('Step 1 of 3')).toBeInTheDocument()
+    expect(screen.getByTestId('template-tmpl_golden_cross')).toHaveTextContent('Buys a stock you choose')
     expect(document.body.textContent).not.toMatch(/win rate|return|%/i)
   })
 
-  it('requires a selection before continuing', async () => {
+  it('requires a selection, and strategy-based templates can’t be chosen', async () => {
     mockGets()
     renderWizard()
     await screen.findByText('Golden Cross Hunter')
     expect(continueBtn()).toBeDisabled()
+    expect(screen.getByTestId('template-tmpl_strategy_signal')).toBeDisabled()
     fireEvent.click(screen.getByTestId('template-tmpl_golden_cross'))
-    expect(screen.getByTestId('template-tmpl_golden_cross')).toHaveAttribute('aria-checked', 'true')
     expect(continueBtn()).toBeEnabled()
   })
 
-  it('shows strategy-based bots as unavailable and not selectable', async () => {
-    mockGets()
-    renderWizard()
-    const card = await screen.findByTestId('template-tmpl_strategy_signal')
-    expect(card).toBeDisabled()
-    expect(card).toHaveTextContent('Not available yet')
-    fireEvent.click(card)
-    expect(continueBtn()).toBeDisabled()
-  })
-
-  it('handles a failed catalog request with a retry', async () => {
-    mockGets({ catalog: new Error('HTTP 500') })
-    renderWizard()
-    expect(await screen.findByText(/couldn’t load the bot catalog/)).toBeInTheDocument()
-    mockGets()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(await screen.findByText('Golden Cross Hunter')).toBeInTheDocument()
-  })
-
-  it('handles an empty catalog', async () => {
-    mockGets({ catalog: { ruleBased: [], strategyBased: [] } })
-    renderWizard()
-    expect(await screen.findByText('No bots are available right now.')).toBeInTheDocument()
-  })
-
-  it('preselects a template from ?template=', async () => {
+  it('starts at Symbols & capital when a starting point is preselected (from Bots)', async () => {
     mockGets()
     renderWizard('/bots/new?template=tmpl_golden_cross')
-    expect(await screen.findByTestId('template-tmpl_golden_cross')).toHaveAttribute('aria-checked', 'true')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Symbols & capital' })).toBeInTheDocument()
+    expect(screen.getByText('Golden Cross Hunter')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }))
+    expect(heading()).toHaveTextContent('Choose a starting point')
   })
 
-  it('does not let a deep link skip ahead of incomplete steps', async () => {
+  it('can’t skip ahead through the URL', async () => {
     mockGets()
-    renderWizard('/bots/new?step=review')
-    await screen.findByText('Golden Cross Hunter')
-    expect(heading()).toHaveTextContent('Choose a bot')
+    renderWizard('/bots/new?step=rules')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Choose a starting point' })).toBeInTheDocument()
+  })
+
+  it('offers a retry when the catalog fails', async () => {
+    mockGets({ catalog: apiError(500) })
+    renderWizard()
+    expect(await screen.findByRole('alert')).toHaveTextContent('couldn’t load')
   })
 })
 
-describe('Step 2 — simulated capital', () => {
-  it('defaults to a transparent amount and shows paper buying power', async () => {
+describe('Step 2 — symbols & capital', () => {
+  it('prefills symbols, capital, per-order limit and a distinguishing name', async () => {
     mockGets()
     renderWizard()
-    await chooseGoldenCross()
+    await toSetup()
+    expect(screen.getByLabelText('Symbols')).toHaveValue('SPY, QQQ, IWM')
     expect(screen.getByLabelText('Simulated capital for this bot')).toHaveValue('1000')
-    expect(screen.getByTestId('buying-power')).toHaveTextContent('$5,000.00')
-    expect(screen.getByText(/isn’t set aside/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Bot name')).toHaveValue('Golden Cross Hunter · SPY')
+    expect(screen.getByTestId('buying-power')).toHaveTextContent('Simulated cash available: $5,000.00')
   })
 
-  it('caps the default at available buying power', async () => {
-    mockGets({ account: { buying_power: 300 } })
-    renderWizard()
-    await chooseGoldenCross()
-    expect(screen.getByLabelText('Simulated capital for this bot')).toHaveValue('300')
+  it('keeps a symbol chosen before the bot (Build a bot for AAPL)', async () => {
+    mockGets()
+    renderWizard('/bots/new?ticker=AAPL')
+    await toSetup()
+    expect(screen.getByLabelText('Symbols')).toHaveValue('AAPL')
+    expect(screen.getByLabelText('Bot name')).toHaveValue('Golden Cross Hunter · AAPL')
   })
 
-  it('rejects amounts above buying power or zero', async () => {
+  it('validates symbols, capital and the per-order limit before continuing', async () => {
     mockGets()
     renderWizard()
-    await chooseGoldenCross()
-    const input = screen.getByLabelText('Simulated capital for this bot')
-    fireEvent.change(input, { target: { value: '9000' } })
+    await toSetup()
+    fireEvent.change(screen.getByLabelText('Symbols'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Simulated capital for this bot'), { target: { value: '9000' } })
     fireEvent.click(continueBtn())
-    expect(screen.getByRole('alert')).toHaveTextContent('more than your paper buying power')
-    expect(heading()).toHaveTextContent('Simulated capital')
-    fireEvent.change(input, { target: { value: '0' } })
-    expect(screen.getByRole('alert')).toHaveTextContent('greater than $0')
-  })
-
-  it('requires symbols when the template has none', async () => {
-    mockGets()
-    renderWizard()
-    fireEvent.click(await screen.findByTestId('template-tmpl_momentum_buy'))
-    fireEvent.click(continueBtn())
-    fireEvent.click(continueBtn())
+    expect(heading()).toHaveTextContent('Symbols & capital')
     expect(screen.getByText('Add at least one symbol for this bot to trade.')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Symbols to trade'), { target: { value: 'aapl, msft' } })
+    expect(screen.getByText('That’s more than the cash available in your account.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Symbols'), { target: { value: 'aapl, msft' } })
+    fireEvent.change(screen.getByLabelText('Simulated capital for this bot'), { target: { value: '500' } })
+    fireEvent.change(screen.getByLabelText('Most it can spend on one order'), { target: { value: '900' } })
     fireEvent.click(continueBtn())
-    expect(heading()).toHaveTextContent('Controls')
+    expect(screen.getByText('Can’t be more than the bot’s simulated capital.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Most it can spend on one order'), { target: { value: '250' } })
+    fireEvent.click(continueBtn())
+    expect(heading()).toHaveTextContent('Rules & start')
     expect(screen.getByTestId('bot-preview')).toHaveTextContent('Buys AAPL, MSFT')
   })
 
-  it('blocks an empty paper account', async () => {
-    mockGets({ account: { buying_power: 0 } })
+  it('blocks an account with no cash', async () => {
+    mockGets({ account: { buying_power: 0, cash: 0 } })
     renderWizard()
-    await chooseGoldenCross()
-    expect(screen.getByText(/no buying power/)).toBeInTheDocument()
+    await toSetup()
+    expect(screen.getByRole('alert')).toHaveTextContent('no cash available')
     expect(continueBtn()).toBeDisabled()
   })
-
-  it('shows buying power as unavailable when the account request fails', async () => {
-    mockGets({ account: new Error('HTTP 502') })
-    renderWizard()
-    await chooseGoldenCross()
-    expect(screen.getByTestId('buying-power')).toHaveTextContent('—')
-    expect(screen.getByTestId('buying-power')).toHaveTextContent('unavailable')
-  })
 })
 
-describe('Step 3 — controls', () => {
-  it('defaults max per order to the capital and validates it', async () => {
-    mockGets()
+describe('Step 3 — rules & start', () => {
+  it('requires a trigger price, then creates the bot paused with its rules and starts it (no checkbox in simulated mode)', async () => {
+    mockGets({ catalog: { ruleBased: [priced], strategyBased: [] } })
+    post.mockResolvedValue({ id: 'bot_7' })
+    put.mockResolvedValue({})
     renderWizard()
-    await chooseGoldenCross()
-    fireEvent.click(continueBtn())
-    const max = screen.getByLabelText('Maximum per buy order')
-    expect(max).toHaveValue('1000')
-    expect(screen.getByText(/Pausing stops new orders/)).toBeInTheDocument()
-    fireEvent.change(max, { target: { value: '1500' } })
-    fireEvent.click(continueBtn())
-    expect(screen.getByRole('alert')).toHaveTextContent('more than the bot’s simulated capital')
-    expect(heading()).toHaveTextContent('Controls')
-  })
-
-  it('keeps technical settings under Advanced, with readable template rules', async () => {
-    mockGets()
-    renderWizard()
-    await chooseGoldenCross()
-    fireEvent.click(continueBtn())
-    const advanced = screen.getByText('Advanced settings').closest('details')
-    expect(advanced).not.toHaveAttribute('open')
-    expect(within(advanced).getByLabelText('Bot name')).toHaveValue('Golden Cross Hunter')
-    expect(within(advanced).getByText('Trades only during regular market hours')).toBeInTheDocument()
-    expect(within(advanced).getByText('Waits 1 day(s) between trades in a symbol')).toBeInTheDocument()
-  })
-
-  it('requires a bot name', async () => {
-    mockGets()
-    renderWizard()
-    await chooseGoldenCross()
-    fireEvent.click(continueBtn())
-    fireEvent.change(screen.getByLabelText('Bot name'), { target: { value: '  ' } })
-    fireEvent.click(continueBtn())
-    expect(screen.getByText('Give your bot a name.')).toBeInTheDocument()
-  })
-})
-
-describe('Back navigation', () => {
-  it('preserves inputs across every step', async () => {
-    mockGets()
-    renderWizard()
-    await chooseGoldenCross()
-    fireEvent.change(screen.getByLabelText('Simulated capital for this bot'), { target: { value: '2500' } })
-    fireEvent.click(continueBtn())
-    expect(screen.getByLabelText('Maximum per buy order')).toHaveValue('2500')
-    fireEvent.change(screen.getByLabelText('Maximum per buy order'), { target: { value: '400' } })
-    fireEvent.change(screen.getByLabelText('Bot name'), { target: { value: 'My cross bot' } })
-    fireEvent.click(continueBtn())
-    fireEvent.click(screen.getByRole('checkbox'))
-
-    back()
-    expect(heading()).toHaveTextContent('Controls')
-    expect(screen.getByLabelText('Maximum per buy order')).toHaveValue('400')
-    expect(screen.getByLabelText('Bot name')).toHaveValue('My cross bot')
-    back()
-    expect(screen.getByLabelText('Simulated capital for this bot')).toHaveValue('2500')
-    back()
-    expect(screen.getByTestId('template-tmpl_golden_cross')).toHaveAttribute('aria-checked', 'true')
-
-    fireEvent.click(continueBtn())
-    fireEvent.click(continueBtn())
-    fireEvent.click(continueBtn())
-    expect(screen.getByTestId('review-summary')).toHaveTextContent('My cross bot')
-    expect(screen.getByTestId('review-summary')).toHaveTextContent('$400.00')
-  })
-
-  it('resets template-specific defaults when a different bot is chosen', async () => {
-    mockGets()
-    renderWizard()
-    await chooseGoldenCross()
-    fireEvent.click(continueBtn())
-    back()
-    back()
-    fireEvent.click(screen.getByTestId('template-tmpl_momentum_buy'))
-    fireEvent.click(continueBtn())
-    expect(screen.getByLabelText('Symbols to trade')).toBeInTheDocument()
-  })
-})
-
-describe('Step 4 — review & start', () => {
-  it('summarizes the configuration and requires explicit confirmation', async () => {
-    mockGets()
-    renderWizard()
-    await walkToReview()
-    const summary = screen.getByTestId('review-summary')
-    expect(summary).toHaveTextContent('Paper trading (simulated money)')
-    expect(summary).toHaveTextContent('SPY, QQQ, IWM')
-    expect(summary).toHaveTextContent('$1,000.00')
-    expect(summary).toHaveTextContent('not set aside')
-    const start = screen.getByRole('button', { name: 'Start paper trading' })
-    expect(start).toBeDisabled()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(start).toBeEnabled()
-  })
-
-  it('creates the bot atomically (paused, with limits), then activates it and opens its page', async () => {
-    mockGets()
-    post.mockResolvedValue({ id: 'bot_9', enabled: false, config: { direction: 'buy', tickers: ['SPY', 'QQQ', 'IWM'], allocatedAmount: 1000, maxOrderNotional: 1000 } })
-    put.mockResolvedValue({ id: 'bot_9', enabled: true })
-    renderWizard()
-    await walkToReview()
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
-
-    expect(await screen.findByTestId('bot-page')).toHaveTextContent('bot bot_9 created')
-    expect(post).toHaveBeenCalledTimes(1)
-    expect(post).toHaveBeenCalledWith('/bots/catalog/from-template', {
-      templateId: 'tmpl_golden_cross', portfolioId: 'pf_1', name: 'Golden Cross Hunter', tickers: ['SPY', 'QQQ', 'IWM'],
-      capitalMode: 'allocated', allocatedAmount: 1000, maxOrderNotional: 1000, riskOnExposure: 1, enabled: false,
-    })
-    // Activation is a separate, explicit step carrying only the state change.
-    expect(put).toHaveBeenCalledTimes(1)
-    expect(put).toHaveBeenCalledWith('/bots/bot_9', { enabled: true })
+    await toRules('tmpl_price')
+    expect(screen.queryByRole('checkbox', { name: /I understand/ })).not.toBeInTheDocument()
+    fireEvent.click(startBtn())
+    expect(screen.getByText('Enter the price that should trigger an order.')).toBeInTheDocument()
+    expect(post).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '725' } })
+    expect(screen.getByTestId('bot-preview')).toHaveTextContent('Buys SPY when the price rises above $725.')
+    expect(screen.getByTestId('review-summary')).toHaveTextContent('Simulated money — fills replay the Nov 19 close; no broker orders.')
+    fireEvent.click(startBtn())
+    expect(await screen.findByTestId('bot-page')).toHaveTextContent('bot bot_7 created')
+    const body = post.mock.calls[0][1]
+    expect(post.mock.calls[0][0]).toBe('/bots/catalog/from-template')
+    expect(body).toMatchObject({ templateId: 'tmpl_price', tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000, enabled: false })
+    expect(body.rules).toEqual([
+      { name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', direction: 'above', price: 725 } },
+      { name: 'Market Hours', type: 'market_hours', config: { allowPremarket: false, allowAfterHours: false } },
+      { name: 'Cooldown', type: 'cooldown', config: { windowMs: 3_600_000 } },
+    ])
+    expect(put).toHaveBeenCalledWith('/bots/bot_7', { enabled: true })
     expect(post.mock.invocationCallOrder[0]).toBeLessThan(put.mock.invocationCallOrder[0])
   })
 
-  it('maps a server-side config rejection', async () => {
-    mockGets()
-    post.mockRejectedValue(apiError(400, 'INVALID_CONFIG'))
+  it('lets the user add and remove limits before starting', async () => {
+    mockGets({ catalog: { ruleBased: [priced], strategyBased: [] } })
+    post.mockResolvedValue({ id: 'bot_8' }); put.mockResolvedValue({})
     renderWizard()
-    await walkToReview()
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
-    expect(await screen.findByTestId('submit-error')).toHaveTextContent('rejected these settings')
-    expect(put).not.toHaveBeenCalled()
+    await toRules('tmpl_price')
+    fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '700' } })
+    fireEvent.click(screen.getByLabelText('At most one trade per symbol every'))
+    fireEvent.click(screen.getByLabelText('Stop for the day after losing'))
+    fireEvent.change(screen.getByLabelText('Daily loss limit in dollars'), { target: { value: '300' } })
+    fireEvent.click(startBtn())
+    await screen.findByTestId('bot-page')
+    expect(post.mock.calls[0][1].rules.map((r) => r.type)).toEqual(['price_threshold', 'market_hours', 'daily_loss'])
   })
 
-  it('reports a failed creation and stays on review without navigating', async () => {
-    mockGets()
-    post.mockRejectedValue(apiError(403, 'BROKER_NOT_CONFIGURED'))
+  it('research starting point: score (not a probability), age, drift and the edge requirement are editable', async () => {
+    mockGets({ catalog: { ruleBased: [research], strategyBased: [] } })
+    post.mockResolvedValue({ id: 'bot_9' }); put.mockResolvedValue({})
     renderWizard()
-    await walkToReview()
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
-    expect(await screen.findByTestId('submit-error')).toHaveTextContent('Connect a paper trading account')
-    expect(heading()).toHaveTextContent('Review & start')
-    expect(put).not.toHaveBeenCalled()
-    expect(screen.queryByTestId('bot-page')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start paper trading' })).toBeEnabled()
+    await toRules('tmpl_alpha_research')
+    expect(screen.getByLabelText('Minimum research score')).toHaveValue('60')
+    expect(screen.getByText('(0–100; a score, not a probability)')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Only research whose holdout beat the always-up baseline/)).toBeChecked()
+    fireEvent.change(screen.getByLabelText('Minimum research score'), { target: { value: '150' } })
+    fireEvent.click(startBtn())
+    expect(screen.getByText('Use a score from 0 to 100.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Minimum research score'), { target: { value: '45' } })
+    fireEvent.click(screen.getByLabelText(/Only research whose holdout beat the always-up baseline/))
+    fireEvent.click(startBtn())
+    await screen.findByTestId('bot-page')
+    expect(post.mock.calls[0][1].config.research).toEqual({ minConfidence: 0.45, maxPredictionAgeHours: 96, maxEntryDriftPct: 5, requireEdgeOverBaseline: false, tenantId: 'default' })
   })
 
-  it('if activation fails, says the bot exists paused with its limits and links to it', async () => {
+  it('outside the simulator, asks for explicit confirmation before placing paper orders', async () => {
+    authState.brokerStatus = { connected: true, paper: true }
     mockGets()
-    post.mockResolvedValue({ id: 'bot_7', enabled: false, config: {} })
-    put.mockRejectedValue(apiError(500, null))
     renderWizard()
-    await walkToReview()
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
-    const err = await screen.findByTestId('submit-error')
-    expect(err).toHaveTextContent('created with your limits but couldn’t be started, so it’s paused')
-    expect(within(err).getByRole('link', { name: 'Open the bot' })).toHaveAttribute('href', '/bots/bot_7')
-    expect(put).toHaveBeenCalledTimes(1)
-    // A second submit would create a duplicate bot.
-    expect(screen.getByRole('button', { name: 'Start paper trading' })).toBeDisabled()
+    await toRules()
+    expect(startBtn()).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: /I understand/ }))
+    expect(startBtn()).toBeEnabled()
   })
 
-  it('explains an activation blocked by a missing paper account', async () => {
+  it('explains when the bot was created but couldn’t be started', async () => {
     mockGets()
-    post.mockResolvedValue({ id: 'bot_8', enabled: false, config: {} })
-    put.mockRejectedValue(apiError(403, 'BROKER_NOT_CONFIGURED'))
+    post.mockResolvedValue({ id: 'bot_5' })
+    put.mockRejectedValue(apiError(500))
     renderWizard()
-    await walkToReview()
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
-    expect(await screen.findByTestId('submit-error')).toHaveTextContent('Connect a paper trading account, then resume it')
+    await toRules()
+    fireEvent.click(startBtn())
+    expect(await screen.findByTestId('submit-error')).toHaveTextContent('so it’s paused')
+    expect(screen.getByRole('link', { name: 'Open the bot' })).toHaveAttribute('href', '/bots/bot_5')
   })
 
-  it('blocks when the portfolio cannot be loaded', async () => {
-    mockGets({ portfolio: new Error('HTTP 500') })
+  it('shows the server’s reason when it rejects the settings', async () => {
+    mockGets()
+    const e = apiError(400, 'INVALID_CONFIG'); e.serverMessage = 'Trigger price must be greater than 0.'
+    post.mockRejectedValue(e)
     renderWizard()
-    await walkToReview()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(screen.getByRole('button', { name: 'Start paper trading' })).toBeDisabled()
-    expect(screen.getByText(/couldn’t load your portfolio/)).toBeInTheDocument()
+    await toRules()
+    fireEvent.click(startBtn())
+    expect(await screen.findByTestId('submit-error')).toHaveTextContent('Trigger price must be greater than 0.')
   })
 })
 
-describe('Paper-mode restrictions', () => {
-  it('without a connected account: explains, allows browsing, blocks starting', async () => {
+describe('Account restrictions', () => {
+  it('without a paper account: explains, links to Account, and won’t start', async () => {
     authState.brokerStatus = { connected: false }
-    mockGets({ account: { buying_power: null } })
-    renderWizard()
-    expect(await screen.findByTestId('mode-notice')).toHaveTextContent('Connect a paper trading account')
-    await walkToReview()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(screen.getByRole('button', { name: 'Start paper trading' })).toBeDisabled()
-    expect(screen.getByTestId('review-summary')).toHaveTextContent('No paper account connected')
-    expect(post).not.toHaveBeenCalled()
-  })
-
-  it('with a live account: states live trading is disabled and blocks starting', async () => {
-    authState.brokerStatus = { connected: true, paper: false }
     mockGets()
     renderWizard()
-    expect(await screen.findByTestId('mode-notice')).toHaveTextContent('Live trading is disabled')
-    await walkToReview()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(screen.getByRole('button', { name: 'Start paper trading' })).toBeDisabled()
+    expect(await screen.findByTestId('mode-notice')).toHaveTextContent('Connect a paper trading account')
+    expect(screen.getByRole('link', { name: 'Account settings' })).toHaveAttribute('href', '/profile')
+    await toRules()
+    expect(startBtn()).toBeDisabled()
   })
 })
 
@@ -426,7 +310,7 @@ describe('newBotApi helpers', () => {
   })
 
   it('validates allocation', () => {
-    expect(validateAllocation({ capital: '100' }, { buyingPower: 50, templateTickers: ['SPY'] }).capital).toMatch(/buying power/)
+    expect(validateAllocation({ capital: '100' }, { buyingPower: 50, templateTickers: ['SPY'] }).capital).toMatch(/cash available/)
     expect(validateAllocation({ capital: '100' }, { buyingPower: null, templateTickers: ['SPY'] })).toEqual({})
     expect(validateAllocation({ capital: 'abc' }, { buyingPower: null, templateTickers: ['SPY'] }).capital).toMatch(/valid/)
     expect(validateAllocation({ capital: '10', symbolsText: '$$$' }, { buyingPower: null, templateTickers: [] }).symbols).toMatch(/ticker symbols/)
@@ -455,141 +339,3 @@ describe('newBotApi helpers', () => {
   })
 })
 
-describe('Alpha Research Follower', () => {
-  const research = {
-    id: 'tmpl_alpha_research', name: 'Alpha Research Follower', botType: 'rule_based',
-    description: 'Trades only on current, verified Alpha Engine predictions.',
-    config: { signalSource: 'alpha_research', tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000, research: { minConfidence: 0.6, maxPredictionAgeHours: 96, maxEntryDriftPct: 5, tenantId: 'default' } },
-    rules: [{ type: 'market_hours', config: {} }],
-  }
-  const catalog = { ruleBased: [research, templates.ruleBased[0]], strategyBased: [] }
-
-  async function toControls() {
-    fireEvent.click(await screen.findByTestId('template-tmpl_alpha_research'))
-    fireEvent.click(continueBtn())
-    fireEvent.click(continueBtn())
-    expect(heading()).toHaveTextContent('Controls')
-  }
-
-  it('describes what the research bot does instead of a fixed direction', async () => {
-    mockGets({ catalog })
-    renderWizard()
-    expect(await screen.findByTestId('template-tmpl_alpha_research')).toHaveTextContent('when Alpha Engine publishes current, verified BUY research')
-  })
-
-  it('shows research settings with the template defaults and validates them', async () => {
-    mockGets({ catalog })
-    renderWizard()
-    await toControls()
-    const box = screen.getByTestId('research-settings')
-    expect(within(box).getByLabelText('Minimum research confidence')).toHaveValue('60')
-    expect(within(box).getByLabelText('Ignore research older than')).toHaveValue('96')
-    expect(within(box).getByLabelText('Skip if price moved more than')).toHaveValue('5')
-    expect(box).toHaveTextContent('not a probability')
-
-    fireEvent.change(within(box).getByLabelText('Minimum research confidence'), { target: { value: '150' } })
-    fireEvent.click(continueBtn())
-    expect(heading()).toHaveTextContent('Controls')
-    expect(within(box).getByText('Enter a number from 0 to 100.')).toBeInTheDocument()
-  })
-
-  it('saves the research settings with the bot, keeping template-only keys', async () => {
-    mockGets({ catalog })
-    post.mockResolvedValue({ id: 'bot_r', enabled: false })
-    put.mockResolvedValue({ id: 'bot_r', enabled: true })
-    renderWizard()
-    await toControls()
-    const box = screen.getByTestId('research-settings')
-    fireEvent.change(within(box).getByLabelText('Minimum research confidence'), { target: { value: '75' } })
-    fireEvent.change(within(box).getByLabelText('Ignore research older than'), { target: { value: '48' } })
-    fireEvent.click(continueBtn())
-    expect(screen.getByTestId('review-summary')).toHaveTextContent('Confidence at least 75% · research under 48 hours old · price within 5% · only research that beat its baseline')
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
-
-    expect(await screen.findByTestId('bot-page')).toHaveTextContent('bot bot_r created')
-    expect(post).toHaveBeenCalledWith('/bots/catalog/from-template', expect.objectContaining({
-      templateId: 'tmpl_alpha_research', tickers: ['SPY'], enabled: false,
-      config: { research: { tenantId: 'default', minConfidence: 0.75, maxPredictionAgeHours: 48, maxEntryDriftPct: 5, requireEdgeOverBaseline: true } },
-    }))
-  })
-
-  it('does not show research settings for rule bots', async () => {
-    mockGets({ catalog })
-    renderWizard()
-    fireEvent.click(await screen.findByTestId('template-tmpl_golden_cross'))
-    fireEvent.click(continueBtn())
-    fireEvent.click(continueBtn())
-    expect(screen.queryByTestId('research-settings')).toBeNull()
-  })
-
-  it('can opt in to simulating research without a demonstrated edge, and says so', async () => {
-    mockGets({ catalog })
-    post.mockResolvedValue({ id: 'bot_r', enabled: false })
-    put.mockResolvedValue({ id: 'bot_r', enabled: true })
-    renderWizard()
-    await toControls()
-    const edge = screen.getByTestId('research-require-edge')
-    expect(edge).toBeChecked()
-    fireEvent.click(edge)
-    fireEvent.click(continueBtn())
-    expect(screen.getByTestId('review-summary')).toHaveTextContent('includes research without a demonstrated edge')
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
-    await screen.findByTestId('bot-page')
-    expect(post.mock.calls[0][1].config.research.requireEdgeOverBaseline).toBe(false)
-  })
-
-  it('shows the simulator account plainly on Review', async () => {
-    authState.brokerStatus = { connected: true, paper: true, simulated: true, mode: 'historical_replay', session: '2026-11-19' }
-    mockGets({ catalog })
-    renderWizard()
-    await toControls()
-    fireEvent.click(continueBtn())
-    expect(screen.getByTestId('review-summary')).toHaveTextContent('Simulated — historical replay of 2026-11-19 (no broker orders)')
-  })
-})
-
-
-describe('Trigger price (price-threshold templates)', () => {
-  const priced = {
-    id: 'tmpl_momentum_buy', name: 'Momentum Buy', botType: 'rule_based', description: '',
-    config: { direction: 'buy', tickers: ['SPY'] },
-    rules: [
-      { name: 'Market Hours', type: 'market_hours', config: {} },
-      { name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', price: 0 } },
-    ],
-  }
-
-  it('requires a trigger price and sends it in the bot’s rules', async () => {
-    mockGets({ catalog: { ruleBased: [priced], strategyBased: [] } })
-    post.mockResolvedValue({ id: 'bot_7' })
-    put.mockResolvedValue({})
-    renderWizard()
-    fireEvent.click(await screen.findByTestId('template-tmpl_momentum_buy'))
-    fireEvent.click(continueBtn())
-    fireEvent.click(continueBtn())
-    expect(heading()).toHaveTextContent('Controls')
-    fireEvent.click(continueBtn())
-    expect(screen.getByText('Enter the price that should trigger an order.')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '725' } })
-    expect(screen.getByTestId('bot-preview')).toHaveTextContent('Buys SPY when the price rises above $725.')
-    fireEvent.click(continueBtn())
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Start paper trading' }))
-    await screen.findByTestId('bot-page')
-    expect(post.mock.calls[0][1].rules).toEqual([
-      { name: 'Market Hours', type: 'market_hours', config: {} },
-      { name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', price: 725 } },
-    ])
-  })
-
-  it('keeps a symbol chosen before the bot (Create a bot for AAPL)', async () => {
-    mockGets({ catalog: { ruleBased: [priced], strategyBased: [] } })
-    renderWizard('/bots/new?ticker=AAPL')
-    fireEvent.click(await screen.findByTestId('template-tmpl_momentum_buy'))
-    fireEvent.click(continueBtn())
-    fireEvent.click(continueBtn())
-    expect(screen.getByTestId('bot-preview')).toHaveTextContent('Buys AAPL')
-  })
-})

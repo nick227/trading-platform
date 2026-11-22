@@ -34,8 +34,9 @@ describe('risk verdicts on the bot timeline', () => {
   const rd = (basis, extra = {}) => ({ basis, decision: basis === 'restricted_blocked' ? 'restrict' : 'reject', reason: 'execution_weak', adjustedQuantity: 4, failedChecks: [], ...extra })
   it('labels a simulator test-scenario order and keeps the normal-policy verdict visible', () => {
     const item = eventToItem({ id: 'e3', type: 'execution_created', metadata: { ticker: 'AAPL', direction: 'buy', quantity: 2, riskDecision: rd('simulator_test_scenario', { testScenario: { name: 'p0-demo' } }) } })
-    expect(item).toMatchObject({ category: 'order', testScenario: true, title: 'Test scenario: simulated buy order placed' })
-    expect(item.explanation).toBe('2 shares of AAPL. Isolated simulator test scenario — the normal risk policy would not place this order (reject: the signal was too weak to trust).')
+    expect(item).toMatchObject({ category: 'order', testScenario: true, title: 'Buy order placed', explanation: '2 shares of AAPL.' })
+    // The verdict stays on the item (shown in the trade's decision trail), never dropped.
+    expect(item.note).toBe('Isolated simulator test scenario — the normal risk policy would not place this order (reject: the signal was too weak to trust).')
   })
   it('distinguishes rejected from restricted', () => {
     expect(eventToItem({ id: 'e4', type: 'execution_blocked_by_risk', metadata: { ticker: 'AAPL', riskDecision: rd('rejected') } }))

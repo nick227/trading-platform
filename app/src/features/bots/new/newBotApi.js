@@ -122,7 +122,7 @@ export function validateAllocation({ capital, symbolsText }, { buyingPower, temp
   else if (amount <= 0) errors.capital = 'Amount must be greater than $0.'
   else if (amount > MAX_CAPITAL) errors.capital = 'Amount is too large.'
   else if (buyingPower !== null && buyingPower !== undefined && amount > buyingPower) {
-    errors.capital = 'Amount is more than your paper buying power.'
+    errors.capital = 'That’s more than the cash available in your account.'
   }
 
   if (!templateTickers || templateTickers.length === 0) {
@@ -191,6 +191,7 @@ export function friendlyCreateError(error) {
   if (code === 'BROKER_CREDENTIALS_INVALID') return 'Your paper account credentials were rejected. Reconnect your account and try again.'
   if (code === 'INVALID_PORTFOLIO') return 'Your portfolio couldn’t be found. Reload the page and try again.'
   if (code === 'NOT_FOUND') return 'That bot template is no longer available. Choose another bot.'
+  if (code === 'INVALID_CONFIG' && error?.serverMessage) return error.serverMessage
   if (code === 'INVALID_CONFIG') return 'The server rejected these settings. Check the capital and order limit, then try again.'
   if (error?.status === 401) return 'Your session expired. Sign in again.'
   return 'We couldn’t create your bot. Nothing was saved. Try again.'
@@ -206,7 +207,7 @@ export function friendlyCreateError(error) {
  * If activation fails, the bot already exists, paused, with the confirmed
  * limits; the result says so and links to it rather than retrying creation.
  */
-export async function createAndStartBot({ template, portfolioId, name, tickers, capital, maxPerOrder, research, rules }) {
+export async function createAndStartBot({ template, portfolioId, name, tickers, capital, maxPerOrder, research, rules, researchConfig }) {
   let created
   try {
     created = await post('/bots/catalog/from-template', {
@@ -220,7 +221,8 @@ export async function createAndStartBot({ template, portfolioId, name, tickers, 
       riskOnExposure: 1,
       enabled: false,
       ...(Array.isArray(rules) && rules.length ? { rules } : {}),
-      ...(template.research && research ? { config: { research: toResearchConfig(research, template.research.base) } } : {}),
+      ...(template.research && researchConfig ? { config: { research: researchConfig } }
+        : template.research && research ? { config: { research: toResearchConfig(research, template.research.base) } } : {}),
     })
   } catch (error) {
     return { ok: false, stage: 'create', message: friendlyCreateError(error) }

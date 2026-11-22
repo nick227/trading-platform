@@ -9,9 +9,7 @@ import Asset from '../features/Asset'
 import BotsPage from '../features/bots/BotsPage'
 import BotDashboard from '../features/bots/detail/BotDashboard'
 import OrderConfirm from '../features/OrderConfirm'
-import Profile from '../features/Profile'
-import AccountTab from '../features/profile/AccountTab'
-import BrokerTab from '../features/profile/BrokerTab'
+import AccountPage from '../features/account/AccountPage'
 import Auth from '../features/Auth'
 import PageSkeleton from '../components/PageSkeleton'
 import { useAuth } from './AuthProvider'
@@ -131,13 +129,11 @@ export function AppShell() {
             </Protected>
           }
         />
-        <Route path="/history" element={<Navigate to="/#history" replace />} />
+        <Route path="/history" element={<Navigate to="/bots#activity" replace />} />
         <Route path="/orders/confirm" element={<Protected><OrderConfirm /></Protected>} />
-        <Route path="/profile" element={<Protected><Profile /></Protected>}>
-          <Route index element={<Navigate to="/profile/account" replace />} />
-          <Route path="account" element={<AccountTab />} />
-          <Route path="broker" element={<BrokerTab />} />
-        </Route>
+        <Route path="/profile" element={<Protected><AccountPage /></Protected>} />
+        <Route path="/profile/account" element={<Navigate to="/profile" replace />} />
+        <Route path="/profile/broker" element={<Navigate to="/profile" replace />} />
         <Route path="/auth" element={<AuthScreen />} />
         <Route path="/login" element={<AuthScreen />} />
         <Route path="/register" element={<AuthScreen />} />

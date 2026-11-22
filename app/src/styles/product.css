@@ -652,3 +652,54 @@ body {
 .sheet .tl-label { display: block; margin: 0 0 6px; }
 .sheet .tl-input { max-width: none; }
 .sheet-title { font-size: 19px; font-weight: 640; letter-spacing: -0.012em; }
+
+/* ── Polish pass components ──────────────────────────────────────────────── */
+.m0 { margin: 0; }
+.tl-ink { color: var(--tl-ink); }
+.tl-asof { margin: 8px 0 0; font-size: 13.5px; color: var(--tl-muted); }
+.tl-hero-change { margin-top: 2px; }
+.tl-compare { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 22px; padding: 14px 16px; border-radius: var(--tl-radius); background: var(--tl-surface-2); }
+.tl-compare-item { display: grid; gap: 2px; font-size: 13px; }
+.tl-compare-item b { font-size: 17px; font-weight: 600; color: var(--tl-ink); }
+.tl-compare-arrow { color: var(--tl-faint); font-size: 18px; }
+.tl-compare-note { flex-basis: 100%; font-size: 12.5px; color: var(--tl-muted); }
+.tl-safety { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; padding: 10px 14px; border: 1px solid var(--tl-line); border-radius: var(--tl-radius); font-size: 14px; }
+.tl-safety-text { min-width: 0; }
+.tl-stop-banner { align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.tl-stop-list { margin: 0; padding-left: 18px; color: var(--tl-ink-2); font-size: 14.5px; line-height: 1.7; }
+.tl-btn--danger-solid { background: var(--tl-neg); border-color: var(--tl-neg); color: #fff !important; }
+.tl-btn--danger-solid:hover { background: #a02822; }
+.tl-chevron { transition: transform 160ms var(--tl-ease); vertical-align: -2px; }
+.tl-chevron.is-open { transform: rotate(90deg); }
+.tl-row-click:hover .tl-chevron { color: var(--tl-ink-2); }
+.tl-detail-summary { margin: 14px 0 12px; font-size: 14.5px; color: var(--tl-ink-2); }
+.tl-mini-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; }
+.tl-research { display: grid; gap: 4px; }
+.tl-research-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: 14px; }
+.tl-research-verdict { margin-left: auto; }
+.tl-feed-tag { margin-left: 8px; height: 20px; font-size: 11.5px; vertical-align: 1px; }
+.tl-trail { margin-top: 6px; }
+.tl-trail-list { list-style: none; margin: 8px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--tl-line); display: grid; gap: 8px; font-size: 13px; color: var(--tl-ink-2); }
+.tl-trail-when { display: block; font-size: 12px; color: var(--tl-faint); }
+.tl-lead-sentence { margin: 16px 0 8px; font-size: 16px; font-weight: 520; color: var(--tl-ink); }
+.tl-edit-panel { margin-top: 14px; padding: 16px 18px; border: 1px solid var(--tl-line-strong); border-radius: var(--tl-radius); }
+.tl-rules { display: grid; gap: 10px; }
+.tl-rules-head { margin: 6px 0 0; font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tl-muted); }
+.tl-rule-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 14.5px; }
+.tl-rule-row .tl-field-error { flex-basis: 100%; }
+.tl-rule-fixed { margin: 0; }
+.tl-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.tl-check input { width: 16px; height: 16px; accent-color: var(--tl-accent); margin: 0; }
+.tl-inline-input { display: inline-flex; align-items: center; gap: 6px; color: var(--tl-muted); }
+.tl-input--inline { height: 32px; padding: 0 8px; font-size: 14.5px; max-width: none; }
+select.tl-input--inline { width: auto; padding-right: 4px; }
+.tl-facts--left dd { text-align: left; }
+.tl-facts--left { grid-template-columns: 140px 1fr; }
+.mode-badge { cursor: default; }
+@media (max-width: 720px) {
+  .tl-safety { flex-direction: column; align-items: flex-start; }
+  .tl-stop-banner { flex-direction: column; align-items: flex-start; }
+  .tl-research-verdict { margin-left: 0; }
+}
+
+.tl-page .tl-asof { text-align: left; }

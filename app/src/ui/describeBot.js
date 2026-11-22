@@ -64,7 +64,7 @@ export function describeGuards({ config = {}, rules = [] } = {}, { template = fa
 export function describeAction({ config = {}, rules = [] } = {}, { template = false } = {}) {
   const tickers = Array.isArray(config.tickers) ? config.tickers.filter(Boolean) : []
   const syms = template
-    ? (isResearchBot(config) ? 'the stocks you pick' : tickers.length ? `${listJoin(tickers)} (or stocks you pick)` : 'the stocks you pick')
+    ? (isResearchBot(config) ? 'the stocks you pick' : 'a stock you choose')
     : tickers.length ? listJoin(tickers) : 'its symbols'
 
   if (isResearchBot(config)) {

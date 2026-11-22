@@ -1,23 +1,24 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { get } from '../../api/client'
-import { normalizeExecution } from '../../api/services/botDashboardService'
+import { normalizeExecution, STATUS_LABELS } from '../../api/services/botDashboardService'
+import ResearchCard from '../../ui/ResearchCard'
 import ValueChart from '../../ui/ValueChart'
 import { money, plural, sessionDate, shares, signedMoney, signedPct, tone } from '../../ui/format'
 import { loadPriceHistory } from './homeApi'
 
 const RANGES = ['1M', '3M', '1Y']
 
-/** Inline detail for one holding: price + fills, position, bots, transactions, actions. */
-export default function HoldingDetail({ position, bots, busy, onToggleBot }) {
-  const sym = position.symbol
+/** Inline detail for one holding: price + fills, position, research, bots, and actions. */
+export default function HoldingDetail({ position: p, bots, busy, onToggleBot }) {
+  const sym = p.symbol
   const [range, setRange] = useState('3M')
   const [prices, setPrices] = useState({ status: 'loading', points: [] })
   const [fills, setFills] = useState(null)
 
   useEffect(() => {
     let live = true
-    setPrices((p) => ({ ...p, status: 'loading' }))
+    setPrices((x) => ({ ...x, status: 'loading' }))
     loadPriceHistory(sym, range)
       .then((points) => live && setPrices({ status: 'done', points }))
       .catch(() => live && setPrices({ status: 'error', points: [] }))
@@ -37,75 +38,48 @@ export default function HoldingDetail({ position, bots, busy, onToggleBot }) {
     kind: f.side,
     label: `${f.side === 'sell' ? 'Sold' : 'Bought'} ${shares(f.filledQuantity)} @ ${money(f.filledPrice)}`,
   }))
-  const holders = position.bots.map((h) => ({ ...h, bot: bots.find((b) => b.id === h.botId) })).filter((h) => h.bot)
+  const holders = p.bots.map((h) => ({ ...h, bot: bots.find((b) => b.id === h.botId) })).filter((h) => h.bot)
   const botName = (id) => (id ? bots.find((b) => b.id === id)?.name ?? 'Stopped bot' : 'Manual')
 
   return (
     <div className="tl-detail-inner" data-testid={`holding-detail-${sym}`}>
-      <div className="tl-detail-grid">
-        <div>
-          <div className="tl-chart-head" style={{ marginTop: 12 }}>
-            <h4 style={{ margin: 0 }}>{sym} daily close</h4>
-            <div className="tl-seg" role="group" aria-label="Price range">
-              {RANGES.map((r) => <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)}>{r}</button>)}
-            </div>
-          </div>
-          {prices.status === 'loading' && prices.points.length === 0 ? (
-            <span className="tl-skel" style={{ height: 180 }} />
-          ) : prices.points.length === 0 ? (
-            <div className="tl-chart-empty" style={{ height: 180 }}>Price history for {sym} isn’t available right now.</div>
-          ) : (
-            <ValueChart points={prices.points} markers={markers} height={180} tone="neutral" label={`${sym} daily closes`} />
-          )}
-          <p className="tl-chart-caption">
-            Alpha Engine daily closes. <span className="tl-pos">●</span> your buys{markers.some((m) => m.kind === 'sell') && <> · <span className="tl-neg">●</span> sells</>}.
-          </p>
-        </div>
-        <div>
-          <h4>Position</h4>
-          <dl className="tl-facts">
-            <dt>Shares</dt><dd>{shares(position.quantity)}</dd>
-            <dt>Average cost</dt><dd>{money(position.avgPrice)}</dd>
-            <dt>Cost basis</dt><dd>{money(position.costBasis)}</dd>
-            <dt>Last close</dt><dd>{money(position.price)} <span className="tl-muted">{position.priceSession ? sessionDate(position.priceSession) : ''}</span></dd>
-            <dt>Market value</dt><dd>{money(position.marketValue)}</dd>
-            <dt>Unrealized</dt><dd className={tone(position.unrealizedPnl)}>{signedMoney(position.unrealizedPnl)} <span>{position.unrealizedPct !== null ? `(${signedPct(position.unrealizedPct, 1)})` : ''}</span></dd>
-            <dt>Of portfolio</dt><dd>{position.weight !== null ? `${position.weight.toFixed(1)}%` : '—'}</dd>
-          </dl>
+      <p className="tl-detail-summary">
+        <strong>{shares(p.quantity)} {sym}</strong> · avg {money(p.avgPrice)} · {sessionDate(p.priceSession)} close {money(p.price)} ·{' '}
+        <span className={tone(p.unrealizedPnl)}>{signedMoney(p.unrealizedPnl)} ({signedPct(p.unrealizedPct, 1)})</span>
+        {p.weight !== null && <span className="tl-muted"> · {p.weight.toFixed(1)}% of portfolio</span>}
+      </p>
+
+      <div className="tl-chart-head">
+        <h4 style={{ margin: 0 }}>Daily close</h4>
+        <div className="tl-seg" role="group" aria-label="Price range">
+          {RANGES.map((r) => <button key={r} type="button" aria-pressed={range === r} onClick={() => setRange(r)}>{r}</button>)}
         </div>
       </div>
+      {prices.status === 'loading' && prices.points.length === 0 ? (
+        <span className="tl-skel" style={{ height: 180 }} />
+      ) : prices.points.length === 0 ? (
+        <div className="tl-chart-empty" style={{ height: 180 }}>Price history for {sym} isn’t available right now.</div>
+      ) : (
+        <ValueChart points={prices.points} markers={markers} height={180} label={`${sym} daily closes`} />
+      )}
+      <p className="tl-chart-caption">Alpha Engine daily closes · dots mark your fills.</p>
 
-      <div className="tl-detail-grid">
+      <div className="tl-detail-grid" style={{ marginTop: 6 }}>
         <div>
-          <h4>Transactions</h4>
-          {fills === null ? (
-            <span className="tl-skel" style={{ height: 60 }} />
-          ) : fills.length === 0 ? (
-            <p className="tl-muted tl-small">No fills recorded for {sym}.</p>
-          ) : (
-            <table className="tl-table tl-small">
-              <tbody>
-                {fills.slice(0, 6).map((f) => (
-                  <tr key={f.id}>
-                    <td>{f.side === 'sell' ? 'Sold' : 'Bought'} {shares(f.filledQuantity)} <span className="tl-sub">{botName(f.botId)}</span></td>
-                    <td className="r">{money(f.filledPrice)}<span className="tl-sub">{f.replaySession ? `Replay of ${sessionDate(f.replaySession)}` : sessionDate(f.filledAt)}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <h4>Research</h4>
+          <ResearchCard symbol={sym} />
         </div>
         <div>
           <h4>{holders.length ? `Bots holding ${sym}` : 'Bots'}</h4>
           {holders.length === 0 ? (
-            <p className="tl-muted tl-small">No bot holds this position.</p>
+            <p className="tl-small tl-muted m0">No running bot holds this position.</p>
           ) : (
             <ul className="tl-list">
               {holders.map(({ bot, quantity }) => (
-                <li key={bot.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '8px 0' }}>
+                <li key={bot.id} className="tl-mini-row">
                   <span>
                     <Link to={`/bots/${bot.id}`} state={{ from: 'home' }}>{bot.name}</Link>
-                    <span className="tl-sub">{plural(quantity, 'share')} · <span className={`tl-status tl-status--${bot.status}`} style={{ fontSize: 12.5 }}>{bot.status === 'running' ? 'Running' : bot.status === 'paused' ? 'Paused' : bot.status}</span></span>
+                    <span className="tl-sub">{plural(quantity, 'share')} · {STATUS_LABELS[bot.status] ?? bot.status}</span>
                   </span>
                   {!bot.stopped && (
                     <button type="button" className="tl-btn tl-btn--sm" onClick={() => onToggleBot(bot)} disabled={busy[bot.id]} aria-label={`${bot.running ? 'Pause' : 'Resume'} ${bot.name}`}>
@@ -117,11 +91,26 @@ export default function HoldingDetail({ position, bots, busy, onToggleBot }) {
             </ul>
           )}
           <div className="tl-detail-actions">
-            <Link className="tl-btn tl-btn--sm" to={`/bots/new?ticker=${encodeURIComponent(sym)}`}>Create a bot for {sym}</Link>
-            <Link className="tl-btn tl-btn--sm tl-btn--quiet" to={`/assets/${encodeURIComponent(sym)}`}>Research {sym} →</Link>
+            <Link className="tl-btn tl-btn--sm" to={`/bots/new?ticker=${encodeURIComponent(sym)}`}>Build a bot for {sym}</Link>
           </div>
         </div>
       </div>
+
+      {fills && fills.length > 0 && (
+        <details className="tl-evidence tl-evidence--quiet" style={{ marginTop: 14 }}>
+          <summary>{plural(fills.length, 'fill')}</summary>
+          <table className="tl-table tl-small" style={{ marginTop: 6 }}>
+            <tbody>
+              {fills.slice(0, 10).map((f) => (
+                <tr key={f.id}>
+                  <td>{f.side === 'sell' ? 'Sold' : 'Bought'} {shares(f.filledQuantity)} <span className="tl-sub">{botName(f.botId)}</span></td>
+                  <td className="r">{money(f.filledPrice)}<span className="tl-sub">{f.replaySession ? `Replay of ${sessionDate(f.replaySession)}` : sessionDate(f.filledAt)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
     </div>
   )
 }

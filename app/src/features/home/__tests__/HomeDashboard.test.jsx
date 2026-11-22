@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { get, getPage, put } from '../../../api/client'
+import { del, get, getPage, post, put } from '../../../api/client'
 import HomeDashboard from '../HomeDashboard'
 import { normalizeBot, normalizeValuation, toNumberOrNull } from '../homeApi'
 
@@ -77,9 +77,12 @@ describe('HomeDashboard', () => {
     mockApi()
     renderHome()
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('$99,966.75')
-    expect(screen.getByTestId('portfolio-total-pnl')).toHaveTextContent('−$33.25 (−0.03%) since start')
+    expect(screen.getByTestId('portfolio-total-pnl')).toHaveTextContent('−$33.25 (−0.03%)')
+    expect(screen.getByText('since you started with $100,000')).toBeInTheDocument()
+    expect(screen.getByTestId('as-of')).toHaveTextContent('Valued at Nov 20 closing prices · simulated fills replay the Nov 19 close')
+    // Two sessions are shown as values, not as a misleading line chart.
+    expect(screen.getByTestId('value-compare')).toHaveTextContent('Nov 19 close$100,000.00')
     expect(screen.getByText('Simulated portfolio')).toBeInTheDocument()
-    expect(screen.getByText(/Prices at the Nov 20 close/)).toBeInTheDocument()
     expect(screen.getByText('Cash').nextSibling).toHaveTextContent('$98,253.95')
     // With only two sessions the one-day change equals the total, so it isn't repeated.
     expect(screen.queryByTestId('balance-today')).not.toBeInTheDocument()
@@ -94,7 +97,8 @@ describe('HomeDashboard', () => {
     expect(row).toHaveTextContent('−$33.25')
     fireEvent.click(row)
     const detail = await screen.findByTestId('holding-detail-AAPL')
-    expect(within(detail).getByRole('link', { name: 'Create a bot for AAPL' })).toHaveAttribute('href', '/bots/new?ticker=AAPL')
+    expect(within(detail).getByRole('link', { name: 'Build a bot for AAPL' })).toHaveAttribute('href', '/bots/new?ticker=AAPL')
+    expect(within(detail).queryByRole('link', { name: /Research AAPL/ })).not.toBeInTheDocument()
     expect(within(detail).getByRole('button', { name: 'Pause Momentum AAPL' })).toBeInTheDocument()
   })
 
@@ -149,7 +153,8 @@ describe('HomeDashboard', () => {
     await screen.findByTestId('balance-equity')
     const calledPaths = get.mock.calls.map(([p]) => p)
     expect(calledPaths.some((p) => /rank|recommend|signal|predict/.test(p))).toBe(false)
-    expect(screen.getByRole('link', { name: 'Market research' })).toHaveAttribute('href', '/research')
+    // The general research dashboard isn't linked while it's being rebuilt.
+    expect(document.querySelector('a[href="/research"]')).toBeNull()
   })
 
   it('shows unavailable values (not $0) and a connect prompt when no account is connected', async () => {
@@ -158,7 +163,7 @@ describe('HomeDashboard', () => {
     renderHome()
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('—')
     expect(screen.queryByText(/\$0\.00/)).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Connect a paper account' })).toHaveAttribute('href', '/profile/broker')
+    expect(screen.getByRole('link', { name: 'Connect a paper account' })).toHaveAttribute('href', '/profile')
   })
 
   it('pauses a running bot via PUT /bots/:id', async () => {
@@ -195,7 +200,7 @@ describe('HomeDashboard', () => {
     mockApi({ botList: [], value: { ...valuation, cash: 100000, equity: 100000, totalPnl: 0, positions: [], fillCount: 0 } })
     renderHome()
     expect(await screen.findByText('You don’t have any bots yet.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Explore bots' })).toHaveAttribute('href', '/bots')
+    expect(screen.getByRole('link', { name: 'Build a bot' })).toHaveAttribute('href', '/bots')
     expect(screen.getByTestId('portfolio-all-cash')).toHaveTextContent('All cash — $100,000.00 available to your bots')
     // Sections with nothing to show stay out of the way.
     expect(screen.queryByRole('heading', { name: /Holdings/ })).not.toBeInTheDocument()
@@ -212,12 +217,13 @@ describe('HomeDashboard', () => {
       },
     })
     renderHome()
-    const rows = within(await screen.findByTestId('activity-list')).getAllByRole('listitem')
-    expect(rows.map((r) => r.textContent.replace(/\s+/g, ' '))).toEqual([
-      expect.stringContaining('Paper sell order placed · MSFT · Mean Reversion'),
-      expect.stringContaining('Bought 5 AAPL · Momentum AAPL'),
-      expect.stringContaining('Paper buy order placed · AAPL · Momentum AAPL'),
+    const rows = within(await screen.findByTestId('activity-list')).getAllByRole('listitem').filter((li) => li.parentElement.dataset.testid === 'activity-list')
+    // One row per trade: the AAPL order and its fill are a single row with a decision trail.
+    expect(rows.map((r) => r.querySelector('.tl-feed-title').textContent.replace(/\s+/g, ' '))).toEqual([
+      'Sell order placed · MSFT · Mean Reversion',
+      'Bought 5 AAPL · Momentum AAPL',
     ])
+    expect(rows[1]).toHaveTextContent('Decision trail · 2 steps')
   })
 
   it('folds routine checks into one summary line', async () => {
@@ -236,6 +242,29 @@ describe('HomeDashboard', () => {
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('—')
     expect(screen.getAllByRole('alert')[0]).toHaveTextContent('couldn’t be loaded')
     expect(screen.getAllByTestId('bot-card')).toHaveLength(2)
+  })
+})
+
+describe('emergency stop on Home', () => {
+  it('turns on with explicit consequences and a reason, then shows a banner that can clear it', async () => {
+    mockApi()
+    let active = false
+    const base = get.getMockImplementation()
+    get.mockImplementation(async (path, params) => (path === '/risk/kill-switch' ? { active, ...(active ? { activatedAt: '2026-11-22T06:00:00Z', reason: 'Checking a bot' } : {}) } : base(path, params)))
+    post.mockImplementation(async (path, body) => { if (path === '/risk/kill-switch') { active = true; return { active: true, botsPaused: 1 } } throw new Error(path) })
+    del.mockImplementation(async (path) => { if (path === '/risk/kill-switch') { active = false; return { active: false } } throw new Error(path) })
+    renderHome()
+    fireEvent.click(await screen.findByRole('button', { name: 'Emergency stop' }))
+    const dialog = screen.getByRole('dialog', { name: 'Stop everything?' })
+    expect(dialog).toHaveTextContent('Cancellation is requested for every open order.')
+    expect(dialog).toHaveTextContent('New orders are refused until you clear the stop.')
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: 'Checking a bot' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Stop everything' }))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/risk/kill-switch', { reason: 'Checking a bot' }))
+    expect(await screen.findByTestId('emergency-banner')).toHaveTextContent('Emergency stop is on')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear stop' }))
+    await waitFor(() => expect(screen.queryByTestId('emergency-banner')).not.toBeInTheDocument())
+    expect(del).toHaveBeenCalledWith('/risk/kill-switch')
   })
 })
 

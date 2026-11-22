@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { describeAction, describeGuards, needsTriggerPrice } from '../describeBot'
-import { collapseRoutine, inLens } from '../ActivityFeed'
+import { collapseRoutine, groupTrades, inLens } from '../ActivityFeed'
 import { niceTicks } from '../ValueChart'
 import { signedMoney, signedPct, money, sessionDate } from '../format'
 
@@ -45,9 +45,30 @@ describe('activity feed', () => {
   })
 
   it('filters by lens', () => {
-    expect(inLens({ category: 'fill' }, 'trades')).toBe(true)
+    expect(inLens({ kind: 'trade', steps: [] }, 'trades')).toBe(true)
     expect(inLens({ category: 'skip' }, 'trades')).toBe(false)
     expect(inLens({ category: 'risk' }, 'decisions')).toBe(true)
+  })
+
+  it('folds a trade into one row (signal, order, fill) with the outcome as its head, keeping every step', () => {
+    const rows = groupTrades([
+      { id: 'f', category: 'fill', title: 'Bought 1 SPY', symbol: 'SPY', botId: 'b', executionId: 'x1', at: '2026-11-21T10:00:05Z' },
+      { id: 'o', category: 'order', title: 'Buy order placed', symbol: 'SPY', botId: 'b', executionId: 'x1', testScenario: true, at: '2026-11-21T10:00:01Z' },
+      { id: 's', category: 'signal', title: 'Signal: buy', symbol: 'SPY', botId: 'b', at: '2026-11-21T10:00:00Z' },
+      { id: 'w', category: 'skip', title: 'Waiting — cooldown', symbol: 'SPY', botId: 'b', at: '2026-11-21T09:00:00Z' },
+    ])
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ kind: 'trade', title: 'Bought 1 SPY', testScenario: true, filled: true })
+    expect(rows[0].steps.map((x) => x.id)).toEqual(['s', 'o', 'f'])
+    expect(rows[1].id).toBe('w')
+  })
+
+  it('heads a cancelled trade with its outcome, not the order', () => {
+    const [row] = groupTrades([
+      { id: 'o', category: 'order', title: 'Sell order placed', symbol: 'SPY', botId: 'b', executionId: 'x2', at: '2026-11-21T10:00:01Z' },
+      { id: 'c', category: 'order', outcome: true, title: 'Order cancelled', symbol: 'SPY', botId: 'b', executionId: 'x2', at: '2026-11-21T10:00:00Z' },
+    ])
+    expect(row).toMatchObject({ title: 'Order cancelled', filled: false })
   })
 })
 
