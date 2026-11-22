@@ -270,7 +270,9 @@ export async function evaluateBot(bot, ticker) {
     if (positions) return
     positions = await getPositions(bot.userId)
     currentQty = getPositionQty(positions, ticker)
-    side = currentQty > 0 ? 'sell' : 'buy'
+    // Loading positions must never override a direction already derived from the bot's
+    // config or research (a buy bot whose owner holds the ticker would otherwise sell).
+    if (side !== 'buy' && side !== 'sell') side = currentQty > 0 ? 'sell' : 'buy'
   }
 
   const context = {

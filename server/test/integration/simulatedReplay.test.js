@@ -101,6 +101,23 @@ async function drain() { for (let i = 0; i < 20; i++) if (!(await worker.runOnce
 const as = () => ({ Authorization: `Bearer ${token}` })
 
 describe('historical-replay simulator', () => {
+  it('keeps a buy bot buying when the owner already holds the ticker through another bot', async () => {
+    // Regression: loading positions (position_limit / trend_filter) used to override the
+    // configured direction with "sell if any shares are held", turning buy bots into sellers.
+    await h.db.execution.create({ data: { id: 'exe_prior', userId: 'usr_a', portfolioId: 'por_a', botId: 'bot_other', ticker: 'SPY', direction: 'buy',
+      quantity: 2, price: 540.25, status: 'filled', filledQuantity: 2, filledPrice: 540.25, fees: 0, commission: 0, origin: 'bot',
+      brokerOrderId: `simreplay_${SESSION}_tp_exe_prior`, createdAt: new Date('2026-11-21T21:00:00Z'), filledAt: new Date('2026-11-21T21:00:00Z') } })
+    await h.db.bot.create({ data: { id: 'bot_b', userId: 'usr_a', portfolioId: 'por_a', name: 'B', enabled: true, botType: 'rule_based',
+      config: { direction: 'buy', tickers: ['SPY'], capitalMode: 'allocated', allocatedAmount: 5_000, maxOrderNotional: 1_000 } } })
+    await h.db.botRule.create({ data: { id: 'rule_pl', botId: 'bot_b', name: 'Position Limit', type: 'position_limit', config: { maxShares: 100, maxQuantity: 100 } } })
+    setMarketOpenState(true)
+    const bot = { ...(await h.db.bot.findUnique({ where: { id: 'bot_b' } })), rules: await h.db.botRule.findMany({ where: { botId: 'bot_b' } }) }
+    await replayTick({ session: SESSION, onTick: async () => engine.evaluateBot(bot, 'SPY') })
+    const created = await h.db.execution.findMany({ where: { botId: 'bot_b' } })
+    expect(created).toHaveLength(1)
+    expect(created[0].direction).toBe('buy')
+  })
+
   it('is enabled only by explicit, complete configuration', () => {
     expect(simulationConfig().enabled).toBe(true)
     expect(simulationConfig({ BROKER_MODE: 'simulated' }).enabled).toBe(false)
