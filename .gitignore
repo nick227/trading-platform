@@ -45,6 +45,8 @@ test-results/
 playwright-report/
 app/test-results/
 app/playwright-report/
+screens-design-system/
+app/screens-design-system/
 
 # Cache & temporary
 .cache/
