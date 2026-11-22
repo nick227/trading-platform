@@ -553,3 +553,31 @@ describe('refused orders (status "refused")', () => {
     expect(acct).toMatchObject({ hasFills: false, fillCount: 0, openPositions: {} })
   })
 })
+
+describe.each([
+  ['current', { status: 'refused', refusalReason: 'bot_allocation_exceeded', cancelReason: null }],
+  ['legacy', { status: 'cancelled', cancelReason: 'refused:bot_allocation_exceeded' }],
+])('refusal parity (%s shape): recovery and history', (shape, fields) => {
+  const mk = async () => {
+    await addBot('bot1', { config: { allocatedAmount: 2_000, maxOrderNotional: 5_000 } })
+    return h.db.execution.create({ data: { id: `exe_${shape}`, userId: 'usr_a', portfolioId: 'por_usr_a', botId: 'bot1', ticker: 'SPY', direction: 'buy', quantity: 15, price: 100,
+      clientOrderId: `tp_${shape}`, lockedAt: new Date(clock.getTime() - 60 * 60_000), lockedBy: 'dead-worker', createdAt: new Date(clock), ...fields } })
+  }
+
+  it('recovery and reconciliation leave it untouched and nothing is sent', async () => {
+    const e = await mk()
+    expect(await recoverStuckJobs()).toBe(0)
+    advance(10 * 60_000)
+    await drain()
+    expect(await exec(e.id)).toMatchObject(fields)
+    expect(broker().submitCalls).toBe(0)
+  })
+
+  it('history: no fill, no holding, no pending exposure', async () => {
+    await mk()
+    expect(await computeBotAccounting('bot1', { prismaClient: h.db })).toMatchObject({ hasFills: false, fillCount: 0, openPositions: {} })
+    const ok = await queue({ botId: 'bot1', quantity: 15, price: 100 })
+    await runOnce()
+    expect((await exec(ok.id)).status).toBe('submitted')
+  })
+})

@@ -1,3 +1,4 @@
+import { refusalReasonOf, refusalText } from '../api/services/botDashboardService'
 import { useState, useEffect, useCallback } from 'react'
 import executionsService from '../api/services/executionsService.js'
 import pricesService from '../api/services/pricesService.js'
@@ -183,12 +184,13 @@ export function buildRecentActivity(executions) {
       }
     }
     
-    if (e.status === 'refused') {
+    const refusal = refusalReasonOf(e)
+    if (refusal) {
       return {
         event: `Refused ${isBuy ? 'Buy' : 'Sell'} Order: ${e.ticker}`,
-        value: e.refusalReason || 'Stopped before it was sent',
+        value: refusalText(refusal),
         time: formatTimeAgo(e.createdAt),
-        type: 'cancelled',
+        type: 'refused',
         ticker: e.ticker,
         quantity: e.quantity,
         price: e.price
