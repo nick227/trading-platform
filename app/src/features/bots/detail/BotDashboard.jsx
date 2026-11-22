@@ -167,8 +167,8 @@ function PendingOrders({ executions, onCancelled }) {
     setBusy((b) => ({ ...b, [x.id]: true }))
     setErrors((e) => ({ ...e, [x.id]: null }))
     try {
-      await post(`/executions/${encodeURIComponent(x.id)}/cancel`, {})
-      onCancelled()
+      const r = await post(`/executions/${encodeURIComponent(x.id)}/cancel`, {})
+      onCancelled(r?.cancelOutcome === 'requested' ? 'Cancellation requested — the order won’t be sent, or will be cancelled at the broker.' : 'Order cancelled.')
     } catch (err) {
       setErrors((e) => ({ ...e, [x.id]: err?.code === 'NOT_CANCELLABLE' ? 'Too late to cancel — it’s already being filled.' : 'Couldn’t cancel. Try again.' }))
     } finally {
@@ -501,7 +501,7 @@ export default function BotDashboard() {
       <WhatItDoes bot={bot} onEdit={() => setSheet('rules')} />
       <WhatItSees bot={bot} timeline={activity.timeline} />
       <WhyItActed activity={{ ...activity, researchBot: research }} status={status} onRetry={refreshActivity} />
-      <WhatHappened bot={bot} fills={fills} activity={activity} onCancelled={() => { setNotice('Cancellation requested.'); refreshActivity() }} />
+      <WhatHappened bot={bot} fills={fills} activity={activity} onCancelled={(msg) => { setNotice(msg); refreshActivity() }} />
 
       <AdvancedDetails bot={bot} />
 

@@ -204,13 +204,13 @@ describe('What has happened (capital and performance)', () => {
 
   it('lists open orders with a working Cancel', async () => {
     mockApi({ executions: [{ id: 'x9', ticker: 'SPY', direction: 'buy', quantity: 3, status: 'queued', createdAt: '2026-11-20T15:00:00Z' }] })
-    post.mockResolvedValue({ id: 'x9', status: 'cancelled' })
+    post.mockResolvedValue({ id: 'x9', status: 'cancelled', cancelOutcome: 'cancelled' })
     renderPage()
     const pending = await screen.findByTestId('pending-orders')
     expect(pending).toHaveTextContent('Buy 3 SPY')
     fireEvent.click(within(pending).getByRole('button', { name: 'Cancel order' }))
     await waitFor(() => expect(post).toHaveBeenCalledWith('/executions/x9/cancel', {}))
-    expect(await screen.findByText('Cancellation requested.')).toBeInTheDocument()
+    expect(await screen.findByText('Order cancelled.')).toBeInTheDocument()
   })
 
   it('explains when an order can no longer be cancelled', async () => {

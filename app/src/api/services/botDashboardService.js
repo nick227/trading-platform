@@ -281,6 +281,7 @@ const sessionLabel = (s) => new Date(`${s}T12:00:00Z`).toLocaleDateString('en-US
 const CANCEL_TEXT = {
   'refused:sell_exceeds_attributable_holdings': 'Refused: the bot can only sell shares it bought itself.',
   emergency_stop: 'Cancelled by the emergency stop.',
+  user_cancel: 'Cancelled by you.',
 }
 export function cancelText(reason) {
   if (!reason) return 'This order was cancelled.'

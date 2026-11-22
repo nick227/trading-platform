@@ -44,6 +44,33 @@ beforeEach(async () => {
 
 const as = (token) => ({ Authorization: `Bearer ${token}` })
 
+describe('order cancellation', () => {
+  it('cancels an unclaimed order outright, releases its intent key, and audits it', async () => {
+    await h.db.execution.update({ where: { id: 'exe_a' }, data: { activeIntentKey: 'bot:bot_a:SPY:buy', botId: 'bot_a' } })
+    const res = await request(app.server).post('/api/executions/exe_a/cancel').set(as(tokenA)).send({})
+    expect(res.status).toBe(200)
+    expect(res.body.data).toMatchObject({ status: 'cancelled', cancelOutcome: 'cancelled', activeIntentKey: null, cancelReason: 'user_cancel' })
+    const audits = await h.db.executionAudit.findMany({ where: { executionId: 'exe_a' } })
+    expect(audits.map((a) => a.eventType)).toEqual(['cancelled'])
+  })
+
+  it('only requests cancellation for an order a worker has claimed; the worker finalizes it', async () => {
+    await h.db.execution.update({ where: { id: 'exe_a' }, data: { status: 'processing', lockedAt: new Date(), lockedBy: 'worker-1' } })
+    const res = await request(app.server).post('/api/executions/exe_a/cancel').set(as(tokenA)).send({})
+    expect(res.status).toBe(200)
+    expect(res.body.data).toMatchObject({ status: 'processing', cancelOutcome: 'requested' })
+    expect(res.body.data.cancelRequestedAt).toBeTruthy()
+    expect((await h.db.executionAudit.findMany({ where: { executionId: 'exe_a' } })).map((a) => a.eventType)).toEqual(['cancel_requested'])
+  })
+
+  it('refuses finished orders and other users’ orders', async () => {
+    await h.db.execution.update({ where: { id: 'exe_a' }, data: { status: 'filled' } })
+    expect((await request(app.server).post('/api/executions/exe_a/cancel').set(as(tokenA)).send({})).status).toBe(409)
+    expect((await request(app.server).post('/api/executions/exe_b/cancel').set(as(tokenA)).send({})).status).toBe(403)
+    expect((await h.db.execution.findUnique({ where: { id: 'exe_b' } })).status).toBe('queued')
+  })
+})
+
 describe('risk routes', () => {
   it('require authentication', async () => {
     expect((await request(app.server).post('/api/risk/kill-switch').send({ reason: 'x' })).status).toBe(401)
