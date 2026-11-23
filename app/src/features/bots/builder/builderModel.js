@@ -66,9 +66,9 @@ export function initCreateDraft(template, data = {}, pinnedTicker = null) {
   let triggerType = 'schedule'
   if (isResearch) {
     triggerType = 'alpha_research'
-  } else if (priceRule) {
+  } else if (priceRule && priceRule.enabled !== false) {
     triggerType = 'price_threshold'
-  } else if (trendRule) {
+  } else if (trendRule && trendRule.enabled !== false) {
     triggerType = 'trend_filter'
   }
 
@@ -115,20 +115,20 @@ export function initCreateDraft(template, data = {}, pinnedTicker = null) {
 
     // More settings / Limits & Schedules
     marketHours: {
-      on: Boolean(hours),
+      on: Boolean(hours && hours.enabled !== false),
       extended: Boolean(hours?.config?.allowPremarket || hours?.config?.allowAfterHours),
     },
     cooldown: {
-      on: Boolean(cd),
+      on: Boolean(cd && cd.enabled !== false),
       hours: cd ? cooldownHours(cd.config) : '24',
     },
     positionLimit: {
-      on: Boolean(pos),
+      on: Boolean(pos && pos.enabled !== false),
       maxShares: String(pos?.config?.maxShares ?? pos?.config?.maxQuantity ?? 100),
       maxPositions: pos?.config?.maxPositions ?? null,
     },
     dailyLoss: {
-      on: Boolean(loss),
+      on: Boolean(loss && loss.enabled !== false),
       maxLoss: String(loss?.config?.maxLoss ?? 500),
       maxDailyLossPct: loss?.config?.maxDailyLossPct ?? null,
     },
@@ -155,9 +155,9 @@ export function initEditDraft(bot) {
   let triggerType = 'schedule'
   if (isResearch) {
     triggerType = 'alpha_research'
-  } else if (priceRule) {
+  } else if (priceRule && priceRule.enabled !== false) {
     triggerType = 'price_threshold'
-  } else if (trendRule) {
+  } else if (trendRule && trendRule.enabled !== false) {
     triggerType = 'trend_filter'
   }
 
@@ -208,20 +208,20 @@ export function initEditDraft(bot) {
 
     // More settings / Limits
     marketHours: {
-      on: Boolean(hours),
+      on: Boolean(hours && hours.enabled !== false),
       extended: Boolean(hours?.config?.allowPremarket || hours?.config?.allowAfterHours),
     },
     cooldown: {
-      on: Boolean(cd),
+      on: Boolean(cd && cd.enabled !== false),
       hours: cd ? cooldownHours(cd.config) : '24',
     },
     positionLimit: {
-      on: Boolean(pos),
+      on: Boolean(pos && pos.enabled !== false),
       maxShares: String(pos?.config?.maxShares ?? pos?.config?.maxQuantity ?? 100),
       maxPositions: pos?.config?.maxPositions ?? null,
     },
     dailyLoss: {
-      on: Boolean(loss),
+      on: Boolean(loss && loss.enabled !== false),
       maxLoss: String(loss?.config?.maxLoss ?? 500),
       maxDailyLossPct: loss?.config?.maxDailyLossPct ?? null,
     },
@@ -313,107 +313,205 @@ export function validateBuilderDraft(draft, { buyingPower = null } = {}) {
 
 /**
  * Formats the full desired rules array for the transactional bot configuration API.
- * Preserves rule IDs, names, and enabled states from originalRules when editing.
- * Omitting a rule signals deletion on the backend.
+ * Preserves rule IDs, names, configurations, and exact order from originalRules.
+ * A disabled rule remains persisted with enabled: false.
+ * Only an explicitly removed rule (in draft.removedRuleIds or draft.removedRuleTypes) is omitted and deleted.
  */
 export function formatDesiredRules(draft, originalRules = []) {
   const orig = Array.isArray(originalRules) ? originalRules : []
   const rules = []
-  const findPrev = (type) => orig.find((r) => r.type === type)
+  const seenTypes = new Set()
 
-  // 1. Price trigger (price_threshold)
-  if (draft.triggerType === 'price_threshold') {
+  const removedIds = draft.removedRuleIds instanceof Set
+    ? draft.removedRuleIds
+    : new Set(Array.isArray(draft.removedRuleIds) ? draft.removedRuleIds : [])
+  const removedTypes = draft.removedRuleTypes instanceof Set
+    ? draft.removedRuleTypes
+    : new Set(Array.isArray(draft.removedRuleTypes) ? draft.removedRuleTypes : [])
+
+  // 1. Process original rules in their exact order
+  for (const prev of orig) {
+    if (!prev || !prev.type) continue
+    if (prev.id && removedIds.has(prev.id)) continue
+    if (removedTypes.has(prev.type)) continue
+
+    seenTypes.add(prev.type)
+
+    if (prev.type === 'price_threshold') {
+      const isTrigger = draft.triggerType === 'price_threshold'
+      const op = draft.trigger?.operator || (draft.direction === 'sell' ? 'below' : 'above')
+      const priceVal = toNumberOrNull(draft.trigger?.price)
+      const validPrice = priceVal !== null && priceVal > 0 ? priceVal : (prev.config?.price ?? 0)
+      rules.push({
+        ...(prev.id ? { id: prev.id } : {}),
+        name: prev.name || (op === 'below' ? 'Price Below Threshold' : 'Price Above Threshold'),
+        type: 'price_threshold',
+        config: isTrigger && priceVal !== null && priceVal > 0
+          ? { operator: op, price: validPrice }
+          : (prev.config || { operator: op, price: validPrice }),
+        enabled: isTrigger,
+      })
+    } else if (prev.type === 'trend_filter') {
+      const isTrend = draft.triggerType === 'trend_filter'
+      rules.push({
+        ...(prev.id ? { id: prev.id } : {}),
+        name: prev.name || 'Trend Filter',
+        type: 'trend_filter',
+        config: prev.config && typeof prev.config === 'object' ? prev.config : { symbol: 'SPY' },
+        enabled: isTrend,
+      })
+    } else if (prev.type === 'market_hours') {
+      const isOn = Boolean(draft.marketHours?.on)
+      rules.push({
+        ...(prev.id ? { id: prev.id } : {}),
+        name: prev.name || 'Market Hours',
+        type: 'market_hours',
+        config: isOn
+          ? {
+              allowPremarket: Boolean(draft.marketHours?.extended),
+              allowAfterHours: Boolean(draft.marketHours?.extended),
+            }
+          : (prev.config || {}),
+        enabled: isOn,
+      })
+    } else if (prev.type === 'cooldown') {
+      const isOn = Boolean(draft.cooldown?.on)
+      const h = toNumberOrNull(draft.cooldown?.hours)
+      rules.push({
+        ...(prev.id ? { id: prev.id } : {}),
+        name: prev.name || 'Cooldown',
+        type: 'cooldown',
+        config: isOn && h !== null && h > 0
+          ? { windowMs: Math.round(h * HOUR) }
+          : (prev.config || { windowMs: 24 * HOUR }),
+        enabled: isOn,
+      })
+    } else if (prev.type === 'position_limit') {
+      const isOn = Boolean(draft.positionLimit?.on)
+      const shares = toNumberOrNull(draft.positionLimit?.maxShares)
+      rules.push({
+        ...(prev.id ? { id: prev.id } : {}),
+        name: prev.name || 'Position Limit',
+        type: 'position_limit',
+        config: isOn && shares !== null && shares > 0
+          ? {
+              maxShares: shares,
+              maxQuantity: shares,
+              ...(draft.positionLimit?.maxPositions ? { maxPositions: draft.positionLimit.maxPositions } : {}),
+            }
+          : (prev.config || { maxShares: 100, maxQuantity: 100 }),
+        enabled: isOn,
+      })
+    } else if (prev.type === 'daily_loss') {
+      const isOn = Boolean(draft.dailyLoss?.on)
+      const loss = toNumberOrNull(draft.dailyLoss?.maxLoss)
+      rules.push({
+        ...(prev.id ? { id: prev.id } : {}),
+        name: prev.name || 'Daily Loss Limit',
+        type: 'daily_loss',
+        config: isOn && loss !== null && loss > 0
+          ? {
+              maxLoss: loss,
+              ...(draft.dailyLoss?.maxDailyLossPct ? { maxDailyLossPct: draft.dailyLoss.maxDailyLossPct } : {}),
+            }
+          : (prev.config || { maxLoss: 500 }),
+        enabled: isOn,
+      })
+    } else {
+      // Unmanaged or fixed rules (e.g. time_window)
+      rules.push({
+        ...(prev.id ? { id: prev.id } : {}),
+        name: prev.name,
+        type: prev.type,
+        config: prev.config,
+        enabled: prev.enabled ?? true,
+      })
+    }
+  }
+
+  // 2. Append newly activated rules that were not in originalRules
+  if (draft.triggerType === 'price_threshold' && !seenTypes.has('price_threshold')) {
     const op = draft.trigger?.operator || (draft.direction === 'sell' ? 'below' : 'above')
     const priceVal = toNumberOrNull(draft.trigger?.price) ?? 0
-    const prev = findPrev('price_threshold')
     rules.push({
-      ...(prev?.id ? { id: prev.id } : {}),
-      name: prev?.name || (op === 'below' ? 'Price Below Threshold' : 'Price Above Threshold'),
+      name: op === 'below' ? 'Price Below Threshold' : 'Price Above Threshold',
       type: 'price_threshold',
       config: { operator: op, price: priceVal },
-      enabled: prev?.enabled ?? true,
+      enabled: true,
     })
+    seenTypes.add('price_threshold')
   }
 
-  // 2. Trend filter (trend_filter)
-  if (draft.triggerType === 'trend_filter') {
-    const prev = findPrev('trend_filter')
+  if (draft.triggerType === 'trend_filter' && !seenTypes.has('trend_filter')) {
     rules.push({
-      ...(prev?.id ? { id: prev.id } : {}),
-      name: prev?.name || 'Trend Filter',
+      name: 'Trend Filter',
       type: 'trend_filter',
-      config: prev?.config && typeof prev.config === 'object' ? prev.config : { symbol: 'SPY' },
-      enabled: prev?.enabled ?? true,
+      config: { symbol: 'SPY' },
+      enabled: true,
     })
+    seenTypes.add('trend_filter')
   }
 
-  // 3. Market hours (market_hours)
-  if (draft.marketHours?.on) {
-    const prev = findPrev('market_hours')
+  if (draft.marketHours?.on && !seenTypes.has('market_hours')) {
     rules.push({
-      ...(prev?.id ? { id: prev.id } : {}),
-      name: prev?.name || 'Market Hours',
+      name: 'Market Hours',
       type: 'market_hours',
       config: {
-        allowPremarket: Boolean(draft.marketHours.extended),
-        allowAfterHours: Boolean(draft.marketHours.extended),
+        allowPremarket: Boolean(draft.marketHours?.extended),
+        allowAfterHours: Boolean(draft.marketHours?.extended),
       },
-      enabled: prev?.enabled ?? true,
+      enabled: true,
     })
+    seenTypes.add('market_hours')
   }
 
-  // 4. Cooldown (cooldown)
-  if (draft.cooldown?.on) {
-    const h = toNumberOrNull(draft.cooldown.hours) ?? 24
-    const prev = findPrev('cooldown')
+  if (draft.cooldown?.on && !seenTypes.has('cooldown')) {
+    const h = toNumberOrNull(draft.cooldown?.hours) ?? 24
     rules.push({
-      ...(prev?.id ? { id: prev.id } : {}),
-      name: prev?.name || 'Cooldown',
+      name: 'Cooldown',
       type: 'cooldown',
-      config: {
-        windowMs: Math.round(h * HOUR),
-      },
-      enabled: prev?.enabled ?? true,
+      config: { windowMs: Math.round(h * HOUR) },
+      enabled: true,
     })
+    seenTypes.add('cooldown')
   }
 
-  // 5. Position limit (position_limit)
-  if (draft.positionLimit?.on) {
-    const shares = toNumberOrNull(draft.positionLimit.maxShares) ?? 100
-    const prev = findPrev('position_limit')
+  if (draft.positionLimit?.on && !seenTypes.has('position_limit')) {
+    const shares = toNumberOrNull(draft.positionLimit?.maxShares) ?? 100
     rules.push({
-      ...(prev?.id ? { id: prev.id } : {}),
-      name: prev?.name || 'Position Limit',
+      name: 'Position Limit',
       type: 'position_limit',
       config: {
         maxShares: shares,
         maxQuantity: shares,
-        ...(draft.positionLimit.maxPositions ? { maxPositions: draft.positionLimit.maxPositions } : {}),
+        ...(draft.positionLimit?.maxPositions ? { maxPositions: draft.positionLimit.maxPositions } : {}),
       },
-      enabled: prev?.enabled ?? true,
+      enabled: true,
     })
+    seenTypes.add('position_limit')
   }
 
-  // 6. Daily loss (daily_loss)
-  if (draft.dailyLoss?.on) {
-    const loss = toNumberOrNull(draft.dailyLoss.maxLoss) ?? 500
-    const prev = findPrev('daily_loss')
+  if (draft.dailyLoss?.on && !seenTypes.has('daily_loss')) {
+    const loss = toNumberOrNull(draft.dailyLoss?.maxLoss) ?? 500
     rules.push({
-      ...(prev?.id ? { id: prev.id } : {}),
-      name: prev?.name || 'Daily Loss Limit',
+      name: 'Daily Loss Limit',
       type: 'daily_loss',
       config: {
         maxLoss: loss,
-        ...(draft.dailyLoss.maxDailyLossPct ? { maxDailyLossPct: draft.dailyLoss.maxDailyLossPct } : {}),
+        ...(draft.dailyLoss?.maxDailyLossPct ? { maxDailyLossPct: draft.dailyLoss.maxDailyLossPct } : {}),
       },
-      enabled: prev?.enabled ?? true,
+      enabled: true,
     })
+    seenTypes.add('daily_loss')
   }
 
-  // 7. Fixed rules (e.g. trend_filter, time_window, or unmanaged rule types)
+  // Include any extra fixed rules from draft.fixed not already seen
   for (const f of draft.fixed || []) {
-    if (!rules.some((r) => r.type === f.type)) {
+    if (f && f.type && !seenTypes.has(f.type)) {
+      if (f.id && removedIds.has(f.id)) continue
+      if (removedTypes.has(f.type)) continue
       rules.push(f)
+      seenTypes.add(f.type)
     }
   }
 
@@ -572,7 +670,7 @@ export function mapServerValidationError(error, rulesSent = []) {
     return {
       stale: true,
       currentUpdatedAt: details.updatedAt || null,
-      message: 'This bot was updated in another window. You can overwrite with your current settings or reload the latest bot.',
+      message: 'This bot was updated in another window. Reload the latest version to retry saving.',
       fieldErrors: {},
     }
   }
@@ -645,16 +743,13 @@ export async function updateBotConfiguration({
   draft,
   api,
   expectedUpdatedAt,
-  overwrite = false,
 }) {
   const patch = buildConfigPatch(draft, bot.config || {})
   const rules = formatDesiredRules(draft, bot.rules || [])
 
-  const effectiveUpdatedAt = overwrite
-    ? undefined
-    : expectedUpdatedAt !== undefined
-      ? expectedUpdatedAt
-      : draft.updatedAt || undefined
+  const effectiveUpdatedAt = expectedUpdatedAt !== undefined
+    ? expectedUpdatedAt
+    : draft.updatedAt || undefined
 
   const payload = {
     ...(effectiveUpdatedAt ? { expectedUpdatedAt: effectiveUpdatedAt } : {}),
@@ -669,7 +764,7 @@ export async function updateBotConfiguration({
 /**
  * Canonical unified save: wraps updateBotConfiguration for backward compatibility.
  */
-export async function saveBotAlgorithm({ bot, builtBot, draft, api, expectedUpdatedAt, overwrite = false }) {
+export async function saveBotAlgorithm({ bot, builtBot, draft, api, expectedUpdatedAt }) {
   try {
     const updated = await updateBotConfiguration({
       bot,
@@ -680,15 +775,14 @@ export async function saveBotAlgorithm({ bot, builtBot, draft, api, expectedUpda
         symbolsText: (builtBot.tickers || []).join(', '),
         capital: String(builtBot.config?.allocatedAmount ?? ''),
         maxPerOrder: String(builtBot.config?.maxOrderNotional ?? ''),
-        marketHours: { on: Boolean(builtBot.rules?.find((r) => r.type === 'market_hours')) },
-        cooldown: { on: Boolean(builtBot.rules?.find((r) => r.type === 'cooldown')) },
-        positionLimit: { on: Boolean(builtBot.rules?.find((r) => r.type === 'position_limit')) },
-        dailyLoss: { on: Boolean(builtBot.rules?.find((r) => r.type === 'daily_loss')) },
-        triggerType: builtBot.rules?.find((r) => r.type === 'price_threshold') ? 'price_threshold' : 'schedule',
+        marketHours: { on: Boolean(builtBot.rules?.find((r) => r.type === 'market_hours' && r.enabled !== false)) },
+        cooldown: { on: Boolean(builtBot.rules?.find((r) => r.type === 'cooldown' && r.enabled !== false)) },
+        positionLimit: { on: Boolean(builtBot.rules?.find((r) => r.type === 'position_limit' && r.enabled !== false)) },
+        dailyLoss: { on: Boolean(builtBot.rules?.find((r) => r.type === 'daily_loss' && r.enabled !== false)) },
+        triggerType: builtBot.rules?.find((r) => r.type === 'price_threshold' && r.enabled !== false) ? 'price_threshold' : 'schedule',
       },
       api,
       expectedUpdatedAt,
-      overwrite,
     })
     return { ok: true, bot: updated }
   } catch (error) {

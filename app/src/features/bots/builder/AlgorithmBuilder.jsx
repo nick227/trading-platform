@@ -218,7 +218,7 @@ export default function AlgorithmBuilder() {
       .join(' · ') || 'Limits & schedule'
 
   // Save action (unified transactional API)
-  const handleSave = async ({ overwrite = false } = {}) => {
+  const handleSave = async () => {
     setTouched(true)
 
     if (hasErrors) {
@@ -245,8 +245,7 @@ export default function AlgorithmBuilder() {
           bot: originalBot,
           draft,
           api: { put },
-          expectedUpdatedAt: overwrite ? undefined : draft.updatedAt,
-          overwrite,
+          expectedUpdatedAt: draft.updatedAt,
         })
         setSubmitting(false)
         navigate(`/bots/${botId}`, { state: { updated: true } })
@@ -953,15 +952,6 @@ export default function AlgorithmBuilder() {
             <div style={{ display: 'grid', gap: 10 }}>
               <span>{staleError.message}</span>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <Button
-                  variant="secondary"
-                  size="small"
-                  type="button"
-                  onClick={() => handleSave({ overwrite: true })}
-                  data-testid="overwrite-btn"
-                >
-                  Overwrite with current settings
-                </Button>
                 <Button
                   variant="secondary"
                   size="small"

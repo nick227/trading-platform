@@ -334,13 +334,12 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     expect(await screen.findByTestId('bot-detail-page')).toHaveTextContent('bot-detail bot_live1 updated')
   })
 
-  it('handles 409 STALE_BOT without discarding draft, offering Overwrite and Reload actions', async () => {
+  it('handles 409 STALE_BOT without discarding draft, offering reload action and no blind overwrite', async () => {
     mockApi({ bot: existingBot, rules: existingBot.rules })
     const staleError = new Error('HTTP 409')
     staleError.code = 'STALE_BOT'
     staleError.details = { code: 'STALE_BOT', message: 'This bot changed since it was loaded.', updatedAt: '2026-11-22T23:45:00.000Z' }
     put.mockRejectedValueOnce(staleError)
-    put.mockResolvedValueOnce({ id: 'bot_live1', updatedAt: '2026-11-22T23:46:00.000Z' })
 
     renderBuilder('/bots/bot_live1/edit')
     await screen.findByLabelText('Bot name')
@@ -348,24 +347,41 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     fireEvent.change(screen.getByLabelText('Simulated capital'), { target: { value: '9000' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
 
-    // Notice appears
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
+    // Verify expectedUpdatedAt was sent (no blind submission)
+    expect(put.mock.calls[0][1].expectedUpdatedAt).toBe('2026-11-22T23:30:00.000Z')
+
+    // Stale notice appears
     const staleNotice = await screen.findByTestId('stale-bot-notice')
     expect(staleNotice).toBeInTheDocument()
     expect(staleNotice).toHaveTextContent(/This bot was updated in another window/)
 
-    // Draft is NOT discarded: simulated capital still has 9000
+    // User draft is NOT discarded: value 9000 remains in the input
     expect(screen.getByLabelText('Simulated capital')).toHaveValue('9000')
 
-    // Click Overwrite button
-    const overwriteBtn = screen.getByTestId('overwrite-btn')
-    fireEvent.click(overwriteBtn)
+    // Blind overwrite button is REMOVED (Correction 2)
+    expect(screen.queryByTestId('overwrite-btn')).not.toBeInTheDocument()
 
-    await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
-    const secondCallPayload = put.mock.calls[1][1]
-    expect(secondCallPayload.expectedUpdatedAt).toBeUndefined()
-    expect(secondCallPayload.config.allocatedAmount).toBe(9000)
+    // Reload action is available
+    const reloadBtn = screen.getByTestId('reload-btn')
+    expect(reloadBtn).toBeInTheDocument()
 
-    expect(await screen.findByTestId('bot-detail-page')).toHaveTextContent('bot-detail bot_live1 updated')
+    // Mock fresh bot response on reload
+    const freshBot = {
+      ...existingBot,
+      updatedAt: '2026-11-22T23:45:00.000Z',
+      allocation: 7500,
+      config: { ...existingBot.config, allocatedAmount: 7500 },
+    }
+    mockApi({ bot: freshBot, rules: existingBot.rules })
+
+    fireEvent.click(reloadBtn)
+
+    // Form reloads fresh bot and clears stale warning
+    await waitFor(() => {
+      expect(screen.queryByTestId('stale-bot-notice')).not.toBeInTheDocument()
+    })
+    expect(screen.getByLabelText('Simulated capital')).toHaveValue('7500')
   })
 
   it('clicking Cancel navigates back to bot detail without saving', async () => {

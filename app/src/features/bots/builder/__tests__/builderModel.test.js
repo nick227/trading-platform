@@ -215,44 +215,87 @@ describe('builderModel', () => {
       })
     })
 
-    it('formatDesiredRules formats complete desired rule set with stable identity', () => {
+    it('disabled rules remain persisted with enabled: false while preserving IDs, names, config, and order', () => {
       const originalRules = [
         { id: 'rule_price', type: 'price_threshold', name: 'Price trigger', config: { operator: 'above', price: 400 }, enabled: true },
         { id: 'rule_hours', type: 'market_hours', name: 'Market hours', config: { allowPremarket: false, allowAfterHours: false }, enabled: true },
         { id: 'rule_cd', type: 'cooldown', name: 'Cooldown', config: { windowMs: 86400000 }, enabled: true },
       ]
 
-      // Draft updates trigger price to 420, removes cooldown, adds daily loss, and keeps market hours
+      // Draft updates trigger price to 420, keeps market hours on, disables cooldown, and adds daily loss
       const draft = {
         direction: 'buy',
         triggerType: 'price_threshold',
         trigger: { operator: 'above', price: '420' },
         marketHours: { on: true, extended: false },
-        cooldown: { on: false },
+        cooldown: { on: false }, // disabled, NOT explicitly removed
         positionLimit: { on: false },
         dailyLoss: { on: true, maxLoss: '300' },
         fixed: [],
       }
 
       const desired = formatDesiredRules(draft, originalRules)
-      expect(desired).toHaveLength(3)
+      // All 3 original rules are preserved in order, plus the new daily loss
+      expect(desired).toHaveLength(4)
 
-      // rule_price: ID preserved, new price
-      const priceRule = desired.find((r) => r.type === 'price_threshold')
-      expect(priceRule.id).toBe('rule_price')
-      expect(priceRule.config.price).toBe(420)
+      // 1. rule_price: ID preserved, new price, enabled: true
+      expect(desired[0]).toEqual({
+        id: 'rule_price',
+        name: 'Price trigger',
+        type: 'price_threshold',
+        config: { operator: 'above', price: 420 },
+        enabled: true,
+      })
 
-      // rule_hours: ID preserved, config preserved
-      const hoursRule = desired.find((r) => r.type === 'market_hours')
-      expect(hoursRule.id).toBe('rule_hours')
+      // 2. rule_hours: ID preserved, config preserved, enabled: true
+      expect(desired[1]).toEqual({
+        id: 'rule_hours',
+        name: 'Market hours',
+        type: 'market_hours',
+        config: { allowPremarket: false, allowAfterHours: false },
+        enabled: true,
+      })
 
-      // new daily_loss: no ID (signals create on backend)
-      const lossRule = desired.find((r) => r.type === 'daily_loss')
-      expect(lossRule.id).toBeUndefined()
-      expect(lossRule.config.maxLoss).toBe(300)
+      // 3. rule_cd: ID preserved, config preserved, enabled: false (Correction 1)
+      expect(desired[2]).toEqual({
+        id: 'rule_cd',
+        name: 'Cooldown',
+        type: 'cooldown',
+        config: { windowMs: 86400000 },
+        enabled: false,
+      })
 
-      // Cooldown omitted (signals delete on backend)
-      expect(desired.find((r) => r.type === 'cooldown')).toBeUndefined()
+      // 4. new daily_loss: no ID, enabled: true
+      expect(desired[3]).toEqual({
+        name: 'Daily Loss Limit',
+        type: 'daily_loss',
+        config: { maxLoss: 300 },
+        enabled: true,
+      })
+    })
+
+    it('only an explicitly removed rule is omitted and deleted', () => {
+      const originalRules = [
+        { id: 'rule_price', type: 'price_threshold', name: 'Price trigger', config: { operator: 'above', price: 400 }, enabled: true },
+        { id: 'rule_hours', type: 'market_hours', name: 'Market hours', config: { allowPremarket: false, allowAfterHours: false }, enabled: true },
+        { id: 'rule_cd', type: 'cooldown', name: 'Cooldown', config: { windowMs: 86400000 }, enabled: true },
+      ]
+
+      // Draft explicitly removes rule_cd
+      const draft = {
+        direction: 'buy',
+        triggerType: 'price_threshold',
+        trigger: { operator: 'above', price: '400' },
+        marketHours: { on: true, extended: false },
+        cooldown: { on: false },
+        positionLimit: { on: false },
+        dailyLoss: { on: false },
+        removedRuleIds: new Set(['rule_cd']),
+      }
+
+      const desired = formatDesiredRules(draft, originalRules)
+      expect(desired).toHaveLength(2)
+      expect(desired.find((r) => r.id === 'rule_cd')).toBeUndefined()
     })
 
     it('supports all seven BotRule types and preserves IDs and untouched config', () => {
@@ -405,7 +448,7 @@ describe('builderModel', () => {
       })
     })
 
-    it('updateBotConfiguration omits expectedUpdatedAt when overwrite: true', async () => {
+    it('updateBotConfiguration always sends expectedUpdatedAt to prevent blind overwrites (Correction 2)', async () => {
       const api = { put: vi.fn().mockResolvedValue({ id: 'bot_1' }) }
       const bot = { id: 'bot_1', updatedAt: '2026-11-22T23:40:00.000Z', config: {}, rules: [] }
       const draft = { isEdit: true, updatedAt: '2026-11-22T23:40:00.000Z', name: 'Bot', symbolsText: 'AAPL', capital: '1000', maxPerOrder: '500', triggerType: 'schedule', marketHours: { on: false }, cooldown: { on: false }, positionLimit: { on: false }, dailyLoss: { on: false } }
@@ -414,11 +457,10 @@ describe('builderModel', () => {
         bot,
         draft,
         api,
-        overwrite: true,
       })
 
       const callPayload = api.put.mock.calls[0][1]
-      expect(callPayload.expectedUpdatedAt).toBeUndefined()
+      expect(callPayload.expectedUpdatedAt).toBe('2026-11-22T23:40:00.000Z')
     })
 
     it('mapServerValidationError maps INVALID_CONFIG, INVALID_RULE, and STALE_BOT correctly', () => {
