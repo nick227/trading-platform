@@ -281,11 +281,28 @@ const sessionLabel = (s) => new Date(`${s}T12:00:00Z`).toLocaleDateString('en-US
 
 const CANCEL_TEXT = {
   emergency_stop: 'Cancelled by the emergency stop.',
+  emergency_stop_pre_submit: 'Cancelled by the emergency stop before it was sent.',
   user_cancel: 'Cancelled by you.',
+  user_cancel_requested_pre_submit: 'Cancelled by you before it was sent.',
+  broker_cancelled_after_user_request: 'Cancelled at the broker, as you requested.',
+  cancelled_before_broker_ack: 'Cancelled before the broker confirmed it.',
 }
 export function cancelText(reason) {
   if (!reason) return 'This order was cancelled.'
-  return CANCEL_TEXT[reason] ?? reason
+  if (CANCEL_TEXT[reason]) return CANCEL_TEXT[reason]
+  if (reason.startsWith('broker_status:')) return `Closed by the broker (${reason.slice(14).replace(/_/g, ' ')}).`
+  if (reason.startsWith('broker_rejected:')) return `Rejected by the broker: ${reason.slice(16)}.`
+  return 'This order was cancelled.'
+}
+
+const FAIL_TEXT = {
+  max_attempts_exceeded: 'Couldn’t be sent after several attempts. Nothing reached the broker.',
+}
+export function failText(reason) {
+  if (!reason) return 'The order was rejected.'
+  if (FAIL_TEXT[reason]) return FAIL_TEXT[reason]
+  if (reason.startsWith('broker_rejected:')) return `Rejected by the broker: ${reason.slice(16)}.`
+  return 'The order was rejected.'
 }
 
 // Pre-submission refusals: the order was never sent.
@@ -376,7 +393,7 @@ export function executionToItems(x, { hasCreatedEvent }) {
       })
       break
     case 'failed':
-      items.push({ id: `exe:${x.id}:failed`, at: x.updatedAt, symbol: x.symbol, category: 'error', outcome: true, executionId: x.id, diagnostics, title: 'Order rejected', explanation: x.cancelReason || 'The order was rejected.' })
+      items.push({ id: `exe:${x.id}:failed`, at: x.updatedAt, symbol: x.symbol, category: 'error', outcome: true, executionId: x.id, diagnostics, title: 'Order rejected', explanation: failText(x.cancelReason) })
       break
     case 'cancelled':
       items.push({ id: `exe:${x.id}:cancelled`, at: x.updatedAt, symbol: x.symbol, category: 'order', outcome: true, executionId: x.id, diagnostics, title: 'Order cancelled', explanation: cancelText(x.cancelReason) })
