@@ -270,6 +270,19 @@ export async function evaluateBot(bot, ticker) {
     return // No price data available
   }
 
+  // paper_daily: once the bot has acted on this symbol at the current session's close, it is
+  // done until the next close. Say so before the rules run, so the reason shown is accurate
+  // (not "cooldown", which would suggest another trade within the hour).
+  const simNow = simulationConfig()
+  if (simNow.enabled && simNow.mode === 'paper_daily') {
+    const session = await simSessionOrNull(simNow)
+    if (session && (await prisma.execution.findFirst({ where: { botId: bot.id, ticker, simSession: session }, select: { id: true } }))) {
+      await maybeLogRuleBlock(bot, ticker, bot.config?.direction ?? null, { id: 'session_once', type: 'session_once', name: 'Once per session' },
+        { reason: 'acted_this_session', detail: session })
+      return
+    }
+  }
+
   // Prepare context for strategy evaluation
   let positions = null
   let currentQty = null

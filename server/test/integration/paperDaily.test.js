@@ -110,6 +110,22 @@ describe('paper_daily simulator', () => {
     expect(skips.some((e) => e.metadata?.reason === 'acted_this_session')).toBe(true)
   })
 
+  it('after acting, the reason shown is "done for this session", even with a cooldown rule', async () => {
+    // Own bot id: the engine's in-memory cooldown and log-dedupe caches are keyed by bot.
+    await h.db.bot.create({ data: { id: 'bot_cd', userId: 'usr_a', portfolioId: 'por_a', name: 'CD', enabled: true, botType: 'rule_based',
+      config: { direction: 'buy', tickers: ['SPY'], capitalMode: 'allocated', allocatedAmount: 10_000, maxOrderNotional: 1_000 } } })
+    await h.db.botRule.create({ data: { id: 'rule_cd_pt', botId: 'bot_cd', name: 'Price', type: 'price_threshold', config: { operator: 'above', price: 100 } } })
+    await h.db.botRule.create({ data: { id: 'rule_cd', botId: 'bot_cd', name: 'Cooldown', type: 'cooldown', config: { windowMs: 3_600_000 } } })
+    const cd = async () => ({ ...(await h.db.bot.findUnique({ where: { id: 'bot_cd' } })), rules: await h.db.botRule.findMany({ where: { botId: 'bot_cd' } }) })
+    const tickCd = () => replayTick({ resolveSession: () => currentSimSession(), onTick: async (t) => engine.evaluateBot(await cd(), t) })
+    await tickCd(); await drain()
+    expect(await h.db.execution.count({ where: { botId: 'bot_cd', status: 'filled' } })).toBe(1)
+    await tickCd()
+    const skips = (await h.db.botEvent.findMany({ where: { botId: 'bot_cd', type: 'execution_skipped' } })).map((e) => e.metadata?.reason)
+    expect(skips).toContain('acted_this_session')
+    expect(skips).not.toContain('cooldown_active')
+  })
+
   it('acts again on the next session’s close (prices advance day to day)', async () => {
     await tick(); await drain()
     setSession(DAY2, 551.5, { at: '2026-11-23T23:00:00Z' })
