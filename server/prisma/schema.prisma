@@ -224,6 +224,8 @@ model Execution {
   cancelReason   String?
   // Set with status 'refused': the pre-submission check that stopped the order (never sent).
   refusalReason  String?
+  // Simulator: the daily session (YYYY-MM-DD) this order was decided on and fills at.
+  simSession     String?
   // Cancellation intent (user requested cancel). Worker attempts broker cancel when applicable.
   cancelRequestedAt DateTime?
   cancelRequestedBy String?

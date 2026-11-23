@@ -108,7 +108,9 @@ export default function AccountPage() {
               <span className="tl-tag tl-tag--sim">Simulated</span>
             </div>
             <p className="tl-small tl-muted" style={{ margin: '0 0 16px', lineHeight: 1.5 }}>
-              Bots trade simulated money in an isolated simulator: fills replay the {sessionDate(brokerStatus.session, { year: true })} close. No broker is connected or needed, and live trading is disabled.
+              {brokerStatus.mode === 'paper_daily'
+                ? <>Bots trade simulated money in an isolated simulator: they act once per trading day on that day’s close (latest: {sessionDate(brokerStatus.session, { year: true })}). No broker is connected or needed, and live trading is disabled.</>
+                : <>Bots trade simulated money in an isolated simulator: fills replay the {sessionDate(brokerStatus.session, { year: true })} close. No broker is connected or needed, and live trading is disabled.</>}
             </p>
             <dl className="tl-facts tl-facts--left" style={{ margin: 0, paddingTop: 14, borderTop: '1px solid var(--tl-line)' }}>
               <dt>Portfolio equity</dt><dd>{valuation ? money(valuation.equity) : valuation === false ? 'Unavailable' : '…'}</dd>

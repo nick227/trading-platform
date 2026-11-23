@@ -13,16 +13,15 @@
  */
 import prisma from '../loaders/prisma.js'
 import { calculateFifoAccounting, isBrokerFill } from './botAccountingService.js'
-import { simulationConfig, isSimulatedOrderId } from './simulationService.js'
+import { currentSimSession, parseSimOrderId, simulationConfig, isSimulatedOrderId } from './simulationService.js'
 import { engineClient } from '../clients/engine.js'
 
-const REPLAY_ORDER = /^simreplay_(\d{4}-\d{2}-\d{2})_/
 const round2 = (n) => Number(n.toFixed(2))
 
-/** Market session a fill belongs to: the replayed session for simulator fills, else the fill date (UTC). */
+/** Market session a fill belongs to: the simulator session for simulator fills, else the fill date (UTC). */
 export function fillSession(exec) {
-  const m = typeof exec?.brokerOrderId === 'string' ? exec.brokerOrderId.match(REPLAY_ORDER) : null
-  if (m) return m[1]
+  const sim = parseSimOrderId(exec?.brokerOrderId)
+  if (sim) return sim.session
   const at = new Date(exec?.filledAt ?? exec?.createdAt ?? NaN)
   return Number.isNaN(at.getTime()) ? null : at.toISOString().slice(0, 10)
 }
@@ -176,7 +175,8 @@ export async function valuePortfolio(userId, { prismaClient = prisma, config = s
   const tickers = [...new Set(fills.map((f) => String(f.ticker).toUpperCase()))]
   const marks = await loadPriceMarks(tickers, { engine })
   if (config.enabled) {
-    return buildValuation({ fills, marks, startingCash: config.startingCash, source: 'simulator', session: config.session })
+    const session = config.mode === 'paper_daily' ? await currentSimSession({ config, engine }).catch(() => null) : config.session
+    return { ...buildValuation({ fills, marks, startingCash: config.startingCash, source: 'simulator', session }), simMode: config.mode }
   }
   const broker = fetchBrokerAccount ? await fetchBrokerAccount(userId) : null
   if (!broker) return { ...buildValuation({ fills, marks, source: 'none' }), cash: null, equity: null, totalPnl: null, totalPnlPct: null }
