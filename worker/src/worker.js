@@ -1,71 +1,54 @@
-import 'dotenv/config'
-import os from 'os'
 import prisma from './db/prisma.js'
-import { AlpacaClient } from './broker/alpacaClient.js'
-import { getMarketDataCredentials } from './market/marketCredentials.js'
+import { WORKER_ID } from './db/lease.js'
 import { startOrderWorker, stopOrderWorker, setInflightMap } from './queues/orderWorker.js'
-import { initDataStream, onQuote, disconnect, ensureConnected, isConnected } from './market/dataStream.js'
+import { startAlpacaStream, stopAlpacaStream } from './market/alpacaStream.js'
+import { getAlpacaClient } from './broker/alpacaClient.js'
+import { getAlpacaStream } from './broker/alpacaStream.js'
 import { startQuoteSync, checkSubscriptionRequests, expireOldSubscriptions } from './market/quoteSync.js'
 import { initCalendar, refreshCalendar, onMarketOpen, onMarketClose, getLastCalendarRefreshAt } from './market/calendar.js'
 import { startBotEngine, stopBotEngine, onPriceTick, inflightMap } from './engine/botEngine.js'
 import { log } from './logger.js'
-import { simulationConfig } from '../../server/src/services/simulationService.js'
+import { currentSimSession, simulationConfig } from '../../server/src/services/simulationService.js'
 import { startSimulationFeed, startReplayFeed } from './market/replayFeed.js'
+import { waitForSchema } from './db/schemaGate.js'
 import { decrypt } from './utils/encryption.js'
 
 // Initialize quote sync to server
 startQuoteSync()
 
-// Check for new subscription requests every 10 seconds
-setInterval(checkSubscriptionRequests, 10_000)
-
-// Expire old subscriptions every 5 minutes to reduce write amplification
-setInterval(expireOldSubscriptions, 5 * 60 * 1000)
-
-const WORKER_ID    = `${os.hostname()}-${process.pid}`
-const HEARTBEAT_MS = 5_000
-
-let heartbeatTimer = null
+// Global interval references for graceful shutdown
+let heartbeatInterval = null
+let quoteSyncInterval = null
+let calendarRefreshInterval = null
 let orderWorkerPromise = null
-let streamClient = null
+let alpacaClient = null
+let alpacaWs = null
+
+// Health state tracked in memory, reported via heartbeat
 const healthState = {
-  orderWorker: 'starting',
+  orderWorker: 'stopped',
+  alpacaWs: 'disconnected',
   alpacaRest: 'unknown',
-  alpacaWs: 'unknown',
-  calendar: 'unknown'
+  calendar: 'uninitialized',
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
-async function ensureDatabaseReady(prismaClient, maxWaitMs = 60_000) {
-  const start = Date.now()
-  let delay = 1000
-  while (Date.now() - start < maxWaitMs) {
-    try {
-      await prismaClient.$queryRaw`SELECT 1`
-      await prismaClient.bot.findFirst({ select: { id: true } })
-      await prismaClient.execution.findFirst({ select: { id: true } })
-      log.info('db_connectivity_and_schema_ok')
-      return true
-    } catch (err) {
-      log.warn({ err: err.message, retryInMs: delay }, 'db_or_schema_pending_migration, retrying...')
-      await sleep(delay)
-      delay = Math.min(delay * 1.5, 5000)
-    }
-  }
-  log.error('database_not_ready_after_timeout')
-  throw new Error('Database schema readiness check timed out')
-}
-
 async function main() {
   log.info({ workerId: WORKER_ID, env: process.env.NODE_ENV ?? 'development' }, 'worker_start')
-
-  // Wait for schema and DB migrations before starting worker loops
-  await ensureDatabaseReady(prisma)
 
   // Wire the inflight map from the bot engine into the order worker
   // so the worker can clear it when an order reaches a terminal state
   setInflightMap(inflightMap)
+
+  if (process.env.WORKER_ORDER_PROCESSING !== 'disabled') {
+    await waitForSchema()
+    log.info('schema_ready')
+  }
 
   // Controlled staging mode: WORKER_ORDER_PROCESSING=disabled verifies the database
   // and reports heartbeats only — no order worker, bot engine, or market stream, so
@@ -77,202 +60,235 @@ async function main() {
   const simProcessing = process.env.WORKER_ORDER_PROCESSING === 'simulated'
   if (simProcessing || sim.requested) {
     if (!(simProcessing && sim.enabled)) {
-      log.error({ WORKER_ORDER_PROCESSING: process.env.WORKER_ORDER_PROCESSING ?? null, BROKER_MODE: process.env.BROKER_MODE ?? null, mode: sim.mode },
-        'simulator_misconfigured: requires WORKER_ORDER_PROCESSING=simulated and BROKER_MODE=simulated; order processing not started')
+      log.error({ WORKER_ORDER_PROCESSING: process.env.WORKER_ORDER_PROCESSING ?? null, BROKER_MODE: process.env.BROKER_MODE ?? null, session: sim.session },
+        'simulator_misconfigured: requires WORKER_ORDER_PROCESSING=simulated, BROKER_MODE=simulated and SIM_REPLAY_SESSION=YYYY-MM-DD|latest; order processing not started')
       for (const k of ['orderWorker', 'alpacaWs', 'alpacaRest', 'calendar']) healthState[k] = 'disabled'
       startHeartbeat()
       return
     }
-    log.warn({ mode: sim.mode, session: sim.session }, 'simulator_mode: simulated fills only; no broker orders are submitted')
+    log.warn({ mode: sim.mode, session: sim.session ?? 'latest' },
+      sim.mode === 'paper_daily'
+        ? 'simulator_mode: paper trading on the latest daily close; no broker orders are submitted'
+        : 'simulator_mode: historical replay fills only; no broker orders are submitted')
     orderWorkerPromise = startOrderWorker().catch((err) => {
       healthState.orderWorker = 'failed'
       log.error({ err }, 'order_worker_crashed')
-      process.exit(1)
     })
     healthState.orderWorker = 'simulated'
     healthState.alpacaWs = 'disabled'
     healthState.alpacaRest = 'disabled'
-    healthState.calendar = `simulated:${sim.mode}`
+    healthState.calendar = `${sim.mode}:${sim.session ?? 'latest'}`
     startHeartbeat()
     await startBotEngine()
-    startSimulationFeed({ mode: sim.mode, session: sim.session, onTick: (ticker) => onPriceTick(ticker) })
+    startSimulationFeed({
+      mode: sim.mode,
+      session: sim.session,
+      resolveSession: sim.mode === 'paper_daily' ? () => currentSimSession({ config: sim }) : null,
+      onTick: (ticker) => onPriceTick(ticker),
+    })
     return
   }
 
   if (process.env.WORKER_ORDER_PROCESSING === 'disabled') {
-    await prisma.$queryRaw`SELECT 1`
-    log.info('db_connectivity_ok')
-    log.warn('worker_order_processing_disabled: connectivity-only mode (no order worker, bot engine, or market stream)')
-    healthState.orderWorker = 'disabled'
-    healthState.alpacaWs = 'disabled'
-    healthState.alpacaRest = 'disabled'
-    healthState.calendar = 'disabled'
+    log.warn('worker_order_processing_disabled: order worker, bot engine, and market stream are stopped')
+    for (const k of ['orderWorker', 'alpacaWs', 'alpacaRest', 'calendar']) healthState[k] = 'disabled'
     startHeartbeat()
     return
   }
 
-  // Start the order worker loop — processes queued executions continuously.
-  // Each execution carries userId → worker loads the correct BrokerAccount per order.
+  // 1. Initialize Market Calendar
+  try {
+    await initCalendar({ onMarketOpen, onMarketClose })
+    healthState.calendar = 'initialized'
+    log.info('market_calendar_initialized')
+  } catch (err) {
+    healthState.calendar = 'failed'
+    log.error({ err }, 'failed_to_initialize_market_calendar')
+  }
+
+  // Schedule periodic calendar refresh (once a day at midnight UTC)
+  calendarRefreshInterval = setInterval(async () => {
+    try {
+      await refreshCalendar()
+      log.info('market_calendar_refreshed')
+    } catch (err) {
+      log.error({ err }, 'failed_to_refresh_market_calendar')
+    }
+  }, 24 * 60 * 60 * 1000)
+
+  // 2. Fetch platform credentials from first active account to init REST & WS
+  try {
+    const account = await prisma.brokerAccount.findFirst({
+      where: { status: 'ACTIVE' },
+    })
+
+    if (account && account.encryptedApiKey && account.encryptedSecretKey) {
+      const apiKey = decrypt(account.encryptedApiKey)
+      const secretKey = decrypt(account.encryptedSecretKey)
+
+      // Initialize REST client
+      alpacaClient = getAlpacaClient(apiKey, secretKey, account.paper)
+      const clock = await alpacaClient.getClock()
+      healthState.alpacaRest = clock ? 'connected' : 'error'
+
+      // Initialize Alpaca WebSocket Stream
+      alpacaWs = getAlpacaStream(apiKey, secretKey, account.paper)
+      alpacaWs.connect()
+
+      // Handle stream connection state
+      alpacaWs.on('authenticated', () => {
+        healthState.alpacaWs = 'connected'
+        log.info('alpaca_websocket_authenticated')
+      })
+
+      alpacaWs.on('disconnect', () => {
+        healthState.alpacaWs = 'disconnected'
+        log.warn('alpaca_websocket_disconnected')
+      })
+
+      alpacaWs.on('error', (err) => {
+        healthState.alpacaWs = 'error'
+        log.error({ err }, 'alpaca_websocket_error')
+      })
+
+      // Wire price ticks from WebSocket to bot engine
+      startAlpacaStream({
+        onPrice: (ticker) => onPriceTick(ticker),
+      })
+    } else {
+      log.warn('no_active_broker_account_found_skipping_market_stream')
+    }
+  } catch (err) {
+    log.error({ err }, 'failed_to_initialize_broker_clients')
+  }
+
+  // 3. Start Order Worker
   orderWorkerPromise = startOrderWorker().catch((err) => {
     healthState.orderWorker = 'failed'
     log.error({ err }, 'order_worker_crashed')
-    process.exit(1)
   })
+  healthState.orderWorker = 'running'
 
-  // Start the heartbeat
+  // 4. Start Bot Engine (rule evaluation on price ticks)
+  try {
+    await startBotEngine()
+    log.info('bot_engine_started')
+  } catch (err) {
+    log.error({ err }, 'failed_to_start_bot_engine')
+  }
+
+  // 5. Start Heartbeat reporting to DB
   startHeartbeat()
 
-  // Market data uses an explicit service-level credential for shared price streaming.
-  // Never use an arbitrary customer account (brokerAccount.findFirst) for shared infrastructure.
-  const marketCreds = getMarketDataCredentials()
-
-  if (!marketCreds) {
-    log.warn('no service-level market data credentials configured (ALPACA_MARKET_DATA_KEY/SECRET) — live stream disabled')
-    healthState.alpacaWs = 'disabled'
-    healthState.alpacaRest = 'disabled'
-    // In dev / test, still start the bot engine and order worker for simulated ticks
-    await startBotEngine()
-    healthState.calendar = 'simulated'
-    healthState.orderWorker = 'up'
-    return
-  }
-
-  try {
-    streamClient = new AlpacaClient({
-      apiKey:    marketCreds.apiKey,
-      apiSecret: marketCreds.apiSecret,
-      paper:     marketCreds.paper
-    })
-
-    // Initialize market data stream — single WS connection for all tickers
-    initDataStream(streamClient.raw)
-    onQuote((ticker) => onPriceTick(ticker))
-    healthState.alpacaWs = isConnected() ? 'up' : 'starting'
-
-    // Initialize market calendar and schedule engine start/stop
-    const { isOpen, msUntilOpen, msUntilClose } = await initCalendar(streamClient)
-    healthState.alpacaRest = 'up'
-    healthState.calendar = 'ready'
-    healthState.orderWorker = 'up'
-
-    if (isOpen) {
-      log.info('market_open_at_boot')
-      await startBotEngine()
-      onMarketClose(msUntilClose, handleMarketClose)
-    } else {
-      log.info('market_closed_at_boot')
-      onMarketOpen(msUntilOpen, handleMarketOpen)
+  // 6. Start Quote Sync subscription management (check every 5s, expire every 60s)
+  quoteSyncInterval = setInterval(async () => {
+    try {
+      await checkSubscriptionRequests()
+      await expireOldSubscriptions()
+    } catch (err) {
+      log.error({ err }, 'quote_sync_maintenance_error')
     }
-  } catch (err) {
-    log.error({ err: err.message }, 'failed_to_initialize_market_data_stream')
-    healthState.alpacaWs = 'failed'
-    healthState.alpacaRest = 'failed'
-    await startBotEngine()
-  }
-}
+  }, 5000)
 
-async function handleMarketOpen() {
-  log.info('market_open')
-  await refreshMarketState()
-  ensureConnected()
-  await startBotEngine()
-  const { msUntilClose } = await refreshCalendar(streamClient)
-  onMarketClose(msUntilClose, handleMarketClose)
-}
-
-async function handleMarketClose() {
-  log.info('market_close')
-  await refreshMarketState()
-  stopBotEngine()
-  disconnect()
-  const { msUntilOpen } = await refreshCalendar(streamClient)
-  onMarketOpen(msUntilOpen, handleMarketOpen)
+  log.info({ workerId: WORKER_ID }, 'worker_bootstrapped_successfully')
 }
 
 // ─── Heartbeat ───────────────────────────────────────────────────────────────
 
 function startHeartbeat() {
-  const tick = async () => {
+  const recordHeartbeat = async () => {
     try {
-      const now = new Date()
-      const queueLagMs = await getQueueLagMs()
-      const connected = isConnected()
-      const health = { ...healthState, alpacaWs: connected ? 'up' : healthState.alpacaWs }
-      await prisma.workerStatus.upsert({
-        where:  { id: WORKER_ID },
-        update: {
-          lastSeen: now,
-          queueLagMs,
-          lastRestOkAt: healthState.alpacaRest === 'up' ? now : undefined,
-          lastWsOkAt: connected ? now : undefined,
-          lastCalendarRefreshAt: getLastCalendarRefreshAt() ?? undefined,
-          health
+      await prisma.systemEvent.create({
+        data: {
+          eventType: 'WORKER_HEARTBEAT',
+          severity: 'INFO',
+          source: `worker:${WORKER_ID}`,
+          message: `Worker heartbeat: orderWorker=${healthState.orderWorker}, alpacaWs=${healthState.alpacaWs}, alpacaRest=${healthState.alpacaRest}`,
+          context: {
+            workerId: WORKER_ID,
+            health: healthState,
+            lastCalendarRefresh: getLastCalendarRefreshAt(),
+            timestamp: new Date().toISOString(),
+          },
         },
-        create: {
-          id: WORKER_ID,
-          lastSeen: now,
-          startedAt: now,
-          queueLagMs,
-          lastRestOkAt: healthState.alpacaRest === 'up' ? now : undefined,
-          lastWsOkAt: connected ? now : undefined,
-          lastCalendarRefreshAt: getLastCalendarRefreshAt() ?? undefined,
-          health
-        }
       })
     } catch (err) {
-      log.warn({ err: err.message }, 'heartbeat_failed')
+      log.error({ err }, 'heartbeat_failed')
     }
   }
-  heartbeatTimer = setInterval(tick, HEARTBEAT_MS)
-  tick()
+
+  // Initial beat
+  recordHeartbeat()
+  // Beat every 30 seconds
+  heartbeatInterval = setInterval(recordHeartbeat, 30_000)
 }
 
-// ─── Graceful shutdown ────────────────────────────────────────────────────────
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+
+let shuttingDown = false
 
 async function shutdown(signal) {
-  log.info({ signal }, 'worker_shutdown')
+  if (shuttingDown) return
+  shuttingDown = true
+  log.info({ signal, workerId: WORKER_ID }, 'worker_shutting_down')
+
+  // Stop periodic intervals
+  if (heartbeatInterval) clearInterval(heartbeatInterval)
+  if (quoteSyncInterval) clearInterval(quoteSyncInterval)
+  if (calendarRefreshInterval) clearInterval(calendarRefreshInterval)
+
+  // Disconnect WebSocket
+  if (alpacaWs) {
+    try {
+      alpacaWs.disconnect()
+    } catch (err) {
+      log.error({ err }, 'error_disconnecting_alpaca_ws')
+    }
+  }
+
+  // Stop Order Worker (stops polling, waits for active lease to finish)
   stopOrderWorker()
+
+  // Stop Simulation Feed if running
+  try {
+    stopSimulationFeed()
+  } catch { /* noop */ }
+
+  // Stop Bot Engine
   stopBotEngine()
-  disconnect()
-  if (heartbeatTimer) clearInterval(heartbeatTimer)
-  if (orderWorkerPromise) await Promise.race([orderWorkerPromise, sleep(2_000)])
-  await prisma.$disconnect()
+
+  // Record final shutdown event
+  try {
+    await prisma.systemEvent.create({
+      data: {
+        eventType: 'WORKER_STOPPED',
+        severity: 'INFO',
+        source: `worker:${WORKER_ID}`,
+        message: `Worker shut down via ${signal}`,
+        context: { workerId: WORKER_ID, signal },
+      },
+    })
+    await prisma.$disconnect()
+  } catch (err) {
+    log.error({ err }, 'error_recording_shutdown_event')
+  }
+
+  log.info({ workerId: WORKER_ID }, 'worker_shutdown_complete')
   process.exit(0)
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'))
-process.on('SIGINT',  () => shutdown('SIGINT'))
+process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('uncaughtException', (err) => {
   log.error({ err }, 'uncaught_exception')
   shutdown('uncaughtException')
 })
-
-main().catch(err => {
-  log.fatal({ err }, 'startup_failed')
-  process.exit(1)
+process.on('unhandledRejection', (reason) => {
+  log.error({ reason }, 'unhandled_rejection')
 })
 
-async function refreshMarketState() {
-  if (!streamClient) return
-  try {
-    await refreshCalendar(streamClient)
-    healthState.alpacaRest = 'up'
-    healthState.calendar = 'ready'
-  } catch (err) {
-    healthState.calendar = 'degraded'
-    log.error({ err }, 'calendar_refresh_failed')
-  }
-}
-
-async function getQueueLagMs() {
-  const oldestQueued = await prisma.execution.findFirst({
-    where: { status: 'queued' },
-    orderBy: { createdAt: 'asc' },
-    select: { createdAt: true }
-  })
-  return oldestQueued ? Date.now() - oldestQueued.createdAt.getTime() : 0
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
+// Run
+main().catch((err) => {
+  log.error({ err }, 'worker_fatal_startup_error')
+  process.exit(1)
+})

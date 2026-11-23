@@ -21,7 +21,13 @@ import { engineClient } from '../../../server/src/clients/engine.js'
 import { fetchVerifiedResearchTrace, recordResearchDecision } from '../../../server/src/services/researchTraceService.js'
 import { linkResearchDecisionToExecution } from '../../../server/src/services/executionResearchService.js'
 import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
-import { simulationConfig } from '../../../server/src/services/simulationService.js'
+import { currentSimSession, simulationConfig } from '../../../server/src/services/simulationService.js'
+
+/** The simulator session now (fixed for replay, latest close for paper_daily); null if none. */
+async function simSessionOrNull(sim = simulationConfig()) {
+  if (!sim.enabled) return null
+  try { return await currentSimSession({ config: sim }) } catch { return null }
+}
 import { resolveRiskOutcome, riskPolicyConfig } from '../risk/riskOutcome.js'
 
 const REGIME_MAP = { risk_on: 'bull', risk_off: 'bear' }
@@ -43,7 +49,7 @@ export async function marketDataFor(ticker, tick) {
   if (!ctx || now - ctx.at > 60_000) {
     const value = {}
     try {
-      const sc = await engineClient.getSessionClose(ticker, sim.enabled ? sim.session : null)
+      const sc = await engineClient.getSessionClose(ticker, sim.enabled ? await simSessionOrNull(sim) : null)
       if (Number(sc?.volume) > 0) value.volume = Number(sc.volume)
       if (Number(sc?.avgVolume20) > 0) value.avgVolume = Number(sc.avgVolume20)
       if (sc?.session) value.session = sc.session
@@ -62,11 +68,13 @@ export async function marketDataFor(ticker, tick) {
 
 // Simulator (historical replay): locate the replay session's publication and judge it at
 // that session's close. Only research decisions use this clock; throttles use real time.
+// paper_daily: the latest live publication, judged at real time (research ages normally).
 function researchContext() {
   const sim = simulationConfig()
-  return sim.enabled
-    ? { locate: { mode: 'historical_replay', session: sim.session }, now: sim.clock, simulation: { mode: sim.mode, session: sim.session } }
-    : { locate: {}, now: botEngineConfig.now(), simulation: null }
+  if (sim.enabled && sim.mode === 'historical_replay') {
+    return { locate: { mode: 'historical_replay', session: sim.session }, now: sim.clock, simulation: { mode: sim.mode, session: sim.session } }
+  }
+  return { locate: {}, now: botEngineConfig.now(), simulation: sim.enabled ? { mode: sim.mode } : null }
 }
 
 // Injectable for deterministic tests (mirrors orderWorkerConfig).
@@ -440,6 +448,24 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
     return
   }
 
+  // paper_daily: a bot acts at most once per symbol per session. Prices change once a day,
+  // so a wall-clock cooldown would otherwise re-buy the same close every cycle. Any order for
+  // this session counts — filled, open, cancelled or refused. Stricter only.
+  const simCfg = simulationConfig()
+  const simSession = await simSessionOrNull(simCfg)
+  if (simCfg.enabled && !simSession) {
+    await maybeLogRuleBlock(bot, ticker, direction, { id: 'sim_session', type: 'sim_session', name: 'Market data' }, { reason: 'no_current_session' })
+    return
+  }
+  if (simCfg.mode === 'paper_daily' && simSession) {
+    const acted = await prisma.execution.findFirst({ where: { botId: bot.id, ticker, simSession }, select: { id: true } })
+    if (acted) {
+      await maybeLogRuleBlock(bot, ticker, direction, { id: 'session_once', type: 'session_once', name: 'Once per session' },
+        { reason: 'acted_this_session', detail: simSession })
+      return
+    }
+  }
+
   // Back off after a refusal at submission (e.g. allocation or daily notional exceeded):
   // re-submitting the same order every cycle would only be refused again. Stricter only.
   const refusedRecently = await prisma.execution.findFirst({
@@ -480,7 +506,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   const sim = simulationConfig()
   const outcome = resolveRiskOutcome(riskEvaluation, { quantity, ...riskPolicyConfig(process.env, { simulationEnabled: sim.enabled }) })
   const riskRecord = { basis: outcome.basis, ...outcome.verdict, marketData: executionRequest.marketData,
-    ...(outcome.testScenario ? { testScenario: { name: outcome.testScenario, mode: sim.mode, session: sim.session,
+    ...(outcome.testScenario ? { testScenario: { name: outcome.testScenario, mode: sim.mode, session: simSession ?? sim.session,
       note: 'Isolated simulator test scenario: normal risk policy would not place this order.' } } : {}) }
   if (!outcome.proceed) {
     // No execution exists yet, so the block is recorded on the bot timeline only
@@ -549,6 +575,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
             status:        'queued',
             clientOrderId: `tp_${executionId}`,
             activeIntentKey,
+            ...(simSession ? { simSession } : {}),
             signalScore:   confidence,
             pnl:           0,
             commission:    0,  // required columns; fees/commission are recorded on fill

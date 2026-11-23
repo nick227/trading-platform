@@ -1,46 +1,49 @@
 /**
- * Internal simulator — shared by the API and the worker.
+ * Internal simulator — shared by the API and the worker. Supports:
  *
- * Supports three simulation modes:
- *  1. 'continuous_paper': Real-time or ongoing paper trading marked to live/fresh market quotes.
- *  2. 'advancing_replay': Multi-session chronological progression stepping forward session by session.
- *  3. 'historical_replay': Deterministic single-session replay (default for static tests).
+ *   paper_daily        SIM_REPLAY_SESSION=latest — the session is the latest completed daily
+ *                      close Alpha Engine has, advancing every trading day. A bot acts at
+ *                      most once per symbol per session; fills are at that session's close.
+ *   historical_replay  SIM_REPLAY_SESSION=YYYY-MM-DD — every decision and fill uses that one
+ *                      session's daily close (demos and tests).
+ *   continuous_paper   SIM_MODE=continuous_paper — ongoing paper trading against live/fresh quotes.
+ *   advancing_replay   SIM_MODE=advancing_replay — multi-day progression.
  *
- * All fills are labelled `simreplay_<session>_<clientOrderId>` and are simulated in-process;
- * live broker accounts (Alpaca) are never contacted.
+ * Enabled only when BROKER_MODE=simulated and SIM_REPLAY_SESSION / SIM_MODE is valid.
  */
 import prisma from '../loaders/prisma.js'
+import { engineClient } from '../clients/engine.js'
 
 export const SIM_ORDER_PREFIX = 'simreplay_'
+export const SIM_DAILY_ORDER_PREFIX = 'simdaily_'
+const SIM_ORDER_ID = /^sim(replay|daily)_(\d{4}-\d{2}-\d{2}|[A-Za-z0-9-]+)_(.+)$/
+const SESSION_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export function simulationConfig(env = process.env) {
   const requested = env.BROKER_MODE === 'simulated'
-  const rawSession = String(env.SIM_REPLAY_SESSION ?? '').trim()
-  const validSession = /^\d{4}-\d{2}-\d{2}$/.test(rawSession) && !Number.isNaN(Date.parse(`${rawSession}T00:00:00Z`))
+  const raw = String(env.SIM_REPLAY_SESSION ?? '').trim()
+  const daily = raw.toLowerCase() === 'latest'
+  const validSession = SESSION_RE.test(raw) && !Number.isNaN(Date.parse(`${raw}T00:00:00Z`))
   const startingCash = Number(env.SIM_STARTING_CASH ?? 100_000)
+  const maxAgeDays = Number(env.SIM_MAX_SESSION_AGE_DAYS ?? 5)
   const simMode = String(env.SIM_MODE ?? '').trim().toLowerCase()
 
-  let mode = 'historical_replay'
-  let session = validSession ? rawSession : null
-  let clock = validSession ? new Date(`${rawSession}T21:00:00Z`) : null
-  let enabled = false
+  let mode = daily ? 'paper_daily' : 'historical_replay'
+  let session = validSession ? raw : null
+  let clock = validSession ? sessionClock(raw) : null
+  let enabled = requested && (daily || validSession) && Number.isFinite(startingCash) && startingCash > 0
 
   if (requested && Number.isFinite(startingCash) && startingCash > 0) {
-    if (simMode === 'continuous' || simMode === 'continuous_paper' || (simMode === '' && !validSession && env.WORKER_ORDER_PROCESSING === 'simulated')) {
+    if (simMode === 'continuous' || simMode === 'continuous_paper') {
       mode = 'continuous_paper'
       enabled = true
       session = new Date().toISOString().slice(0, 10)
-      clock = null // live wall clock
+      clock = null
     } else if (simMode === 'advancing_replay' || env.SIM_ADVANCING === 'true') {
       mode = 'advancing_replay'
       enabled = true
-      session = validSession ? rawSession : '2026-11-20'
+      session = validSession ? raw : '2026-11-20'
       clock = new Date(`${session}T21:00:00Z`)
-    } else if (validSession) {
-      mode = 'historical_replay'
-      enabled = true
-      session = rawSession
-      clock = new Date(`${rawSession}T21:00:00Z`)
     }
   }
 
@@ -48,14 +51,56 @@ export function simulationConfig(env = process.env) {
     requested,
     enabled,
     mode,
+    // Fixed for replay; resolved per use with currentSimSession() for paper_daily.
     session,
     startingCash: Number.isFinite(startingCash) && startingCash > 0 ? startingCash : null,
+    // Replay: research is judged at the replayed session's close. paper_daily: real time.
     clock,
+    referenceTicker: String(env.SIM_REFERENCE_TICKER ?? 'SPY').toUpperCase(),
+    maxSessionAgeDays: Number.isFinite(maxAgeDays) && maxAgeDays > 0 ? maxAgeDays : 5,
   }
 }
 
+/** The moment a session's daily close is attributed to (decisions, research clock, fills). */
+export function sessionClock(session) {
+  return new Date(`${session}T21:00:00Z`)
+}
+
 export function isSimulatedOrderId(id) {
-  return typeof id === 'string' && id.startsWith(SIM_ORDER_PREFIX)
+  return typeof id === 'string' && SIM_ORDER_ID.test(id)
+}
+
+/** { mode, session, clientOrderId } from a simulator order id, else null. */
+export function parseSimOrderId(id) {
+  const m = typeof id === 'string' ? id.match(SIM_ORDER_ID) : null
+  return m ? { mode: m[1] === 'daily' ? 'paper_daily' : 'historical_replay', session: m[2], clientOrderId: m[3] } : null
+}
+
+export function simOrderId(config, session, clientOrderId) {
+  return `${config.mode === 'paper_daily' ? SIM_DAILY_ORDER_PREFIX : SIM_ORDER_PREFIX}${session}_${clientOrderId}`
+}
+
+let sessionCache = { value: null, at: 0 }
+export function resetSimSessionCache() { sessionCache = { value: null, at: 0 } }
+
+/**
+ * The session the simulator trades on right now. Replay: the configured session.
+ * paper_daily: the latest completed session Alpha Engine has a close for (reference ticker),
+ * cached briefly. Fails closed when market data is missing or older than maxSessionAgeDays.
+ */
+export async function currentSimSession({ config = simulationConfig(), engine = engineClient, now = Date.now(), cacheMs = 5 * 60_000 } = {}) {
+  if (!config.enabled) return null
+  if (config.mode !== 'paper_daily') return config.session
+  if (sessionCache.value && now - sessionCache.at < cacheMs) return sessionCache.value
+  const sc = await engine.getSessionClose(config.referenceTicker)
+  const session = sc?.session
+  if (!SESSION_RE.test(String(session ?? ''))) throw Object.assign(new Error('no current market session'), { code: 'SIM_NO_SESSION' })
+  const ageDays = (now - Date.parse(`${session}T00:00:00Z`)) / 86_400_000
+  if (ageDays > config.maxSessionAgeDays) {
+    throw Object.assign(new Error(`market data is stale (latest close ${session})`), { code: 'SIM_STALE_SESSION', session })
+  }
+  sessionCache = { value: session, at: now }
+  return session
 }
 
 /**

@@ -1,12 +1,11 @@
 /**
- * Simulation Market Feed (paper trading & replay).
+ * Simulator price feed (replaces the Alpaca stream).
  *
- * Supports three operational modes:
- *  1. 'continuous_paper': Continuously polls fresh market quotes from Alpha Engine
- *     for all enabled bots' tickers, updating priceCache and advancing bot evaluation.
- *  2. 'advancing_replay': Chronologically advances through historical trading sessions,
- *     allowing multi-day simulation and strategy evaluation over changing regimes.
- *  3. 'historical_replay': Fixed single-session daily close replay (deterministic test mode).
+ * Supports:
+ *  1. 'paper_daily': Latest completed daily close from Alpha Engine, advancing each day.
+ *  2. 'historical_replay': Fixed single-session daily close replay (demos and tests).
+ *  3. 'continuous_paper': Real-time quotes polled continuously.
+ *  4. 'advancing_replay': Chronologically advances through historical trading sessions.
  */
 import prisma from '../db/prisma.js'
 import { log } from '../logger.js'
@@ -15,7 +14,7 @@ import { setMarketOpenState } from './calendar.js'
 import { engineClient } from '../../../server/src/clients/engine.js'
 
 export const replayFeedConfig = {
-  tickMs: Number(process.env.REPLAY_TICK_MS ?? 15_000),
+  tickMs: Number(process.env.REPLAY_TICK_MS ?? 30_000),
   continuousTickMs: Number(process.env.SIM_CONTINUOUS_TICK_MS ?? 15_000),
   advanceEveryNTicks: Number(process.env.SIM_ADVANCE_TICKS ?? 4),
 }
@@ -66,21 +65,32 @@ export async function continuousTick({
 }
 
 /**
- * Historical replay tick: fetches close price for the configured session date.
+ * Simulator replay tick: publishes session daily close into price cache and evaluates bots.
  */
 export async function replayTick({
-  session,
+  session: fixed,
+  resolveSession,
   onTick,
   prismaClient = prisma,
   sessionClose = (t, s) => engineClient.getSessionClose(t, s),
 }) {
+  let session = fixed
+  if (resolveSession) {
+    try {
+      session = await resolveSession()
+    } catch (err) {
+      log.warn({ err: err.message, code: err.code ?? null }, 'simulator_session_unavailable')
+      return []
+    }
+  }
+
   const tickers = await getEnabledTickers(prismaClient)
   const out = []
 
   for (const ticker of tickers) {
     try {
       const px = await sessionClose(ticker, session)
-      if (!px || (px.session && px.session !== session) || !(Number(px.close) > 0)) {
+      if (!px || px.session !== session || !(Number(px.close) > 0)) {
         log.warn({ ticker, session, got: px?.session ?? null }, 'replay_price_unavailable')
         continue
       }
@@ -132,7 +142,7 @@ export function startContinuousFeed({ onTick }) {
 /**
  * Starts the unified simulation feed based on configured mode.
  */
-export function startSimulationFeed({ mode = 'historical_replay', session = null, sessions = [], onTick }) {
+export function startSimulationFeed({ mode = 'historical_replay', session = null, resolveSession = null, sessions = [], onTick }) {
   if (mode === 'continuous_paper') {
     startContinuousFeed({ onTick })
   } else if (mode === 'advancing_replay' && Array.isArray(sessions) && sessions.length > 0) {
@@ -143,21 +153,21 @@ export function startSimulationFeed({ mode = 'historical_replay', session = null
     timer = setInterval(run, replayFeedConfig.tickMs)
     log.info({ mode: 'advancing_replay', sessionsCount: sessions.length, tickMs: replayFeedConfig.tickMs }, 'advancing_feed_started')
   } else {
-    startReplayFeed({ session: session || '2026-11-20', onTick })
+    startReplayFeed({ session, resolveSession, onTick })
   }
 }
 
 /**
- * Preserved for backward compatibility with existing tests and scripts.
+ * Replay feed startup.
  */
-export function startReplayFeed({ session, onTick }) {
+export function startReplayFeed({ session, resolveSession, onTick }) {
   setMarketOpenState(true)
   stopSimulationFeed()
 
-  const run = () => replayTick({ session, onTick }).catch((err) => log.error({ err: err.message }, 'replay_feed_error'))
+  const run = () => replayTick({ session, resolveSession, onTick }).catch((err) => log.error({ err: err.message }, 'replay_feed_error'))
   run()
   timer = setInterval(run, replayFeedConfig.tickMs)
-  log.info({ mode: 'historical_replay', session, tickMs: replayFeedConfig.tickMs }, 'replay_feed_started')
+  log.info({ session: session ?? 'latest', tickMs: replayFeedConfig.tickMs }, 'replay_feed_started')
 }
 
 export function stopSimulationFeed() {

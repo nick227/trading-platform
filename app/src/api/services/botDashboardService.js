@@ -128,6 +128,8 @@ const SKIP_REASONS = {
   trend_filter_missing_snapshot: { title: 'Skipped — trend data missing', text: () => 'Market trend data wasn’t available.' },
   trend_filter_snapshot_stale: { title: 'Skipped — trend data out of date', text: () => 'Market trend data was too old to use.' },
   prediction_already_acted: { title: 'Waiting — already acted on this research', text: (s) => `The bot already traded the current research for ${s}; it waits for new research.` },
+  acted_this_session: { title: 'Done for today', text: (s) => `The bot already acted on ${s} at the latest close. It checks again after the next trading day’s close.` },
+  no_current_session: { title: 'Waiting for market data', text: (s) => `No current daily close for ${s} yet, so the bot isn’t trading. It resumes when fresh prices arrive.` },
   refused_recently: { title: 'Waiting — last order was refused', text: (s) => `The last ${s} order was refused before it was sent, so the bot waits 15 minutes before trying again.` },
   no_research_prediction: { title: 'Waiting — no research', text: (s) => `Alpha Engine has no current ranked research for ${s}.` },
 }
@@ -336,13 +338,15 @@ export function refusalReasonOf(x) {
   return null
 }
 
-const REPLAY_ORDER = /^simreplay_(\d{4}-\d{2}-\d{2})_/
+// Simulator order ids: simreplay_<session>_… (historical replay) or simdaily_<session>_… (paper trading on daily closes).
+const SIM_ORDER = /^sim(replay|daily)_(\d{4}-\d{2}-\d{2})_/
 
 export function normalizeExecution(x) {
-  const replay = typeof x.brokerOrderId === 'string' ? x.brokerOrderId.match(REPLAY_ORDER) : null
+  const sim = typeof x.brokerOrderId === 'string' ? x.brokerOrderId.match(SIM_ORDER) : null
   return {
     brokerOrderId: x.brokerOrderId ?? null,
-    replaySession: replay ? replay[1] : null,
+    replaySession: sim ? sim[2] : null,
+    simKind: sim ? (sim[1] === 'daily' ? 'daily' : 'replay') : null,
     id: x.id,
     symbol: x.ticker ?? null,
     side: x.direction ?? null,
@@ -387,7 +391,7 @@ export function executionToItems(x, { hasCreatedEvent }) {
         id: `exe:${x.id}:fill`, at: x.filledAt ?? x.updatedAt, symbol: x.symbol, category: 'fill', executionId: x.id, diagnostics,
         title: x.status === 'filled' ? `${sideWord(x.side, true)} ${qty ?? ''} ${sym}`.replace(/\s+/g, ' ').trim() : `Partly filled: ${sym}`,
         explanation: x.replaySession
-          ? `Simulated fill at the ${sessionLabel(x.replaySession)} close${x.filledPrice !== null ? ` (${fmt(x.filledPrice)})` : ''} — historical replay, not a broker execution.`
+          ? `Simulated fill at the ${sessionLabel(x.replaySession)} close${x.filledPrice !== null ? ` (${fmt(x.filledPrice)})` : ''} — ${x.simKind === 'daily' ? 'paper trading on daily closes' : 'historical replay'}, not a broker execution.`
           : [x.filledPrice !== null ? `at ${fmt(x.filledPrice)}` : null, x.costs > 0 ? `costs ${fmt(x.costs)}` : null].filter(Boolean).join(' · ') || 'Paper fill.',
         simulated: Boolean(x.replaySession),
       })
