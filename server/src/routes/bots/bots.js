@@ -3,6 +3,7 @@ import { getEmergencyStop } from '../../services/emergencyStopService.js'
 import prisma from '../../loaders/prisma.js'
 import { getUserAlpacaCredentialsOrThrow } from '../../services/alpacaClockService.js'
 import { simulationConfig } from '../../services/simulationService.js'
+import { BotSaveError, saveBot } from '../../services/botConfigService.js'
 
 async function ensureBrokerConnectedOrReply(userId, reply) {
   // Simulator mode needs no broker: orders are filled by the internal replay simulator.
@@ -23,7 +24,49 @@ async function ensureBrokerConnectedOrReply(userId, reply) {
   }
 }
 
+/** Throwing form of the broker check, for the unified save. */
+async function ensureBroker(userId) {
+  if (simulationConfig().enabled) return
+  try {
+    await getUserAlpacaCredentialsOrThrow(userId)
+  } catch (error) {
+    if (['BROKER_NOT_CONFIGURED', 'BROKER_CREDENTIALS_INVALID', 'LIVE_TRADING_DISABLED'].includes(error?.code)) throw new BotSaveError(403, error.code, error.message)
+    throw error
+  }
+}
+
+async function handleSave(request, reply, input) {
+  try {
+    const { bot, changes, created } = await saveBot(request.user.id, input, { ensureBroker })
+    return reply.code(created ? 201 : 200).send({ data: bot, changes })
+  } catch (error) {
+    if (error instanceof BotSaveError) return reply.code(error.status).send({ error: { code: error.code, message: error.message, ...error.extra } })
+    throw error
+  }
+}
+
+const SAVE_BODY = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    templateId:        { type: 'string' },
+    portfolioId:       { type: 'string' },
+    name:              { type: 'string' },
+    enabled:           { type: 'boolean' },
+    config:            { type: 'object' },
+    rules:             { type: 'array', items: { type: 'object' } },
+    expectedUpdatedAt: { type: 'string' }
+  }
+}
+
 export default async function botsRoutes(app, opts) {
+  // Unified, transactional save of a bot and its rules (see services/botConfigService.js).
+  // POST creates; PUT updates. `config` is a deep-merge patch; `rules`, when sent, is the full set.
+  app.post('/configuration', { schema: { body: { ...SAVE_BODY, required: ['portfolioId'] } } }, async (request, reply) =>
+    handleSave(request, reply, request.body))
+  app.put('/:id/configuration', { schema: { body: SAVE_BODY } }, async (request, reply) =>
+    handleSave(request, reply, { ...request.body, id: request.params.id }))
+
   // GET /api/bots
   app.get('/', async (request, reply) => {
     const result = await botsService.getBots({ ...request.query, userId: request.user.id })
