@@ -8,6 +8,8 @@ import Disclosure from '../../../components/ui/Disclosure'
 import { Field, Input, Select } from '../../../components/ui/Field'
 import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { money, sessionDate } from '../../../ui/format'
+import AlgorithmStep from './AlgorithmStep'
+import AlgorithmIdentity, { algorithmIdentity } from '../../../ui/AlgorithmIdentity'
 import { loadWizardData, parseSymbols } from './builderData'
 import {
   buildBotFromDraft,
@@ -62,10 +64,24 @@ export default function AlgorithmBuilder() {
   const [serverFieldErrors, setServerFieldErrors] = useState({})
   const [staleError, setStaleError] = useState(null)
 
-  // Section disclosures open state
-  const [whenOpen, setWhenOpen] = useState(true)
-  const [tradeOpen, setTradeOpen] = useState(true)
-  const [moreOpen, setMoreOpen] = useState(false)
+  const [activeStep, setActiveStep] = useState(null)
+  const [focusRequest, setFocusRequest] = useState(0)
+  const formRef = useRef(null)
+  const openStep = (step) => setActiveStep((current) => current === step ? null : step)
+  const revealErrors = (fieldErrors) => {
+    const first = ['name', 'symbols', 'triggerPrice', 'minScore', 'capital', 'maxPerOrder',
+      'cooldown', 'positionLimit', 'dailyLoss', 'maxAgeHours', 'maxDriftPct'].find((key) => fieldErrors[key])
+    const step = { name: 'name', symbols: 'watch', triggerPrice: 'when', minScore: 'when',
+      capital: 'trade', maxPerOrder: 'trade' }[first] || 'more'
+    setActiveStep(step)
+    setFocusRequest((n) => n + 1)
+  }
+
+  useEffect(() => {
+    if (!focusRequest) return
+    const container = formRef.current?.querySelector(`[data-testid="section-${activeStep}"]`)
+    container?.querySelector('[aria-invalid="true"]')?.focus()
+  }, [focusRequest, activeStep])
 
   // Load data on mount
   useEffect(() => {
@@ -141,6 +157,7 @@ export default function AlgorithmBuilder() {
     setOriginalBot(tmpl)
     setDraft(initCreateDraft(tmpl, wizardData, pinnedTicker))
     setTouched(false)
+    setActiveStep(null)
     setSubmitError(null)
     setServerFieldErrors({})
     setStaleError(null)
@@ -205,11 +222,8 @@ export default function AlgorithmBuilder() {
           ? 'Benchmark trend confirmation'
           : 'Regular schedule'
 
-  const tradeMetaText = draft.symbolsText
-    ? `${draft.symbolsText} · ${draft.direction === 'sell' ? 'Sell' : draft.direction === 'buy' ? 'Buy' : 'Buy & sell'}${
-        draft.capital ? ` · $${Number(draft.capital).toLocaleString()} capital` : ''
-      }`
-    : 'Symbols & capital'
+  const tradeMetaText = `${draft.direction === 'sell' ? 'Sell shares held' : draft.direction === 'buy' ? 'Buy' : 'Follow research'}${draft.maxPerOrder ? ` · up to ${money(Number(draft.maxPerOrder))} per order` : ' · set an order limit'}`
+  const hasChanges = isEdit && JSON.stringify(draft) !== JSON.stringify(loadedDraft)
 
   const settingsMetaText =
     [
@@ -219,22 +233,14 @@ export default function AlgorithmBuilder() {
       draft.positionLimit.on && `${draft.positionLimit.maxShares} max shares`,
     ]
       .filter(Boolean)
-      .join(' · ') || 'Limits & schedule'
+      .join(' · ') || 'Review limits'
 
   // Save action (unified transactional API)
   const handleSave = async () => {
     setTouched(true)
 
     if (hasErrors) {
-      if (errors.cooldown || errors.positionLimit || errors.dailyLoss || errors.maxAgeHours || errors.maxDriftPct) {
-        setMoreOpen(true)
-      }
-      if (errors.triggerPrice || errors.minScore) {
-        setWhenOpen(true)
-      }
-      if (errors.name || errors.symbols || errors.capital || errors.maxPerOrder) {
-        setTradeOpen(true)
-      }
+      revealErrors(errors)
       return
     }
 
@@ -278,26 +284,7 @@ export default function AlgorithmBuilder() {
         setSubmitError({ message: mapped.message })
         if (mapped.fieldErrors && Object.keys(mapped.fieldErrors).length > 0) {
           setServerFieldErrors(mapped.fieldErrors)
-          if (mapped.fieldErrors.triggerPrice || mapped.fieldErrors.minScore) {
-            setWhenOpen(true)
-          }
-          if (
-            mapped.fieldErrors.name ||
-            mapped.fieldErrors.symbols ||
-            mapped.fieldErrors.capital ||
-            mapped.fieldErrors.maxPerOrder
-          ) {
-            setTradeOpen(true)
-          }
-          if (
-            mapped.fieldErrors.cooldown ||
-            mapped.fieldErrors.positionLimit ||
-            mapped.fieldErrors.dailyLoss ||
-            mapped.fieldErrors.maxAgeHours ||
-            mapped.fieldErrors.maxDriftPct
-          ) {
-            setMoreOpen(true)
-          }
+          revealErrors(mapped.fieldErrors)
         }
       }
     }
@@ -349,33 +336,13 @@ export default function AlgorithmBuilder() {
           <h1 className="tl-title">{isEdit ? `Edit ${originalBot?.name}` : 'New bot'}</h1>
           <p className="tl-lede">
             {isEdit
-              ? 'Adjust your strategy conditions, symbols, and risk limits.'
-              : 'Configure your strategy conditions, symbols, and simulated capital.'}
+              ? 'Refine what your algorithm watches, decides, and does.'
+              : 'Build an algorithm that watches, decides, and acts on your rules.'}
           </p>
         </div>
       </header>
 
       <ModeNotice mode={mode} />
-
-      {/* Live Strategy Summary */}
-      <section className="tl-builder-summary" data-testid="builder-summary" aria-label="Strategy summary">
-        <div className="tl-builder-summary-head">
-          <span className="tl-builder-summary-label">Strategy summary</span>
-          <span className="tl-small tl-muted">
-            {simulated
-              ? `Simulated money (${sessionDate(brokerStatus?.session)} close)`
-              : mode === 'paper'
-                ? 'Paper trading (simulated money)'
-                : 'Account not connected'}
-          </span>
-        </div>
-        <p className="tl-builder-summary-sentence">{actionSentence}</p>
-        <ul className="tl-builder-summary-guards" data-testid="builder-guards">
-          {guards.map((g) => (
-            <li key={g}>{g}</li>
-          ))}
-        </ul>
-      </section>
 
       {/* Starting point selector (Create mode only) */}
       {!isEdit && wizardData?.templates && wizardData.templates.length > 0 && (
@@ -402,17 +369,65 @@ export default function AlgorithmBuilder() {
         </section>
       )}
 
-      <form onSubmit={handleSubmit} noValidate>
-        <div className="tl-builder-sections">
+      <form ref={formRef} onSubmit={handleSubmit} noValidate>
+        <section className="tl-algorithm" aria-label="Your algorithm">
+          <header className="tl-algorithm-head">
+            <span className="tl-algorithm-heading-identity"><AlgorithmIdentity bot={builtBot} compact /><span><span className="tl-builder-summary-label">Your algorithm</span><span className="tl-algorithm-family">{algorithmIdentity(builtBot).label}</span></span></span>
+            <span className="tl-algorithm-status" role="status">{isEdit ? hasChanges ? 'Unsaved changes' : 'Saved configuration' : 'Draft'}</span>
+          </header>
+          <AlgorithmStep label="Name" summary={draft.name || 'Name your bot'} open={activeStep === 'name'} onToggle={() => openStep('name')} testId="section-name" quiet>
+              <Field
+                label="Bot name"
+                error={(touched ? errors.name : null) || serverFieldErrors.name || null}
+              >
+                {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
+                  <Input
+                    id={id}
+                    value={draft.name}
+                    error={(touched && errors.name) || Boolean(serverFieldErrors.name)}
+                    aria-invalid={ariaInvalid}
+                    aria-describedby={ariaDescribedby}
+                    onChange={(e) => {
+                      setServerFieldErrors((s) => ({ ...s, name: null }))
+                      setDraft((d) => ({ ...d, name: e.target.value }))
+                    }}
+                  />
+                )}
+              </Field>
+
+          </AlgorithmStep>
+          {isEdit && <p className="tl-algorithm-save-note">{hasChanges ? 'Your bot keeps its saved configuration until you save these changes.' : 'Changes here apply only when you save.'}</p>}
+          <div className="tl-algorithm-flow">
+            <AlgorithmStep label="Watch" summary={parseSymbols(draft.symbolsText).join(', ') || 'Choose symbols'} mark="○" open={activeStep === 'watch'} onToggle={() => openStep('watch')} testId="section-watch">
+              <Field
+                label="Symbols"
+                help={
+                  draft.triggerType === 'alpha_research'
+                    ? 'The bot acts only on symbols with current Alpha Engine research.'
+                    : 'Separate several symbols with commas (e.g. AAPL, MSFT).'
+                }
+                error={(touched ? errors.symbols : null) || serverFieldErrors.symbols || null}
+              >
+                {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
+                  <Input
+                    id={id}
+                    placeholder="e.g. AAPL, MSFT"
+                    value={draft.symbolsText}
+                    error={(touched && errors.symbols) || Boolean(serverFieldErrors.symbols)}
+                    aria-invalid={ariaInvalid}
+                    aria-describedby={ariaDescribedby}
+                    onChange={(e) => {
+                      setServerFieldErrors((s) => ({ ...s, symbols: null }))
+                      setDraft((d) => ({ ...d, symbolsText: e.target.value }))
+                    }}
+                  />
+                )}
+              </Field>
+
+            </AlgorithmStep>
           {/* ── Section 1: When ────────────────────────────────────────── */}
-          <Disclosure
-            label="1. When"
-            meta={triggerMetaText}
-            open={whenOpen}
-            onToggle={setWhenOpen}
-            testId="section-when"
-            className="tl-disc--card"
-          >
+          <AlgorithmStep label="When" summary={triggerMetaText} mark="◇"
+            open={activeStep === 'when'} onToggle={() => openStep('when')} testId="section-when">
             <div style={{ display: 'grid', gap: 16 }}>
               <div>
                 <label className="tl-label" style={{ marginBottom: 8, display: 'block' }}>
@@ -473,7 +488,7 @@ export default function AlgorithmBuilder() {
               </div>
 
               {draft.triggerType === 'price_threshold' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 14 }}>
                   <Field label="Condition">
                     {({ id }) => (
                       <Select
@@ -564,62 +579,13 @@ export default function AlgorithmBuilder() {
                 </p>
               )}
             </div>
-          </Disclosure>
+          </AlgorithmStep>
 
           {/* ── Section 2: Trade ────────────────────────────────────────── */}
-          <Disclosure
-            label="2. Trade"
-            meta={tradeMetaText}
-            open={tradeOpen}
-            onToggle={setTradeOpen}
-            testId="section-trade"
-            className="tl-disc--card"
-          >
+          <AlgorithmStep label="Act" summary={tradeMetaText} mark="→"
+            detail={`Capital allocated: ${draft.capital ? money(Number(draft.capital)) : 'Not set'}`}
+            open={activeStep === 'trade'} onToggle={() => openStep('trade')} testId="section-trade">
             <div style={{ display: 'grid', gap: 16 }}>
-              <Field
-                label="Bot name"
-                error={(touched ? errors.name : null) || serverFieldErrors.name || null}
-              >
-                {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
-                  <Input
-                    id={id}
-                    value={draft.name}
-                    error={(touched && errors.name) || Boolean(serverFieldErrors.name)}
-                    aria-invalid={ariaInvalid}
-                    aria-describedby={ariaDescribedby}
-                    onChange={(e) => {
-                      setServerFieldErrors((s) => ({ ...s, name: null }))
-                      setDraft((d) => ({ ...d, name: e.target.value }))
-                    }}
-                  />
-                )}
-              </Field>
-
-              <Field
-                label="Symbols"
-                help={
-                  draft.triggerType === 'alpha_research'
-                    ? 'The bot acts only on symbols with current Alpha Engine research.'
-                    : 'Separate several symbols with commas (e.g. AAPL, MSFT).'
-                }
-                error={(touched ? errors.symbols : null) || serverFieldErrors.symbols || null}
-              >
-                {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
-                  <Input
-                    id={id}
-                    placeholder="e.g. AAPL, MSFT"
-                    value={draft.symbolsText}
-                    error={(touched && errors.symbols) || Boolean(serverFieldErrors.symbols)}
-                    aria-invalid={ariaInvalid}
-                    aria-describedby={ariaDescribedby}
-                    onChange={(e) => {
-                      setServerFieldErrors((s) => ({ ...s, symbols: null }))
-                      setDraft((d) => ({ ...d, symbolsText: e.target.value }))
-                    }}
-                  />
-                )}
-              </Field>
-
               <div>
                 <label className="tl-label" style={{ marginBottom: 8, display: 'block' }}>
                   Order direction
@@ -657,9 +623,9 @@ export default function AlgorithmBuilder() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 14 }}>
                 <Field
-                  label="Simulated capital"
+                  label="Capital allocated"
                   help={`Cash available: ${money(wizardData?.buyingPower)}. Capital caps total spend.`}
                   error={(touched ? errors.capital : null) || serverFieldErrors.capital || null}
                 >
@@ -705,18 +671,28 @@ export default function AlgorithmBuilder() {
                 </Field>
               </div>
             </div>
-          </Disclosure>
+          </AlgorithmStep>
+          </div>
+          <section className="tl-algorithm-sentence" data-testid="builder-summary" aria-label="Strategy summary">
+            <p>{actionSentence}</p>
+            <span className="tl-small tl-muted">{simulated
+              ? `Simulated money (${sessionDate(brokerStatus?.session)} close)`
+              : mode === 'paper' ? 'Paper trading (simulated money)' : 'Account not connected'}</span>
+          </section>
 
           {/* ── Section 3: More settings ─────────────────────────────────── */}
           <Disclosure
-            label="3. More settings"
+            label="Limits & schedule"
             meta={settingsMetaText}
-            open={moreOpen}
-            onToggle={setMoreOpen}
+            open={activeStep === 'more'}
+            onToggle={() => openStep('more')}
             testId="section-more"
-            className="tl-disc--card"
+            className="tl-algorithm-limits"
           >
             <div style={{ display: 'grid', gap: 18 }}>
+              <ul className="tl-builder-summary-guards" data-testid="builder-guards">
+                {guards.map((g) => <li key={g}>{g}</li>)}
+              </ul>
               {/* Market hours */}
               <div className="tl-rule-row">
                 <label className="tl-check">
@@ -882,7 +858,7 @@ export default function AlgorithmBuilder() {
               {draft.triggerType === 'alpha_research' && draft.research && (
                 <div style={{ borderTop: '1px solid var(--tl-line)', paddingTop: 16, marginTop: 4, display: 'grid', gap: 14 }}>
                   <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Alpha Engine research policy</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 14 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 14 }}>
                     <Field
                       label="Maximum prediction age"
                       help="Hours since publication (1–720)"
@@ -950,7 +926,7 @@ export default function AlgorithmBuilder() {
               )}
             </div>
           </Disclosure>
-        </div>
+        </section>
 
         {/* Confirmation checkbox outside simulator */}
         {needsConfirm && (

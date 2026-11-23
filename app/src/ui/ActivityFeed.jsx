@@ -215,20 +215,21 @@ function RowDetails({ item }) {
   return null
 }
 
-export function FeedRow({ item, showBot = true }) {
+export function FeedRow({ item, showBot = true, narrative = false }) {
   const routine = ROUTINE.has(item.category)
   return (
     <li className={`tl-feed-item ${routine ? 'tl-feed-item--routine' : ''}`} title={routine ? item.explanation : undefined} data-kind={item.kind ?? item.category}>
       <FeedIcon item={item} />
       <div>
         <div className="tl-feed-title">
+          {narrative && showBot && item.botName && <Link className="tl-moment-bot" to={`/bots/${item.botId}`}>{item.botName}</Link>}
           {item.title}
           {item.symbol && !item.title.includes(item.symbol) && <> · {item.symbol}</>}
           {item.count > 1 && <span className="tl-feed-repeat" title={`Since ${dateTime(item.since)}`}>×{item.count}</span>}
           {item.testScenario && <span className="tl-tag tl-tag--warn tl-feed-tag">Test scenario</span>}
-          {showBot && item.botName && <> <span className="tl-feed-bot">· <Link to={`/bots/${item.botId}`}>{item.botName}</Link></span></>}
+          {!narrative && showBot && item.botName && <> <span className="tl-feed-bot">· <Link to={`/bots/${item.botId}`}>{item.botName}</Link></span></>}
         </div>
-        {item.explanation && !routine && <p className="tl-feed-text">{item.explanation}</p>}
+        {item.explanation && (!routine || narrative) && <p className="tl-feed-text">{item.explanation}</p>}
         {item.kind !== 'trade' && <ResearchLine research={item.research} />}
         <RowDetails item={item} />
       </div>
@@ -247,6 +248,7 @@ export default function ActivityFeed({
   testId = 'activity-list',
   routine = 'inline', // 'inline' | 'summary' — summary folds routine checks into one line
   footer = null,
+  narrative = false,
 }) {
   const [lens, setLens] = useState(initialLens)
   const [shown, setShown] = useState(limit)
@@ -271,7 +273,7 @@ export default function ActivityFeed({
         <p className="tl-feed-empty">{lens === 'all' ? empty : lens === 'trades' ? 'No orders or fills yet.' : 'No decisions recorded yet.'}</p>
       ) : (
         <ol className="tl-feed" data-testid={testId}>
-          {visible.slice(0, shown).map((item) => <FeedRow key={`${item.botId ?? ''}:${item.id}`} item={item} showBot={showBot} />)}
+          {visible.slice(0, shown).map((item) => <FeedRow key={`${item.botId ?? ''}:${item.id}`} item={item} showBot={showBot} narrative={narrative} />)}
         </ol>
       )}
       {folding && (

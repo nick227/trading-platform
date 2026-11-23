@@ -85,6 +85,7 @@ export function normalizeBot(raw, activity = null) {
   const lastMeaningful = timeline.find((i) => !['evaluation', 'skip'].includes(i.category)) ?? timeline[0] ?? null
   return {
     ...bot,
+    rulesAvailable: Array.isArray(raw?.rules),
     openPositions: raw?.openPositions && typeof raw.openPositions === 'object' ? raw.openPositions : {},
     running: bot.enabled && !bot.stopped,
     status: deriveStatus(bot, timeline),
