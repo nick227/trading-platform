@@ -354,7 +354,7 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     // Stale notice appears
     const staleNotice = await screen.findByTestId('stale-bot-notice')
     expect(staleNotice).toBeInTheDocument()
-    expect(staleNotice).toHaveTextContent(/This bot was updated in another window/)
+    expect(staleNotice).toHaveTextContent(/changed since you opened it/)
 
     // User draft is NOT discarded: value 9000 remains in the input
     expect(screen.getByLabelText('Simulated capital')).toHaveValue('9000')
@@ -366,22 +366,30 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     const reloadBtn = screen.getByTestId('reload-btn')
     expect(reloadBtn).toBeInTheDocument()
 
-    // Mock fresh bot response on reload
+    // Another window changed the per-order limit (a field this user didn't touch)
     const freshBot = {
       ...existingBot,
       updatedAt: '2026-11-22T23:45:00.000Z',
-      allocation: 7500,
-      config: { ...existingBot.config, allocatedAmount: 7500 },
+      maxPerOrder: 1800,
+      config: { ...existingBot.config, maxOrderNotional: 1800 },
     }
     mockApi({ bot: freshBot, rules: existingBot.rules })
 
     fireEvent.click(reloadBtn)
 
-    // Form reloads fresh bot and clears stale warning
+    // Rebased: the other window's change is shown, the user's edit is kept, warning cleared
     await waitFor(() => {
       expect(screen.queryByTestId('stale-bot-notice')).not.toBeInTheDocument()
     })
-    expect(screen.getByLabelText('Simulated capital')).toHaveValue('7500')
+    await waitFor(() => expect(screen.getByLabelText('Max spend per order')).toHaveValue('1800'))
+    expect(screen.getByLabelText('Simulated capital')).toHaveValue('9000')
+
+    // Saving again sends only the user's edit, guarded by the new version
+    put.mockResolvedValueOnce({ ...freshBot, updatedAt: '2026-11-22T23:50:00.000Z' })
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
+    expect(put.mock.calls[1][1].expectedUpdatedAt).toBe('2026-11-22T23:45:00.000Z')
+    expect(put.mock.calls[1][1].config).toEqual({ allocatedAmount: 9000 })
   })
 
   it('clicking Cancel navigates back to bot detail without saving', async () => {

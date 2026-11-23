@@ -145,5 +145,6 @@ Every error has the shape `{ "error": { "code", "message", …details } }`. Noth
 
 Example: `400 { "error": { "code": "INVALID_RULE", "message": "Trigger price must be greater than 0.", "ruleIndex": 0, "type": "price_threshold" } }`. Show it inline on the rule at `ruleIndex`.
 
-## Older endpoints (kept until the builder ships)
-`POST /api/bots`, `POST /api/bots/catalog/from-template`, `PUT /api/bots/:id` (replaces `config` wholesale) and `/api/bots/:id/rules*` are unchanged. They're used by the current wizard and the Edit Rules sheet. Once the builder uses this API, they'll be removed, except `PUT /api/bots/:id { enabled }`, which still serves Pause/Resume elsewhere.
+## Retired endpoints
+The unified save replaced these: `POST /api/bots`, `POST /api/bots/catalog/from-template`, and `POST/PUT/DELETE /api/bots/:id/rules*`.
+`PUT /api/bots/:id` now only pauses or resumes (`{ "enabled": true|false }`). Any other field returns `400 USE_CONFIGURATION_ENDPOINT`. The reads (`GET /api/bots`, `/:id`, `/:id/rules`, `/catalog`) are unchanged.

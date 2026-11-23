@@ -184,6 +184,7 @@ describe('builderModel', () => {
       // 1. User changes ONLY maxPerOrder from 1000 to 1500
       const draft1 = {
         isEdit: true,
+        initialDirection: 'buy',
         symbolsText: 'AAPL',
         direction: 'buy',
         capital: '5000',
@@ -201,6 +202,7 @@ describe('builderModel', () => {
       // 2. User changes symbols and capital
       const draft2 = {
         isEdit: true,
+        initialDirection: 'buy',
         symbolsText: 'MSFT, NVDA',
         direction: 'sell',
         capital: '8000',
@@ -376,15 +378,13 @@ describe('builderModel', () => {
         },
         rules: [
           {
-            name: 'Price Above Threshold',
             type: 'price_threshold',
             config: { operator: 'above', price: 410 },
             enabled: true,
           },
           {
-            name: 'Market Hours',
             type: 'market_hours',
-            config: { allowPremarket: false, allowAfterHours: false },
+            config: {},
             enabled: true,
           },
         ],
@@ -410,6 +410,8 @@ describe('builderModel', () => {
 
       const draft = {
         isEdit: true,
+        initialDirection: 'buy',
+        initialTriggerType: 'price_threshold',
         updatedAt: '2026-11-22T23:40:00.000Z',
         name: 'MSFT breakout updated',
         symbolsText: 'MSFT',
@@ -490,5 +492,58 @@ describe('builderModel', () => {
       const mappedRule = mapServerValidationError(ruleError)
       expect(mappedRule.fieldErrors.triggerPrice).toBe('Trigger price must be greater than 0.')
     })
+  })
+})
+
+describe('lossless saves (integration defects B3/B4)', () => {
+  const rules = [
+    { id: 'r1', type: 'price_threshold', name: 'Price', config: { direction: 'above', operator: 'above', price: 500 }, enabled: true },
+    { id: 'r2', type: 'market_hours', name: 'Hours', config: { allowPremarket: true, allowAfterHours: false }, enabled: true },
+    { id: 'r3', type: 'daily_loss', name: 'Loss', config: { maxDailyLossPct: 3 }, enabled: true },
+    { id: 'r4', type: 'cooldown', name: 'Hourly', config: { cooldownHours: 1, windowMs: 3_600_000 }, enabled: true },
+    { id: 'r5', type: 'cooldown', name: 'Daily', config: { windowMs: 86_400_000 }, enabled: true },
+    { id: 'r6', type: 'position_limit', name: 'Pos', config: { maxShares: 100 }, enabled: false },
+    { id: 'r7', type: 'time_window', name: 'Window', config: { start: '09:45', end: '15:30' }, enabled: true },
+    { id: 'r8', type: 'trend_filter', name: 'Trend', config: { symbol: 'QQQ', confirmationBars: 2 }, enabled: true },
+  ]
+  const bot = { id: 'b', updatedAt: 't', name: 'B', config: { tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000 }, rules }
+
+  it('a no-op edit sends every rule exactly as stored (configs, names, enabled, duplicates)', () => {
+    const sent = formatDesiredRules(initEditDraft(bot), rules)
+    expect(sent).toEqual(rules.map(({ id, type, name, config, enabled }) => ({ id, type, name, config, enabled })))
+    expect(buildConfigPatch(initEditDraft(bot), bot.config)).toEqual({})
+  })
+
+  it('editing one field changes only that field of that rule', () => {
+    const d = initEditDraft(bot)
+    const sent = formatDesiredRules({ ...d, dailyLoss: { ...d.dailyLoss, maxLoss: '250' }, trigger: { ...d.trigger, price: '520' } }, rules)
+    expect(sent.find((r) => r.id === 'r3').config).toEqual({ maxDailyLossPct: 3, maxLoss: 250 })
+    expect(sent.find((r) => r.id === 'r1').config).toEqual({ direction: 'above', operator: 'above', price: 520 })
+    expect(sent.find((r) => r.id === 'r2').config).toEqual({ allowPremarket: true, allowAfterHours: false })
+    expect(sent.find((r) => r.id === 'r5').config).toEqual({ windowMs: 86_400_000 })
+  })
+
+  it('unchecking keeps the rule (enabled:false); re-checking a disabled rule enables it', () => {
+    const d = initEditDraft(bot)
+    const sent = formatDesiredRules({ ...d, cooldown: { ...d.cooldown, on: false }, positionLimit: { ...d.positionLimit, on: true } }, rules)
+    expect(sent.find((r) => r.id === 'r4')).toMatchObject({ enabled: false, config: { cooldownHours: 1, windowMs: 3_600_000 } })
+    expect(sent.find((r) => r.id === 'r5').enabled).toBe(true)
+    expect(sent.find((r) => r.id === 'r6')).toMatchObject({ enabled: true, config: { maxShares: 100 } })
+  })
+
+  it('research bots keep an absent direction (they follow BUY and SELL research)', () => {
+    const research = { ...bot, config: { tickers: ['AAPL'], signalSource: 'alpha_research', research: { minConfidence: 0.45 } }, rules: [] }
+    const d = initEditDraft(research)
+    expect(d.direction).toBeNull()
+    expect(buildConfigPatch({ ...d, research: { ...d.research, minScore: '55' } }, research.config)).toEqual({ research: { minConfidence: 0.55 } })
+    expect(buildConfigPatch({ ...d, direction: 'buy' }, research.config)).toMatchObject({ direction: 'buy' })
+    const create = initCreateDraft({ id: 'tmpl_alpha_research', config: { tickers: [], signalSource: 'alpha_research' }, rules: [] })
+    expect(create.direction).toBeNull()
+    expect(buildConfigPatch({ ...create, symbolsText: 'AAPL' }, {})).not.toHaveProperty('direction')
+  })
+
+  it('rule bots never get a default direction written on edit', () => {
+    const legacy = { ...bot, config: { tickers: ['SPY'] } }
+    expect(buildConfigPatch(initEditDraft(legacy), legacy.config)).toEqual({})
   })
 })

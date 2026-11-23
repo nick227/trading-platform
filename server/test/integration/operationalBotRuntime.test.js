@@ -81,7 +81,9 @@ vi.mock('../../src/loaders/prisma.js', () => ({
             const bot = { ...data, createdAt: new Date(), updatedAt: new Date(), deletedAt: null }
             db.bots.set(bot.id, bot)
             return bot
-          })
+          }),
+          findUnique: vi.fn(async ({ where }) => db.bots.get(where?.id) ?? null),
+          findFirst: vi.fn(async ({ where }) => { const b = db.bots.get(where?.id); return b && !b.deletedAt ? b : null })
         },
         botRule: {
           createMany: vi.fn(async ({ data }) => {
@@ -89,7 +91,13 @@ vi.mock('../../src/loaders/prisma.js', () => ({
               db.rules.set(r.id, { ...r, createdAt: new Date(), updatedAt: new Date() })
             }
             return { count: data.length }
-          })
+          }),
+          create: vi.fn(async ({ data }) => {
+            const r = { ...data, createdAt: new Date(), updatedAt: new Date() }
+            db.rules.set(r.id, r)
+            return r
+          }),
+          findMany: vi.fn(async ({ where }) => [...db.rules.values()].filter((r) => r.botId === where?.botId))
         }
       }
       return cb(tx)
@@ -283,15 +291,18 @@ describe('Operational Bot Runtime - Verification Suite', () => {
   it('verifies complete lifecycle: creation, execution fills, PnL accounting, user isolation, and pause/stop controls', async () => {
     // 1. Alice creates bot from template
     const createRes = await request(app.server)
-      .post('/api/bots/catalog/from-template')
+      .post('/api/bots/configuration')
       .set('Authorization', `Bearer ${tokenAlice}`)
       .send({
         templateId: 'tmpl_momentum_buy',
         name: 'Alice SPY Momentum',
         portfolioId: 'por_alice',
         enabled: true,
-        capital: 5000,
-        maxPerOrder: 1000
+        config: { allocatedAmount: 5000, maxOrderNotional: 1000 },
+        rules: [
+          { name: 'Market Hours', type: 'market_hours', config: { allowPremarket: false, allowAfterHours: false } },
+          { name: 'Price Rule', type: 'price_threshold', config: { operator: 'above', price: 100 } }
+        ]
       })
     expect(createRes.status).toBe(201)
     const botAlice = createRes.body.data

@@ -8,13 +8,14 @@ import Disclosure from '../../../components/ui/Disclosure'
 import { Field, Input, Select } from '../../../components/ui/Field'
 import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { money, sessionDate } from '../../../ui/format'
-import { loadWizardData, parseSymbols } from '../new/newBotApi'
+import { loadWizardData, parseSymbols } from './builderData'
 import {
   buildBotFromDraft,
   createBotConfiguration,
   formatDesiredRules,
   initCreateDraft,
   initEditDraft,
+  rebaseDraft,
   mapServerValidationError,
   updateBotConfiguration,
   validateBuilderDraft,
@@ -54,6 +55,7 @@ export default function AlgorithmBuilder() {
   const [wizardData, setWizardData] = useState(null)
   const [originalBot, setOriginalBot] = useState(null)
   const [draft, setDraft] = useState(null)
+  const [loadedDraft, setLoadedDraft] = useState(null) // as loaded from the server, for conflict rebase
   const [touched, setTouched] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -97,7 +99,9 @@ export default function AlgorithmBuilder() {
         }
 
         setOriginalBot(fullBot)
-        setDraft(initEditDraft(fullBot))
+        const loaded = initEditDraft(fullBot)
+        setLoadedDraft(loaded)
+        setDraft(loaded)
         setWizardData({
           buyingPower: accountRes?.buying_power ?? null,
         })
@@ -202,7 +206,7 @@ export default function AlgorithmBuilder() {
           : 'Regular schedule'
 
   const tradeMetaText = draft.symbolsText
-    ? `${draft.symbolsText} · ${draft.direction === 'sell' ? 'Sell' : 'Buy'}${
+    ? `${draft.symbolsText} · ${draft.direction === 'sell' ? 'Sell' : draft.direction === 'buy' ? 'Buy' : 'Buy & sell'}${
         draft.capital ? ` · $${Number(draft.capital).toLocaleString()} capital` : ''
       }`
     : 'Symbols & capital'
@@ -318,8 +322,12 @@ export default function AlgorithmBuilder() {
         ...botRes,
         rules: Array.isArray(botRes.rules) && botRes.rules.length ? botRes.rules : Array.isArray(rulesRes) ? rulesRes : [],
       }
+      const latest = initEditDraft(fullBot)
       setOriginalBot(fullBot)
-      setDraft(initEditDraft(fullBot))
+      setLoadedDraft(latest)
+      // Keep the user's edits on top of the latest version; they review and save again.
+      setDraft((d) => (d && loadedDraft ? rebaseDraft(loadedDraft, d, latest) : latest))
+      setSubmitError(null)
       setLoading(false)
     } catch {
       setLoadError('Failed to reload latest bot.')
@@ -617,6 +625,17 @@ export default function AlgorithmBuilder() {
                   Order direction
                 </label>
                 <div className="tl-segmented" role="radiogroup" aria-label="Order direction">
+                  {draft.triggerType === 'alpha_research' && (
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={!draft.direction}
+                      className={`tl-segmented-btn ${!draft.direction ? 'is-active' : ''}`}
+                      onClick={() => setDraft((d) => ({ ...d, direction: null }))}
+                    >
+                      Follow research
+                    </button>
+                  )}
                   <button
                     type="button"
                     role="radio"
@@ -959,7 +978,7 @@ export default function AlgorithmBuilder() {
                   onClick={handleReloadBot}
                   data-testid="reload-btn"
                 >
-                  Reload latest bot
+                  Load latest and keep my changes
                 </Button>
               </div>
             </div>

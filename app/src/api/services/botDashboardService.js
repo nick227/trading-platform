@@ -490,18 +490,6 @@ export const pauseBot = (id) => put(`/bots/${id}`, { enabled: false })
 export const resumeBot = (id) => put(`/bots/${id}`, { enabled: true })
 export const stopBot = (id) => del(`/bots/${id}`)
 
-export function updateBotSettings(bot, { name, allocation, maxPerOrder }) {
-  return put(`/bots/${bot.id}`, {
-    name,
-    config: {
-      ...bot.config,
-      capitalMode: 'allocated',
-      allocatedAmount: allocation,
-      riskOnExposure: bot.config?.riskOnExposure ?? 1,
-      maxOrderNotional: maxPerOrder,
-    },
-  })
-}
 
 /** Archived, digest-verified research evidence for one execution (trade history). */
 export async function getExecutionResearch(executionId) {

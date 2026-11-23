@@ -4,19 +4,6 @@ import { validateEventMetadata } from '../utils/validation.js'
 import { computeBotAccounting } from './botAccountingService.js'
 import { simulationConfig } from './simulationService.js'
 import { loadPriceMarks } from './portfolioValuationService.js'
-import { ruleConfigError } from '../utils/ruleConfig.js'
-import { isResearchDriven, resolveResearchPolicy } from '../../../worker/src/engine/researchDecision.js'
-
-/** Research-driven bots must carry a policy the bot engine accepts (it fails closed otherwise). */
-function assertValidResearchConfig(config) {
-  if (!isResearchDriven({ config })) return
-  const resolved = resolveResearchPolicy(config)
-  if (!resolved.ok) {
-    const err = new Error(`Invalid research settings (${resolved.reason})`)
-    err.statusCode = 400
-    throw err
-  }
-}
 
 /**
  * Simulator only: value open positions with the portfolio valuation marks (Alpha Engine's
@@ -54,124 +41,6 @@ async function computeBotPerformance(botId) {
 }
 
 export default {
-  async createBot(data) {
-    assertValidResearchConfig(data.config)
-    if (!data.userId) {
-      throw new Error('userId is required to create a bot')
-    }
-    const bot = await prisma.bot.create({
-      data: {
-        id:          generateId(ID_PREFIXES.BOT),
-        userId:      data.userId,
-        portfolioId: data.portfolioId,
-        strategyId:  data.strategyId ?? null,
-        templateId:  data.templateId ?? null,
-        botType:     data.botType ?? 'rule_based',
-        name:        data.name,
-        enabled:     data.enabled ?? false,
-        config:      data.config ?? {}
-      }
-    })
-    return bot
-  },
-
-  // Create a bot + its rules atomically from a BotTemplate.
-  // Callers supply overrides to customise the template defaults.
-  async createBotFromTemplate(data) {
-    if (!data.userId) {
-      throw new Error('userId is required to create a bot from template')
-    }
-    const template = await prisma.botTemplate.findUnique({ where: { id: data.templateId } })
-    if (!template) return null
-
-    // Validate capital / max order notional if provided
-    const rawCapital = data.capital ?? data.allocatedAmount
-    if (rawCapital !== undefined && rawCapital !== null) {
-      const cap = Number(rawCapital)
-      if (!Number.isFinite(cap) || cap <= 0) {
-        const err = new Error('Capital must be greater than 0')
-        err.statusCode = 400
-        throw err
-      }
-    }
-
-    const rawMaxOrder = data.maxOrderNotional ?? data.maxPerOrder
-    if (rawMaxOrder !== undefined && rawMaxOrder !== null) {
-      const maxOrd = Number(rawMaxOrder)
-      if (!Number.isFinite(maxOrd) || maxOrd <= 0) {
-        const err = new Error('Max order notional must be greater than 0')
-        err.statusCode = 400
-        throw err
-      }
-    }
-
-    const allocatedAmount = data.allocatedAmount ?? data.capital ?? template.config?.allocatedAmount ?? null
-    const maxOrderNotional = data.maxOrderNotional ?? data.maxPerOrder ?? template.config?.maxOrderNotional ?? null
-    const capitalMode = data.capitalMode ?? template.config?.capitalMode ?? (allocatedAmount ? 'allocated' : 'legacy')
-    const direction = data.direction ?? template.config?.direction ?? null
-    const tickers = data.tickers ?? template.config?.tickers ?? []
-    const quantity = data.quantity ?? template.config?.quantity ?? (allocatedAmount ? null : 1)
-
-    const config = {
-      ...template.config,
-      ...(data.config ?? {}),
-      tickers,
-      ...(direction ? { direction } : {}),
-      ...(quantity != null ? { quantity } : {}),
-      ...(allocatedAmount != null ? { allocatedAmount: Number(allocatedAmount) } : {}),
-      ...(maxOrderNotional != null ? { maxOrderNotional: Number(maxOrderNotional) } : {}),
-      ...(capitalMode ? { capitalMode } : {}),
-      riskOnExposure: data.riskOnExposure ?? template.config?.riskOnExposure ?? 1.0,
-    }
-    assertValidResearchConfig(config)
-
-    return prisma.$transaction(async (tx) => {
-      const bot = await tx.bot.create({
-        data: {
-          id:          generateId(ID_PREFIXES.BOT),
-          userId:      data.userId,
-          portfolioId: data.portfolioId,
-          strategyId:  data.strategyId ?? null,
-          templateId:  template.id,
-          botType:     template.botType,
-          name:        data.name ?? template.name,
-          enabled:     data.enabled ?? false,
-          config
-        }
-      })
-
-      const templateRules = Array.isArray(data.rules) && data.rules.length > 0
-        ? data.rules
-        : (template.rules ?? [])
-      // Caller-supplied rules must be valid; template defaults (e.g. an unset trigger price)
-      // are only accepted when the caller supplied no rules.
-      if (Array.isArray(data.rules) && data.rules.length > 0) {
-        for (const r of data.rules) {
-          const invalid = ruleConfigError(r.type, r.config)
-          if (invalid) { const err = new Error(invalid); err.statusCode = 400; err.code = 'INVALID_RULE'; throw err }
-        }
-      }
-
-      const rules = templateRules.map((rule) => ({
-        id:      generateId(ID_PREFIXES.RULE),
-        botId:   bot.id,
-        name:    rule.name,
-        type:    rule.type,
-        config:  rule.config ?? {},
-        enabled: rule.enabled ?? true
-      }))
-
-      if (rules.length > 0) {
-        await tx.botRule.createMany({ data: rules })
-      }
-
-      return {
-        ...bot,
-        rules
-      }
-    })
-  },
-
   async getBots(query = {}) {
     const { userId, portfolioId, enabled, offset = 0, limit = 50 } = query
     if (!userId) {
@@ -243,17 +112,12 @@ export default {
     }
   },
 
+  // Pause/resume only. Name, config and rules are saved by botConfigService.saveBot.
   async updateBot(id, data) {
-    if (data.config !== undefined) assertValidResearchConfig(data.config)
     const existing = await prisma.bot.findUnique({ where: { id } })
     const updated = await prisma.bot.update({
       where: { id },
-      data: {
-        ...(data.name       !== undefined ? { name:       data.name }       : {}),
-        ...(data.enabled    !== undefined ? { enabled:    data.enabled }    : {}),
-        ...(data.config     !== undefined ? { config:     data.config }     : {}),
-        ...(data.strategyId !== undefined ? { strategyId: data.strategyId } : {})
-      }
+      data: { ...(data.enabled !== undefined ? { enabled: data.enabled } : {}) }
     })
 
     // Persist pause/resume event

@@ -22,7 +22,7 @@ import {
   defaultCapital,
   defaultMaxPerOrder,
   parseSymbols,
-} from '../new/newBotApi'
+} from './builderData'
 
 const HOUR = 3_600_000
 
@@ -85,7 +85,9 @@ export function initCreateDraft(template, data = {}, pinnedTicker = null) {
     templateName: t.name ?? 'Custom',
     name: t.name ? `${t.name}${symbols[0] ? ` · ${symbols[0]}` : ''}` : '',
     symbolsText,
-    direction: config.direction === 'sell' ? 'sell' : 'buy',
+    // Research bots follow both BUY and SELL research unless a direction is set explicitly.
+    direction: isResearch ? (config.direction === 'buy' || config.direction === 'sell' ? config.direction : null) : (config.direction === 'sell' ? 'sell' : 'buy'),
+    initialTriggerType: triggerType,
     capital: String(cap ?? DEFAULT_CAPITAL),
     maxPerOrder: String(maxPerOrder ?? cap ?? DEFAULT_CAPITAL),
     confirmed: false,
@@ -178,7 +180,13 @@ export function initEditDraft(bot) {
     templateName: bot.strategyName ?? bot.name,
     name: bot.name || '',
     symbolsText: tickers.join(', '),
-    direction: bot.direction || config.direction || 'buy',
+    direction: isResearch
+      ? (config.direction === 'buy' || config.direction === 'sell' ? config.direction : null)
+      : (config.direction || bot.direction || 'buy'),
+    initialDirection: isResearch
+      ? (config.direction === 'buy' || config.direction === 'sell' ? config.direction : null)
+      : (config.direction || bot.direction || 'buy'),
+    initialTriggerType: triggerType,
     capital: cap !== null && cap !== undefined ? String(cap) : '',
     maxPerOrder: maxOrder !== null && maxOrder !== undefined ? String(maxOrder) : '',
     confirmed: true,
@@ -227,6 +235,23 @@ export function initEditDraft(bot) {
     },
     fixed: rules.filter((x) => x.type === 'trend_filter' || x.type === 'time_window'),
   }
+}
+
+const EDITABLE_FIELDS = ['name', 'symbolsText', 'direction', 'capital', 'maxPerOrder', 'triggerType', 'trigger', 'research', 'marketHours', 'cooldown', 'positionLimit', 'dailyLoss', 'removedRuleIds', 'removedRuleTypes']
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+/**
+ * After a 409 STALE_BOT: rebuild the draft on the latest bot, re-applying only the fields the
+ * user changed since loading (three-way: loaded → user draft vs loaded → latest). Changes made
+ * elsewhere to fields the user didn't touch are kept; nothing is blindly overwritten.
+ */
+export function rebaseDraft(loadedDraft, userDraft, latestDraft) {
+  const out = { ...latestDraft }
+  for (const k of EDITABLE_FIELDS) {
+    const strip = (v) => (k === 'research' && v ? { ...v, base: undefined } : v)
+    if (!same(strip(userDraft[k]), strip(loadedDraft[k]))) out[k] = userDraft[k]
+  }
+  return out
 }
 
 /**
@@ -311,6 +336,74 @@ export function validateBuilderDraft(draft, { buyingPower = null } = {}) {
   return errors
 }
 
+const MANAGED_RULES = new Set(['price_threshold', 'trend_filter', 'market_hours', 'cooldown', 'position_limit', 'daily_loss'])
+const omit = (o, keys) => Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !keys.includes(k)))
+
+/**
+ * Applies the builder's edits to one stored rule without touching anything the user didn't
+ * change: same config object when the shown fields are unchanged, else the stored config with
+ * only the edited fields replaced. `enabled` changes only when the user toggled it.
+ */
+export function applyDraftToRule(prev, draft) {
+  const c = prev.config && typeof prev.config === 'object' ? prev.config : {}
+  const wasOn = prev.enabled !== false
+  const toggled = (on, initialOn) => (on === initialOn ? (prev.enabled ?? true) : on)
+  const triggerChanged = draft.triggerType !== (draft.initialTriggerType ?? draft.triggerType)
+
+  switch (prev.type) {
+    case 'price_threshold': {
+      const op0 = c.operator ?? c.direction ?? (draft.direction === 'sell' ? 'below' : 'above')
+      const price0 = Number(c.price) > 0 ? String(c.price) : ''
+      const op = draft.trigger?.operator || op0
+      const price = String(draft.trigger?.price ?? '')
+      const edited = op !== op0 || (price !== price0 && toNumberOrNull(price) !== Number(c.price))
+      const isTrigger = draft.triggerType === 'price_threshold'
+      return {
+        config: edited && toNumberOrNull(price) !== null
+          ? { ...c, operator: op, price: toNumberOrNull(price), ...('direction' in c ? { direction: op } : {}) }
+          : c,
+        enabled: triggerChanged ? isTrigger : (prev.enabled ?? true),
+      }
+    }
+    case 'trend_filter':
+      return { config: c, enabled: triggerChanged ? draft.triggerType === 'trend_filter' : (prev.enabled ?? true) }
+    case 'market_hours': {
+      const ext0 = Boolean(c.allowPremarket || c.allowAfterHours)
+      const ext = Boolean(draft.marketHours?.extended)
+      return {
+        config: ext !== ext0 ? { ...c, allowPremarket: ext, allowAfterHours: ext } : c,
+        enabled: toggled(Boolean(draft.marketHours?.on), wasOn),
+      }
+    }
+    case 'cooldown': {
+      const h = toNumberOrNull(draft.cooldown?.hours)
+      const edited = String(draft.cooldown?.hours ?? '') !== cooldownHours(c) && h !== null && h > 0
+      return {
+        config: edited ? { ...omit(c, ['windowMs', 'cooldownHours', 'minutes']), windowMs: Math.round(h * HOUR) } : c,
+        enabled: toggled(Boolean(draft.cooldown?.on), wasOn),
+      }
+    }
+    case 'position_limit': {
+      const n = toNumberOrNull(draft.positionLimit?.maxShares)
+      const edited = String(draft.positionLimit?.maxShares ?? '') !== String(c.maxShares ?? c.maxQuantity ?? 100) && n !== null && n > 0
+      return {
+        config: edited ? { ...c, maxShares: n, ...('maxQuantity' in c ? { maxQuantity: n } : {}) } : c,
+        enabled: toggled(Boolean(draft.positionLimit?.on), wasOn),
+      }
+    }
+    case 'daily_loss': {
+      const n = toNumberOrNull(draft.dailyLoss?.maxLoss)
+      const edited = String(draft.dailyLoss?.maxLoss ?? '') !== String(c.maxLoss ?? 500) && n !== null && n > 0
+      return {
+        config: edited ? { ...c, maxLoss: n } : c,
+        enabled: toggled(Boolean(draft.dailyLoss?.on), wasOn),
+      }
+    }
+    default:
+      return { config: c, enabled: prev.enabled ?? true }
+  }
+}
+
 /**
  * Formats the full desired rules array for the transactional bot configuration API.
  * Preserves rule IDs, names, configurations, and exact order from originalRules.
@@ -329,104 +422,26 @@ export function formatDesiredRules(draft, originalRules = []) {
     ? draft.removedRuleTypes
     : new Set(Array.isArray(draft.removedRuleTypes) ? draft.removedRuleTypes : [])
 
-  // 1. Process original rules in their exact order
+  // 1. Existing rules, in order. Only the first rule of each managed type is shown in the
+  //    builder; its config changes only for fields the user actually edited (merged into the
+  //    stored config), and its enabled flag only when toggled. Every other rule — extra rules
+  //    of the same type, time windows, unknown types — is passed through untouched.
+  const primary = new Set()
   for (const prev of orig) {
     if (!prev || !prev.type) continue
     if (prev.id && removedIds.has(prev.id)) continue
     if (removedTypes.has(prev.type)) continue
-
     seenTypes.add(prev.type)
-
-    if (prev.type === 'price_threshold') {
-      const isTrigger = draft.triggerType === 'price_threshold'
-      const op = draft.trigger?.operator || (draft.direction === 'sell' ? 'below' : 'above')
-      const priceVal = toNumberOrNull(draft.trigger?.price)
-      const validPrice = priceVal !== null && priceVal > 0 ? priceVal : (prev.config?.price ?? 0)
-      rules.push({
-        ...(prev.id ? { id: prev.id } : {}),
-        name: prev.name || (op === 'below' ? 'Price Below Threshold' : 'Price Above Threshold'),
-        type: 'price_threshold',
-        config: isTrigger && priceVal !== null && priceVal > 0
-          ? { operator: op, price: validPrice }
-          : (prev.config || { operator: op, price: validPrice }),
-        enabled: isTrigger,
-      })
-    } else if (prev.type === 'trend_filter') {
-      const isTrend = draft.triggerType === 'trend_filter'
-      rules.push({
-        ...(prev.id ? { id: prev.id } : {}),
-        name: prev.name || 'Trend Filter',
-        type: 'trend_filter',
-        config: prev.config && typeof prev.config === 'object' ? prev.config : { symbol: 'SPY' },
-        enabled: isTrend,
-      })
-    } else if (prev.type === 'market_hours') {
-      const isOn = Boolean(draft.marketHours?.on)
-      rules.push({
-        ...(prev.id ? { id: prev.id } : {}),
-        name: prev.name || 'Market Hours',
-        type: 'market_hours',
-        config: isOn
-          ? {
-              allowPremarket: Boolean(draft.marketHours?.extended),
-              allowAfterHours: Boolean(draft.marketHours?.extended),
-            }
-          : (prev.config || {}),
-        enabled: isOn,
-      })
-    } else if (prev.type === 'cooldown') {
-      const isOn = Boolean(draft.cooldown?.on)
-      const h = toNumberOrNull(draft.cooldown?.hours)
-      rules.push({
-        ...(prev.id ? { id: prev.id } : {}),
-        name: prev.name || 'Cooldown',
-        type: 'cooldown',
-        config: isOn && h !== null && h > 0
-          ? { windowMs: Math.round(h * HOUR) }
-          : (prev.config || { windowMs: 24 * HOUR }),
-        enabled: isOn,
-      })
-    } else if (prev.type === 'position_limit') {
-      const isOn = Boolean(draft.positionLimit?.on)
-      const shares = toNumberOrNull(draft.positionLimit?.maxShares)
-      rules.push({
-        ...(prev.id ? { id: prev.id } : {}),
-        name: prev.name || 'Position Limit',
-        type: 'position_limit',
-        config: isOn && shares !== null && shares > 0
-          ? {
-              maxShares: shares,
-              maxQuantity: shares,
-              ...(draft.positionLimit?.maxPositions ? { maxPositions: draft.positionLimit.maxPositions } : {}),
-            }
-          : (prev.config || { maxShares: 100, maxQuantity: 100 }),
-        enabled: isOn,
-      })
-    } else if (prev.type === 'daily_loss') {
-      const isOn = Boolean(draft.dailyLoss?.on)
-      const loss = toNumberOrNull(draft.dailyLoss?.maxLoss)
-      rules.push({
-        ...(prev.id ? { id: prev.id } : {}),
-        name: prev.name || 'Daily Loss Limit',
-        type: 'daily_loss',
-        config: isOn && loss !== null && loss > 0
-          ? {
-              maxLoss: loss,
-              ...(draft.dailyLoss?.maxDailyLossPct ? { maxDailyLossPct: draft.dailyLoss.maxDailyLossPct } : {}),
-            }
-          : (prev.config || { maxLoss: 500 }),
-        enabled: isOn,
-      })
-    } else {
-      // Unmanaged or fixed rules (e.g. time_window)
-      rules.push({
-        ...(prev.id ? { id: prev.id } : {}),
-        name: prev.name,
-        type: prev.type,
-        config: prev.config,
-        enabled: prev.enabled ?? true,
-      })
-    }
+    const isPrimary = MANAGED_RULES.has(prev.type) && !primary.has(prev.type)
+    if (isPrimary) primary.add(prev.type)
+    const next = isPrimary ? applyDraftToRule(prev, draft) : { config: prev.config ?? {}, enabled: prev.enabled ?? true }
+    rules.push({
+      ...(prev.id ? { id: prev.id } : {}),
+      ...(prev.name ? { name: prev.name } : {}),
+      type: prev.type,
+      config: next.config,
+      enabled: next.enabled,
+    })
   }
 
   // 2. Append newly activated rules that were not in originalRules
@@ -537,8 +552,11 @@ export function buildConfigPatch(draft, baseConfig = {}) {
       patch.tickers = symbols
     }
 
-    if (draft.direction && draft.direction !== baseConfig.direction) {
-      patch.direction = draft.direction
+    // Only when the user changed it: an absent direction is meaningful (research bots follow
+    // both BUY and SELL research; rule bots infer the side), so never write a default.
+    const wantDirection = draft.triggerType !== 'alpha_research' && !draft.direction ? 'buy' : (draft.direction ?? null)
+    if (wantDirection !== (draft.initialDirection ?? null)) {
+      patch.direction = wantDirection
     }
 
     if (capitalNum !== null && capitalNum !== baseConfig.allocatedAmount) {
@@ -556,19 +574,20 @@ export function buildConfigPatch(draft, baseConfig = {}) {
     }
 
     if (isResearch && draft.research) {
+      // Write a research field only when the user changed what was shown for it; absent fields
+      // keep the engine's defaults.
       const baseRes = baseConfig.research || {}
+      const shown = {
+        minScore: String(Math.round(Number(baseRes.minConfidence ?? 0.6) * 100)),
+        maxAgeHours: String(baseRes.maxPredictionAgeHours ?? 96),
+        maxDriftPct: String(baseRes.maxEntryDriftPct ?? 5),
+        requireEdge: baseRes.requireEdgeOverBaseline !== false,
+      }
       const rPatch = {}
-      const minConf = (toNumberOrNull(draft.research.minScore) ?? 60) / 100
-      if (minConf !== baseRes.minConfidence) rPatch.minConfidence = minConf
-
-      const maxAge = toNumberOrNull(draft.research.maxAgeHours) ?? 96
-      if (maxAge !== baseRes.maxPredictionAgeHours) rPatch.maxPredictionAgeHours = maxAge
-
-      const maxDrift = toNumberOrNull(draft.research.maxDriftPct) ?? 5
-      if (maxDrift !== baseRes.maxEntryDriftPct) rPatch.maxEntryDriftPct = maxDrift
-
-      const reqEdge = draft.research.requireEdge !== false
-      if (reqEdge !== (baseRes.requireEdgeOverBaseline ?? true)) rPatch.requireEdgeOverBaseline = reqEdge
+      if (String(draft.research.minScore) !== shown.minScore) rPatch.minConfidence = (toNumberOrNull(draft.research.minScore) ?? 60) / 100
+      if (String(draft.research.maxAgeHours) !== shown.maxAgeHours) rPatch.maxPredictionAgeHours = toNumberOrNull(draft.research.maxAgeHours) ?? 96
+      if (String(draft.research.maxDriftPct) !== shown.maxDriftPct) rPatch.maxEntryDriftPct = toNumberOrNull(draft.research.maxDriftPct) ?? 5
+      if ((draft.research.requireEdge !== false) !== shown.requireEdge) rPatch.requireEdgeOverBaseline = draft.research.requireEdge !== false
 
       if (Object.keys(rPatch).length > 0) {
         patch.research = rPatch
@@ -577,7 +596,8 @@ export function buildConfigPatch(draft, baseConfig = {}) {
   } else {
     // Create mode: send complete configured core values
     patch.tickers = symbols
-    patch.direction = draft.direction || 'buy'
+    const direction = draft.triggerType === 'alpha_research' ? draft.direction : (draft.direction || 'buy')
+    if (direction) patch.direction = direction
     if (capitalNum !== null) patch.allocatedAmount = capitalNum
     if (maxOrderNum !== null) patch.maxOrderNotional = maxOrderNum
 
@@ -612,13 +632,15 @@ export function buildBotFromDraft(draft, original = {}) {
   const nextConfig = {
     ...origConfig,
     tickers: symbols,
-    direction: draft.direction,
     capitalMode: origConfig.capitalMode ?? 'allocated',
     allocatedAmount: capitalNum,
     maxOrderNotional: maxOrderNum,
     riskOnExposure: origConfig.riskOnExposure ?? 1,
   }
 
+  if (draft.direction) nextConfig.direction = draft.direction
+  else if (draft.triggerType === 'alpha_research') delete nextConfig.direction
+  else nextConfig.direction = 'buy'
   if (origConfig.quantity !== undefined) nextConfig.quantity = origConfig.quantity
   if (origConfig.riskLimits !== undefined) nextConfig.riskLimits = origConfig.riskLimits
   if (origConfig.positionSizing !== undefined) nextConfig.positionSizing = origConfig.positionSizing
@@ -670,7 +692,7 @@ export function mapServerValidationError(error, rulesSent = []) {
     return {
       stale: true,
       currentUpdatedAt: details.updatedAt || null,
-      message: 'This bot was updated in another window. Reload the latest version to retry saving.',
+      message: 'This bot changed since you opened it. Load the latest version — your edits are kept — then save again.',
       fieldErrors: {},
     }
   }

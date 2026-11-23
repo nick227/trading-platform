@@ -77,15 +77,18 @@ beforeEach(() => {
 })
 
 describe('Statuses', () => {
-  it('Running: Pause, Name & capital and Stop are available', async () => {
+  it('Running: Pause, Edit (in the builder) and Stop are available', async () => {
     mockApi()
     renderPage()
     expect(await screen.findByRole('heading', { level: 1, name: 'Golden Cross' })).toBeInTheDocument()
     expect(status()).toHaveTextContent('Running')
     expect(button('Pause')).toBeInTheDocument()
-    expect(button('Name & capital')).toBeInTheDocument()
-    expect(button('Edit rules')).toBeInTheDocument()
     expect(button('Stop')).toBeInTheDocument()
+    // Editing happens in one place: the Algorithm Builder.
+    expect(screen.getByRole('link', { name: 'Edit bot' })).toHaveAttribute('href', '/bots/bot_1/edit')
+    expect(screen.getByRole('link', { name: 'Edit' })).toHaveAttribute('href', '/bots/bot_1/edit')
+    expect(screen.queryByRole('button', { name: 'Name & capital' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit rules' })).not.toBeInTheDocument()
     expect(screen.getByText('SPY, QQQ · Rule-based · $1,000 capital')).toBeInTheDocument()
   })
 
@@ -397,70 +400,9 @@ describe('Controls', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('Edit validates, saves name and limits, and updates the page', async () => {
-    mockApi()
-    put.mockResolvedValue({})
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Name & capital' }))
-    const dialog = screen.getByRole('dialog', { name: 'Name & capital' })
-    expect(within(dialog).getByLabelText('Simulated capital ($)')).toHaveValue('1000')
-    fireEvent.change(within(dialog).getByLabelText('Max per buy order ($)'), { target: { value: '5000' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('more than the simulated capital')
-    expect(put).not.toHaveBeenCalled()
 
-    fireEvent.change(within(dialog).getByLabelText('Max per buy order ($)'), { target: { value: '300' } })
-    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Cross v2' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(put).toHaveBeenCalledWith('/bots/bot_1', {
-      name: 'Cross v2',
-      config: { ...baseBot.config, capitalMode: 'allocated', allocatedAmount: 1000, riskOnExposure: 1, maxOrderNotional: 300 },
-    }))
-    expect(await screen.findByRole('heading', { level: 1, name: 'Cross v2' })).toBeInTheDocument()
-    expect(screen.getByText('Up to $300 per order')).toBeInTheDocument()
-  })
 
-  it('failed Edit keeps the sheet open and changes nothing', async () => {
-    mockApi()
-    put.mockRejectedValue(apiError(500))
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Name & capital' }))
-    const dialog = screen.getByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Nope' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Couldn’t save changes')
-    expect(screen.getByRole('heading', { level: 1, name: 'Golden Cross' })).toBeInTheDocument()
-  })
-})
 
-describe('Editing rules on an existing bot', () => {
-  const ruled = { ...baseBot, rules: [
-    { id: 'r1', name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', direction: 'above', price: 500 } },
-    { id: 'r2', name: 'Cooldown', type: 'cooldown', config: { windowMs: 3_600_000 } },
-  ] }
-
-  it('validates, then updates changed rules, removes switched-off ones and adds new limits', async () => {
-    mockApi({ bot: ruled })
-    put.mockResolvedValue({}); del.mockResolvedValue({}); post.mockResolvedValue({})
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit rules' }))
-    const editor = screen.getByTestId('rule-editor')
-    fireEvent.change(within(editor).getByLabelText('Trigger price'), { target: { value: '0' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save rules' }))
-    expect(await within(editor).findByText('Enter the price that should trigger an order.')).toBeInTheDocument()
-    expect(put).not.toHaveBeenCalled()
-
-    fireEvent.change(within(editor).getByLabelText('Trigger price'), { target: { value: '510' } })
-    fireEvent.click(within(editor).getByLabelText('At most one trade per symbol every'))   // switch the cooldown off
-    fireEvent.click(within(editor).getByLabelText('Stop for the day once the account has realized a loss of'))         // add a loss limit
-    fireEvent.change(within(editor).getByLabelText('Daily loss limit in dollars'), { target: { value: '200' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save rules' }))
-    await waitFor(() => expect(post).toHaveBeenCalled())
-    expect(put).toHaveBeenCalledWith('/bots/bot_1/rules/r1', { config: { operator: 'above', direction: 'above', price: 510 } })
-    expect(del).toHaveBeenCalledWith('/bots/bot_1/rules/r2')
-    expect(post).toHaveBeenCalledWith('/bots/bot_1/rules', { name: 'Daily Loss Limit', type: 'daily_loss', config: { maxLoss: 200 } })
-    expect(await screen.findByText(/Rules saved/)).toBeInTheDocument()
-  })
 })
 
 describe('Progressive disclosure', () => {

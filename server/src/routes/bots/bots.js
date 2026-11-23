@@ -1,6 +1,5 @@
 import botsService from '../../services/botsService.js'
 import { getEmergencyStop } from '../../services/emergencyStopService.js'
-import prisma from '../../loaders/prisma.js'
 import { getUserAlpacaCredentialsOrThrow } from '../../services/alpacaClockService.js'
 import { simulationConfig } from '../../services/simulationService.js'
 import { BotSaveError, saveBot } from '../../services/botConfigService.js'
@@ -83,53 +82,13 @@ export default async function botsRoutes(app, opts) {
     return { data: bot }
   })
 
-  // POST /api/bots
-  // strategyId is required for strategy_based bots, optional for rule_based.
-  app.post('/', {
-    schema: {
-      body: {
-        type: 'object',
-        required: ['name', 'portfolioId'],
-        properties: {
-          name:        { type: 'string', minLength: 1 },
-          portfolioId: { type: 'string' },
-          strategyId:  { type: 'string' },
-          botType:     { type: 'string', enum: ['rule_based', 'strategy_based'] },
-          enabled:     { type: 'boolean' },
-          config:      { type: 'object' },
-          userId:      { type: 'string' }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const connected = await ensureBrokerConnectedOrReply(request.user.id, reply)
-    if (!connected) return
-
-    const portfolio = await prisma.portfolio.findUnique({ where: { id: request.body.portfolioId } })
-    if (!portfolio || portfolio.userId !== request.user.id) {
-      return reply.code(400).send({ error: { code: 'INVALID_PORTFOLIO', message: 'Invalid portfolioId' } })
-    }
-
-    try {
-      const bot = await botsService.createBot({ ...request.body, userId: request.user.id })
-      return reply.code(201).send({ data: bot })
-    } catch (error) {
-      if (error.statusCode === 400) {
-        return reply.code(400).send({ error: { code: 'INVALID_CONFIG', message: error.message } })
-      }
-      throw error
-    }
-  })
-
+  // PUT /api/bots/:id — pause/resume only. Everything else is saved through
+  // PUT /api/bots/:id/configuration (one transactional save for the bot and its rules).
   app.put('/:id', {
     schema: {
       body: {
         type: 'object',
-        properties: {
-          name: { type: 'string', minLength: 1 },
-          enabled: { type: 'boolean' },
-          config: { type: 'object' }
-        }
+        properties: { enabled: { type: 'boolean' } }
       }
     }
   }, async (request, reply) => {
@@ -138,6 +97,9 @@ export default async function botsRoutes(app, opts) {
       const existing = await botsService.getBot(id)
       if (!existing || existing.userId !== request.user.id) {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
+      }
+      if (Object.keys(request.body ?? {}).some((k) => k !== 'enabled') || typeof request.body?.enabled !== 'boolean') {
+        return reply.code(400).send({ error: { code: 'USE_CONFIGURATION_ENDPOINT', message: 'This endpoint only pauses or resumes. Save name, config and rules with PUT /api/bots/:id/configuration.' } })
       }
 
       if (request.body?.enabled === true) {
@@ -149,7 +111,7 @@ export default async function botsRoutes(app, opts) {
         if (!connected) return
       }
 
-      const bot = await botsService.updateBot(id, request.body)
+      const bot = await botsService.updateBot(id, { enabled: request.body.enabled })
       return { data: bot }
     } catch (error) {
       if (error.statusCode === 400) {

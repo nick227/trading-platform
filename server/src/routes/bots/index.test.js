@@ -174,81 +174,26 @@ describe('GET /api/bots/:id', () => {
   })
 })
 
-describe('POST /api/bots', () => {
-  it('creates a bot and returns 201', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots',
-      payload: { name: 'New Bot', portfolioId: 'por_test123' }
-    })
-    expect(res.statusCode).toBe(201)
-    expect(res.json().data.id).toBe('bot_test123')
-  })
-
-  it('returns 400 when portfolioId is invalid', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.portfolio.findUnique).mockResolvedValueOnce(null)
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots',
-      payload: { name: 'New Bot', portfolioId: 'por_wrong' }
-    })
-    expect(res.statusCode).toBe(400)
-    expect(res.json().error.code).toBe('INVALID_PORTFOLIO')
-  })
-
-  it('returns 400 when portfolio belongs to another user', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.portfolio.findUnique).mockResolvedValueOnce({ ...mockPortfolio, userId: 'usr_other' })
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots',
-      payload: { name: 'New Bot', portfolioId: 'por_test123' }
-    })
-    expect(res.statusCode).toBe(400)
-  })
-
-  it('returns 400 when required fields are missing', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots',
-      payload: { name: 'No Portfolio' }
-    })
-    expect(res.statusCode).toBe(400)
-  })
-})
-
-describe('PUT /api/bots/:id', () => {
-  it('updates a bot and returns updated data', async () => {
-    const res = await app.inject({
-      method: 'PUT',
-      url: '/api/bots/bot_test123',
-      payload: { name: 'Updated Bot' }
-    })
+describe('PUT /api/bots/:id (pause/resume only)', () => {
+  it('pauses a bot', async () => {
+    const res = await app.inject({ method: 'PUT', url: '/api/bots/bot_test123', payload: { enabled: false } })
     expect(res.statusCode).toBe(200)
-    expect(res.json().data.name).toBe('Updated Bot')
+    const botsService = (await import('../../services/botsService.js')).default
+    expect(botsService.updateBot).toHaveBeenLastCalledWith('bot_test123', { enabled: false })
   })
 
   it('returns 404 when bot not found', async () => {
     const botsService = (await import('../../services/botsService.js')).default
     vi.mocked(botsService.getBot).mockResolvedValueOnce(null)
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: '/api/bots/bot_missing',
-      payload: { name: 'Updated Bot' }
-    })
+    const res = await app.inject({ method: 'PUT', url: '/api/bots/bot_missing', payload: { enabled: false } })
     expect(res.statusCode).toBe(404)
   })
 
-  it('maps invalid research settings to 400 INVALID_CONFIG', async () => {
-    const botsService = (await import('../../services/botsService.js')).default
-    vi.mocked(botsService.updateBot).mockRejectedValueOnce(Object.assign(new Error('Invalid research settings (invalid_minConfidence)'), { statusCode: 400 }))
-    const res = await app.inject({ method: 'PUT', url: '/api/bots/bot_test123', payload: { config: { signalSource: 'alpha_research', research: { minConfidence: 5 } } } })
+  it('refuses name/config here: they are saved through /configuration', async () => {
+    const res = await app.inject({ method: 'PUT', url: '/api/bots/bot_test123', payload: { enabled: true, config: { tickers: ['X'] } } })
     expect(res.statusCode).toBe(400)
-    expect(res.json().error.code).toBe('INVALID_CONFIG')
+    expect(res.json().error.code).toBe('USE_CONFIGURATION_ENDPOINT')
+    expect((await app.inject({ method: 'PUT', url: '/api/bots/bot_test123', payload: { name: 'x' } })).statusCode).toBe(400)
   })
 })
 
@@ -294,54 +239,6 @@ describe('GET /api/bots/catalog/:id', () => {
     expect(res.json().error.code).toBe('NOT_FOUND')
   })
 })
-
-describe('POST /api/bots/catalog/from-template', () => {
-  it('creates a bot from a template and returns 201', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/catalog/from-template',
-      payload: { templateId: 'tpl_test123', portfolioId: 'por_test123' }
-    })
-    expect(res.statusCode).toBe(201)
-    expect(res.json().data.id).toBe('bot_test123')
-  })
-
-  it('returns 400 when portfolio is invalid', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.portfolio.findUnique).mockResolvedValueOnce(null)
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/catalog/from-template',
-      payload: { templateId: 'tpl_test123', portfolioId: 'por_wrong' }
-    })
-    expect(res.statusCode).toBe(400)
-    expect(res.json().error.code).toBe('INVALID_PORTFOLIO')
-  })
-
-  it('returns 404 when template does not exist', async () => {
-    const botsService = (await import('../../services/botsService.js')).default
-    vi.mocked(botsService.createBotFromTemplate).mockResolvedValueOnce(null)
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/catalog/from-template',
-      payload: { templateId: 'tpl_missing', portfolioId: 'por_test123' }
-    })
-    expect(res.statusCode).toBe(404)
-  })
-
-  it('returns 400 when required fields are missing', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/catalog/from-template',
-      payload: { templateId: 'tpl_test123' }
-    })
-    expect(res.statusCode).toBe(400)
-  })
-})
-
-// ─── /api/bots/:id/events (events.js) ────────────────────────────────────────
 
 describe('GET /api/bots/:id/events', () => {
   it('returns events for a bot', async () => {
@@ -441,103 +338,3 @@ describe('GET /api/bots/:id/rules/:ruleId', () => {
   })
 })
 
-describe('POST /api/bots/:id/rules', () => {
-  it('rejects a rule the engine would mis-evaluate (no or zero trigger price)', async () => {
-    for (const config of [{ threshold: 150 }, { operator: 'above', price: 0 }]) {
-      const res = await app.inject({ method: 'POST', url: '/api/bots/bot_test123/rules', payload: { name: 'Price Rule', type: 'price_threshold', config } })
-      expect(res.statusCode).toBe(400)
-      expect(res.json().error.code).toBe('INVALID_RULE')
-    }
-  })
-
-  it('creates a rule and returns 201', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_test123/rules',
-      payload: { name: 'Price Rule', type: 'price_threshold', config: { operator: 'above', price: 150 } }
-    })
-    expect(res.statusCode).toBe(201)
-    expect(res.json().data.id).toBe('rul_test123')
-    expect(res.json().data.type).toBe('price_threshold')
-  })
-
-  it('returns 400 when required fields are missing', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_test123/rules',
-      payload: { name: 'Missing Type' }
-    })
-    expect(res.statusCode).toBe(400)
-  })
-
-  it('returns 404 when bot not found', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.bot.findFirst).mockResolvedValueOnce(null)
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/bots/bot_missing/rules',
-      payload: { name: 'Price Rule', type: 'price_threshold' }
-    })
-    expect(res.statusCode).toBe(404)
-  })
-})
-
-describe('PUT /api/bots/:id/rules/:ruleId', () => {
-  it('updates a rule and returns updated data', async () => {
-    const res = await app.inject({
-      method: 'PUT',
-      url: '/api/bots/bot_test123/rules/rul_test123',
-      payload: { name: 'Updated Rule' }
-    })
-    expect(res.statusCode).toBe(200)
-    expect(res.json().data.name).toBe('Updated Rule')
-  })
-
-  it('returns 404 when rule belongs to a different bot', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.botRule.findUnique).mockResolvedValueOnce({ ...mockRule, botId: 'bot_other' })
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: '/api/bots/bot_test123/rules/rul_test123',
-      payload: { name: 'Updated Rule' }
-    })
-    expect(res.statusCode).toBe(404)
-  })
-
-  it('returns 404 when rule not found', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.botRule.findUnique).mockResolvedValueOnce(null)
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: '/api/bots/bot_test123/rules/rul_missing',
-      payload: { name: 'Updated Rule' }
-    })
-    expect(res.statusCode).toBe(404)
-  })
-})
-
-describe('DELETE /api/bots/:id/rules/:ruleId', () => {
-  it('deletes a rule and returns 204', async () => {
-    const res = await app.inject({ method: 'DELETE', url: '/api/bots/bot_test123/rules/rul_test123' })
-    expect(res.statusCode).toBe(204)
-  })
-
-  it('returns 404 when rule belongs to a different bot', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.botRule.findUnique).mockResolvedValueOnce({ ...mockRule, botId: 'bot_other' })
-
-    const res = await app.inject({ method: 'DELETE', url: '/api/bots/bot_test123/rules/rul_test123' })
-    expect(res.statusCode).toBe(404)
-  })
-
-  it('returns 404 when rule not found', async () => {
-    const prisma = (await import('../../loaders/prisma.js')).default
-    vi.mocked(prisma.botRule.findUnique).mockResolvedValueOnce(null)
-
-    const res = await app.inject({ method: 'DELETE', url: '/api/bots/bot_test123/rules/rul_missing' })
-    expect(res.statusCode).toBe(404)
-  })
-})

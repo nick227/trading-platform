@@ -123,8 +123,9 @@ describe('risk routes', () => {
     const resume = await request(app.server).put('/api/bots/bot_a').set(as(tokenA)).send({ enabled: true })
     expect(resume.status).toBe(403)
     expect(resume.body.error.code).toBe('EMERGENCY_STOP_ACTIVE')
-    const create = await request(app.server).post('/api/bots/catalog/from-template').set(as(tokenA)).send({ templateId: 't', portfolioId: 'por_usr_a', enabled: true })
+    const create = await request(app.server).post('/api/bots/configuration').set(as(tokenA)).send({ portfolioId: 'por_usr_a', name: 'x', enabled: true, config: { tickers: ['SPY'] } })
     expect(create.status).toBe(403)
+    expect(create.body.error.code).toBe('EMERGENCY_STOP_ACTIVE')
 
     const cleared = await request(app.server).delete('/api/risk/kill-switch').set(as(tokenA))
     expect(cleared.body.data).toMatchObject({ active: false, botsResumed: 0 })
