@@ -2,6 +2,7 @@
 // Measures how trustworthy a specific trade signal is
 
 import prisma from '../../db/prisma.js'
+import { simulationConfig } from '../../../../server/src/services/simulationService.js'
 
 export class ExecutionConfidenceService {
   constructor() {
@@ -14,29 +15,52 @@ export class ExecutionConfidenceService {
     }
   }
 
-  // Calculate execution confidence score for a trade signal (0-100)
-  async calculateExecutionConfidence(signal, portfolioId, marketData = {}) {
+  // Calculate execution confidence score for a trade signal (0-100).
+  // In the internal simulator, inputs with no real data are "not applicable" and the score is
+  // the weighted average of the known inputs (thresholds unchanged). With no known input the
+  // score stays neutral (50), so the order is still restricted. Elsewhere unknown inputs keep
+  // their neutral 50, as before.
+  async calculateExecutionConfidence(signal, portfolioId, marketData = {}, { unknownAsNotApplicable = simulationConfig().enabled } = {}) {
     try {
+      const winRate = await this.scoreBotWinRate(signal?.botId, portfolioId, { nullWhenUnknown: unknownAsNotApplicable })
       const scores = {
         signalConfidence: this.scoreSignalConfidence(signal),
         liquidity: this.scoreLiquidity(marketData),
         spreadQuality: this.scoreSpreadQuality(marketData),
         regimeFit: await this.scoreRegimeFit(signal, marketData),
-        botWinRate: await this.scoreBotWinRate(signal.botId, portfolioId)
+        botWinRate: winRate ?? 50
+      }
+      const known = {
+        signalConfidence: signal?.confidence !== undefined && signal?.confidence !== null,
+        liquidity: Boolean(marketData?.volume),
+        spreadQuality: Boolean(marketData?.spread),
+        regimeFit: Boolean(signal?.regime),
+        botWinRate: winRate !== null
       }
 
-      // Weighted blend
-      const weightedScore = 
-        (scores.signalConfidence * this.weights.signalConfidence) +
-        (scores.liquidity * this.weights.liquidity) +
-        (scores.spreadQuality * this.weights.spreadQuality) +
-        (scores.regimeFit * this.weights.regimeFit) +
-        (scores.botWinRate * this.weights.botWinRate)
+      let weightedScore
+      let notApplicable = []
+      if (unknownAsNotApplicable) {
+        const keys = Object.keys(this.weights).filter((k) => known[k])
+        notApplicable = Object.keys(this.weights).filter((k) => !known[k])
+        const totalWeight = keys.reduce((sum, k) => sum + this.weights[k], 0)
+        weightedScore = totalWeight > 0 ? keys.reduce((sum, k) => sum + scores[k] * this.weights[k], 0) / totalWeight : 50
+        for (const k of notApplicable) scores[k] = null
+      } else {
+        weightedScore =
+          (scores.signalConfidence * this.weights.signalConfidence) +
+          (scores.liquidity * this.weights.liquidity) +
+          (scores.spreadQuality * this.weights.spreadQuality) +
+          (scores.regimeFit * this.weights.regimeFit) +
+          (scores.botWinRate * this.weights.botWinRate)
+      }
 
       return {
         score: Math.round(weightedScore),
         label: this.getLabel(weightedScore),
         breakdown: scores,
+        basis: unknownAsNotApplicable ? 'known_inputs' : 'all_inputs',
+        notApplicable,
         recommendation: this.getRecommendation(weightedScore)
       }
 
@@ -123,9 +147,10 @@ export class ExecutionConfidenceService {
   }
 
   // Score bot win rate (0-100)
-  async scoreBotWinRate(botId, portfolioId) {
+  async scoreBotWinRate(botId, portfolioId, { nullWhenUnknown = false } = {}) {
+    const unknown = nullWhenUnknown ? null : 50
     try {
-      if (!botId) return 50
+      if (!botId) return unknown
 
       // Get recent bot performance
       const recentTrades = await prisma.execution.findMany({
@@ -141,7 +166,7 @@ export class ExecutionConfidenceService {
         take: 50
       })
 
-      if (recentTrades.length === 0) return 50
+      if (recentTrades.length === 0) return unknown
 
       // Calculate win rate
       const winningTrades = recentTrades.filter(t => t.pnl > 0).length
@@ -156,7 +181,7 @@ export class ExecutionConfidenceService {
 
     } catch (error) {
       console.error('Failed to score bot win rate:', error)
-      return 50
+      return unknown
     }
   }
 

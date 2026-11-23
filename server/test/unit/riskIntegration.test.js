@@ -96,3 +96,40 @@ describe('marketDataFor', () => {
     expect(md.regime).toBeUndefined()
   })
 })
+
+describe('simulator scoring: unknown inputs are not applicable (thresholds unchanged)', () => {
+  const healthy = { operational: 95, exposure: 88, stress: 75 }
+  const decide = async (signal, md, unknownAsNotApplicable = true) => {
+    vi.spyOn(executionConfidenceService, 'scoreBotWinRate').mockResolvedValue(unknownAsNotApplicable ? null : 50)
+    const e = await executionConfidenceService.calculateExecutionConfidence(signal, 'p', md, { unknownAsNotApplicable })
+    return { score: e.score, notApplicable: e.notApplicable, ...riskDecisionMatrix.applyDecisionMatrix({ ...healthy, execution: e.score }, signal, 'p') }
+  }
+  const dailyClose = (volume, avgVolume) => ({ price: 484.52, volume, avgVolume }) // daily data: no spread
+
+  it('a rule-based bot on a liquid daily close is approved on its real inputs', async () => {
+    const r = await decide({ botId: 'b' }, dailyClose(47e6, 28e6))
+    expect(r).toMatchObject({ action: 'approve', score: 85 })
+    expect(r.notApplicable.sort()).toEqual(['botWinRate', 'regimeFit', 'signalConfidence', 'spreadQuality'])
+  })
+
+  it('the same bot on a thin day is still restricted (liquidity is a real input)', async () => {
+    expect((await decide({ botId: 'b' }, dailyClose(20e6, 28e6))).action).not.toBe('approve')
+  })
+
+  it('weak research stays rejected/restricted; strong research can be approved', async () => {
+    expect((await decide({ botId: 'b', confidence: 0.49 }, dailyClose(47e6, 28e6))).action).not.toBe('approve')
+    expect((await decide({ botId: 'b', confidence: 0.85 }, dailyClose(47e6, 28e6))).action).toBe('approve')
+  })
+
+  it('with no real input at all the score stays neutral and the order is restricted', async () => {
+    const r = await decide({ botId: 'b' }, {})
+    expect(r.score).toBe(50)
+    expect(r.action).not.toBe('approve')
+  })
+
+  it('outside the simulator nothing changes: unknown inputs still count as 50', async () => {
+    const r = await decide({ botId: 'b' }, dailyClose(47e6, 28e6), false)
+    expect(r.score).toBe(59)
+    expect(r.action).not.toBe('approve')
+  })
+})

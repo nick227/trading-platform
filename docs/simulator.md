@@ -17,7 +17,7 @@ TradeLoom bots trade simulated money in an internal simulator (`BROKER_MODE=simu
 
 ## Known limits
 - Daily data only. Alpha Engine has no intraday bars, and its `/api/quote` returns a stale bar, so it must not be used as a live price.
-- **Risk policy:** under the default `RISK_RESTRICT_MODE=block`, the execution-confidence score of a rule-based bot on daily data can't reach the approve threshold. Unknown inputs (signal confidence, spread, regime, win rate) score a neutral 50, which caps the blend near 68 against a threshold of 75. Such orders are restricted and not placed, unless `SIM_TEST_SCENARIO` (labelled "Test scenario") or `RISK_RESTRICT_MODE=reduce` is set.
+- **Risk policy in the simulator:** execution confidence scores only the inputs that have real data. On daily data that usually means liquidity, plus signal confidence for research bots, and regime and win rate once known. Unknown inputs (signal confidence for rule bots, spread, regime, win rate) are "not applicable" instead of a neutral 50. If no input is known, the score stays 50, so the order is restricted. Thresholds, weights and `RISK_RESTRICT_MODE=block` are unchanged, and weak research is still not approved. Outside the simulator, unknown inputs still count as 50.
 
 ## Deploys
 The worker waits for the database schema to match its build before starting any loop (`worker/src/db/schemaGate.js`). This makes it safe for Railway to start the worker before the API's pre-deploy `prisma db push`.
