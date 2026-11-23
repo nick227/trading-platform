@@ -398,6 +398,13 @@ export default function BotDashboard() {
     if (!state.loading && location.state?.focus === 'behavior') document.getElementById('behavior')?.scrollIntoView?.({ block: 'start' })
   }, [state.loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (location.state?.updated) {
+      setNotice('Changes saved. They apply from the bot’s next check.')
+      load()
+    }
+  }, [location.state?.updated]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const refreshActivity = useCallback(async () => {
     const activity = await loadBotActivity(botId)
     setState((s) => (s.bot ? { ...s, activity, status: deriveStatus(s.bot, activity.timeline), fills: summarizeFills(activity.executions) } : s))
@@ -483,6 +490,7 @@ export default function BotDashboard() {
             <button type="button" className={`tl-btn ${bot.enabled ? '' : 'tl-btn--primary'}`} onClick={toggle} disabled={busy} style={{ minWidth: 88 }}>
               {busy ? 'Saving…' : bot.enabled ? 'Pause' : 'Resume'}
             </button>
+            <Link to={`/bots/${bot.id}/edit`} className="tl-btn" data-testid="edit-bot-btn">Edit bot</Link>
             <button type="button" className="tl-btn" onClick={() => setSheet('edit')} disabled={busy}>Name &amp; capital</button>
             <button type="button" className="tl-btn tl-btn--quiet tl-btn--danger" onClick={() => setSheet('stop')} disabled={busy}>Stop</button>
           </div>

@@ -31,18 +31,28 @@ export default function Disclosure({
   children,
   onOpen,
   defaultOpen = false,
+  open: controlledOpen,
+  onToggle,
   testId,
   className = '',
 }) {
-  const [open, setOpen] = useState(defaultOpen)
-  const [opened, setOpened] = useState(defaultOpen)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : uncontrolledOpen
+  const [opened, setOpened] = useState(defaultOpen || Boolean(controlledOpen))
   const id = useId()
+
   const toggle = () => {
+    const next = !open
     if (!open && !opened) {
       setOpened(true)
       onOpen?.()
     }
-    setOpen(!open)
+    if (isControlled) {
+      onToggle?.(next)
+    } else {
+      setUncontrolledOpen(next)
+    }
   }
   return (
     <div className={`tl-disc ${className}`.trim()} data-testid={testId}>
