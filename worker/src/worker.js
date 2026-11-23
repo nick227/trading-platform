@@ -10,7 +10,7 @@ import { initCalendar, refreshCalendar, onMarketOpen, onMarketClose, getLastCale
 import { startBotEngine, stopBotEngine, onPriceTick, inflightMap } from './engine/botEngine.js'
 import { log } from './logger.js'
 import { simulationConfig } from '../../server/src/services/simulationService.js'
-import { startReplayFeed } from './market/replayFeed.js'
+import { startSimulationFeed, startReplayFeed } from './market/replayFeed.js'
 import { decrypt } from './utils/encryption.js'
 
 // Initialize quote sync to server
@@ -37,8 +37,31 @@ const healthState = {
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
+async function ensureDatabaseReady(prismaClient, maxWaitMs = 60_000) {
+  const start = Date.now()
+  let delay = 1000
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      await prismaClient.$queryRaw`SELECT 1`
+      await prismaClient.bot.findFirst({ select: { id: true } })
+      await prismaClient.execution.findFirst({ select: { id: true } })
+      log.info('db_connectivity_and_schema_ok')
+      return true
+    } catch (err) {
+      log.warn({ err: err.message, retryInMs: delay }, 'db_or_schema_pending_migration, retrying...')
+      await sleep(delay)
+      delay = Math.min(delay * 1.5, 5000)
+    }
+  }
+  log.error('database_not_ready_after_timeout')
+  throw new Error('Database schema readiness check timed out')
+}
+
 async function main() {
   log.info({ workerId: WORKER_ID, env: process.env.NODE_ENV ?? 'development' }, 'worker_start')
+
+  // Wait for schema and DB migrations before starting worker loops
+  await ensureDatabaseReady(prisma)
 
   // Wire the inflight map from the bot engine into the order worker
   // so the worker can clear it when an order reaches a terminal state
@@ -47,22 +70,20 @@ async function main() {
   // Controlled staging mode: WORKER_ORDER_PROCESSING=disabled verifies the database
   // and reports heartbeats only — no order worker, bot engine, or market stream, so
   // nothing can reach a broker. Unset keeps the normal runtime unchanged.
-  // Simulator mode: only when explicitly configured on both switches AND a replay session
-  // is named. Orders are filled by the internal replay simulator; no Alpaca client, stream
+  // Simulator mode: only when explicitly configured on both switches.
+  // Orders are filled by the internal simulator; no Alpaca client, stream
   // or credentials are ever created. Any partial configuration fails closed.
   const sim = simulationConfig()
   const simProcessing = process.env.WORKER_ORDER_PROCESSING === 'simulated'
   if (simProcessing || sim.requested) {
-    await prisma.$queryRaw`SELECT 1`
-    log.info('db_connectivity_ok')
     if (!(simProcessing && sim.enabled)) {
-      log.error({ WORKER_ORDER_PROCESSING: process.env.WORKER_ORDER_PROCESSING ?? null, BROKER_MODE: process.env.BROKER_MODE ?? null, session: sim.session },
-        'simulator_misconfigured: requires WORKER_ORDER_PROCESSING=simulated, BROKER_MODE=simulated and SIM_REPLAY_SESSION=YYYY-MM-DD; order processing not started')
+      log.error({ WORKER_ORDER_PROCESSING: process.env.WORKER_ORDER_PROCESSING ?? null, BROKER_MODE: process.env.BROKER_MODE ?? null, mode: sim.mode },
+        'simulator_misconfigured: requires WORKER_ORDER_PROCESSING=simulated and BROKER_MODE=simulated; order processing not started')
       for (const k of ['orderWorker', 'alpacaWs', 'alpacaRest', 'calendar']) healthState[k] = 'disabled'
       startHeartbeat()
       return
     }
-    log.warn({ mode: sim.mode, session: sim.session }, 'simulator_mode: historical replay fills only; no broker orders are submitted')
+    log.warn({ mode: sim.mode, session: sim.session }, 'simulator_mode: simulated fills only; no broker orders are submitted')
     orderWorkerPromise = startOrderWorker().catch((err) => {
       healthState.orderWorker = 'failed'
       log.error({ err }, 'order_worker_crashed')
@@ -71,10 +92,10 @@ async function main() {
     healthState.orderWorker = 'simulated'
     healthState.alpacaWs = 'disabled'
     healthState.alpacaRest = 'disabled'
-    healthState.calendar = `historical_replay:${sim.session}`
+    healthState.calendar = `simulated:${sim.mode}`
     startHeartbeat()
     await startBotEngine()
-    startReplayFeed({ session: sim.session, onTick: (ticker) => onPriceTick(ticker) })
+    startSimulationFeed({ mode: sim.mode, session: sim.session, onTick: (ticker) => onPriceTick(ticker) })
     return
   }
 
