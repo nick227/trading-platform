@@ -193,3 +193,46 @@ describe('ownership and the emergency stop', () => {
     expect((await post({ portfolioId: 'por_usr_a', name: 'paused', config: { tickers: ['SPY'] } })).status).toBe(201)
   })
 })
+
+describe('create and edit persist the same algorithm identically', () => {
+  const CONFIG = { tickers: ['msft', 'AAPL'], direction: 'buy', allocatedAmount: 5000, maxOrderNotional: 1000, signalSource: 'alpha_research', research: { minConfidence: 0.5, requireEdgeOverBaseline: false } }
+  const RULES = [
+    { type: 'price_threshold', config: { price: 410, operator: 'above' } },
+    { type: 'cooldown', config: { windowMs: 3_600_000 } },
+    { type: 'position_limit', config: { maxShares: 100 } },
+    { type: 'daily_loss', config: { maxLoss: 300 } },
+    { type: 'time_window', config: { start: '09:45', end: '15:30', timezone: 'America/New_York' } },
+    { type: 'market_hours', config: { allowPremarket: false, allowAfterHours: false } },
+    { type: 'trend_filter', config: { symbol: 'QQQ' } },
+  ]
+  const shape = async (id) => {
+    const bot = await botOf(id)
+    return { name: bot.name, enabled: bot.enabled, config: bot.config, rules: (await rulesOf(id)).map(({ type, name, config, enabled }) => ({ type, name, config, enabled })) }
+  }
+
+  it('POST with everything == POST minimal then PUT with everything (all 7 rule types + research)', async () => {
+    const a = await post({ portfolioId: 'por_usr_a', name: 'Algo', config: CONFIG, rules: RULES })
+    const b = await post({ portfolioId: 'por_usr_a', name: 'Draft', config: { tickers: ['SPY'] } })
+    const edit = await put(b.body.data.id, { name: 'Algo', config: CONFIG, rules: RULES })
+    expect([a.status, b.status, edit.status]).toEqual([201, 201, 200])
+    expect(await shape(b.body.data.id)).toEqual(await shape(a.body.data.id))
+  })
+
+  it('reload round trip: re-saving what GET returns changes nothing', async () => {
+    const { body } = await post({ portfolioId: 'por_usr_a', name: 'Algo', config: CONFIG, rules: RULES })
+    const loaded = (await request(app.server).get(`/api/bots/${body.data.id}`).set(as(tokenA))).body.data
+    const before = await shape(body.data.id)
+    const res = await put(body.data.id, { name: loaded.name, config: loaded.config, rules: (await rulesOf(body.data.id)).map(({ id, type, name, config, enabled }) => ({ id, type, name, config, enabled })), expectedUpdatedAt: loaded.updatedAt })
+    expect(res.status).toBe(200)
+    expect(res.body.changes).toEqual({ rulesCreated: 0, rulesUpdated: 0, rulesDeleted: 0, rulesUnchanged: 7 })
+    expect(await shape(body.data.id)).toEqual(before)
+  })
+
+  it('rules: [] removes every rule; omitting rules keeps them', async () => {
+    await put('bot_r', { name: 'keep' })
+    expect(await rulesOf('bot_r')).toHaveLength(2)
+    const res = await put('bot_r', { rules: [] })
+    expect(res.body.changes).toMatchObject({ rulesDeleted: 2 })
+    expect(await rulesOf('bot_r')).toHaveLength(0)
+  })
+})
