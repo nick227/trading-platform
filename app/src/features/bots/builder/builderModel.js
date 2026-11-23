@@ -173,6 +173,7 @@ export function initEditDraft(bot) {
   return {
     isEdit: true,
     botId: bot.id,
+    updatedAt: bot.updatedAt ?? null,
     templateId: bot.templateId ?? null,
     templateName: bot.strategyName ?? bot.name,
     name: bot.name || '',
@@ -311,8 +312,194 @@ export function validateBuilderDraft(draft, { buyingPower = null } = {}) {
 }
 
 /**
+ * Formats the full desired rules array for the transactional bot configuration API.
+ * Preserves rule IDs, names, and enabled states from originalRules when editing.
+ * Omitting a rule signals deletion on the backend.
+ */
+export function formatDesiredRules(draft, originalRules = []) {
+  const orig = Array.isArray(originalRules) ? originalRules : []
+  const rules = []
+  const findPrev = (type) => orig.find((r) => r.type === type)
+
+  // 1. Price trigger (price_threshold)
+  if (draft.triggerType === 'price_threshold') {
+    const op = draft.trigger?.operator || (draft.direction === 'sell' ? 'below' : 'above')
+    const priceVal = toNumberOrNull(draft.trigger?.price) ?? 0
+    const prev = findPrev('price_threshold')
+    rules.push({
+      ...(prev?.id ? { id: prev.id } : {}),
+      name: prev?.name || (op === 'below' ? 'Price Below Threshold' : 'Price Above Threshold'),
+      type: 'price_threshold',
+      config: { operator: op, price: priceVal },
+      enabled: prev?.enabled ?? true,
+    })
+  }
+
+  // 2. Trend filter (trend_filter)
+  if (draft.triggerType === 'trend_filter') {
+    const prev = findPrev('trend_filter')
+    rules.push({
+      ...(prev?.id ? { id: prev.id } : {}),
+      name: prev?.name || 'Trend Filter',
+      type: 'trend_filter',
+      config: prev?.config && typeof prev.config === 'object' ? prev.config : { symbol: 'SPY' },
+      enabled: prev?.enabled ?? true,
+    })
+  }
+
+  // 3. Market hours (market_hours)
+  if (draft.marketHours?.on) {
+    const prev = findPrev('market_hours')
+    rules.push({
+      ...(prev?.id ? { id: prev.id } : {}),
+      name: prev?.name || 'Market Hours',
+      type: 'market_hours',
+      config: {
+        allowPremarket: Boolean(draft.marketHours.extended),
+        allowAfterHours: Boolean(draft.marketHours.extended),
+      },
+      enabled: prev?.enabled ?? true,
+    })
+  }
+
+  // 4. Cooldown (cooldown)
+  if (draft.cooldown?.on) {
+    const h = toNumberOrNull(draft.cooldown.hours) ?? 24
+    const prev = findPrev('cooldown')
+    rules.push({
+      ...(prev?.id ? { id: prev.id } : {}),
+      name: prev?.name || 'Cooldown',
+      type: 'cooldown',
+      config: {
+        windowMs: Math.round(h * HOUR),
+      },
+      enabled: prev?.enabled ?? true,
+    })
+  }
+
+  // 5. Position limit (position_limit)
+  if (draft.positionLimit?.on) {
+    const shares = toNumberOrNull(draft.positionLimit.maxShares) ?? 100
+    const prev = findPrev('position_limit')
+    rules.push({
+      ...(prev?.id ? { id: prev.id } : {}),
+      name: prev?.name || 'Position Limit',
+      type: 'position_limit',
+      config: {
+        maxShares: shares,
+        maxQuantity: shares,
+        ...(draft.positionLimit.maxPositions ? { maxPositions: draft.positionLimit.maxPositions } : {}),
+      },
+      enabled: prev?.enabled ?? true,
+    })
+  }
+
+  // 6. Daily loss (daily_loss)
+  if (draft.dailyLoss?.on) {
+    const loss = toNumberOrNull(draft.dailyLoss.maxLoss) ?? 500
+    const prev = findPrev('daily_loss')
+    rules.push({
+      ...(prev?.id ? { id: prev.id } : {}),
+      name: prev?.name || 'Daily Loss Limit',
+      type: 'daily_loss',
+      config: {
+        maxLoss: loss,
+        ...(draft.dailyLoss.maxDailyLossPct ? { maxDailyLossPct: draft.dailyLoss.maxDailyLossPct } : {}),
+      },
+      enabled: prev?.enabled ?? true,
+    })
+  }
+
+  // 7. Fixed rules (e.g. trend_filter, time_window, or unmanaged rule types)
+  for (const f of draft.fixed || []) {
+    if (!rules.some((r) => r.type === f.type)) {
+      rules.push(f)
+    }
+  }
+
+  return rules
+}
+
+/**
+ * Builds the config patch for Bot.config.
+ * When editing, sends only changed fields; server deep-merges with stored config.
+ * When creating, sends the full configured core fields.
+ */
+export function buildConfigPatch(draft, baseConfig = {}) {
+  const patch = {}
+  const symbols = parseSymbols(draft.symbolsText)
+  const capitalNum = toNumberOrNull(draft.capital)
+  const maxOrderNum = toNumberOrNull(draft.maxPerOrder)
+  const isEdit = Boolean(draft.isEdit)
+
+  if (isEdit) {
+    const baseTickers = Array.isArray(baseConfig.tickers) ? baseConfig.tickers : []
+    const tickersChanged = symbols.length !== baseTickers.length || symbols.some((s, i) => s !== baseTickers[i])
+    if (tickersChanged) {
+      patch.tickers = symbols
+    }
+
+    if (draft.direction && draft.direction !== baseConfig.direction) {
+      patch.direction = draft.direction
+    }
+
+    if (capitalNum !== null && capitalNum !== baseConfig.allocatedAmount) {
+      patch.allocatedAmount = capitalNum
+    }
+
+    if (maxOrderNum !== null && maxOrderNum !== baseConfig.maxOrderNotional) {
+      patch.maxOrderNotional = maxOrderNum
+    }
+
+    const isResearch = draft.triggerType === 'alpha_research'
+    const wasResearch = baseConfig.signalSource === 'alpha_research'
+    if (isResearch !== wasResearch) {
+      patch.signalSource = isResearch ? 'alpha_research' : null
+    }
+
+    if (isResearch && draft.research) {
+      const baseRes = baseConfig.research || {}
+      const rPatch = {}
+      const minConf = (toNumberOrNull(draft.research.minScore) ?? 60) / 100
+      if (minConf !== baseRes.minConfidence) rPatch.minConfidence = minConf
+
+      const maxAge = toNumberOrNull(draft.research.maxAgeHours) ?? 96
+      if (maxAge !== baseRes.maxPredictionAgeHours) rPatch.maxPredictionAgeHours = maxAge
+
+      const maxDrift = toNumberOrNull(draft.research.maxDriftPct) ?? 5
+      if (maxDrift !== baseRes.maxEntryDriftPct) rPatch.maxEntryDriftPct = maxDrift
+
+      const reqEdge = draft.research.requireEdge !== false
+      if (reqEdge !== (baseRes.requireEdgeOverBaseline ?? true)) rPatch.requireEdgeOverBaseline = reqEdge
+
+      if (Object.keys(rPatch).length > 0) {
+        patch.research = rPatch
+      }
+    }
+  } else {
+    // Create mode: send complete configured core values
+    patch.tickers = symbols
+    patch.direction = draft.direction || 'buy'
+    if (capitalNum !== null) patch.allocatedAmount = capitalNum
+    if (maxOrderNum !== null) patch.maxOrderNotional = maxOrderNum
+
+    if (draft.triggerType === 'alpha_research' && draft.research) {
+      patch.signalSource = 'alpha_research'
+      patch.research = {
+        minConfidence: (toNumberOrNull(draft.research.minScore) ?? 60) / 100,
+        maxPredictionAgeHours: toNumberOrNull(draft.research.maxAgeHours) ?? 96,
+        maxEntryDriftPct: toNumberOrNull(draft.research.maxDriftPct) ?? 5,
+        requireEdgeOverBaseline: draft.research.requireEdge !== false,
+      }
+    }
+  }
+
+  return patch
+}
+
+/**
  * Reconstructs the complete bot object { name, tickers, direction, config, rules }
- * from the builder draft, preserving existing rule IDs and unedited config fields.
+ * from the builder draft for live strategy summary and client-side rendering.
  */
 export function buildBotFromDraft(draft, original = {}) {
   const origConfig = original.config && typeof original.config === 'object' ? original.config : {}
@@ -321,91 +508,9 @@ export function buildBotFromDraft(draft, original = {}) {
   const capitalNum = toNumberOrNull(draft.capital)
   const maxOrderNum = toNumberOrNull(draft.maxPerOrder)
 
-  const keep = (type, name, cfg) => {
-    const prev = origRules.find((r) => r.type === type)
-    return {
-      ...(prev?.id ? { id: prev.id } : {}),
-      name: prev?.name ?? name,
-      type,
-      config: { ...(prev?.config ?? {}), ...cfg },
-      ...(prev?.enabled !== undefined ? { enabled: prev.enabled } : {}),
-    }
-  }
+  const rules = formatDesiredRules(draft, origRules)
 
-  const rules = []
-
-  // 1. Trigger rule (price_threshold)
-  if (draft.triggerType === 'price_threshold') {
-    const op = draft.trigger?.operator || (draft.direction === 'sell' ? 'below' : 'above')
-    const priceVal = toNumberOrNull(draft.trigger?.price) ?? 0
-    rules.push(
-      keep('price_threshold', op === 'below' ? 'Price Below Threshold' : 'Price Above Threshold', {
-        operator: op,
-        direction: op,
-        price: priceVal,
-      })
-    )
-  }
-
-  // 2. Market hours (market_hours)
-  if (draft.marketHours.on) {
-    rules.push(
-      keep('market_hours', 'Market Hours', {
-        allowPremarket: draft.marketHours.extended,
-        allowAfterHours: draft.marketHours.extended,
-      })
-    )
-  }
-
-  // 3. Cooldown (cooldown)
-  if (draft.cooldown.on) {
-    const h = toNumberOrNull(draft.cooldown.hours) ?? 24
-    rules.push(
-      keep('cooldown', 'Cooldown', {
-        windowMs: Math.round(h * HOUR),
-        cooldownHours: undefined,
-        minutes: undefined,
-      })
-    )
-  }
-
-  // 4. Position limit (position_limit)
-  if (draft.positionLimit.on) {
-    const shares = toNumberOrNull(draft.positionLimit.maxShares) ?? 100
-    rules.push(
-      keep('position_limit', 'Position Limit', {
-        maxShares: shares,
-        maxQuantity: shares,
-        ...(draft.positionLimit.maxPositions ? { maxPositions: draft.positionLimit.maxPositions } : {}),
-      })
-    )
-  }
-
-  // 5. Daily loss (daily_loss)
-  if (draft.dailyLoss.on) {
-    const loss = toNumberOrNull(draft.dailyLoss.maxLoss) ?? 500
-    rules.push(
-      keep('daily_loss', 'Daily Loss Limit', {
-        maxLoss: loss,
-        ...(draft.dailyLoss.maxDailyLossPct ? { maxDailyLossPct: draft.dailyLoss.maxDailyLossPct } : {}),
-      })
-    )
-  }
-
-  // 6. Fixed rules (trend_filter, time_window, and any unmanaged rule types)
-  for (const f of draft.fixed || []) {
-    rules.push(f)
-  }
-
-  // Remove undefined config values while keeping null or false values
-  for (const r of rules) {
-    for (const k of Object.keys(r.config)) {
-      if (r.config[k] === undefined) delete r.config[k]
-    }
-  }
-
-  // Base config preservation — wholesale replacement on backend requires
-  // preserving every engine-supported property not explicitly edited.
+  // Base config preservation for client-side preview
   const nextConfig = {
     ...origConfig,
     tickers: symbols,
@@ -416,12 +521,7 @@ export function buildBotFromDraft(draft, original = {}) {
     riskOnExposure: origConfig.riskOnExposure ?? 1,
   }
 
-  // If quantity was configured on the original bot, preserve it
-  if (origConfig.quantity !== undefined) {
-    nextConfig.quantity = origConfig.quantity
-  }
-
-  // If engine risk limits, position sizing, timezone, regime, etc. were present, preserve them
+  if (origConfig.quantity !== undefined) nextConfig.quantity = origConfig.quantity
   if (origConfig.riskLimits !== undefined) nextConfig.riskLimits = origConfig.riskLimits
   if (origConfig.positionSizing !== undefined) nextConfig.positionSizing = origConfig.positionSizing
   if (origConfig.timezone !== undefined) nextConfig.timezone = origConfig.timezone
@@ -458,57 +558,147 @@ export function buildBotFromDraft(draft, original = {}) {
 }
 
 /**
- * Saves an existing bot algorithm (PUT /bots/:id for name/config, diffs /bots/:id/rules).
- * Handles partial save failures explicitly: if bot config is saved but a rule
- * operation fails, returns { ok: false, partial: true, error: ... } so success
- * is never falsely reported.
+ * Maps server error responses from POST/PUT /api/bots/.../configuration to:
+ *  - field errors (INVALID_CONFIG, INVALID_RULE)
+ *  - concurrency conflict indicator (STALE_BOT)
+ *  - human-readable message for the banner
  */
-export async function saveBotAlgorithm({ bot, builtBot, api }) {
-  let botConfigSaved = false
+export function mapServerValidationError(error, rulesSent = []) {
+  const details = error?.details || {}
+  const code = error?.code || details.code
+  const message = error?.serverMessage || details.message || error?.message || 'Validation failed.'
+
+  if (code === 'STALE_BOT') {
+    return {
+      stale: true,
+      currentUpdatedAt: details.updatedAt || null,
+      message: 'This bot was updated in another window. You can overwrite with your current settings or reload the latest bot.',
+      fieldErrors: {},
+    }
+  }
+
+  if (code === 'EMERGENCY_STOP_ACTIVE') {
+    return {
+      stale: false,
+      message: 'Emergency stop is active. Save the bot paused or clear the stop first.',
+      fieldErrors: {},
+    }
+  }
+
+  const fieldErrors = {}
+
+  if (code === 'INVALID_CONFIG') {
+    const f = details.field
+    if (f === 'tickers') fieldErrors.symbols = message
+    else if (f === 'allocatedAmount') fieldErrors.capital = message
+    else if (f === 'maxOrderNotional') fieldErrors.maxPerOrder = message
+    else if (f === 'name') fieldErrors.name = message
+    else if (f === 'direction') fieldErrors.direction = message
+    else if (f === 'research') fieldErrors.minScore = message
+    return { stale: false, fieldErrors, message }
+  }
+
+  if (code === 'INVALID_RULE') {
+    const ruleType = details.type || (details.ruleIndex !== undefined && rulesSent[details.ruleIndex]?.type)
+    if (ruleType === 'price_threshold') fieldErrors.triggerPrice = message
+    else if (ruleType === 'cooldown') fieldErrors.cooldown = message
+    else if (ruleType === 'position_limit') fieldErrors.positionLimit = message
+    else if (ruleType === 'daily_loss') fieldErrors.dailyLoss = message
+    return { stale: false, fieldErrors, message }
+  }
+
+  return { stale: false, fieldErrors, message }
+}
+
+/**
+ * Creates a bot and its rules in one atomic transaction.
+ * POST /api/bots/configuration
+ */
+export async function createBotConfiguration({
+  portfolioId,
+  templateId,
+  draft,
+  originalTemplate = {},
+  api,
+}) {
+  const patch = buildConfigPatch(draft, originalTemplate?.config || {})
+  const rules = formatDesiredRules(draft, originalTemplate?.rules || [])
+
+  const payload = {
+    portfolioId,
+    ...(templateId ? { templateId } : {}),
+    name: draft.name.trim(),
+    enabled: true,
+    config: patch,
+    rules,
+  }
+
+  return await api.post('/bots/configuration', payload)
+}
+
+/**
+ * Updates an existing bot and its rules in one atomic transaction.
+ * PUT /api/bots/:id/configuration
+ */
+export async function updateBotConfiguration({
+  bot,
+  draft,
+  api,
+  expectedUpdatedAt,
+  overwrite = false,
+}) {
+  const patch = buildConfigPatch(draft, bot.config || {})
+  const rules = formatDesiredRules(draft, bot.rules || [])
+
+  const effectiveUpdatedAt = overwrite
+    ? undefined
+    : expectedUpdatedAt !== undefined
+      ? expectedUpdatedAt
+      : draft.updatedAt || undefined
+
+  const payload = {
+    ...(effectiveUpdatedAt ? { expectedUpdatedAt: effectiveUpdatedAt } : {}),
+    name: draft.name.trim(),
+    config: patch,
+    rules,
+  }
+
+  return await api.put(`/bots/${bot.id}/configuration`, payload)
+}
+
+/**
+ * Canonical unified save: wraps updateBotConfiguration for backward compatibility.
+ */
+export async function saveBotAlgorithm({ bot, builtBot, draft, api, expectedUpdatedAt, overwrite = false }) {
   try {
-    // 1. Update bot name and config wholesale (preserving all untouched engine properties)
-    await api.put(`/bots/${bot.id}`, {
-      name: builtBot.name,
-      config: builtBot.config,
+    const updated = await updateBotConfiguration({
+      bot,
+      draft: draft || {
+        ...builtBot,
+        isEdit: true,
+        updatedAt: expectedUpdatedAt || bot.updatedAt,
+        symbolsText: (builtBot.tickers || []).join(', '),
+        capital: String(builtBot.config?.allocatedAmount ?? ''),
+        maxPerOrder: String(builtBot.config?.maxOrderNotional ?? ''),
+        marketHours: { on: Boolean(builtBot.rules?.find((r) => r.type === 'market_hours')) },
+        cooldown: { on: Boolean(builtBot.rules?.find((r) => r.type === 'cooldown')) },
+        positionLimit: { on: Boolean(builtBot.rules?.find((r) => r.type === 'position_limit')) },
+        dailyLoss: { on: Boolean(builtBot.rules?.find((r) => r.type === 'daily_loss')) },
+        triggerType: builtBot.rules?.find((r) => r.type === 'price_threshold') ? 'price_threshold' : 'schedule',
+      },
+      api,
+      expectedUpdatedAt,
+      overwrite,
     })
-    botConfigSaved = true
-
-    // 2. Diff and update rules
-    const wanted = new Map(
-      builtBot.rules
-        .filter((r) => r.type !== 'trend_filter' && r.type !== 'time_window')
-        .map((r) => [r.type, r])
-    )
-
-    for (const prev of bot.rules ?? []) {
-      if (prev.type === 'trend_filter' || prev.type === 'time_window') continue
-      const next = wanted.get(prev.type)
-      if (!next) {
-        await api.del(`/bots/${bot.id}/rules/${prev.id}`)
-      } else if (JSON.stringify(next.config) !== JSON.stringify(prev.config)) {
-        await api.put(`/bots/${bot.id}/rules/${prev.id}`, { config: next.config })
-      }
-      wanted.delete(prev.type)
-    }
-
-    for (const r of wanted.values()) {
-      await api.post(`/bots/${bot.id}/rules`, { name: r.name, type: r.type, config: r.config })
-    }
-
-    return { ok: true }
+    return { ok: true, bot: updated }
   } catch (error) {
-    if (botConfigSaved) {
-      const detail = error?.serverMessage || error?.message || 'rule update error'
-      return {
-        ok: false,
-        partial: true,
-        error: `Your bot settings were saved, but some rule changes couldn’t be applied (${detail}). Reload the page to review current rules.`,
-      }
-    }
+    const mapped = mapServerValidationError(error)
     return {
       ok: false,
-      partial: false,
-      error: error?.serverMessage || error?.message || 'Couldn’t save changes. Reload to check current settings.',
+      error: mapped.message,
+      stale: mapped.stale,
+      fieldErrors: mapped.fieldErrors,
+      details: error.details,
     }
   }
 }

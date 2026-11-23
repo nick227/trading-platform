@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { del, get, post, put } from '../../../api/client'
+import { get, post, put } from '../../../api/client'
 import { useAuth } from '../../../app/AuthProvider'
 import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
 import Button from '../../../components/ui/Button'
@@ -8,12 +8,15 @@ import Disclosure from '../../../components/ui/Disclosure'
 import { Field, Input, Select } from '../../../components/ui/Field'
 import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { money, sessionDate } from '../../../ui/format'
-import { createAndStartBot, loadWizardData, parseSymbols } from '../new/newBotApi'
+import { loadWizardData, parseSymbols } from '../new/newBotApi'
 import {
   buildBotFromDraft,
+  createBotConfiguration,
+  formatDesiredRules,
   initCreateDraft,
   initEditDraft,
-  saveBotAlgorithm,
+  mapServerValidationError,
+  updateBotConfiguration,
   validateBuilderDraft,
 } from './builderModel'
 
@@ -54,6 +57,8 @@ export default function AlgorithmBuilder() {
   const [touched, setTouched] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [serverFieldErrors, setServerFieldErrors] = useState({})
+  const [staleError, setStaleError] = useState(null)
 
   // Section disclosures open state
   const [whenOpen, setWhenOpen] = useState(true)
@@ -133,6 +138,8 @@ export default function AlgorithmBuilder() {
     setDraft(initCreateDraft(tmpl, wizardData, pinnedTicker))
     setTouched(false)
     setSubmitError(null)
+    setServerFieldErrors({})
+    setStaleError(null)
   }
 
   // Live bot preview built from draft
@@ -210,9 +217,8 @@ export default function AlgorithmBuilder() {
       .filter(Boolean)
       .join(' · ') || 'Limits & schedule'
 
-  // Submit action
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  // Save action (unified transactional API)
+  const handleSave = async ({ overwrite = false } = {}) => {
     setTouched(true)
 
     if (hasErrors) {
@@ -230,40 +236,95 @@ export default function AlgorithmBuilder() {
 
     setSubmitting(true)
     setSubmitError(null)
+    setServerFieldErrors({})
+    setStaleError(null)
 
-    if (isEdit) {
-      // Save existing bot
-      const res = await saveBotAlgorithm({
-        bot: originalBot,
-        builtBot,
-        api: { put, post, del },
-      })
-      setSubmitting(false)
-
-      if (res.ok) {
+    try {
+      if (isEdit) {
+        await updateBotConfiguration({
+          bot: originalBot,
+          draft,
+          api: { put },
+          expectedUpdatedAt: overwrite ? undefined : draft.updatedAt,
+          overwrite,
+        })
+        setSubmitting(false)
         navigate(`/bots/${botId}`, { state: { updated: true } })
       } else {
-        setSubmitError({ message: res.error, partial: res.partial })
+        const res = await createBotConfiguration({
+          portfolioId: wizardData?.portfolioId,
+          templateId: draft.templateId,
+          draft,
+          originalTemplate: originalBot,
+          api: { post },
+        })
+        setSubmitting(false)
+        navigate(`/bots/${res?.id || res?.botId}`, { state: { created: true } })
       }
-    } else {
-      // Create new bot
-      const res = await createAndStartBot({
-        template: originalBot,
-        portfolioId: wizardData?.portfolioId,
-        name: builtBot.name,
-        tickers: builtBot.tickers,
-        capital: builtBot.config.allocatedAmount,
-        maxPerOrder: builtBot.config.maxOrderNotional,
-        rules: builtBot.rules,
-        researchConfig: builtBot.config.research,
-      })
+    } catch (error) {
       setSubmitting(false)
+      const desiredRules = formatDesiredRules(draft, isEdit ? originalBot?.rules : originalBot?.rules || [])
+      const mapped = mapServerValidationError(error, desiredRules)
 
-      if (res.ok) {
-        navigate(`/bots/${res.botId}`, { state: { created: true } })
+      if (mapped.stale) {
+        setStaleError({
+          message: mapped.message,
+          currentUpdatedAt: mapped.currentUpdatedAt,
+        })
       } else {
-        setSubmitError(res)
+        setSubmitError({ message: mapped.message })
+        if (mapped.fieldErrors && Object.keys(mapped.fieldErrors).length > 0) {
+          setServerFieldErrors(mapped.fieldErrors)
+          if (mapped.fieldErrors.triggerPrice || mapped.fieldErrors.minScore) {
+            setWhenOpen(true)
+          }
+          if (
+            mapped.fieldErrors.name ||
+            mapped.fieldErrors.symbols ||
+            mapped.fieldErrors.capital ||
+            mapped.fieldErrors.maxPerOrder
+          ) {
+            setTradeOpen(true)
+          }
+          if (
+            mapped.fieldErrors.cooldown ||
+            mapped.fieldErrors.positionLimit ||
+            mapped.fieldErrors.dailyLoss ||
+            mapped.fieldErrors.maxAgeHours ||
+            mapped.fieldErrors.maxDriftPct
+          ) {
+            setMoreOpen(true)
+          }
+        }
       }
+    }
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    handleSave()
+  }
+
+  const handleReloadBot = async () => {
+    setLoading(true)
+    setStaleError(null)
+    setSubmitError(null)
+    setServerFieldErrors({})
+    try {
+      const [botRes, rulesRes] = await Promise.all([
+        get(`/bots/${botId}`),
+        get(`/bots/${botId}/rules`).catch(() => []),
+      ])
+      const fullBot = {
+        ...botRes,
+        rules: Array.isArray(botRes.rules) && botRes.rules.length ? botRes.rules : Array.isArray(rulesRes) ? rulesRes : [],
+      }
+      setOriginalBot(fullBot)
+      setDraft(initEditDraft(fullBot))
+      setLoading(false)
+    } catch {
+      setLoadError('Failed to reload latest bot.')
+      setLoading(false)
     }
   }
 
@@ -425,7 +486,7 @@ export default function AlgorithmBuilder() {
                   </Field>
                   <Field
                     label="Trigger price"
-                    error={touched ? errors.triggerPrice : null}
+                    error={(touched ? errors.triggerPrice : null) || serverFieldErrors.triggerPrice || null}
                     help="Target price in dollars"
                   >
                     {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
@@ -434,11 +495,12 @@ export default function AlgorithmBuilder() {
                         prefix="$"
                         inputMode="decimal"
                         value={draft.trigger?.price || ''}
-                        error={touched && errors.triggerPrice}
+                        error={(touched && errors.triggerPrice) || Boolean(serverFieldErrors.triggerPrice)}
                         aria-invalid={ariaInvalid}
                         aria-describedby={ariaDescribedby}
                         onChange={(e) => {
                           const val = e.target.value.replace(/[^0-9.]/g, '')
+                          setServerFieldErrors((s) => ({ ...s, triggerPrice: null }))
                           setDraft((d) => ({
                             ...d,
                             trigger: { ...(d.trigger || {}), price: val },
@@ -458,7 +520,7 @@ export default function AlgorithmBuilder() {
                   <Field
                     label="Minimum research score"
                     help="(0–100; a score, not a probability)"
-                    error={touched ? errors.minScore : null}
+                    error={(touched ? errors.minScore : null) || serverFieldErrors.minScore || null}
                   >
                     {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
                       <Input
@@ -466,11 +528,12 @@ export default function AlgorithmBuilder() {
                         style={{ maxWidth: 160 }}
                         inputMode="numeric"
                         value={draft.research.minScore}
-                        error={touched && errors.minScore}
+                        error={(touched && errors.minScore) || Boolean(serverFieldErrors.minScore)}
                         aria-invalid={ariaInvalid}
                         aria-describedby={ariaDescribedby}
                         onChange={(e) => {
                           const val = e.target.value.replace(/[^0-9]/g, '')
+                          setServerFieldErrors((s) => ({ ...s, minScore: null }))
                           setDraft((d) => ({
                             ...d,
                             research: { ...d.research, minScore: val },
@@ -508,16 +571,19 @@ export default function AlgorithmBuilder() {
             <div style={{ display: 'grid', gap: 16 }}>
               <Field
                 label="Bot name"
-                error={touched ? errors.name : null}
+                error={(touched ? errors.name : null) || serverFieldErrors.name || null}
               >
                 {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
                   <Input
                     id={id}
                     value={draft.name}
-                    error={touched && errors.name}
+                    error={(touched && errors.name) || Boolean(serverFieldErrors.name)}
                     aria-invalid={ariaInvalid}
                     aria-describedby={ariaDescribedby}
-                    onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                    onChange={(e) => {
+                      setServerFieldErrors((s) => ({ ...s, name: null }))
+                      setDraft((d) => ({ ...d, name: e.target.value }))
+                    }}
                   />
                 )}
               </Field>
@@ -529,17 +595,20 @@ export default function AlgorithmBuilder() {
                     ? 'The bot acts only on symbols with current Alpha Engine research.'
                     : 'Separate several symbols with commas (e.g. AAPL, MSFT).'
                 }
-                error={touched ? errors.symbols : null}
+                error={(touched ? errors.symbols : null) || serverFieldErrors.symbols || null}
               >
                 {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
                   <Input
                     id={id}
                     placeholder="e.g. AAPL, MSFT"
                     value={draft.symbolsText}
-                    error={touched && errors.symbols}
+                    error={(touched && errors.symbols) || Boolean(serverFieldErrors.symbols)}
                     aria-invalid={ariaInvalid}
                     aria-describedby={ariaDescribedby}
-                    onChange={(e) => setDraft((d) => ({ ...d, symbolsText: e.target.value }))}
+                    onChange={(e) => {
+                      setServerFieldErrors((s) => ({ ...s, symbols: null }))
+                      setDraft((d) => ({ ...d, symbolsText: e.target.value }))
+                    }}
                   />
                 )}
               </Field>
@@ -574,7 +643,7 @@ export default function AlgorithmBuilder() {
                 <Field
                   label="Simulated capital"
                   help={`Cash available: ${money(wizardData?.buyingPower)}. Capital caps total spend.`}
-                  error={touched ? errors.capital : null}
+                  error={(touched ? errors.capital : null) || serverFieldErrors.capital || null}
                 >
                   {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
                     <Input
@@ -582,11 +651,12 @@ export default function AlgorithmBuilder() {
                       prefix="$"
                       inputMode="decimal"
                       value={draft.capital}
-                      error={touched && errors.capital}
+                      error={(touched && errors.capital) || Boolean(serverFieldErrors.capital)}
                       aria-invalid={ariaInvalid}
                       aria-describedby={ariaDescribedby}
                       onChange={(e) => {
                         const val = e.target.value.replace(/[^0-9.]/g, '')
+                        setServerFieldErrors((s) => ({ ...s, capital: null }))
                         setDraft((d) => ({ ...d, capital: val }))
                       }}
                     />
@@ -596,7 +666,7 @@ export default function AlgorithmBuilder() {
                 <Field
                   label="Max spend per order"
                   help="Caps the size of any single order."
-                  error={touched ? errors.maxPerOrder : null}
+                  error={(touched ? errors.maxPerOrder : null) || serverFieldErrors.maxPerOrder || null}
                 >
                   {({ id, 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedby }) => (
                     <Input
@@ -604,11 +674,12 @@ export default function AlgorithmBuilder() {
                       prefix="$"
                       inputMode="decimal"
                       value={draft.maxPerOrder}
-                      error={touched && errors.maxPerOrder}
+                      error={(touched && errors.maxPerOrder) || Boolean(serverFieldErrors.maxPerOrder)}
                       aria-invalid={ariaInvalid}
                       aria-describedby={ariaDescribedby}
                       onChange={(e) => {
                         const val = e.target.value.replace(/[^0-9.]/g, '')
+                        setServerFieldErrors((s) => ({ ...s, maxPerOrder: null }))
                         setDraft((d) => ({ ...d, maxPerOrder: val }))
                       }}
                     />
@@ -681,9 +752,10 @@ export default function AlgorithmBuilder() {
                     inputMode="decimal"
                     aria-label="Cooldown hours"
                     value={draft.cooldown.hours}
-                    error={touched && errors.cooldown}
+                    error={(touched && errors.cooldown) || Boolean(serverFieldErrors.cooldown)}
                     onChange={(e) => {
                       const val = e.target.value.replace(/[^0-9.]/g, '')
+                      setServerFieldErrors((s) => ({ ...s, cooldown: null }))
                       setDraft((d) => ({
                         ...d,
                         cooldown: { ...d.cooldown, hours: val, on: true },
@@ -692,7 +764,11 @@ export default function AlgorithmBuilder() {
                   />
                   <span className="tl-muted">hours</span>
                 </div>
-                {touched && errors.cooldown && <p className="tl-field-error" role="alert">{errors.cooldown}</p>}
+                {((touched && errors.cooldown) || serverFieldErrors.cooldown) && (
+                  <p className="tl-field-error" role="alert">
+                    {errors.cooldown || serverFieldErrors.cooldown}
+                  </p>
+                )}
               </div>
 
               {/* Position limit */}
@@ -716,9 +792,10 @@ export default function AlgorithmBuilder() {
                     inputMode="numeric"
                     aria-label="Maximum shares per symbol"
                     value={draft.positionLimit.maxShares}
-                    error={touched && errors.positionLimit}
+                    error={(touched && errors.positionLimit) || Boolean(serverFieldErrors.positionLimit)}
                     onChange={(e) => {
                       const val = e.target.value.replace(/[^0-9]/g, '')
+                      setServerFieldErrors((s) => ({ ...s, positionLimit: null }))
                       setDraft((d) => ({
                         ...d,
                         positionLimit: { ...d.positionLimit, maxShares: val, on: true },
@@ -727,7 +804,11 @@ export default function AlgorithmBuilder() {
                   />
                   <span className="tl-muted">shares per symbol</span>
                 </div>
-                {touched && errors.positionLimit && <p className="tl-field-error" role="alert">{errors.positionLimit}</p>}
+                {((touched && errors.positionLimit) || serverFieldErrors.positionLimit) && (
+                  <p className="tl-field-error" role="alert">
+                    {errors.positionLimit || serverFieldErrors.positionLimit}
+                  </p>
+                )}
               </div>
 
               {/* Daily loss limit */}
@@ -752,9 +833,10 @@ export default function AlgorithmBuilder() {
                     inputMode="decimal"
                     aria-label="Daily loss limit in dollars"
                     value={draft.dailyLoss.maxLoss}
-                    error={touched && errors.dailyLoss}
+                    error={(touched && errors.dailyLoss) || Boolean(serverFieldErrors.dailyLoss)}
                     onChange={(e) => {
                       const val = e.target.value.replace(/[^0-9.]/g, '')
+                      setServerFieldErrors((s) => ({ ...s, dailyLoss: null }))
                       setDraft((d) => ({
                         ...d,
                         dailyLoss: { ...d.dailyLoss, maxLoss: val, on: true },
@@ -762,7 +844,11 @@ export default function AlgorithmBuilder() {
                     }}
                   />
                 </div>
-                {touched && errors.dailyLoss && <p className="tl-field-error" role="alert">{errors.dailyLoss}</p>}
+                {((touched && errors.dailyLoss) || serverFieldErrors.dailyLoss) && (
+                  <p className="tl-field-error" role="alert">
+                    {errors.dailyLoss || serverFieldErrors.dailyLoss}
+                  </p>
+                )}
               </div>
 
               {/* Fixed rules (trend_filter, time_window) */}
@@ -782,17 +868,18 @@ export default function AlgorithmBuilder() {
                     <Field
                       label="Maximum prediction age"
                       help="Hours since publication (1–720)"
-                      error={touched ? errors.maxAgeHours : null}
+                      error={(touched ? errors.maxAgeHours : null) || serverFieldErrors.maxAgeHours || null}
                     >
                       {({ id, 'aria-invalid': ariaInvalid }) => (
                         <Input
                           id={id}
                           inputMode="numeric"
                           value={draft.research.maxAgeHours}
-                          error={touched && errors.maxAgeHours}
+                          error={(touched && errors.maxAgeHours) || Boolean(serverFieldErrors.maxAgeHours)}
                           aria-invalid={ariaInvalid}
                           onChange={(e) => {
                             const val = e.target.value.replace(/[^0-9]/g, '')
+                            setServerFieldErrors((s) => ({ ...s, maxAgeHours: null }))
                             setDraft((d) => ({
                               ...d,
                               research: { ...d.research, maxAgeHours: val },
@@ -804,17 +891,18 @@ export default function AlgorithmBuilder() {
                     <Field
                       label="Maximum price drift"
                       help="Price move since signal (0–50%)"
-                      error={touched ? errors.maxDriftPct : null}
+                      error={(touched ? errors.maxDriftPct : null) || serverFieldErrors.maxDriftPct || null}
                     >
                       {({ id, 'aria-invalid': ariaInvalid }) => (
                         <Input
                           id={id}
                           inputMode="numeric"
                           value={draft.research.maxDriftPct}
-                          error={touched && errors.maxDriftPct}
+                          error={(touched && errors.maxDriftPct) || Boolean(serverFieldErrors.maxDriftPct)}
                           aria-invalid={ariaInvalid}
                           onChange={(e) => {
                             const val = e.target.value.replace(/[^0-9]/g, '')
+                            setServerFieldErrors((s) => ({ ...s, maxDriftPct: null }))
                             setDraft((d) => ({
                               ...d,
                               research: { ...d.research, maxDriftPct: val },
@@ -859,26 +947,39 @@ export default function AlgorithmBuilder() {
           </label>
         )}
 
+        {/* Concurrency conflict notice (409 STALE_BOT) */}
+        {staleError && (
+          <div className="tl-notice tl-notice--warn" role="alert" data-testid="stale-bot-notice" style={{ marginTop: 18 }}>
+            <div style={{ display: 'grid', gap: 10 }}>
+              <span>{staleError.message}</span>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  type="button"
+                  onClick={() => handleSave({ overwrite: true })}
+                  data-testid="overwrite-btn"
+                >
+                  Overwrite with current settings
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  type="button"
+                  onClick={handleReloadBot}
+                  data-testid="reload-btn"
+                >
+                  Reload latest bot
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Submit error alert */}
-        {submitError && (
+        {submitError && !staleError && (
           <div className="tl-notice tl-notice--error" role="alert" data-testid="submit-error" style={{ marginTop: 18 }}>
-            <span>
-              {submitError.message}
-              {submitError.partial && (
-                <>
-                  {' '}
-                  <button type="button" className="tl-link-btn" onClick={() => window.location.reload()}>
-                    Reload bot
-                  </button>
-                </>
-              )}
-              {submitError.botId && (
-                <>
-                  {' '}
-                  <Link to={`/bots/${submitError.botId}`}>Open the bot</Link>
-                </>
-              )}
-            </span>
+            <span>{submitError.message}</span>
           </div>
         )}
 
@@ -894,8 +995,7 @@ export default function AlgorithmBuilder() {
               submitting ||
               (needsConfirm && !draft.confirmed) ||
               mode !== 'paper' ||
-              (!isEdit && !wizardData?.portfolioId) ||
-              Boolean(submitError?.botId)
+              (!isEdit && !wizardData?.portfolioId)
             }
             data-testid="submit-builder-btn"
           >

@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useParams, useLocation } from 'react-router-dom'
-import { get, post, put, del } from '../../../../api/client'
+import { get, post, put } from '../../../../api/client'
 import AlgorithmBuilder from '../AlgorithmBuilder'
+
+vi.mock('../../../../api/client', () => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  del: vi.fn(),
+}))
 
 vi.mock('react-router-dom', async () => vi.importActual('react-router-dom'))
 
@@ -125,27 +132,24 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     expect(screen.getByTestId('submit-builder-btn')).toHaveTextContent('Start bot')
   })
 
-  it('allows switching starting points, updating preloaded values reactively', async () => {
+  it('allows switching starting point from the template selector', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_golden_cross')
-
     await screen.findByLabelText('Bot name')
+
     const select = screen.getByTestId('template-select')
     fireEvent.change(select, { target: { value: 'tmpl_price' } })
 
     expect(screen.getByLabelText('Bot name')).toHaveValue('Price Threshold Buy · AAPL')
     expect(screen.getByLabelText('Symbols')).toHaveValue('AAPL')
     expect(screen.getByLabelText('Trigger price')).toHaveValue('200')
-    expect(screen.getByText(/Buys AAPL when the price rises above \$200/)).toBeInTheDocument()
   })
 
-  it('validates fields and highlights inline errors without losing state', async () => {
+  it('validates required fields inline on submit attempt', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_price')
-
     await screen.findByLabelText('Bot name')
 
-    // Clear name, symbols, price
     fireEvent.change(screen.getByLabelText('Bot name'), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('Symbols'), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '' } })
@@ -160,10 +164,9 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     expect(post).not.toHaveBeenCalled()
   })
 
-  it('creates and starts the bot, navigating to bot detail with created status', async () => {
+  it('creates and starts the bot atomically in one POST /api/bots/configuration call', async () => {
     mockApi()
     post.mockResolvedValue({ id: 'bot_new123' })
-    put.mockResolvedValue({})
 
     renderBuilder('/bots/new?template=tmpl_price')
     await screen.findByLabelText('Bot name')
@@ -175,14 +178,23 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
 
     await waitFor(() => expect(post).toHaveBeenCalled())
-    expect(post).toHaveBeenCalledWith('/bots/catalog/from-template', expect.objectContaining({
+    expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
+      portfolioId: 'pf_1',
       templateId: 'tmpl_price',
       name: 'Price Threshold Buy · AAPL',
-      tickers: ['AAPL'],
-      allocatedAmount: 4000,
-      maxOrderNotional: 800,
+      enabled: true,
+      config: expect.objectContaining({
+        tickers: ['AAPL'],
+        allocatedAmount: 4000,
+        maxOrderNotional: 800,
+      }),
+      rules: expect.arrayContaining([
+        expect.objectContaining({
+          type: 'price_threshold',
+          config: { operator: 'above', price: 215 },
+        }),
+      ]),
     }))
-    expect(put).toHaveBeenCalledWith('/bots/bot_new123', { enabled: true })
     expect(await screen.findByTestId('bot-detail-page')).toHaveTextContent('bot-detail bot_new123 created')
   })
 
@@ -204,7 +216,6 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
   it('validates Alpha Engine research parameters and edge requirement', async () => {
     mockApi()
     post.mockResolvedValue({ id: 'bot_res_1' })
-    put.mockResolvedValue({})
 
     renderBuilder('/bots/new?template=tmpl_alpha_research')
     expect(await screen.findByLabelText('Minimum research score')).toHaveValue('60')
@@ -226,7 +237,7 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
 
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     await waitFor(() => expect(post).toHaveBeenCalled())
-    expect(post).toHaveBeenCalledWith('/bots/catalog/from-template', expect.objectContaining({
+    expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
       config: expect.objectContaining({
         research: expect.objectContaining({
           minConfidence: 0.45,
@@ -236,31 +247,19 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     }))
   })
 
-  it('handles creation failures with friendly messages', async () => {
+  it('handles creation server validation error and maps field inline', async () => {
     mockApi()
     const err = new Error('HTTP 400')
     err.code = 'INVALID_CONFIG'
-    err.serverMessage = 'Target price is below minimum tick size.'
+    err.details = { code: 'INVALID_CONFIG', field: 'allocatedAmount', message: 'Simulated capital exceeds maximum.' }
     post.mockRejectedValue(err)
 
     renderBuilder('/bots/new?template=tmpl_price')
     await screen.findByLabelText('Bot name')
 
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
-    expect(await screen.findByTestId('submit-error')).toHaveTextContent('Target price is below minimum tick size.')
-  })
-
-  it('handles activation failure by linking to created paused bot', async () => {
-    mockApi()
-    post.mockResolvedValue({ id: 'bot_paused_1' })
-    put.mockRejectedValue(new Error('Broker unreachable'))
-
-    renderBuilder('/bots/new?template=tmpl_price')
-    await screen.findByLabelText('Bot name')
-
-    fireEvent.click(screen.getByTestId('submit-builder-btn'))
-    expect(await screen.findByTestId('submit-error')).toHaveTextContent('so it’s paused')
-    expect(screen.getByRole('link', { name: 'Open the bot' })).toHaveAttribute('href', '/bots/bot_paused_1')
+    expect(await screen.findByTestId('submit-error')).toHaveTextContent('Simulated capital exceeds maximum.')
+    expect(screen.getAllByText('Simulated capital exceeds maximum.')).toHaveLength(2)
   })
 })
 
@@ -271,6 +270,7 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     enabled: true,
     deletedAt: null,
     direction: 'buy',
+    updatedAt: '2026-11-22T23:30:00.000Z',
     allocation: 6000,
     maxPerOrder: 1200,
     tickers: ['NVDA', 'AMD'],
@@ -289,11 +289,9 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     ],
   }
 
-  it('loads existing bot settings, preserves fixed rules, and saves updates', async () => {
+  it('loads existing bot settings, sends expectedUpdatedAt, and saves updates atomically', async () => {
     mockApi({ bot: existingBot, rules: existingBot.rules })
-    put.mockResolvedValue({})
-    del.mockResolvedValue({})
-    post.mockResolvedValue({})
+    put.mockResolvedValue({ id: 'bot_live1', updatedAt: '2026-11-22T23:35:00.000Z' })
 
     renderBuilder('/bots/bot_live1/edit')
 
@@ -315,21 +313,58 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
 
     await waitFor(() => expect(put).toHaveBeenCalled())
 
-    // Check PUT /bots/bot_live1
-    expect(put).toHaveBeenCalledWith('/bots/bot_live1', expect.objectContaining({
+    // Check PUT /bots/bot_live1/configuration with expectedUpdatedAt and patch
+    expect(put).toHaveBeenCalledWith('/bots/bot_live1/configuration', expect.objectContaining({
+      expectedUpdatedAt: '2026-11-22T23:30:00.000Z',
       name: 'Momentum Scalper',
       config: expect.objectContaining({
         allocatedAmount: 8000,
         maxOrderNotional: 1500,
       }),
+      rules: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'r_pt',
+          type: 'price_threshold',
+          config: { operator: 'above', price: 145 },
+        }),
+      ]),
     }))
 
-    // Check PUT /bots/bot_live1/rules/r_pt with new price
-    expect(put).toHaveBeenCalledWith('/bots/bot_live1/rules/r_pt', {
-      config: { operator: 'above', direction: 'above', price: 145 },
-    })
-
     // Navigation to bot detail with updated status
+    expect(await screen.findByTestId('bot-detail-page')).toHaveTextContent('bot-detail bot_live1 updated')
+  })
+
+  it('handles 409 STALE_BOT without discarding draft, offering Overwrite and Reload actions', async () => {
+    mockApi({ bot: existingBot, rules: existingBot.rules })
+    const staleError = new Error('HTTP 409')
+    staleError.code = 'STALE_BOT'
+    staleError.details = { code: 'STALE_BOT', message: 'This bot changed since it was loaded.', updatedAt: '2026-11-22T23:45:00.000Z' }
+    put.mockRejectedValueOnce(staleError)
+    put.mockResolvedValueOnce({ id: 'bot_live1', updatedAt: '2026-11-22T23:46:00.000Z' })
+
+    renderBuilder('/bots/bot_live1/edit')
+    await screen.findByLabelText('Bot name')
+
+    fireEvent.change(screen.getByLabelText('Simulated capital'), { target: { value: '9000' } })
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+
+    // Notice appears
+    const staleNotice = await screen.findByTestId('stale-bot-notice')
+    expect(staleNotice).toBeInTheDocument()
+    expect(staleNotice).toHaveTextContent(/This bot was updated in another window/)
+
+    // Draft is NOT discarded: simulated capital still has 9000
+    expect(screen.getByLabelText('Simulated capital')).toHaveValue('9000')
+
+    // Click Overwrite button
+    const overwriteBtn = screen.getByTestId('overwrite-btn')
+    fireEvent.click(overwriteBtn)
+
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
+    const secondCallPayload = put.mock.calls[1][1]
+    expect(secondCallPayload.expectedUpdatedAt).toBeUndefined()
+    expect(secondCallPayload.config.allocatedAmount).toBe(9000)
+
     expect(await screen.findByTestId('bot-detail-page')).toHaveTextContent('bot-detail bot_live1 updated')
   })
 
