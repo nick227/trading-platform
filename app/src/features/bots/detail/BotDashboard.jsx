@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { del, get, post, put } from '../../../api/client'
+import { get, post } from '../../../api/client'
 import Sheet from '../../../components/Sheet'
 import {
   controlErrorMessage,
@@ -13,13 +13,10 @@ import {
   STATUS_LABELS,
   stopBot,
   summarizeFills,
-  toNumberOrNull,
-  updateBotSettings,
 } from '../../../api/services/botDashboardService'
 import ActivityFeed from '../../../ui/ActivityFeed'
 import Disclosure from '../../../ui/Disclosure'
 import ResearchCard from '../../../ui/ResearchCard'
-import RuleEditor, { draftFromBot, saveBotRules, validateDraft } from '../../../ui/RuleEditor'
 import { EmergencyBanner, useEmergencyStop } from '../../../ui/Safety'
 import { describeAction, describeGuards, isResearchBot } from '../../../ui/describeBot'
 import { ago, dateTime, money, moneyWhole, plural, sessionDate, shares, signedMoney, tone } from '../../../ui/format'
@@ -32,42 +29,12 @@ const MAX_WATCHED = 6
 
 // ── 1. What does this bot do? ───────────────────────────────────────────────
 
-function RulesSheet({ bot, onClose, onSaved }) {
-  const [draft, setDraft] = useState(() => draftFromBot(bot))
-  const [submitted, setSubmitted] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
-  const errors = validateDraft(draft)
-  const save = async () => {
-    setSubmitted(true)
-    if (Object.keys(errors).length) return
-    setSaving(true)
-    setError(null)
-    const r = await saveBotRules({ bot, draft, api: { put, post, del } })
-    setSaving(false)
-    if (!r.ok) { setError(r.error); return }
-    onSaved()
-  }
-  return (
-    <Sheet title="Edit rules" size="wide" onClose={onClose} footer={
-      <>
-        <button type="button" className="tl-btn" onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" className="tl-btn tl-btn--primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save rules'}</button>
-      </>
-    }>
-      <RuleEditor value={draft} onChange={setDraft} errors={submitted ? errors : {}} direction={bot.direction ?? 'buy'} idPrefix="edit" />
-      <p className="tl-help" style={{ marginTop: 14 }}>Changes apply from the bot’s next check.</p>
-      {error && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
-    </Sheet>
-  )
-}
-
-function WhatItDoes({ bot, onEdit }) {
+function WhatItDoes({ bot }) {
   return (
     <section className="tl-section" id="behavior" aria-labelledby="behavior-title">
       <div className="tl-section-head">
         <h2 className="tl-section-title" id="behavior-title">What it does</h2>
-        {!bot.stopped && <button type="button" className="tl-link-btn" onClick={onEdit}>Edit rules</button>}
+        {!bot.stopped && <Link to={`/bots/${bot.id}/edit`} className="tl-link-btn">Edit</Link>}
       </div>
       <p className="tl-lead-sentence">{describeAction(bot)}</p>
       <ul className="tl-rule-list" data-testid="rule-summary">{describeGuards(bot).map((g) => <li key={g}>{g}</li>)}</ul>
@@ -276,65 +243,6 @@ function AdvancedDetails({ bot }) {
   )
 }
 
-function EditSheet({ bot, onClose, onSaved }) {
-  const [name, setName] = useState(bot.name)
-  const [allocation, setAllocation] = useState(bot.allocation !== null ? String(bot.allocation) : '')
-  const [maxPerOrder, setMaxPerOrder] = useState(bot.maxPerOrder !== null ? String(bot.maxPerOrder) : '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
-  const [submitted, setSubmitted] = useState(false)
-
-  const cap = toNumberOrNull(allocation)
-  const max = toNumberOrNull(maxPerOrder)
-  const errors = {}
-  if (!name.trim()) errors.name = 'Give your bot a name.'
-  if (cap === null || cap <= 0) errors.allocation = 'Enter an amount greater than $0.'
-  if (max === null || max <= 0) errors.maxPerOrder = 'Enter an amount greater than $0.'
-  else if (cap !== null && max > cap) errors.maxPerOrder = 'Can’t be more than the simulated capital.'
-
-  const save = async () => {
-    setSubmitted(true)
-    if (Object.keys(errors).length > 0) return
-    setSaving(true)
-    setError(null)
-    try {
-      await updateBotSettings(bot, { name: name.trim(), allocation: cap, maxPerOrder: max })
-      onSaved({ name: name.trim(), allocation: cap, maxPerOrder: max })
-    } catch (e) {
-      setError(controlErrorMessage(e, 'edit'))
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Sheet
-      title="Name & capital"
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="tl-btn" onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" className="tl-btn tl-btn--primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-        </>
-      }
-    >
-      <label className="tl-label" htmlFor="edit-name">Name</label>
-      <input id="edit-name" className="tl-input" value={name} onChange={(e) => setName(e.target.value)} />
-      {submitted && errors.name && <div className="tl-field-error" role="alert">{errors.name}</div>}
-
-      <label className="tl-label" style={{ display: 'block', marginTop: 16 }} htmlFor="edit-allocation">Simulated capital ($)</label>
-      <input id="edit-allocation" className="tl-input" inputMode="decimal" value={allocation} onChange={(e) => setAllocation(e.target.value.replace(/[^0-9.]/g, ''))} />
-      {submitted && errors.allocation && <div className="tl-field-error" role="alert">{errors.allocation}</div>}
-
-      <label className="tl-label" style={{ display: 'block', marginTop: 16 }} htmlFor="edit-max">Max per buy order ($)</label>
-      <input id="edit-max" className="tl-input" inputMode="decimal" value={maxPerOrder} onChange={(e) => setMaxPerOrder(e.target.value.replace(/[^0-9.]/g, ''))} />
-      {submitted && errors.maxPerOrder && <div className="tl-field-error" role="alert">{errors.maxPerOrder}</div>}
-
-      <p className="tl-help" style={{ marginTop: 14 }}>Changes apply to the bot’s next orders.</p>
-      {error && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
-    </Sheet>
-  )
-}
-
 function StopSheet({ bot, onClose, onStopped }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -375,7 +283,7 @@ export default function BotDashboard() {
   const [state, setState] = useState({ loading: true })
   const [busy, setBusy] = useState(false)
   const [controlError, setControlError] = useState(null)
-  const [sheet, setSheet] = useState(null) // 'edit' | 'stop' | null
+  const [sheet, setSheet] = useState(null) // 'stop' | null
   const [notice, setNotice] = useState(location.state?.created ? 'Your bot was created and is running on simulated money. You can pause it anytime.' : null)
   const { stop, clear } = useEmergencyStop()
 
@@ -397,6 +305,13 @@ export default function BotDashboard() {
   useEffect(() => {
     if (!state.loading && location.state?.focus === 'behavior') document.getElementById('behavior')?.scrollIntoView?.({ block: 'start' })
   }, [state.loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (location.state?.updated) {
+      setNotice('Changes saved. They apply from the bot’s next check.')
+      load()
+    }
+  }, [location.state?.updated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshActivity = useCallback(async () => {
     const activity = await loadBotActivity(botId)
@@ -483,7 +398,7 @@ export default function BotDashboard() {
             <button type="button" className={`tl-btn ${bot.enabled ? '' : 'tl-btn--primary'}`} onClick={toggle} disabled={busy} style={{ minWidth: 88 }}>
               {busy ? 'Saving…' : bot.enabled ? 'Pause' : 'Resume'}
             </button>
-            <button type="button" className="tl-btn" onClick={() => setSheet('edit')} disabled={busy}>Name &amp; capital</button>
+            <Link to={`/bots/${bot.id}/edit`} className="tl-btn" data-testid="edit-bot-btn">Edit bot</Link>
             <button type="button" className="tl-btn tl-btn--quiet tl-btn--danger" onClick={() => setSheet('stop')} disabled={busy}>Stop</button>
           </div>
         )}
@@ -498,32 +413,13 @@ export default function BotDashboard() {
         </div>
       )}
 
-      <WhatItDoes bot={bot} onEdit={() => setSheet('rules')} />
+      <WhatItDoes bot={bot} />
       <WhatItSees bot={bot} timeline={activity.timeline} />
       <WhyItActed activity={{ ...activity, researchBot: research }} status={status} onRetry={refreshActivity} />
       <WhatHappened bot={bot} fills={fills} activity={activity} onCancelled={(msg) => { setNotice(msg); refreshActivity() }} />
 
       <AdvancedDetails bot={bot} />
 
-      {sheet === 'edit' && (
-        <EditSheet
-          bot={bot}
-          onClose={() => setSheet(null)}
-          onSaved={(saved) => {
-            patchBot({
-              name: saved.name,
-              allocation: saved.allocation,
-              maxPerOrder: saved.maxPerOrder,
-              config: { ...bot.config, capitalMode: 'allocated', allocatedAmount: saved.allocation, maxOrderNotional: saved.maxPerOrder },
-            })
-            setSheet(null)
-            setNotice('Changes saved.')
-          }}
-        />
-      )}
-      {sheet === 'rules' && (
-        <RulesSheet bot={bot} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); setNotice('Rules saved. They apply from the bot’s next check.'); load() }} />
-      )}
       {sheet === 'stop' && (
         <StopSheet
           bot={bot}

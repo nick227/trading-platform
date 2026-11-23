@@ -20,9 +20,11 @@ async function handleResponse(response) {
       const body = await response.json()
       error.code = body?.error?.code ?? null
       error.serverMessage = body?.error?.message ?? (typeof body?.error === 'string' ? body.error : null)
+      error.details = body?.error && typeof body.error === 'object' ? body.error : null
     } catch {
       error.code = null
       error.serverMessage = null
+      error.details = null
     }
     throw error
   }

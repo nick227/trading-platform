@@ -4,7 +4,7 @@ import Nav from '../components/Nav'
 import Landing from '../features/Landing'
 import HomeDashboard from '../features/home/HomeDashboard'
 import Welcome from '../features/home/Welcome'
-import NewBotWizard from '../features/bots/new/NewBotWizard'
+import AlgorithmBuilder from '../features/bots/builder/AlgorithmBuilder'
 import Asset from '../features/Asset'
 import BotsPage from '../features/bots/BotsPage'
 import BotDashboard from '../features/bots/detail/BotDashboard'
@@ -107,8 +107,10 @@ export function AppShell() {
         />
         <Route path="/assets/:ticker" element={<Protected><Asset /></Protected>} />
         <Route path="/bots" element={<Protected><BotsPage /></Protected>} />
-        {/* One bot-creation flow. Former creation paths redirect here. */}
-        <Route path="/bots/new" element={<Protected><NewBotWizard /></Protected>} />
+        {/* Canonical Algorithm Builder for creation and editing */}
+        <Route path="/bots/new" element={<Protected><AlgorithmBuilder /></Protected>} />
+        <Route path="/bots/:botId/edit" element={<Protected><AlgorithmBuilder /></Protected>} />
+        <Route path="/bots/:id/edit" element={<Protected><AlgorithmBuilder /></Protected>} />
         <Route path="/bots/create" element={<Navigate to="/bots/new" replace />} />
         <Route path="/bots/create/rule-based" element={<Navigate to="/bots/new" replace />} />
         <Route path="/bots/create/strategy-based" element={<Navigate to="/bots/new" replace />} />

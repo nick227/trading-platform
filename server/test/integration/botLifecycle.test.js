@@ -99,7 +99,9 @@ vi.mock('../../src/loaders/prisma.js', () => ({
             const bot = { ...data, createdAt: new Date(), updatedAt: new Date(), deletedAt: null }
             db.bots.set(bot.id, bot)
             return bot
-          })
+          }),
+          findUnique: vi.fn(async ({ where }) => db.bots.get(where?.id) ?? null),
+          findFirst: vi.fn(async ({ where }) => { const b = db.bots.get(where?.id); return b && !b.deletedAt ? b : null })
         },
         botRule: {
           createMany: vi.fn(async ({ data }) => {
@@ -107,7 +109,13 @@ vi.mock('../../src/loaders/prisma.js', () => ({
               db.rules.set(r.id, { ...r, createdAt: new Date(), updatedAt: new Date() })
             }
             return { count: data.length }
-          })
+          }),
+          create: vi.fn(async ({ data }) => {
+            const r = { ...data, createdAt: new Date(), updatedAt: new Date() }
+            db.rules.set(r.id, r)
+            return r
+          }),
+          findMany: vi.fn(async ({ where }) => [...db.rules.values()].filter((r) => r.botId === where?.botId))
         }
       }
       return cb(tx)
@@ -336,20 +344,19 @@ describe('Complete Multi-User Bot Lifecycle Integration Test', () => {
 
     // ── 2. Create Bot Transactionally (Paused by default) ────────────────────────────
     const createRes = await request(app.server)
-      .post('/api/bots/catalog/from-template')
+      .post('/api/bots/configuration')
       .set('Cookie', [`access_token=${tokenAlice}`])
       .send({
         templateId: 'tmpl_momentum_buy',
         portfolioId: 'por_alice',
         name: 'Alice SPY Momentum Bot',
-        tickers: ['SPY'],
-        capital: 5000,
-        allocatedAmount: 5000,
-        maxPerOrder: 1000,
-        maxOrderNotional: 1000,
-        capitalMode: 'allocated',
-        direction: 'buy',
-        enabled: false
+        enabled: false,
+        config: { tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000, capitalMode: 'allocated', direction: 'buy' },
+        rules: [
+          { name: 'Market Hours', type: 'market_hours', config: { allowPremarket: false, allowAfterHours: false } },
+          { name: 'Price Above Threshold', type: 'price_threshold', config: { operator: 'above', price: 500 } },
+          { name: 'Position Limit', type: 'position_limit', config: { maxShares: 100, maxQuantity: 100 } }
+        ]
       })
       .expect(201)
 
@@ -453,9 +460,14 @@ describe('Complete Multi-User Bot Lifecycle Integration Test', () => {
 
     // Bob cannot modify Alice's bot
     await request(app.server)
-      .put(`/api/bots/${botId}`)
+      .put(`/api/bots/${botId}/configuration`)
       .set('Cookie', [`access_token=${tokenBob}`])
       .send({ name: 'Hacked by Bob' })
+      .expect(404)
+    await request(app.server)
+      .put(`/api/bots/${botId}`)
+      .set('Cookie', [`access_token=${tokenBob}`])
+      .send({ enabled: false })
       .expect(404)
 
     // Bob cannot read Alice's bot events
