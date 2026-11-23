@@ -82,7 +82,7 @@ function Portfolio({ valuation, history, error, bots }) {
       )}
       {v.fillCount > 0 && v.pricesAsOf && (
         <p className="tl-asof" data-testid="as-of">
-          Valued at {sessionDate(v.pricesAsOf)} closing prices{v.simulated && v.session ? ` · simulated fills replay the ${sessionDate(v.session)} close` : ''}
+          Valued at {sessionDate(v.pricesAsOf)} closing prices{v.simulated && v.session ? (v.simMode === 'paper_daily' ? ' · simulated fills at each daily close' : ` · simulated fills replay the ${sessionDate(v.session)} close`) : ''}
         </p>
       )}
       {v.fillCount === 0 ? (
@@ -273,7 +273,7 @@ export default function HomeDashboard() {
           )}
           <p className="tl-small tl-faint" style={{ marginTop: 56 }}>
             {data.valuation?.simulated
-              ? 'Simulated money · fills replay historical closes, not broker executions · research is an input, not a recommendation.'
+              ? `Simulated money · ${data.valuation?.simMode === 'paper_daily' ? 'bots act once per trading day at the close' : 'fills replay historical closes'}, not broker executions · research is an input, not a recommendation.`
               : 'Paper trading only — live trading is disabled.'}
           </p>
         </>

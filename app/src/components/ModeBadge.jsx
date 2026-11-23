@@ -41,7 +41,9 @@ function replayLabel(session) {
 export default function ModeBadge({ brokerStatus, loading = false, error = false }) {
   const mode = getTradingMode(brokerStatus, { loading, error })
   const simulated = mode === 'paper' && isSimulated(brokerStatus)
-  const full = simulated ? `Simulated · ${replayLabel(brokerStatus.session)} replay` : LABELS[mode]
+  const full = simulated
+    ? brokerStatus.mode === 'paper_daily' ? 'Simulated · daily closes' : `Simulated · ${replayLabel(brokerStatus.session)} replay`
+    : LABELS[mode]
   const short = simulated ? 'Simulated' : SHORT_LABELS[mode]
   return (
     <span

@@ -8,8 +8,10 @@ import { simulationConfig } from '../services/simulationService.js'
  * status is 'available' | 'none' (nothing published) | 'unavailable' (engine unreachable).
  */
 export async function symbolResearch(symbol, { engine = engineClient, config = simulationConfig() } = {}) {
-  const mode = config.enabled ? 'historical_replay' : 'live'
-  const session = config.enabled ? config.session : null
+  // Replay looks up the replayed session's publication; paper_daily and live use the latest.
+  const replay = config.enabled && config.mode === 'historical_replay'
+  const mode = replay ? 'historical_replay' : 'live'
+  const session = replay ? config.session : null
   let found
   try {
     found = await engine.locateResearchPrediction(symbol, 'default', { mode, session })

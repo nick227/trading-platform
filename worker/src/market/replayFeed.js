@@ -1,9 +1,10 @@
 /**
- * Historical-replay price feed (simulator mode only). Replaces the Alpaca stream:
- * every tick interval, for each enabled bot's tickers, publishes the configured replay
- * session's daily close into the price cache and evaluates bots. The calendar is marked
- * open because the replayed session was a trading session — this is a labelled replay,
- * not live market hours.
+ * Simulator price feed (replaces the Alpaca stream). Every tick interval, for each enabled
+ * bot's tickers, publishes the simulator session's daily close into the price cache and
+ * evaluates bots. The session is fixed (historical_replay) or the latest completed close
+ * (paper_daily), resolved on every tick. A ticker without a close for that session (stale or
+ * outside Alpha Engine's live universe) is skipped — never priced from another session.
+ * The calendar is marked open: decisions are attributed to the session's close.
  */
 import prisma from '../db/prisma.js'
 import { log } from '../logger.js'
@@ -14,7 +15,16 @@ import { engineClient } from '../../../server/src/clients/engine.js'
 export const replayFeedConfig = { tickMs: Number(process.env.REPLAY_TICK_MS ?? 30_000) }
 let timer = null
 
-export async function replayTick({ session, onTick, prismaClient = prisma, sessionClose = (t, s) => engineClient.getSessionClose(t, s) }) {
+export async function replayTick({ session: fixed, resolveSession, onTick, prismaClient = prisma, sessionClose = (t, s) => engineClient.getSessionClose(t, s) }) {
+  let session = fixed
+  if (resolveSession) {
+    try {
+      session = await resolveSession()
+    } catch (err) {
+      log.warn({ err: err.message, code: err.code ?? null }, 'simulator_session_unavailable')
+      return []
+    }
+  }
   const bots = await prismaClient.bot.findMany({ where: { enabled: true, deletedAt: null }, select: { config: true } })
   const tickers = [...new Set(bots.flatMap((b) => (Array.isArray(b.config?.tickers) ? b.config.tickers : [])).map((t) => String(t).toUpperCase()))]
   const out = []
@@ -35,12 +45,12 @@ export async function replayTick({ session, onTick, prismaClient = prisma, sessi
   return out
 }
 
-export function startReplayFeed({ session, onTick }) {
+export function startReplayFeed({ session, resolveSession, onTick }) {
   setMarketOpenState(true)
-  const run = () => replayTick({ session, onTick }).catch((err) => log.error({ err: err.message }, 'replay_feed_error'))
+  const run = () => replayTick({ session, resolveSession, onTick }).catch((err) => log.error({ err: err.message }, 'replay_feed_error'))
   run()
   timer = setInterval(run, replayFeedConfig.tickMs)
-  log.info({ session, tickMs: replayFeedConfig.tickMs }, 'replay_feed_started')
+  log.info({ session: session ?? 'latest', tickMs: replayFeedConfig.tickMs }, 'replay_feed_started')
 }
 
 export function stopReplayFeed() {

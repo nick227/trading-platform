@@ -145,7 +145,7 @@ export default async function accountRoutes(fastify) {
     if (sim.enabled) {
       const v = await valuePortfolio(userId)
       return reply.send({
-        connected: true, paper: true, simulated: true, mode: sim.mode, session: sim.session, status: 'simulated',
+        connected: true, paper: true, simulated: true, mode: sim.mode, session: v.session ?? sim.session, status: 'simulated',
         lastVerifiedAt: null, accountNumber: null, equity: v.equity, cash: v.cash, buyingPower: v.cash !== null ? Math.max(0, v.cash) : null,
       })
     }

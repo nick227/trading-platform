@@ -24,7 +24,7 @@ describe('rule config validation', () => {
 })
 
 describe('per-symbol research (descriptive input, never advice)', () => {
-  const SIM = { enabled: true, session: '2026-11-19' }
+  const SIM = { enabled: true, mode: 'historical_replay', session: '2026-11-19' }
   it('returns the latest verified publication with holdout vs baseline, in replay mode for the simulator', async () => {
     let asked = null
     const engine = {

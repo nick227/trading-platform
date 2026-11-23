@@ -101,7 +101,7 @@ export default function HoldingDetail({ position: p, bots, busy, onToggleBot }) 
           {fills.slice(0, 5).map((f) => (
             <li key={f.id}>
               {f.side === 'sell' ? 'Sold' : 'Bought'} {shares(f.filledQuantity)} @ {money(f.filledPrice)}
-              <span className="tl-muted"> · {f.replaySession ? `replay of ${sessionDate(f.replaySession)}` : sessionDate(f.filledAt)} · {botName(f.botId)}</span>
+              <span className="tl-muted"> · {f.replaySession ? (f.simKind === 'daily' ? `${sessionDate(f.replaySession)} close` : `replay of ${sessionDate(f.replaySession)}`) : sessionDate(f.filledAt)} · {botName(f.botId)}</span>
             </li>
           ))}
           {fills.length > 5 && <li className="tl-muted">+{fills.length - 5} more in Activity</li>}

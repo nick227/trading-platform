@@ -38,6 +38,7 @@ export function normalizeValuation(raw) {
     source: v.source ?? null,
     simulated: v.simulated === true,
     session: v.session ?? null,
+    simMode: v.simMode ?? null,
     startingCash: n(v.startingCash),
     cash: n(v.cash),
     marketValue: n(v.marketValue),
