@@ -6,7 +6,7 @@ import ValueChart from '../../ui/ValueChart'
 import { EmergencyBanner, SafetyBar, useEmergencyStop } from '../../ui/Safety'
 import { Chevron } from '../../ui/Disclosure'
 import { useBotControls } from '../../ui/useBotControls'
-import { listJoin, money, moneyWhole, plural, sessionDate, shares, signedMoney, signedPct, tone } from '../../ui/format'
+import { dateTime, listJoin, money, moneyWhole, plural, sessionDate, shares, signedMoney, signedPct, tone } from '../../ui/format'
 import HoldingDetail from './HoldingDetail'
 import { loadHome } from './homeApi'
 
@@ -41,11 +41,11 @@ function ValueHistory({ points, startingCash }) {
   )
 }
 
-function Portfolio({ valuation, history, error, bots }) {
+function Portfolio({ valuation, history, error }) {
   if (error || !valuation) {
     return (
       <section className="tl-section" aria-labelledby="portfolio-title">
-        <h1 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>Portfolio</h1>
+        <h2 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>Portfolio</h2>
         <div className="tl-hero-value" data-testid="balance-equity">—</div>
         <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error ?? 'Your portfolio value couldn’t be loaded.'} Refresh to try again.</div>
       </section>
@@ -54,7 +54,7 @@ function Portfolio({ valuation, history, error, bots }) {
   if (valuation.source === 'none') {
     return (
       <section className="tl-section" aria-labelledby="portfolio-title">
-        <h1 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>Portfolio</h1>
+        <h2 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>Portfolio</h2>
         <div className="tl-hero-value" data-testid="balance-equity">—</div>
         <div className="tl-notice" role="status" style={{ marginTop: 12 }}>
           <span>No trading account is connected, so there’s no balance to show. <Link to="/profile">Connect a paper account</Link> to run bots.</span>
@@ -64,10 +64,9 @@ function Portfolio({ valuation, history, error, bots }) {
   }
   const v = valuation
   const pts = history?.points?.filter((p) => p.v !== null) ?? []
-  const running = bots.filter((b) => b.running).length
   return (
     <section className="tl-section" aria-labelledby="portfolio-title">
-      <h1 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>{v.simulated ? 'Simulated portfolio' : 'Portfolio'}</h1>
+      <h2 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>{v.simulated ? 'Simulated portfolio' : 'Portfolio'}</h2>
       <div className="tl-hero-value" data-testid="balance-equity">{money(v.equity)}</div>
       {v.fillCount > 0 && v.totalPnl !== null && (
         <div className="tl-hero-change">
@@ -95,9 +94,8 @@ function Portfolio({ valuation, history, error, bots }) {
           <dl className="tl-stats" style={{ marginTop: 22 }}>
             <div className="tl-stat"><dt>Cash</dt><dd>{money(v.cash)}</dd></div>
             <div className="tl-stat"><dt>Invested</dt><dd>{money(v.marketValue)}<small>{plural(v.positions.length, 'holding')}</small></dd></div>
-            <div className="tl-stat"><dt>P&amp;L</dt><dd className={tone(v.totalPnl)}>{signedMoney(v.totalPnl)}<small>{signedMoney(v.realizedPnl)} realized</small></dd></div>
-            <div className="tl-stat"><dt>Bots</dt><dd>{running} running<small>of {bots.length}</small></dd></div>
           </dl>
+          <p className="tl-small tl-muted" style={{ marginBottom: 0 }}>{signedMoney(v.realizedPnl)} realized P&amp;L</p>
         </>
       )}
     </section>
@@ -195,11 +193,39 @@ function MyBots({ bots, error, controls }) {
           <Link to="/bots" className="tl-btn tl-btn--primary">Build a bot</Link>
         </div>
       ) : (
-        <ul className="tl-list">
+        <ul className="tl-list tl-machine-list">
           {bots.map((bot) => <BotRow key={bot.id} bot={bot} busy={Boolean(controls.busy[bot.id])} error={controls.errors[bot.id]} onToggle={controls.toggle} from="home" />)}
         </ul>
       )}
     </section>
+  )
+}
+
+function WorkshopOverview({ bots, error, activity }) {
+  const running = bots.filter((bot) => bot.running).length
+  const paused = bots.filter((bot) => bot.status === 'paused').length
+  const attention = bots.filter((bot) => bot.status === 'error').length
+  const stopped = bots.filter((bot) => bot.stopped).length
+  const latest = (activity ?? []).find((item) => item.at && Number.isFinite(Date.parse(item.at)))
+  return (
+    <header className="tl-workshop-overview">
+      <div className="tl-workshop-heading">
+        <div><p className="tl-workshop-eyebrow">TradeLoom / Algorithm workshop</p>
+          <h1>Your ideas, in motion.</h1>
+          <p className="tl-muted">{error ? 'Your algorithms and portfolio, at a glance.' : bots.length ? 'Observe your algorithms. Understand their decisions.' : 'Turn a trading idea into your first algorithm.'}</p>
+        </div>
+        <Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot <span aria-hidden="true">↗</span></Link>
+      </div>
+      {error ? <p className="tl-muted">Bot status unavailable</p> : (
+        <div className="tl-workshop-status" aria-label="Workshop status" data-testid="workshop-status">
+          <a href="#bots"><span className={`tl-workshop-dot${running ? '' : ' is-idle'}`} aria-hidden="true" /><strong>{running}</strong> running</a>
+          <a href="#bots"><strong>{paused}</strong> paused</a>
+          {stopped > 0 && <a href="#bots"><strong>{stopped}</strong> stopped</a>}
+          {attention > 0 && <a className="tl-workshop-attention" href="#bots">{attention} running with an error</a>}
+          <span className="tl-workshop-recorded">{latest ? `Latest recorded activity · ${dateTime(latest.at)}` : 'No recorded activity loaded'}</span>
+        </div>
+      )}
+    </header>
   )
 }
 
@@ -245,32 +271,35 @@ export default function HomeDashboard() {
   const data = state.data
 
   return (
-    <main className="tl-page" aria-busy={state.loading}>
+    <main className="tl-page tl-workshop-home" aria-busy={state.loading}>
       <EmergencyBanner stop={stop} onClear={clear} />
       {state.loading ? (
         <HomeSkeleton />
       ) : (
         <>
-          <Portfolio valuation={data.valuation} history={data.history} error={data.valuationError} bots={data.bots} />
+          <WorkshopOverview bots={data.bots} error={data.botsError} activity={data.activity} />
+          <div className={`tl-workshop-dashboard${data.bots.length ? '' : ' tl-workshop-dashboard--empty'}`}>
+            <Portfolio valuation={data.valuation} history={data.history} error={data.valuationError} />
+            {data.bots.length > 0 && (
+              <section className="tl-section" id="activity" aria-labelledby="home-activity-title">
+                <div className="tl-section-head">
+                  <h2 className="tl-section-title" id="home-activity-title">Recent decisions & activity</h2>
+                  <Link className="tl-section-aside" to="/bots#activity">Full history →</Link>
+                </div>
+                {data.activityError ? (
+                  <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{data.activityError}</div>
+                ) : (
+                  <ActivityFeed items={data.activity} limit={3} narrative showLensControl={false}
+                    empty="Nothing yet — your bots’ trades and decisions appear here." />
+                )}
+              </section>
+            )}
+          </div>
           {data.bots.length > 0 && <SafetyBar stop={stop} onActivate={onActivate} fact={concentration(data.valuation)} />}
           {/* New accounts see their bots first; sections without content stay out of the way. */}
           {data.bots.length === 0 && !data.botsError && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
-          <Holdings valuation={data.valuation} bots={data.bots} open={open} setOpen={setOpen} busy={controls.busy} onToggleBot={controls.toggle} />
           {(data.bots.length > 0 || data.botsError) && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
-          {data.bots.length > 0 && (
-            <section className="tl-section" id="activity" aria-labelledby="home-activity-title">
-              <div className="tl-section-head">
-                <h2 className="tl-section-title" id="home-activity-title">Recent activity</h2>
-                <Link className="tl-section-aside" to="/bots#activity">Full history →</Link>
-              </div>
-              {data.activityError ? (
-                <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{data.activityError}</div>
-              ) : (
-                <ActivityFeed items={data.activity} limit={5} routine="summary" showLensControl={false}
-                  empty="Nothing yet — your bots’ trades and decisions appear here." />
-              )}
-            </section>
-          )}
+          <Holdings valuation={data.valuation} bots={data.bots} open={open} setOpen={setOpen} busy={controls.busy} onToggleBot={controls.toggle} />
           <p className="tl-small tl-faint" style={{ marginTop: 56 }}>
             {data.valuation?.simulated
               ? `Simulated money · ${data.valuation?.simMode === 'paper_daily' ? 'bots act once per trading day at the close' : 'fills replay historical closes'}, not broker executions · research is an input, not a recommendation.`
