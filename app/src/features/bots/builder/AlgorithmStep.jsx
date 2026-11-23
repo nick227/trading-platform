@@ -6,7 +6,7 @@ export default function AlgorithmStep({ label, summary, detail, mark, open, onTo
   return (
     <div className={`tl-algorithm-step${quiet ? ' tl-algorithm-step--name' : ''}`} data-testid={testId}>
       {mark && <span className="tl-algorithm-mark" aria-hidden="true">{mark}</span>}
-      <button type="button" className="tl-algorithm-toggle" aria-label={`${open ? 'Close' : 'Edit'} ${label.toLowerCase()}`}
+      <button type="button" className="tl-algorithm-toggle" aria-label={`${open ? 'Done editing' : 'Edit'} ${label.toLowerCase()}`}
         aria-expanded={open} aria-controls={id} onClick={onToggle}>
         <span className="tl-algorithm-step-copy">
           {!quiet && <span className="tl-algorithm-step-label">{label}</span>}

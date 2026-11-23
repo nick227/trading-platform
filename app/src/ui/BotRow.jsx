@@ -29,7 +29,6 @@ export default function BotRow({ bot, busy, error, onToggle, from = 'home' }) {
         <span className="tl-bot-meta">
           {holdings.length > 0 && <span>Holds {listJoin(holdings, 3)}</span>}
           <span>{bot.capitalInUse !== null && bot.allocation !== null ? `${moneyWhole(bot.capitalInUse)} of ${moneyWhole(bot.allocation)} in use` : bot.allocation !== null ? `${moneyWhole(bot.allocation)} capital` : 'Capital not set'}</span>
-
         </span>
         <span className="tl-machine-last" data-testid="bot-last-activity"><span aria-hidden="true">↳</span> {lastAction(bot)}</span>
       </Link>
