@@ -1,8 +1,6 @@
 function buildUrl(path, params = {}) {
-  // Point to backend server on port 3001
-  const baseUrl = process.env.NODE_ENV === 'production' 
-    ? `${window.location.origin}/api`
-    : 'http://localhost:3001/api'
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'
+  const baseUrl = process.env.VITE_API_URL || `${origin}/api`
   
   const url = new URL(`${baseUrl}${path}`)
   for (const [key, val] of Object.entries(params)) {
