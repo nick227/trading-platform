@@ -590,7 +590,7 @@ export function buildConfigPatch(draft, baseConfig = {}) {
       if (String(draft.research.minScore) !== shown.minScore) rPatch.minConfidence = (toNumberOrNull(draft.research.minScore) ?? 60) / 100
       if (String(draft.research.maxAgeHours) !== shown.maxAgeHours) rPatch.maxPredictionAgeHours = toNumberOrNull(draft.research.maxAgeHours) ?? 96
       if (String(draft.research.maxDriftPct) !== shown.maxDriftPct) rPatch.maxEntryDriftPct = toNumberOrNull(draft.research.maxDriftPct) ?? 5
-      if ((draft.research.requireEdge !== false) !== shown.requireEdge) rPatch.requireEdgeOverBaseline = draft.research.requireEdge !== false
+      // requireEdgeOverBaseline is locked on server-side in the beta; never sent.
 
       if (Object.keys(rPatch).length > 0) {
         patch.research = rPatch
@@ -610,7 +610,7 @@ export function buildConfigPatch(draft, baseConfig = {}) {
         minConfidence: (toNumberOrNull(draft.research.minScore) ?? 60) / 100,
         maxPredictionAgeHours: toNumberOrNull(draft.research.maxAgeHours) ?? 96,
         maxEntryDriftPct: toNumberOrNull(draft.research.maxDriftPct) ?? 5,
-        requireEdgeOverBaseline: draft.research.requireEdge !== false,
+        requireEdgeOverBaseline: true, // locked on in the beta
       }
     }
   }
@@ -660,7 +660,7 @@ export function buildBotFromDraft(draft, original = {}) {
         minConfidence: (toNumberOrNull(draft.research.minScore) ?? 60) / 100,
         maxPredictionAgeHours: toNumberOrNull(draft.research.maxAgeHours) ?? 96,
         maxEntryDriftPct: toNumberOrNull(draft.research.maxDriftPct) ?? 5,
-        requireEdgeOverBaseline: draft.research.requireEdge !== false,
+        requireEdgeOverBaseline: true, // locked on in the beta
       }
     }
   } else {

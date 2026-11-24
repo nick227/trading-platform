@@ -34,6 +34,16 @@ describe('per-symbol research (descriptive input, never advice)', () => {
     const r = await symbolResearch('AAPL', { engine, config: SIM })
     expect(asked).toEqual({ mode: 'historical_replay', session: '2026-11-19' })
     expect(r).toMatchObject({ status: 'available', direction: 'BUY', horizon: '5d', score: 0.49, edgeOverBaseline: false, holdout: { hitRate: 0.487, baselineRate: 0.503 } })
+    // A healthy publication without edge is reported as healthy AND not eligible.
+    expect(r).toMatchObject({ eligibleForTrading: false })
+  })
+  it('is eligible only with edge on genuinely out-of-sample evidence from a full-tier run', async () => {
+    const mk = (quality, tier = 'full') => ({ locateResearchPrediction: async () => ({ predictionId: 'p', publicationId: 'pub', marketDate: '2026-11-24', run: { intelligenceConfidenceTier: tier, runStatus: 'HEALTHY' }, quality }), getPredictionTrace: async () => null })
+    const live = { enabled: true, mode: 'paper_daily' }
+    expect((await symbolResearch('SPY', { engine: mk({ edgeOverBaseline: true, genuineOutOfSample: true }), config: live })).eligibleForTrading).toBe(true)
+    expect((await symbolResearch('SPY', { engine: mk({ edgeOverBaseline: true, genuineOutOfSample: false }), config: live })).eligibleForTrading).toBe(false)
+    expect((await symbolResearch('SPY', { engine: mk({ edgeOverBaseline: true, genuineOutOfSample: true }, 'suppressed'), config: live })).eligibleForTrading).toBe(false)
+    expect((await symbolResearch('SPY', { engine: mk({ edgeOverBaseline: true, genuineOutOfSample: true }), config: live })).operationalStatus).toBe('HEALTHY')
   })
   it('distinguishes "nothing published" from "engine unavailable"', async () => {
     expect((await symbolResearch('META', { engine: { locateResearchPrediction: async () => null }, config: SIM })).status).toBe('none')

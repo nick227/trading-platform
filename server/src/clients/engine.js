@@ -346,7 +346,9 @@ export const engineClient = {
         rankedUnderDegradedRun: data.run?.rankedUnderDegradedRun ?? null,
         runStatus: data.run?.runStatus ?? null
       },
-      quality: data.quality ?? null
+      quality: data.quality ?? null,
+      // Operational health (runStatus) is not predictive quality; see Alpha Engine research_quality.
+      researchQuality: data.researchQuality ?? null
     }
   },
 

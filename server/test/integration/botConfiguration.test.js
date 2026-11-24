@@ -218,6 +218,15 @@ describe('create and edit persist the same algorithm identically', () => {
     expect(await shape(b.body.data.id)).toEqual(await shape(a.body.data.id))
   })
 
+  it('stores the evidence requirement as on, whatever the client sends (beta lock)', async () => {
+    const { body, status } = await post({ portfolioId: 'por_usr_a', name: 'Opt-out attempt', config: CONFIG, rules: [] })
+    expect(status).toBe(201)
+    expect((await botOf(body.data.id)).config.research).toMatchObject({ minConfidence: 0.5, requireEdgeOverBaseline: true })
+    const edit = await put(body.data.id, { config: { research: { requireEdgeOverBaseline: false } } })
+    expect(edit.status).toBe(200)
+    expect((await botOf(body.data.id)).config.research.requireEdgeOverBaseline).toBe(true)
+  })
+
   it('reload round trip: re-saving what GET returns changes nothing', async () => {
     const { body } = await post({ portfolioId: 'por_usr_a', name: 'Algo', config: CONFIG, rules: RULES })
     const loaded = (await request(app.server).get(`/api/bots/${body.data.id}`).set(as(tokenA))).body.data

@@ -28,6 +28,7 @@ describe('engineClient.locateResearchPrediction (research publications)', () => 
       predictionId: 'pub_x:SPY', ticker: 'SPY', publicationId: 'pub_x', mode: 'live', marketDate: '2026-11-20', rankedAt: 't',
       run: { intelligenceConfidenceTier: 'full', rankedUnderDegradedRun: false, runStatus: 'HEALTHY' },
       quality: { edgeOverBaseline: false, genuineOutOfSample: false },
+      researchQuality: null,
     })
     const [url, opts] = global.fetch.mock.calls[0]
     expect(url).toBe('http://engine.test/api/research/latest?ticker=SPY&tenant_id=default&mode=live')

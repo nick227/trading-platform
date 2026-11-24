@@ -72,6 +72,10 @@ function assertValidConfig(config) {
 
 function normalizeConfig(config) {
   const out = { ...config, tickers: config.tickers.map((s) => s.trim().toUpperCase()) }
+  // Evidence requirements are locked on in the beta (see RESEARCH_EVIDENCE_LOCKED): store what applies.
+  if (isResearchDriven({ config: out }) && out.research?.requireEdgeOverBaseline === false) {
+    out.research = { ...out.research, requireEdgeOverBaseline: true }
+  }
   if (out.allocatedAmount !== undefined && out.capitalMode === undefined) out.capitalMode = 'allocated'
   return out
 }

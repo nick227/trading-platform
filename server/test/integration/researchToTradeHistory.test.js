@@ -133,7 +133,7 @@ beforeEach(async () => {
   }
 })
 
-async function researchBot(id = 'bot_r', { userId = 'usr_a', research = { requireEdgeOverBaseline: false }, config = {}, enabled = true } = {}) {
+async function researchBot(id = 'bot_r', { userId = 'usr_a', research = {}, config = {}, enabled = true } = {}) {
   return h.db.bot.create({ data: {
     id, userId, portfolioId: `por_${userId}`, name: id, enabled, botType: 'rule_based',
     config: { signalSource: 'alpha_research', tickers: ['SPY', 'QQQ', 'IWM', 'DIA'], capitalMode: 'allocated', allocatedAmount: 10_000, maxOrderNotional: 5_000, research, ...config }
@@ -513,12 +513,13 @@ describe('multi-user isolation', () => {
 })
 
 describe('edge over baseline (default policy)', () => {
-  it('rejects research whose evidence shows no edge unless the bot opts in to simulate it', async () => {
-    await researchBot('bot_default', { research: {} })
-    await tick('bot_default', 'SPY', 540)
-    expect(await executions({ botId: 'bot_default' })).toHaveLength(0)
-    const [d] = await decisions('bot_default')
-    expect(d.metadata).toMatchObject({ decision: 'rejected', decisionContext: { reason: 'no_edge_over_baseline', edgeOverBaseline: null } })
+  it('never trades research without demonstrated edge, even when the bot config opts out', async () => {
+    // pred_qqq_weak carries staging-like evidence (48.4% vs 49.9%, not out of sample).
+    await researchBot('bot_optout', { research: { requireEdgeOverBaseline: false, minConfidence: 0.3 } })
+    await tick('bot_optout', 'QQQ', 480.25)
+    expect(await executions({ botId: 'bot_optout' })).toHaveLength(0)
+    const [d] = await decisions('bot_optout')
+    expect(d.metadata).toMatchObject({ decision: 'rejected', decisionContext: { reason: 'no_edge_over_baseline', edgeOverBaseline: false, genuineOutOfSample: false } })
   })
 })
 

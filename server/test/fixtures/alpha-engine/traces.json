@@ -1,6 +1,6 @@
 {
   "generatedBy": "alpha-engine build_prediction_trace",
-  "alphaEngineCommit": "0a58e7e",
+  "alphaEngineCommit": "1af499b",
   "traces": {
     "pred_spy_buy": {
       "schemaVersion": "research-trace/v1",
@@ -20,11 +20,11 @@
         "traceId": "research:f2c9609cb2f1e13d439d4732b1300b81e3e111fd803bc6667410221e9d1ba1f3",
         "predictionId": "pred_spy_buy",
         "observedAt": "2026-11-20T14:30:00+00:00",
-        "evidenceSha256": "69690cf56b7304211d4c643b20a415c52c6c9bd7eb244780f2f8acc60c47815a"
+        "evidenceSha256": "cdcb27876dd8e451e9e8db0fb68bf4d2c991e1c9fbffb3a1b6bd4d060b4ea1c5"
       },
       "evidence": {
-        "sha256": "69690cf56b7304211d4c643b20a415c52c6c9bd7eb244780f2f8acc60c47815a",
-        "canonicalJson": "{\"confidence\":0.82,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":540.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\",\"momentum_20d\":0.034,\"note\":\"café ✓\",\"rsi_14\":61.5},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_spy_buy\",\"rankScore\":0.6,\"ranking\":{\"as_of_date\":\"2026-11-20\",\"config\":{\"pipeline_version\":\"9f52dc1\"},\"rank_score\":0.6},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"SPY\"}",
+        "sha256": "cdcb27876dd8e451e9e8db0fb68bf4d2c991e1c9fbffb3a1b6bd4d060b4ea1c5",
+        "canonicalJson": "{\"confidence\":0.82,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":540.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\",\"momentum_20d\":0.034,\"note\":\"café ✓\",\"rsi_14\":61.5},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_spy_buy\",\"rankScore\":0.6,\"ranking\":{\"as_of_date\":\"2026-11-20\",\"config\":{\"pipeline_version\":\"9f52dc1\"},\"evaluation\":{\"edgeOverBaseline\":true,\"genuineOutOfSample\":true,\"holdout\":{\"baselineRate\":0.5,\"precision\":0.57,\"signals\":420},\"sufficientHoldout\":true},\"rank_score\":0.6},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"SPY\"}",
         "snapshot": {
           "predictionId": "pred_spy_buy",
           "ticker": "SPY",
@@ -49,7 +49,17 @@
             "config": {
               "pipeline_version": "9f52dc1"
             },
-            "rank_score": 0.6
+            "rank_score": 0.6,
+            "evaluation": {
+              "edgeOverBaseline": true,
+              "genuineOutOfSample": true,
+              "sufficientHoldout": true,
+              "holdout": {
+                "signals": 420,
+                "precision": 0.57,
+                "baselineRate": 0.5
+              }
+            }
           }
         },
         "availability": {
@@ -94,11 +104,11 @@
         "traceId": "research:c6dfab5ea6eea7a18e27c1847e7a0bac5a886a1dbd5d984b450bcdaea90828a6",
         "predictionId": "pred_qqq_weak",
         "observedAt": "2026-11-20T14:30:00+00:00",
-        "evidenceSha256": "194d71b7116e56e49beb812319943f40ff561d611c8054b4ddb4d5dd2c3810f0"
+        "evidenceSha256": "fe25fea903379c1690a7e26cdc3436680d92d23d63cfe3a505bf8886db49121c"
       },
       "evidence": {
-        "sha256": "194d71b7116e56e49beb812319943f40ff561d611c8054b4ddb4d5dd2c3810f0",
-        "canonicalJson": "{\"confidence\":0.35,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":480.25,\"features\":{\"model_id\":\"ownership_vacuum_v1_paper\",\"rsi_14\":48.0},\"horizon\":\"15d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_qqq_weak\",\"rankScore\":0.41,\"ranking\":{\"as_of_date\":\"2026-11-20\"},\"strategyId\":\"ownership_vacuum_v1_paper\",\"successProbability\":null,\"ticker\":\"QQQ\"}",
+        "sha256": "fe25fea903379c1690a7e26cdc3436680d92d23d63cfe3a505bf8886db49121c",
+        "canonicalJson": "{\"confidence\":0.35,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":480.25,\"features\":{\"model_id\":\"ownership_vacuum_v1_paper\",\"rsi_14\":48.0},\"horizon\":\"15d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_qqq_weak\",\"rankScore\":0.41,\"ranking\":{\"as_of_date\":\"2026-11-20\",\"evaluation\":{\"edgeOverBaseline\":false,\"genuineOutOfSample\":false,\"holdout\":{\"baselineRate\":0.499,\"precision\":0.484,\"signals\":630},\"sufficientHoldout\":true}},\"strategyId\":\"ownership_vacuum_v1_paper\",\"successProbability\":null,\"ticker\":\"QQQ\"}",
         "snapshot": {
           "predictionId": "pred_qqq_weak",
           "ticker": "QQQ",
@@ -117,7 +127,17 @@
             "rsi_14": 48.0
           },
           "ranking": {
-            "as_of_date": "2026-11-20"
+            "as_of_date": "2026-11-20",
+            "evaluation": {
+              "edgeOverBaseline": false,
+              "genuineOutOfSample": false,
+              "sufficientHoldout": true,
+              "holdout": {
+                "signals": 630,
+                "precision": 0.484,
+                "baselineRate": 0.499
+              }
+            }
           }
         },
         "availability": {
@@ -162,11 +182,11 @@
         "traceId": "research:a5ad37eebed14295113750e36655b1c50e4a36a90abbf646be542f5a3af7443b",
         "predictionId": "pred_iwm_sell",
         "observedAt": "2026-11-20T14:30:00+00:00",
-        "evidenceSha256": "ac81e1638fe92f128ba20137ba7dcd8484655f8b2596e113ac7c7cddb50ae7f4"
+        "evidenceSha256": "96558ee6af0c798a58bd8eeaee432fe2922cdb746df59a1ef0f9f251512ce7e4"
       },
       "evidence": {
-        "sha256": "ac81e1638fe92f128ba20137ba7dcd8484655f8b2596e113ac7c7cddb50ae7f4",
-        "canonicalJson": "{\"confidence\":0.9,\"confidenceIsProbability\":false,\"direction\":\"SELL\",\"entryPrice\":200.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\"},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_iwm_sell\",\"rankScore\":0.55,\"ranking\":{\"as_of_date\":\"2026-11-20\"},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"IWM\"}",
+        "sha256": "96558ee6af0c798a58bd8eeaee432fe2922cdb746df59a1ef0f9f251512ce7e4",
+        "canonicalJson": "{\"confidence\":0.9,\"confidenceIsProbability\":false,\"direction\":\"SELL\",\"entryPrice\":200.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\"},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:30:00+00:00\",\"predictionId\":\"pred_iwm_sell\",\"rankScore\":0.55,\"ranking\":{\"as_of_date\":\"2026-11-20\",\"evaluation\":{\"edgeOverBaseline\":true,\"genuineOutOfSample\":true,\"holdout\":{\"baselineRate\":0.5,\"precision\":0.57,\"signals\":420},\"sufficientHoldout\":true}},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"IWM\"}",
         "snapshot": {
           "predictionId": "pred_iwm_sell",
           "ticker": "IWM",
@@ -184,7 +204,17 @@
             "model_id": "realness_repricer_v1_paper"
           },
           "ranking": {
-            "as_of_date": "2026-11-20"
+            "as_of_date": "2026-11-20",
+            "evaluation": {
+              "edgeOverBaseline": true,
+              "genuineOutOfSample": true,
+              "sufficientHoldout": true,
+              "holdout": {
+                "signals": 420,
+                "precision": 0.57,
+                "baselineRate": 0.5
+              }
+            }
           }
         },
         "availability": {
@@ -229,11 +259,11 @@
         "traceId": "research:584cdd614f1e3a9c22232db049f66231f6f191b71743a507914d076eaf481718",
         "predictionId": "pred_spy_buy_next",
         "observedAt": "2026-11-20T14:45:00+00:00",
-        "evidenceSha256": "df5b6e7b4adbdf13dc2ab66cc37db838c0776d2bcbdeadccaecb4282b437c4ae"
+        "evidenceSha256": "47f43af0c403b5bbc23da96c274dc396b30b66307c2a8f55b8c0e99bfb344fa9"
       },
       "evidence": {
-        "sha256": "df5b6e7b4adbdf13dc2ab66cc37db838c0776d2bcbdeadccaecb4282b437c4ae",
-        "canonicalJson": "{\"confidence\":0.77,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":541.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\",\"rsi_14\":63.0},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:45:00+00:00\",\"predictionId\":\"pred_spy_buy_next\",\"rankScore\":0.62,\"ranking\":{\"as_of_date\":\"2026-11-20\",\"rank_score\":0.62},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"SPY\"}",
+        "sha256": "47f43af0c403b5bbc23da96c274dc396b30b66307c2a8f55b8c0e99bfb344fa9",
+        "canonicalJson": "{\"confidence\":0.77,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":541.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\",\"rsi_14\":63.0},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-20T14:45:00+00:00\",\"predictionId\":\"pred_spy_buy_next\",\"rankScore\":0.62,\"ranking\":{\"as_of_date\":\"2026-11-20\",\"evaluation\":{\"edgeOverBaseline\":true,\"genuineOutOfSample\":true,\"holdout\":{\"baselineRate\":0.5,\"precision\":0.57,\"signals\":420},\"sufficientHoldout\":true},\"rank_score\":0.62},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"SPY\"}",
         "snapshot": {
           "predictionId": "pred_spy_buy_next",
           "ticker": "SPY",
@@ -253,7 +283,17 @@
           },
           "ranking": {
             "as_of_date": "2026-11-20",
-            "rank_score": 0.62
+            "rank_score": 0.62,
+            "evaluation": {
+              "edgeOverBaseline": true,
+              "genuineOutOfSample": true,
+              "sufficientHoldout": true,
+              "holdout": {
+                "signals": 420,
+                "precision": 0.57,
+                "baselineRate": 0.5
+              }
+            }
           }
         },
         "availability": {
@@ -298,11 +338,11 @@
         "traceId": "research:6b84d7e5bf69b71c85e06bbdbacd4946b996613a5cf8553b1fa7703a22c9dc7f",
         "predictionId": "pred_dia_stale",
         "observedAt": "2026-11-10T14:30:00+00:00",
-        "evidenceSha256": "46be9d3fe18dd108b3b708dd262b41cba5c5073635f140df44bb356b10ab214c"
+        "evidenceSha256": "293778f60ef676fb9e79b124cd46a91fc66d5eee134b3d0c19e431611ad32da9"
       },
       "evidence": {
-        "sha256": "46be9d3fe18dd108b3b708dd262b41cba5c5073635f140df44bb356b10ab214c",
-        "canonicalJson": "{\"confidence\":0.95,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":420.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\"},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-10T14:30:00+00:00\",\"predictionId\":\"pred_dia_stale\",\"rankScore\":0.7,\"ranking\":{\"as_of_date\":\"2026-11-10\"},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"DIA\"}",
+        "sha256": "293778f60ef676fb9e79b124cd46a91fc66d5eee134b3d0c19e431611ad32da9",
+        "canonicalJson": "{\"confidence\":0.95,\"confidenceIsProbability\":false,\"direction\":\"BUY\",\"entryPrice\":420.0,\"features\":{\"model_id\":\"realness_repricer_v1_paper\"},\"horizon\":\"5d\",\"mode\":\"discovery\",\"observedAt\":\"2026-11-10T14:30:00+00:00\",\"predictionId\":\"pred_dia_stale\",\"rankScore\":0.7,\"ranking\":{\"as_of_date\":\"2026-11-10\",\"evaluation\":{\"edgeOverBaseline\":true,\"genuineOutOfSample\":true,\"holdout\":{\"baselineRate\":0.5,\"precision\":0.57,\"signals\":420},\"sufficientHoldout\":true}},\"strategyId\":\"realness_repricer_v1_paper\",\"successProbability\":null,\"ticker\":\"DIA\"}",
         "snapshot": {
           "predictionId": "pred_dia_stale",
           "ticker": "DIA",
@@ -320,7 +360,17 @@
             "model_id": "realness_repricer_v1_paper"
           },
           "ranking": {
-            "as_of_date": "2026-11-10"
+            "as_of_date": "2026-11-10",
+            "evaluation": {
+              "edgeOverBaseline": true,
+              "genuineOutOfSample": true,
+              "sufficientHoldout": true,
+              "holdout": {
+                "signals": 420,
+                "precision": 0.57,
+                "baselineRate": 0.5
+              }
+            }
           }
         },
         "availability": {
