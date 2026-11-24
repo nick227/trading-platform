@@ -49,6 +49,8 @@ export default function AlgorithmBuilder() {
   const { brokerStatus, brokerStatusLoading, brokerStatusError } = useAuth()
   const mode = getTradingMode(brokerStatus, { loading: brokerStatusLoading, error: brokerStatusError })
   const simulated = isSimulated(brokerStatus)
+  // paper_daily: only symbols with a fresh daily close can trade (server-enforced too).
+  const tradableSymbols = Array.isArray(brokerStatus?.tradableSymbols) && brokerStatus.tradableSymbols.length ? brokerStatus.tradableSymbols : null
   const pinnedTicker = params.get('ticker')
   const templateQuery = params.get('template')
 
@@ -172,8 +174,8 @@ export default function AlgorithmBuilder() {
   // Field validation
   const errors = useMemo(() => {
     if (!draft) return {}
-    return validateBuilderDraft(draft, { buyingPower: wizardData?.buyingPower ?? null })
-  }, [draft, wizardData?.buyingPower])
+    return validateBuilderDraft(draft, { buyingPower: wizardData?.buyingPower ?? null, tradableSymbols })
+  }, [draft, wizardData?.buyingPower, tradableSymbols])
 
   const hasErrors = Object.keys(errors).length > 0
 
@@ -402,9 +404,11 @@ export default function AlgorithmBuilder() {
               <Field
                 label="Symbols"
                 help={
-                  draft.triggerType === 'alpha_research'
-                    ? 'The bot acts only on symbols with current Alpha Engine research.'
-                    : 'Separate several symbols with commas (e.g. AAPL, MSFT).'
+                  tradableSymbols
+                    ? `Paper trading uses daily closes for ${tradableSymbols.join(', ')}.`
+                    : draft.triggerType === 'alpha_research'
+                      ? 'The bot acts only on symbols with current Alpha Engine research.'
+                      : 'Separate several symbols with commas (e.g. AAPL, MSFT).'
                 }
                 error={(touched ? errors.symbols : null) || serverFieldErrors.symbols || null}
               >

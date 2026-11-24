@@ -18,6 +18,7 @@ import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { ruleConfigError } from '../utils/ruleConfig.js'
 import { isResearchDriven, resolveResearchPolicy } from '../../../worker/src/engine/researchDecision.js'
 import { getEmergencyStop } from './emergencyStopService.js'
+import { simulationConfig } from './simulationService.js'
 
 export const RULE_TYPES = ['price_threshold', 'position_limit', 'daily_loss', 'market_hours', 'cooldown', 'trend_filter', 'time_window']
 const RULE_NAMES = {
@@ -52,6 +53,13 @@ const positive = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0
 function assertValidConfig(config) {
   const t = config.tickers
   if (!Array.isArray(t) || t.length === 0 || !t.every((s) => typeof s === 'string' && s.trim())) throw invalid('Add at least one symbol.', { field: 'tickers' })
+  const tradable = simulationConfig().tradableSymbols
+  if (tradable) {
+    const outside = t.map((s) => s.trim().toUpperCase()).filter((s) => !tradable.includes(s))
+    if (outside.length) {
+      throw invalid(`${outside.join(', ')} ${outside.length === 1 ? 'isn’t' : 'aren’t'} available in paper trading. Choose from ${tradable.join(', ')}.`, { field: 'tickers', allowed: tradable })
+    }
+  }
   if (config.direction !== undefined && config.direction !== 'buy' && config.direction !== 'sell') throw invalid('Direction must be "buy" or "sell".', { field: 'direction' })
   for (const [field, label] of [['allocatedAmount', 'Capital'], ['maxOrderNotional', 'Per-order limit'], ['quantity', 'Quantity']]) {
     if (config[field] !== undefined && !positive(config[field])) throw invalid(`${label} must be greater than 0.`, { field })

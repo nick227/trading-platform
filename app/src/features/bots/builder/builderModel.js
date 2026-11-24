@@ -257,7 +257,7 @@ export function rebaseDraft(loadedDraft, userDraft, latestDraft) {
 /**
  * Validates the full builder draft. Returns an object of field errors (empty = valid).
  */
-export function validateBuilderDraft(draft, { buyingPower = null } = {}) {
+export function validateBuilderDraft(draft, { buyingPower = null, tradableSymbols = null } = {}) {
   const errors = {}
 
   // Name
@@ -271,6 +271,9 @@ export function validateBuilderDraft(draft, { buyingPower = null } = {}) {
     errors.symbols = 'Add at least one symbol.'
   } else if (symbols.some((s) => !SYMBOL_RE.test(s))) {
     errors.symbols = 'Use ticker symbols like AAPL or BRK.B.'
+  } else if (tradableSymbols) {
+    const outside = symbols.filter((s) => !tradableSymbols.includes(s))
+    if (outside.length) errors.symbols = `${outside.join(', ')} ${outside.length === 1 ? 'isn’t' : 'aren’t'} available in paper trading. Choose from ${tradableSymbols.join(', ')}.`
   }
 
   // Capital
