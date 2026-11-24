@@ -21,9 +21,10 @@ import { getEmergencyStop } from './emergencyStopService.js'
 import { simulationConfig } from './simulationService.js'
 
 export const RULE_TYPES = ['price_threshold', 'position_limit', 'daily_loss', 'market_hours', 'cooldown', 'trend_filter', 'time_window', 'relative_volume', 'price_change']
-const RULE_NAMES = {
+export const RULE_NAMES = {
   price_threshold: 'Price trigger', position_limit: 'Position limit', daily_loss: 'Daily loss limit',
-  market_hours: 'Market hours', cooldown: 'Cooldown', trend_filter: 'Trend filter', time_window: 'Trading window'
+  market_hours: 'Market hours', cooldown: 'Cooldown', trend_filter: 'Trend filter', time_window: 'Trading window',
+  relative_volume: 'Relative volume', price_change: 'Price change'
 }
 
 export class BotSaveError extends Error {
