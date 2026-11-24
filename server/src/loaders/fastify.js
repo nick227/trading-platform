@@ -6,10 +6,19 @@ import jwt from '@fastify/jwt'
 import cookie from '@fastify/cookie'
 import compression from '../middleware/compression.js'
 import caching from '../middleware/caching.js'
+import { trustProxyFromEnv } from '../middleware/authThrottle.js'
 
-export default async function createApp() {
+export default async function createApp({ trustProxy = trustProxyFromEnv() } = {}) {
   const app = fastify({
-    logger: true
+    logger: {
+      // Request logs carry method + path only: no client address, headers, cookies or bodies.
+      serializers: {
+        req: (req) => ({ method: req.method, url: String(req.url ?? '').split('?')[0] }),
+      },
+    },
+    // Behind Railway: edge → web (app/serve.mjs) → API is 2 hops, so TRUST_PROXY=2.
+    // Unset keeps request.ip = socket peer; auth throttling then uses account buckets only.
+    trustProxy,
   })
 
   const isProduction = process.env.NODE_ENV === 'production'

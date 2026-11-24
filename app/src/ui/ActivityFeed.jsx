@@ -31,6 +31,26 @@ export function inLens(item, lens) {
 const ms = (iso) => new Date(iso ?? 0).getTime()
 
 /**
+ * How much an activity row matters on summary views (lower = more important):
+ *   0  trades (fills, refused / rejected / cancelled orders), risk events and errors
+ *   1  meaningful bot decisions: signals, research, pause/resume/stop
+ *   2  routine checks ("Done for today", waiting, no trade)
+ */
+export function tierOf(item) {
+  if (item.kind === 'trade' || item.category === 'fill' || item.category === 'order' || item.category === 'risk' || item.category === 'error') return 0
+  if (ROUTINE.has(item.category) && !item.research) return 2
+  return 1
+}
+
+/** Most important first, newest first within a tier. */
+export const byPriority = (a, b) => tierOf(a) - tierOf(b) || ms(b.at) - ms(a.at)
+
+/** The newest row that isn't a routine check — what Home leads with. */
+export function latestMeaningful(items) {
+  return groupTrades(items).find((i) => tierOf(i) < 2) ?? null
+}
+
+/**
  * Folds timeline items into trade rows (one per bot + execution) and keeps everything
  * else as individual rows. Input and output are newest-first.
  */
@@ -249,11 +269,15 @@ export default function ActivityFeed({
   routine = 'inline', // 'inline' | 'summary' — summary folds routine checks into one line
   footer = null,
   narrative = false,
+  order = 'time', // 'time' | 'priority' — priority: trades & risk, then decisions, then routine
 }) {
   const [lens, setLens] = useState(initialLens)
   const [shown, setShown] = useState(limit)
   const [showRoutine, setShowRoutine] = useState(false)
-  const all = useMemo(() => collapseRoutine(groupTrades(items).filter((i) => inLens(i, lens))), [items, lens])
+  const all = useMemo(() => {
+    const rows = collapseRoutine(groupTrades(items).filter((i) => inLens(i, lens)))
+    return order === 'priority' ? rows.sort(byPriority) : rows
+  }, [items, lens, order])
   const routineItems = all.filter((i) => ROUTINE.has(i.category))
   const folding = routine === 'summary' && !showRoutine && routineItems.length > 0
   const visible = folding ? all.filter((i) => !ROUTINE.has(i.category)) : all
