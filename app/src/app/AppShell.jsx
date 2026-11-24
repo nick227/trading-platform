@@ -16,6 +16,8 @@ import { useAuth } from './AuthProvider'
 import pageTitleService from '../services/pageTitleService'
 
 const AssetsIndex = lazy(() => import('../features/AssetsIndex'))
+const StrategiesIndex = lazy(() => import('../features/strategies/StrategiesIndex'))
+const StrategyDetail = lazy(() => import('../features/strategies/StrategyDetail'))
 const Orders = lazy(() => import('../features/Orders'))
 
 /** Redirects logged-in users away from auth pages. */
@@ -58,6 +60,7 @@ function AppLayout() {
       '/assets': 'Assets',
       '/bots': 'Bots',
       '/bots/new': 'New bot',
+      '/strategies': 'Platform strategies',
       '/orders': 'Orders',
       '/history': 'Trade History',
       '/profile': 'Account',
@@ -119,6 +122,9 @@ export function AppShell() {
         {/* Former mock-data history page; the bot page timeline replaces it. */}
         <Route path="/bots/:botId/history" element={<BotHistoryRedirect />} />
         <Route path="/strategies/:templateId/history" element={<FeaturedRedirect />} />
+        {/* Public: platform strategy evidence, no account needed. */}
+        <Route path="/strategies" element={<Suspense fallback={<PageSkeleton />}><StrategiesIndex /></Suspense>} />
+        <Route path="/strategies/:templateId" element={<Suspense fallback={<PageSkeleton />}><StrategyDetail /></Suspense>} />
         <Route path="/templates" element={<Navigate to="/bots/new" replace />} />
         <Route path="/templates/:templateSlug" element={<Navigate to="/bots/new" replace />} />
         <Route

@@ -87,6 +87,7 @@ const DEFAULTS = {
 const UNIQUE = {
   execution: ['clientOrderId', 'activeIntentKey', 'brokerOrderId'],
   backtestRun: ['activeKey'],
+  strategyEvidence: [],
 }
 
 function assertUnique(name, all, candidate, self = null) {
@@ -164,7 +165,7 @@ function model(store, name) {
 export function createMemoryPrisma() {
   const store = {}
   const client = { _store: store }
-  for (const name of ['execution', 'executionAudit', 'bot', 'botRule', 'botEvent', 'user', 'portfolio', 'brokerAccount', 'botTemplate', 'backtestRun']) {
+  for (const name of ['execution', 'executionAudit', 'bot', 'botRule', 'botEvent', 'user', 'portfolio', 'brokerAccount', 'botTemplate', 'backtestRun', 'strategyVersion', 'strategyEvidence']) {
     client[name] = model(store, name)
   }
   client.$transaction = async (arg) => {
