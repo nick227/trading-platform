@@ -42,6 +42,10 @@ export function describeGuards({ config = {}, rules = [] } = {}, { template = fa
   if (win?.config?.start && win?.config?.end) out.push(`Only between ${win.config.start} and ${win.config.end} ET`)
   const cd = durationText(cooldownMs(findRule(rules, 'cooldown')?.config))
   if (cd) out.push(/^\d/.test(cd) ? `At most one trade per symbol every ${cd}` : `At most one trade per symbol per ${cd}`)
+  const rv = findRule(rules, 'relative_volume')
+  if (rv && rv.enabled !== false && isPos(rv.config?.minRatio)) out.push(`Only when volume is at least ${rv.config.minRatio}× its 20-day average`)
+  const pc = findRule(rules, 'price_change')
+  if (pc && pc.enabled !== false && isPos(pc.config?.pct)) out.push(`Only after the price ${pc.config.operator === 'below' ? 'fell' : 'rose'} ${pc.config.pct}% or more over ${pc.config.sessions} sessions`)
   const pos = findRule(rules, 'position_limit')?.config
   if (pos?.maxPositions === 1) out.push('Holds at most one position')
   else if (isPos(pos?.maxShares)) out.push(`Holds at most ${pos.maxShares} shares per symbol`)
@@ -55,7 +59,7 @@ export function describeGuards({ config = {}, rules = [] } = {}, { template = fa
     if (isPos(r.maxPredictionAgeHours)) parts.push(`under ${r.maxPredictionAgeHours}h old`)
     if (Number.isFinite(Number(r.maxEntryDriftPct))) parts.push(`price within ${r.maxEntryDriftPct}% of entry`)
     if (parts.length) out.push(`Research must be ${parts.join(', ')}`)
-    out.push(r.requireEdgeOverBaseline === false ? 'Includes research without a proven edge' : 'Only research that beat its baseline')
+    out.push('Only research that beat its baseline out of sample')
   }
   return out
 }

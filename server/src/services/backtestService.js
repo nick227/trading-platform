@@ -17,7 +17,8 @@ import { RISK_POLICY_VERSION } from '../../../worker/src/risk/riskCore.js'
 import { EXECUTION_MODELS, runBacktest } from '../../../worker/src/backtest/historicalRunner.js'
 import { canonical, dataFingerprint, normalizeDataset } from '../../../worker/src/backtest/priceData.js'
 
-export const BACKTEST_LIMITS = Object.freeze({ maxDays: 366 * 5 + 1, maxSymbols: 5, warmupDays: 45, calendarTicker: 'SPY', staleRunMs: 30 * 60_000 })
+// warmupDays covers the 20-session volume average and a 60-session price-change lookback.
+export const BACKTEST_LIMITS = Object.freeze({ maxDays: 366 * 5 + 1, maxSymbols: 5, warmupDays: 100, calendarTicker: 'SPY', staleRunMs: 30 * 60_000 })
 const RANGES = { '1Y': 1, '3Y': 3, '5Y': 5 }
 export const MAX_VARIANTS = 3
 

@@ -23,11 +23,11 @@ describe('describeBot (plain-language rules)', () => {
     expect(describeAction({ ...t, rules: [{ type: 'price_threshold', config: { price: 725 } }] })).toBe('Buys SPY when the price rises above $725.')
   })
 
-  it('states research requirements, including when edge is not required', () => {
+  it('states research requirements; the evidence requirement is always on', () => {
     const r = { config: { signalSource: 'alpha_research', tickers: ['AAPL'], research: { minConfidence: 0.45, maxPredictionAgeHours: 96, maxEntryDriftPct: 5, requireEdgeOverBaseline: false } }, rules: [] }
     expect(describeAction(r)).toMatch(/^Buys AAPL when Alpha Engine publishes current, verified BUY research/)
     expect(describeGuards(r)).toContain('Research must be score ≥ 45, under 96h old, price within 5% of entry')
-    expect(describeGuards(r)).toContain('Includes research without a proven edge')
+    expect(describeGuards(r)).toContain('Only research that beat its baseline out of sample') // requirement is locked on; a stored opt-out has no effect
   })
 })
 
@@ -85,5 +85,16 @@ describe('formatting', () => {
   it('picks round chart ticks', () => {
     expect(niceTicks(99830, 100010, 3)).toEqual([99850, 99900, 99950, 100000])
     expect(niceTicks(318, 362, 3)).toEqual([320, 340, 360])
+  })
+})
+
+describe('market-aware conditions', () => {
+  it('are described in plain words', () => {
+    const g = describeGuards({ config: {}, rules: [
+      { type: 'relative_volume', config: { minRatio: 1.5 } },
+      { type: 'price_change', config: { sessions: 5, operator: 'below', pct: 3 } },
+    ] })
+    expect(g).toContain('Only when volume is at least 1.5× its 20-day average')
+    expect(g).toContain('Only after the price fell 3% or more over 5 sessions')
   })
 })

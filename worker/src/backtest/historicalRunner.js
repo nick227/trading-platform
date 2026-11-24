@@ -141,6 +141,8 @@ export async function runBacktest({ bot, symbols, start, end, executionModel = '
         ticker: t, side, price: bar[4], now, market: { isOpen: true, marketOpen: null, marketClose: null },
         positions: accountQty ? [{ symbol: t, qty: accountQty }] : [], lastAttemptAt,
         realizedLossToday: Math.abs(Math.min(0, realizedToday)), regime: null,
+        volume: bar[5], avgVolume: avgVolume20(data.bars[t], index[t].get(d)),
+        closes: data.bars[t].slice(Math.max(0, index[t].get(d) - 60), index[t].get(d) + 1).map((b) => b[4]),
       }
       // Rule pipeline (same order and short-circuit as live).
       const outcome = await runRulePipeline(rules, (rule) => {

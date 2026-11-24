@@ -13,6 +13,7 @@ import { evaluateTimeWindow } from './rules/timeWindow.js'
 import { cooldownDecision, windowMsFromConfig } from './rules/cooldown.js'
 import { dailyLossDecision } from './rules/dailyLoss.js'
 import { trendFilterDecision } from './rules/trendFilter.js'
+import { priceChangeDecision, relativeVolumeDecision } from './rules/marketConditions.js'
 
 /** Trade direction from bot config: 'buy' | 'sell' | null (never defaulted). */
 export function deriveDirection(bot) {
@@ -68,7 +69,9 @@ export async function runRulePipeline(rules, evaluateOne) {
  * A rule decision from explicit inputs (historical runs; the live wrappers call the same
  * pure functions after loading):
  *   price, now (Date), market { isOpen, marketOpen, marketClose }, positions [{ symbol, qty }],
- *   lastAttemptAt (ms, 0 = none), realizedLossToday (>= 0), regime (snapshot | null), side.
+ *   lastAttemptAt (ms, 0 = none), realizedLossToday (>= 0), regime (snapshot | null), side,
+ *   volume / avgVolume (the session's and its prior 20-session average), closes (completed
+ *   daily closes up to this session, ascending).
  */
 export function ruleDecision(rule, inputs) {
   const config = rule.config ?? {}
@@ -91,6 +94,8 @@ export function ruleDecision(rule, inputs) {
       }, inputs.regime ?? null, inputs.now.getTime())
     }
     case 'time_window': return evaluateTimeWindow(config, inputs.now)
+    case 'relative_volume': return relativeVolumeDecision(config, { volume: inputs.volume, avgVolume: inputs.avgVolume })
+    case 'price_change': return priceChangeDecision(config, { closes: inputs.closes })
     default: return { pass: true }
   }
 }

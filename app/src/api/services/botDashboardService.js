@@ -140,6 +140,11 @@ const SKIP_REASONS = {
   acted_this_session: { title: 'Done for today', text: (s) => `The bot already acted on ${s} at the latest close. It checks again after the next trading day’s close.` },
   no_current_session: { title: 'Waiting for market data', text: (s) => `No current daily close for ${s} yet, so the bot isn’t trading. It resumes when fresh prices arrive.` },
   refused_recently: { title: 'Waiting — last order was refused', text: (s) => `The last ${s} order was refused before it was sent, so the bot waits 15 minutes before trying again.` },
+  relative_volume_below: { title: 'Waiting — volume below the condition', text: (s) => `${s}’s volume wasn’t high enough versus its 20-day average.` },
+  relative_volume_unavailable: { title: 'Skipped — no volume data', text: (s) => `Volume for ${s} wasn’t available.` },
+  price_change_rise_not_met: { title: 'Waiting — price hasn’t risen enough', text: (s) => `${s} hasn’t risen by the set amount over the lookback.` },
+  price_change_fall_not_met: { title: 'Waiting — price hasn’t fallen enough', text: (s) => `${s} hasn’t fallen by the set amount over the lookback.` },
+  price_change_unavailable: { title: 'Skipped — not enough price history', text: (s) => `Not enough daily closes for ${s} to measure the change.` },
   no_research_prediction: { title: 'Waiting — no research', text: (s) => `Alpha Engine has no current ranked research for ${s}.` },
 }
 

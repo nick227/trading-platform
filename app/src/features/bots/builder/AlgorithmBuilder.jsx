@@ -596,6 +596,41 @@ export default function AlgorithmBuilder() {
                   Evaluates on every market schedule without price triggers.
                 </p>
               )}
+
+              <fieldset className="tl-conditions" data-testid="market-conditions">
+                <legend className="tl-label">Market conditions <span className="tl-muted tl-small">(optional, all must hold)</span></legend>
+                <label className="tl-check">
+                  <input type="checkbox" checked={Boolean(draft.relVolume?.on)} data-testid="cond-relvol"
+                    onChange={(e) => setDraft((d) => ({ ...d, relVolume: { ...(d.relVolume ?? { minRatio: '1.5' }), on: e.target.checked } }))} />
+                  <span>Volume is at least</span>
+                  <input className="tl-input tl-input--inline" inputMode="decimal" aria-label="Volume multiple" value={draft.relVolume?.minRatio ?? '1.5'}
+                    disabled={!draft.relVolume?.on} aria-invalid={Boolean(touched && errors.relVolume)}
+                    onChange={(e) => setDraft((d) => ({ ...d, relVolume: { ...(d.relVolume ?? {}), minRatio: e.target.value } }))} />
+                  <span>× its 20-day average</span>
+                </label>
+                {touched && errors.relVolume && <p className="tl-field-error" role="alert">{errors.relVolume}</p>}
+                <label className="tl-check">
+                  <input type="checkbox" checked={Boolean(draft.priceChange?.on)} data-testid="cond-pricechange"
+                    onChange={(e) => setDraft((d) => ({ ...d, priceChange: { ...(d.priceChange ?? { sessions: '5', operator: 'above', pct: '3' }), on: e.target.checked } }))} />
+                  <span>Price</span>
+                  <select className="tl-input tl-input--inline" aria-label="Rose or fell" value={draft.priceChange?.operator ?? 'above'} disabled={!draft.priceChange?.on}
+                    onChange={(e) => setDraft((d) => ({ ...d, priceChange: { ...(d.priceChange ?? {}), operator: e.target.value } }))}>
+                    <option value="above">rose</option>
+                    <option value="below">fell</option>
+                  </select>
+                  <span>at least</span>
+                  <input className="tl-input tl-input--inline" inputMode="decimal" aria-label="Percent change" value={draft.priceChange?.pct ?? '3'} disabled={!draft.priceChange?.on}
+                    aria-invalid={Boolean(touched && errors.priceChange)}
+                    onChange={(e) => setDraft((d) => ({ ...d, priceChange: { ...(d.priceChange ?? {}), pct: e.target.value } }))} />
+                  <span>% over</span>
+                  <input className="tl-input tl-input--inline" inputMode="numeric" aria-label="Sessions" value={draft.priceChange?.sessions ?? '5'} disabled={!draft.priceChange?.on}
+                    aria-invalid={Boolean(touched && errors.priceChange)}
+                    onChange={(e) => setDraft((d) => ({ ...d, priceChange: { ...(d.priceChange ?? {}), sessions: e.target.value } }))} />
+                  <span>sessions</span>
+                </label>
+                {touched && errors.priceChange && <p className="tl-field-error" role="alert">{errors.priceChange}</p>}
+                <p className="tl-help" style={{ margin: 0 }}>Checked on completed daily closes from Alpha Engine — the same data in paper trading and backtests.</p>
+              </fieldset>
             </div>
           </AlgorithmStep>
 
@@ -948,7 +983,7 @@ export default function AlgorithmBuilder() {
           blockedReason={
             draft.triggerType === 'alpha_research'
               ? 'Research bots can’t be backtested yet: Alpha Engine has no point-in-time research history to replay.'
-              : errors.symbols || errors.triggerPrice || errors.capital || errors.maxPerOrder
+              : errors.symbols || errors.triggerPrice || errors.capital || errors.maxPerOrder || errors.relVolume || errors.priceChange
                 ? 'Fix the highlighted fields to run a backtest.'
                 : null
           }

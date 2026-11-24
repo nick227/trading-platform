@@ -39,6 +39,10 @@ const SKIP_TEXT = {
   invalid_quantity: 'order too small',
   inflight_exists: 'order already pending',
   no_session_bar: 'no price that day',
+  relative_volume_below: 'volume below the condition',
+  price_change_rise_not_met: 'price hadn’t risen enough',
+  price_change_fall_not_met: 'price hadn’t fallen enough',
+  price_change_unavailable: 'not enough history yet',
 }
 const BLOCK_TEXT = {
   execution_weak: 'thin trading volume',

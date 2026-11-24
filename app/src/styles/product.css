@@ -1169,3 +1169,7 @@ select.tl-input--inline { width: auto; padding-right: 4px; }
 @media (max-width: 760px) { .tl-stats--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tl-backtest { padding: 16px; } }
 .tl-backtest-variants { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 6px; }
 .tl-backtest-variants .tl-input--sm { min-height: 36px; padding: 6px 10px; font-size: 13px; max-width: 220px; }
+.tl-conditions { border: 0; margin: 4px 0 0; padding: 14px 0 0; border-top: 1px solid var(--tl-line); display: grid; gap: 10px; }
+.tl-conditions .tl-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tl-input--inline { width: 68px; min-height: 32px; padding: 4px 8px; font-size: 13px; }
+select.tl-input--inline { width: auto; }

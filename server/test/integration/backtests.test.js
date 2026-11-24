@@ -82,7 +82,7 @@ describe('processing', () => {
     const run = await processNextBacktest({ engine })
     expect(run).toMatchObject({ id: body.data.id, status: 'succeeded', activeKey: null, dataFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/) })
     expect(engine.calls.map((c) => c[1])).toEqual(['SPY', 'NVDA']) // calendar reference + the bot's symbols (SPY once)
-    expect(engine.calls[0][2]).toBe('2025-10-09') // 45-day warm-up before the start, for the liquidity average
+    expect(engine.calls[0][2]).toBe('2025-08-15') // 100-day warm-up: liquidity average and price-change lookbacks
     expect(run.dataIssues).toContainEqual(expect.objectContaining({ ticker: 'NVDA', type: 'price_basis_adjusted', factor: 10 }))
     expect(run.results.metrics.trades).toBeGreaterThan(0)
     expect(run.results.trades.every((t) => t.price < 200)).toBe(true) // never bought on the unadjusted ×10 basis

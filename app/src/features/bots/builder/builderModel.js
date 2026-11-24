@@ -124,6 +124,7 @@ export function initCreateDraft(template, data = {}, pinnedTicker = null) {
       on: Boolean(cd && cd.enabled !== false),
       hours: cd ? cooldownHours(cd.config) : '24',
     },
+    ...marketConditionDrafts(rules),
     positionLimit: {
       on: Boolean(pos && pos.enabled !== false),
       maxShares: String(pos?.config?.maxShares ?? pos?.config?.maxQuantity ?? 100),
@@ -223,6 +224,7 @@ export function initEditDraft(bot) {
       on: Boolean(cd && cd.enabled !== false),
       hours: cd ? cooldownHours(cd.config) : '24',
     },
+    ...marketConditionDrafts(rules),
     positionLimit: {
       on: Boolean(pos && pos.enabled !== false),
       maxShares: String(pos?.config?.maxShares ?? pos?.config?.maxQuantity ?? 100),
@@ -237,7 +239,7 @@ export function initEditDraft(bot) {
   }
 }
 
-const EDITABLE_FIELDS = ['name', 'symbolsText', 'direction', 'capital', 'maxPerOrder', 'triggerType', 'trigger', 'research', 'marketHours', 'cooldown', 'positionLimit', 'dailyLoss', 'removedRuleIds', 'removedRuleTypes']
+const EDITABLE_FIELDS = ['name', 'symbolsText', 'direction', 'capital', 'maxPerOrder', 'triggerType', 'trigger', 'research', 'marketHours', 'cooldown', 'positionLimit', 'dailyLoss', 'relVolume', 'priceChange', 'removedRuleIds', 'removedRuleTypes']
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
 /**
@@ -336,10 +338,37 @@ export function validateBuilderDraft(draft, { buyingPower = null, tradableSymbol
     if (dl === null || dl <= 0) errors.dailyLoss = 'Enter an amount greater than $0.'
   }
 
+  // Market-aware conditions
+  if (draft.relVolume?.on) {
+    const r = toNumberOrNull(draft.relVolume.minRatio)
+    if (r === null || r <= 0 || r > 10) errors.relVolume = 'Use a multiple between 0 and 10.'
+  }
+  if (draft.priceChange?.on) {
+    const n = toNumberOrNull(draft.priceChange.sessions)
+    const p = toNumberOrNull(draft.priceChange.pct)
+    if (n === null || !Number.isInteger(n) || n < 1 || n > 60) errors.priceChange = 'Look back 1–60 sessions.'
+    else if (p === null || p <= 0 || p > 100) errors.priceChange = 'Use a change between 0% and 100%.'
+  }
+
   return errors
 }
 
-const MANAGED_RULES = new Set(['price_threshold', 'trend_filter', 'market_hours', 'cooldown', 'position_limit', 'daily_loss'])
+const MANAGED_RULES = new Set(['price_threshold', 'trend_filter', 'market_hours', 'cooldown', 'position_limit', 'daily_loss', 'relative_volume', 'price_change'])
+/** Draft fields for the market-aware conditions (relative volume, price change). */
+function marketConditionDrafts(rules) {
+  const rv = findRule(rules, 'relative_volume')
+  const pc = findRule(rules, 'price_change')
+  return {
+    relVolume: { on: Boolean(rv && rv.enabled !== false), minRatio: String(rv?.config?.minRatio ?? 1.5) },
+    priceChange: {
+      on: Boolean(pc && pc.enabled !== false),
+      sessions: String(pc?.config?.sessions ?? 5),
+      operator: pc?.config?.operator === 'below' ? 'below' : 'above',
+      pct: String(pc?.config?.pct ?? 3),
+    },
+  }
+}
+
 const omit = (o, keys) => Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !keys.includes(k)))
 
 /**
@@ -400,6 +429,21 @@ export function applyDraftToRule(prev, draft) {
       return {
         config: edited ? { ...c, maxLoss: n } : c,
         enabled: toggled(Boolean(draft.dailyLoss?.on), wasOn),
+      }
+    }
+    case 'relative_volume': {
+      const r = toNumberOrNull(draft.relVolume?.minRatio)
+      const edited = r !== null && r > 0 && r !== Number(c.minRatio)
+      return { config: edited ? { ...c, minRatio: r } : c, enabled: toggled(Boolean(draft.relVolume?.on), wasOn) }
+    }
+    case 'price_change': {
+      const n = toNumberOrNull(draft.priceChange?.sessions)
+      const p = toNumberOrNull(draft.priceChange?.pct)
+      const op = draft.priceChange?.operator === 'below' ? 'below' : 'above'
+      const edited = (n !== null && n !== Number(c.sessions)) || (p !== null && p !== Number(c.pct)) || op !== (c.operator ?? 'above')
+      return {
+        config: edited && n !== null && p !== null ? { ...c, sessions: Math.round(n), pct: p, operator: op } : c,
+        enabled: toggled(Boolean(draft.priceChange?.on), wasOn),
       }
     }
     default:
@@ -521,6 +565,20 @@ export function formatDesiredRules(draft, originalRules = []) {
       enabled: true,
     })
     seenTypes.add('daily_loss')
+  }
+
+  if (draft.relVolume?.on && !seenTypes.has('relative_volume')) {
+    rules.push({ name: 'Relative Volume', type: 'relative_volume', config: { minRatio: toNumberOrNull(draft.relVolume?.minRatio) ?? 1.5 }, enabled: true })
+    seenTypes.add('relative_volume')
+  }
+
+  if (draft.priceChange?.on && !seenTypes.has('price_change')) {
+    rules.push({
+      name: 'Price Change', type: 'price_change',
+      config: { sessions: Math.round(toNumberOrNull(draft.priceChange?.sessions) ?? 5), operator: draft.priceChange?.operator === 'below' ? 'below' : 'above', pct: toNumberOrNull(draft.priceChange?.pct) ?? 3 },
+      enabled: true,
+    })
+    seenTypes.add('price_change')
   }
 
   // Include any extra fixed rules from draft.fixed not already seen

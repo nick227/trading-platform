@@ -557,3 +557,26 @@ describe('paper trading symbol list', () => {
     expect(validateBuilderDraft(base, {}).symbols).toBeUndefined()
   })
 })
+
+describe('market-aware conditions in the builder', () => {
+  const base = { name: 'X', symbolsText: 'SPY', direction: 'buy', capital: '5000', maxPerOrder: '1000', triggerType: 'price_threshold', trigger: { operator: 'above', price: '500' },
+    marketHours: { on: false }, cooldown: { on: false }, positionLimit: { on: false }, dailyLoss: { on: false } }
+  it('adds the conditions as rules when switched on', () => {
+    const rules = formatDesiredRules({ ...base, relVolume: { on: true, minRatio: '2' }, priceChange: { on: true, sessions: '10', operator: 'below', pct: '4' } }, [])
+    expect(rules.filter((r) => ['relative_volume', 'price_change'].includes(r.type))).toEqual([
+      { name: 'Relative Volume', type: 'relative_volume', config: { minRatio: 2 }, enabled: true },
+      { name: 'Price Change', type: 'price_change', config: { sessions: 10, operator: 'below', pct: 4 }, enabled: true },
+    ])
+  })
+  it('edits only what changed on existing rules and keeps a switched-off rule (disabled)', () => {
+    const existing = [{ id: 'r1', type: 'price_change', config: { sessions: 5, operator: 'above', pct: 3 }, enabled: true }, { id: 'r2', type: 'relative_volume', config: { minRatio: 1.5 }, enabled: true }]
+    const rules = formatDesiredRules({ ...base, priceChange: { on: true, sessions: '5', operator: 'above', pct: '6' }, relVolume: { on: false, minRatio: '1.5' } }, existing)
+    expect(rules.find((r) => r.id === 'r1')).toMatchObject({ config: { sessions: 5, operator: 'above', pct: 6 }, enabled: true })
+    expect(rules.find((r) => r.id === 'r2')).toMatchObject({ config: { minRatio: 1.5 }, enabled: false })
+  })
+  it('validates the values', () => {
+    expect(validateBuilderDraft({ ...base, relVolume: { on: true, minRatio: '0' } }).relVolume).toMatch(/between 0 and 10/)
+    expect(validateBuilderDraft({ ...base, priceChange: { on: true, sessions: '90', operator: 'above', pct: '3' } }).priceChange).toMatch(/1–60/)
+    expect(validateBuilderDraft({ ...base, priceChange: { on: false, sessions: '90' } }).priceChange).toBeUndefined()
+  })
+})
