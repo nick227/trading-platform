@@ -1,0 +1,27 @@
+{
+  "_comment": "Evaluation design for redesigned platform strategies. Parameters were fixed from conventional defaults before any data was examined; development data (through developmentEnd) was used only to confirm the mechanics work. Results after developmentEnd are the holdout (out of sample). Part of each strategy version's identity.",
+  "tmpl_spy_trend_filter": {
+    "developmentEnd": "2025-11-21",
+    "objective": "Participate in uptrends and avoid prolonged downtrends.",
+    "benchmark": "Buy & hold of the same symbol; judged on drawdown and time in market as well as return.",
+    "parameterBasis": "200-day moving-average regime from Alpha Engine with 2 confirming sessions — a conventional trend definition, not fitted."
+  },
+  "tmpl_momentum_sell": {
+    "developmentEnd": "2025-11-21",
+    "objective": "Hold only while short-term momentum lasts; exit on reversal or loss.",
+    "benchmark": "Buy & hold of the same symbol; judged on return per time in market and drawdown.",
+    "parameterBasis": "20-session (about one month) momentum of 5%, 10-session reversal of 5%, and an 8% stop below cost — conventional values, not fitted."
+  },
+  "tmpl_dca_accumulator": {
+    "developmentEnd": "2025-11-21",
+    "objective": "Spread entry over time instead of investing at once.",
+    "benchmark": "Lump-sum buy & hold of the same capital on day one; judged on drawdown and return.",
+    "parameterBasis": "Monthly installments of 10% of capital — a common DCA schedule, not fitted."
+  },
+  "tmpl_loss_guard": {
+    "developmentEnd": "2025-11-21",
+    "objective": "Limit losses on each position.",
+    "benchmark": "Buy & hold of the same symbol; judged mainly on maximum drawdown.",
+    "parameterBasis": "Monthly entries and a 10% stop below average cost — conventional values, not fitted."
+  }
+}

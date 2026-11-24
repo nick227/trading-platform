@@ -8,7 +8,7 @@ export default async function publicStrategyRoutes(app) {
     return { data: await listPublicStrategies() }
   })
   app.get('/:templateId', async (request, reply) => {
-    const s = await getPublicStrategy(String(request.params.templateId))
+    const s = await getPublicStrategy(String(request.params.templateId), { versionId: request.query?.version ? String(request.query.version) : null })
     if (!s) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Strategy not found' } })
     cache(reply)
     return { data: s }

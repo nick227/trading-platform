@@ -44,7 +44,8 @@ beforeEach(async () => {
 describe('platform strategy evidence', () => {
   it('publishes every strategy on every symbol and window, including untradeable ones', async () => {
     const out = await generateStrategyEvidence({ engine, config, now: NOW })
-    expect(out).toMatchObject({ end: '2026-11-20', created: TEMPLATES.length * 2 * 3 })
+    const designed = TEMPLATES.filter((t) => ['tmpl_spy_trend_filter', 'tmpl_momentum_sell', 'tmpl_dca_accumulator', 'tmpl_loss_guard'].includes(t.id)).length
+    expect(out).toMatchObject({ end: '2026-11-20', created: (TEMPLATES.length * 3 + designed * 2) * 2 })
     const rows = await h.db.strategyEvidence.findMany({})
     const of = (id, w = '5Y', s = 'SPY') => rows.find((r) => r.templateId === id && r.window === w && r.symbol === s)
     expect(of('tmpl_alpha_research')).toMatchObject({ status: 'not_backtestable', reason: expect.stringMatching(/point-in-time research/) })
@@ -53,8 +54,16 @@ describe('platform strategy evidence', () => {
     expect(mb.parameters).toMatchObject({ triggerPrice: expect.any(Number), triggerFrom: expect.any(String) })
     expect(mb.parameters.triggerFrom < mb.startDate).toBe(true) // standardized from data known before the window
     expect(mb.results.capital).toBe(10_000)
-    expect(of('tmpl_momentum_sell').results.metrics.trades).toBe(0) // sell-only: nothing to sell, published anyway
-    expect(of('tmpl_momentum_sell').results.skips.no_position).toBeGreaterThan(0)
+    // Redesigned versions: development (fixed, ends 2025-11-21) and holdout (after it) windows.
+    expect(of('tmpl_loss_guard', 'development')).toMatchObject({ status: 'ok', startDate: '2021-11-21' })
+    expect(of('tmpl_loss_guard', 'development').results.range.lastSession <= '2025-11-21').toBe(true)
+    expect(of('tmpl_loss_guard', 'holdout')).toMatchObject({ status: 'ok', startDate: '2025-11-22' })
+    expect(of('tmpl_momentum_buy', 'holdout')).toBeUndefined() // unchanged version: no design, no new windows
+    // Momentum Exit buys before it sells, and never sells more than it holds.
+    for (const sym of ['SPY', 'NVDA']) {
+      let held = 0
+      for (const t of of('tmpl_momentum_sell', '5Y', sym).results.trades) { held += t.side === 'buy' ? t.quantity : -t.quantity; expect(held).toBeGreaterThanOrEqual(0) }
+    }
     expect(of('tmpl_momentum_buy', 'forward')).toMatchObject({ status: 'awaiting_sessions' })
     expect(await h.db.execution.findMany({})).toEqual([])
   })
@@ -85,6 +94,26 @@ describe('platform strategy evidence', () => {
     const pub = (await request(app.server).get(`/api/public/strategies/${t.id}`)).body.data
     expect(pub.version).toMatchObject({ id: v2, published: true })
     expect(pub.versions.map((x) => x.id).sort()).toEqual([v1, v2].sort())
+  })
+
+  it('keeps a replaced version’s evidence published and viewable', async () => {
+    // Publish an old definition first (as staging had before the redesign), then the new one.
+    const old = { ...TEMPLATES.find((x) => x.id === 'tmpl_dca_accumulator'), rules: [{ type: 'cooldown', config: { windowMs: 86_400_000 } }], config: { direction: 'buy', tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000 } }
+    await h.db.botTemplate.update({ where: { id: old.id }, data: { rules: old.rules, config: old.config } })
+    await generateStrategyEvidence({ engine, config, now: NOW })
+    const oldId = canonicalStrategy(await h.db.botTemplate.findUnique({ where: { id: old.id } })).id
+    const t = TEMPLATES.find((x) => x.id === old.id)
+    await h.db.botTemplate.update({ where: { id: old.id }, data: { rules: t.rules, config: t.config } }) // the seed's redesign
+    await generateStrategyEvidence({ engine, config, now: NOW })
+    const cur = (await request(app.server).get(`/api/public/strategies/${old.id}`)).body.data
+    expect(cur.version).toMatchObject({ current: true })
+    expect(cur.version.id).not.toBe(oldId)
+    expect(cur.design).toMatchObject({ developmentEnd: '2025-11-21' })
+    const prev = (await request(app.server).get(`/api/public/strategies/${old.id}?version=${oldId}`)).body.data
+    expect(prev.version).toMatchObject({ id: oldId, current: false })
+    expect(prev.results.length).toBeGreaterThanOrEqual(6)
+    expect(prev.results.every((r) => r.endDate === '2026-11-20')).toBe(true)
+    expect((await request(app.server).get(`/api/public/strategies/${old.id}?version=sv_nope`)).status).toBe(404)
   })
 
   it('serves the evidence publicly, without an account', async () => {

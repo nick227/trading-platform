@@ -4,11 +4,17 @@
     "name": "Momentum Buy",
     "description": "Buys a ticker when price rises above a configurable threshold. Enforces market hours, position limits, and a per-ticker cooldown to prevent overtrading.",
     "botType": "rule_based",
-    "tags": ["momentum", "long", "threshold"],
+    "tags": [
+      "momentum",
+      "long",
+      "threshold"
+    ],
     "config": {
       "direction": "buy",
       "quantity": 1,
-      "tickers": ["SPY"],
+      "tickers": [
+        "SPY"
+      ],
       "capitalMode": "allocated",
       "allocatedAmount": 5000,
       "maxOrderNotional": 1000
@@ -17,168 +23,235 @@
       {
         "name": "Market Hours",
         "type": "market_hours",
-        "config": { "allowPremarket": false, "allowAfterHours": false }
+        "config": {
+          "allowPremarket": false,
+          "allowAfterHours": false
+        }
       },
       {
         "name": "Price Above Threshold",
         "type": "price_threshold",
-        "config": { "direction": "above", "operator": "above", "price": 0 }
+        "config": {
+          "direction": "above",
+          "operator": "above",
+          "price": 0
+        }
       },
       {
         "name": "Position Limit",
         "type": "position_limit",
-        "config": { "maxShares": 100, "maxQuantity": 100 }
+        "config": {
+          "maxShares": 100,
+          "maxQuantity": 100
+        }
       },
       {
         "name": "Cooldown",
         "type": "cooldown",
-        "config": { "windowMs": 3600000 }
+        "config": {
+          "windowMs": 3600000
+        }
       }
     ]
   },
   {
     "id": "tmpl_dca_accumulator",
     "name": "DCA Accumulator",
-    "description": "Dollar-cost averages into a position by buying on a fixed time interval regardless of price. Respects a max-shares ceiling so you never over-accumulate.",
+    "description": "Invests a fixed $1,000 every 30 days regardless of price, spreading the capital over about ten months instead of buying at once.",
     "botType": "rule_based",
-    "tags": ["dca", "long", "accumulation"],
+    "tags": [
+      "dca",
+      "long",
+      "accumulation",
+      "schedule"
+    ],
     "config": {
       "direction": "buy",
-      "quantity": 1,
-      "tickers": ["SPY"],
+      "tickers": [
+        "SPY"
+      ],
       "capitalMode": "allocated",
-      "allocatedAmount": 5000,
+      "allocatedAmount": 10000,
       "maxOrderNotional": 1000
     },
     "rules": [
       {
         "name": "Market Hours",
         "type": "market_hours",
-        "config": { "allowPremarket": false, "allowAfterHours": false }
+        "config": {
+          "allowPremarket": false,
+          "allowAfterHours": false
+        }
       },
       {
-        "name": "Position Limit",
-        "type": "position_limit",
-        "config": { "maxShares": 500, "maxQuantity": 500 }
-      },
-      {
-        "name": "DCA Interval",
+        "name": "Monthly",
         "type": "cooldown",
-        "config": { "windowMs": 86400000 }
+        "config": {
+          "cooldownHours": 720
+        }
       }
     ]
   },
   {
     "id": "tmpl_momentum_sell",
-    "name": "Momentum Sell",
-    "description": "Sells a ticker when price drops below a configurable threshold. Mirrors the Momentum Buy template for paired long/short strategies.",
+    "name": "Momentum Exit",
+    "description": "Buys after a 5% rise over 20 sessions and sells its own shares when the rise reverses (a 5% fall over 10 sessions) or the price drops 8% below its cost. Never sells shares it doesn't hold.",
     "botType": "rule_based",
-    "tags": ["momentum", "short", "threshold"],
+    "tags": [
+      "momentum",
+      "long",
+      "exit"
+    ],
     "config": {
-      "direction": "sell",
-      "quantity": 1,
-      "tickers": ["SPY"],
+      "direction": "buy",
+      "tickers": [
+        "SPY"
+      ],
       "capitalMode": "allocated",
-      "allocatedAmount": 5000,
-      "maxOrderNotional": 1000
+      "allocatedAmount": 10000,
+      "maxOrderNotional": 2000,
+      "exit": {
+        "rules": [
+          {
+            "type": "price_change",
+            "config": {
+              "sessions": 10,
+              "operator": "below",
+              "pct": 5
+            }
+          },
+          {
+            "type": "stop_loss",
+            "config": {
+              "pct": 8
+            }
+          }
+        ]
+      }
     },
     "rules": [
       {
         "name": "Market Hours",
         "type": "market_hours",
-        "config": { "allowPremarket": false, "allowAfterHours": false }
+        "config": {
+          "allowPremarket": false,
+          "allowAfterHours": false
+        }
       },
       {
-        "name": "Price Below Threshold",
-        "type": "price_threshold",
-        "config": { "direction": "below", "operator": "below", "price": 0 }
+        "name": "Momentum",
+        "type": "price_change",
+        "config": {
+          "sessions": 20,
+          "operator": "above",
+          "pct": 5
+        }
       },
       {
-        "name": "Cooldown",
+        "name": "At most weekly",
         "type": "cooldown",
-        "config": { "windowMs": 3600000 }
+        "config": {
+          "cooldownHours": 120
+        }
       }
     ]
   },
   {
     "id": "tmpl_loss_guard",
     "name": "Loss Guard",
-    "description": "Buys on each price tick but stops for the day once portfolio daily loss exceeds a threshold. Use as a risk-control overlay or standalone conservative bot.",
+    "description": "Buys $2,000 every 30 days and sells all of its shares if the price falls 10% below their average cost; it then waits at least 30 days before buying again.",
     "botType": "rule_based",
-    "tags": ["risk", "long", "daily-loss"],
+    "tags": [
+      "risk",
+      "long",
+      "stop-loss",
+      "exit"
+    ],
     "config": {
       "direction": "buy",
-      "quantity": 1,
-      "tickers": ["SPY"],
+      "tickers": [
+        "SPY"
+      ],
       "capitalMode": "allocated",
-      "allocatedAmount": 5000,
-      "maxOrderNotional": 1000
+      "allocatedAmount": 10000,
+      "maxOrderNotional": 2000,
+      "exit": {
+        "rules": [
+          {
+            "type": "stop_loss",
+            "config": {
+              "pct": 10
+            }
+          }
+        ]
+      }
     },
     "rules": [
       {
         "name": "Market Hours",
         "type": "market_hours",
-        "config": { "allowPremarket": false, "allowAfterHours": false }
+        "config": {
+          "allowPremarket": false,
+          "allowAfterHours": false
+        }
       },
       {
-        "name": "Daily Loss Limit",
-        "type": "daily_loss",
-        "config": { "maxLoss": 500 }
-      },
-      {
-        "name": "Position Limit",
-        "type": "position_limit",
-        "config": { "maxShares": 100, "maxQuantity": 100 }
-      },
-      {
-        "name": "Cooldown",
+        "name": "Monthly",
         "type": "cooldown",
-        "config": { "windowMs": 1800000 }
+        "config": {
+          "cooldownHours": 720
+        }
       }
     ]
   },
   {
     "id": "tmpl_spy_trend_filter",
     "name": "SPY Trend Filter",
-    "description": "Participates in SPY uptrends, steps aside in weak markets. Daily regime confirmation, full allocation model.",
+    "description": "Holds while SPY is above its 200-day average and sells its own shares when SPY's trend turns down. Evaluated at the daily close.",
     "botType": "rule_based",
-    "tags": ["spy", "trend", "regime"],
+    "tags": [
+      "spy",
+      "trend",
+      "regime",
+      "exit"
+    ],
     "config": {
       "direction": "buy",
-      "tickers": ["SPY"],
+      "tickers": [
+        "SPY"
+      ],
       "capitalMode": "allocated",
       "allocatedAmount": 10000,
-      "riskOnExposure": 1.0,
-      "riskOffExposure": 0.0,
-      "maxOrderNotional": 25000,
-      "executionStyle": "market_open",
-      "maxTradesPerDay": 1
+      "maxOrderNotional": 2000,
+      "exit": {
+        "rules": [
+          {
+            "type": "trend_filter",
+            "config": {
+              "symbol": "SPY",
+              "confirmationBars": 2,
+              "requiredRegime": "risk_off"
+            }
+          }
+        ]
+      }
     },
     "rules": [
       {
-        "name": "Open Window",
-        "type": "time_window",
-        "config": { "start": "09:35", "end": "09:55", "timezone": "America/New_York" }
-      },
-      {
-        "name": "Cooldown",
-        "type": "cooldown",
-        "config": { "cooldownHours": 24, "windowMs": 86400000 }
-      },
-      {
-        "name": "Position Limit",
-        "type": "position_limit",
-        "config": { "maxPositions": 1, "maxQuantity": 100, "maxShares": 100 }
-      },
-      {
-        "name": "Daily Loss",
-        "type": "daily_loss",
-        "config": { "maxLoss": 500, "maxDailyLossPct": 3 }
-      },
-      {
-        "name": "Trend Filter",
+        "name": "SPY uptrend",
         "type": "trend_filter",
-        "config": { "symbol": "SPY", "confirmationBars": 2, "maxSnapshotAgeHours": 90, "side": "buy" }
+        "config": {
+          "symbol": "SPY",
+          "confirmationBars": 2,
+          "requiredRegime": "risk_on"
+        }
+      },
+      {
+        "name": "One order per day",
+        "type": "cooldown",
+        "config": {
+          "cooldownHours": 24
+        }
       }
     ]
   },
@@ -187,25 +260,41 @@
     "name": "Alpha Research Follower",
     "description": "Trades only on current, verified Alpha Engine predictions, archiving the evidence with each order. Stale, low-confidence or price-drifted research is not traded. Paper only.",
     "botType": "rule_based",
-    "tags": ["research", "alpha-engine", "evidence"],
+    "tags": [
+      "research",
+      "alpha-engine",
+      "evidence"
+    ],
     "config": {
       "signalSource": "alpha_research",
-      "tickers": ["SPY"],
+      "tickers": [
+        "SPY"
+      ],
       "capitalMode": "allocated",
       "allocatedAmount": 5000,
       "maxOrderNotional": 1000,
-      "research": { "minConfidence": 0.6, "maxPredictionAgeHours": 96, "maxEntryDriftPct": 5 }
+      "research": {
+        "minConfidence": 0.6,
+        "maxPredictionAgeHours": 96,
+        "maxEntryDriftPct": 5
+      }
     },
     "rules": [
       {
         "name": "Market Hours",
         "type": "market_hours",
-        "config": { "allowPremarket": false, "allowAfterHours": false }
+        "config": {
+          "allowPremarket": false,
+          "allowAfterHours": false
+        }
       },
       {
         "name": "Position Limit",
         "type": "position_limit",
-        "config": { "maxShares": 100, "maxQuantity": 100 }
+        "config": {
+          "maxShares": 100,
+          "maxQuantity": 100
+        }
       }
     ]
   }

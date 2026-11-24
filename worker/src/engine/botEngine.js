@@ -21,8 +21,8 @@ import { engineClient } from '../../../server/src/clients/engine.js'
 import { fetchVerifiedResearchTrace, recordResearchDecision } from '../../../server/src/services/researchTraceService.js'
 import { linkResearchDecisionToExecution } from '../../../server/src/services/executionResearchService.js'
 import { calculateFifoAccounting, loadBotFills } from '../../../server/src/services/botAccountingService.js'
-import { computeBuyQuantity as coreBuyQuantity, deriveDirection, runRulePipeline, sellableFrom } from './decisionCore.js'
-import { priceChangeDecision, relativeVolumeDecision } from './rules/marketConditions.js'
+import { computeBuyQuantity as coreBuyQuantity, deriveDirection, exitQuantity, exitRulesOf, runExitRules, runRulePipeline, sellableFrom } from './decisionCore.js'
+import { priceChangeDecision, relativeVolumeDecision, stopLossDecision } from './rules/marketConditions.js'
 import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
 import { currentSimSession, simulationConfig } from '../../../server/src/services/simulationService.js'
 
@@ -336,7 +336,26 @@ export async function evaluateBot(bot, ticker) {
   // Handle different bot types
   let evaluationResult
 
-  if (bot.botType === 'rule_based') {
+  // Exits first: a bot holding its own shares sells them when any exit rule triggers.
+  const exitRules = bot.botType === 'rule_based' && !isResearchDriven(bot) ? exitRulesOf(bot) : []
+  if (exitRules.length) {
+    const held = await botPosition(bot.id, ticker)
+    if (held.quantity > 0) {
+      const ex = await runExitRules(exitRules, (rule) => evaluateExitRule(rule, ticker, held))
+      if (ex.exit) {
+        side = 'sell'
+        context.side = side
+        evaluationResult = { signal: 'sell', confidence: 0.8, reason: `Exit: ${ex.rule.type}`, exit: { rule: ex.rule.type, detail: ex.result.detail ?? null } }
+        await logBotEvent(bot, 'decision_made', `Exit signal (${ex.rule.type}) for ${ticker}`, ticker, {
+          signal: 'sell', confidence: 0.8, reason: evaluationResult.reason, exit: evaluationResult.exit,
+        })
+      }
+    }
+  }
+
+  if (evaluationResult) {
+    // exit decided above
+  } else if (bot.botType === 'rule_based') {
     // Research-driven bots take direction and confidence from verified Alpha research;
     // configured rules still gate when the bot may act on it.
     let research = null
@@ -444,6 +463,29 @@ export async function evaluateBot(bot, ticker) {
   await createExecution(bot, ticker, evaluationResult, tick, context)
 }
 
+/** The bot's own open position in a ticker (FIFO lots): { quantity, avgPrice }. */
+export async function botPosition(botId, ticker) {
+  const p = calculateFifoAccounting(await loadBotFills(botId, { prismaClient: prisma })).openPositions?.[String(ticker).toUpperCase()]
+  return { quantity: p?.quantity ?? 0, avgPrice: p?.avgPrice ?? null }
+}
+
+/** Live inputs for one exit rule (the same pure decisions the backtest uses). */
+async function evaluateExitRule(rule, ticker, held) {
+  const config = rule.config ?? {}
+  switch (rule.type) {
+    case 'stop_loss': {
+      const q = priceCache.getIfFresh(ticker)
+      return stopLossDecision(config, { price: q ? (q.last ?? q.ask) : null, avgCost: held.avgPrice })
+    }
+    case 'trend_filter':
+      return evaluateTrendFilter({ ...config, side: 'sell' })
+    case 'price_change':
+      return priceChangeDecision(config, { closes: await recentCloses(ticker, Number(config.sessions) || 1) })
+    default:
+      return { pass: false, reason: 'unknown_exit_rule' }
+  }
+}
+
 /** min(this bot's attributable FIFO quantity, the account's position) for a sell. */
 export async function sellableQuantity(botId, ticker, accountQty) {
   const t = String(ticker).toUpperCase()
@@ -483,7 +525,7 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
 
   let quantity = direction === 'buy'
     ? computeBuyQuantity({ bot, quote: tick })
-    : currentQty
+    : evaluationResult.exit ? exitQuantity({ bot, price: tick?.last ?? tick?.ask, held: currentQty }) : currentQty
 
   if (!Number.isFinite(quantity) || quantity <= 0) {
     await logBotEvent(bot, 'execution_skipped', `Computed quantity is not tradable for ${ticker}`, ticker, {

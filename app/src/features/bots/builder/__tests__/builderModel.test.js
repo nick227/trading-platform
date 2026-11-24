@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  exitDraftFrom,
+  exitConfigFromDraft,
   initCreateDraft,
   initEditDraft,
   validateBuilderDraft,
@@ -375,6 +377,7 @@ describe('builderModel', () => {
           direction: 'buy',
           allocatedAmount: 5000,
           maxOrderNotional: 1000,
+          exit: null, // no exits chosen: removes any template exit
         },
         rules: [
           {
@@ -578,5 +581,16 @@ describe('market-aware conditions in the builder', () => {
     expect(validateBuilderDraft({ ...base, relVolume: { on: true, minRatio: '0' } }).relVolume).toMatch(/between 0 and 10/)
     expect(validateBuilderDraft({ ...base, priceChange: { on: true, sessions: '90', operator: 'above', pct: '3' } }).priceChange).toMatch(/1–60/)
     expect(validateBuilderDraft({ ...base, priceChange: { on: false, sessions: '90' } }).priceChange).toBeUndefined()
+  })
+})
+
+describe('exits in the builder', () => {
+  it('reads a template’s exits and writes them back as config.exit.rules', () => {
+    const cfg = { exit: { rules: [{ type: 'stop_loss', config: { pct: 8 } }, { type: 'price_change', config: { sessions: 10, operator: 'below', pct: 5 } }] } }
+    const e = exitDraftFrom(cfg)
+    expect(e).toMatchObject({ stopLoss: { on: true, pct: '8' }, trend: { on: false }, reversal: { on: true, sessions: '10', pct: '5' } })
+    expect(exitConfigFromDraft({ direction: 'buy', triggerType: 'price_threshold', exit: e })).toEqual(cfg.exit)
+    expect(exitConfigFromDraft({ direction: 'buy', triggerType: 'price_threshold', exit: { ...e, stopLoss: { on: false }, reversal: { on: false } } })).toBeNull()
+    expect(exitConfigFromDraft({ direction: 'sell', triggerType: 'price_threshold', exit: e })).toBeNull() // never on sell bots
   })
 })

@@ -261,3 +261,32 @@ describe('rule names (BotRule.name is required in the database)', () => {
     ])
   })
 })
+
+describe('exit rules on save', () => {
+  const base = { tickers: ['SPY'], direction: 'buy', allocatedAmount: 1000 }
+  const save = (config) => post({ portfolioId: 'por_usr_a', name: 'Exit', config, rules: [{ type: 'price_threshold', config: { operator: 'above', price: 10 } }] })
+  it('accepts buy bots with supported exits, rejects anything that could sell what it does not own', async () => {
+    expect((await save({ ...base, exit: { rules: [{ type: 'stop_loss', config: { pct: 8 } }, { type: 'trend_filter', config: { symbol: 'SPY', requiredRegime: 'risk_off' } }] } })).status).toBe(201)
+    expect((await save({ ...base, direction: 'sell', exit: { rules: [{ type: 'stop_loss', config: { pct: 8 } }] } })).body.error.message).toMatch(/buy bots/)
+    expect((await save({ ...base, exit: { rules: [{ type: 'cooldown', config: { cooldownHours: 1 } }] } })).body.error.message).toMatch(/Exit rules can be/)
+    expect((await save({ ...base, exit: { rules: [{ type: 'stop_loss', config: { pct: 0 } }] } })).body.error.message).toMatch(/between 0% and 90%/)
+  })
+
+  it('rejects duplicate exit rule types, malformed rules, non-boolean enabled, and non-protective price changes', async () => {
+    const dup = await save({ ...base, exit: { rules: [{ type: 'stop_loss', config: { pct: 5 } }, { type: 'stop_loss', config: { pct: 10 } }] } })
+    expect(dup.status).toBe(400)
+    expect(dup.body.error.message).toMatch(/Duplicate exit rule type: stop_loss/)
+
+    const malformed = await save({ ...base, exit: { rules: ['not an object'] } })
+    expect(malformed.status).toBe(400)
+    expect(malformed.body.error.message).toMatch(/Each exit rule must be an object/)
+
+    const badEnabled = await save({ ...base, exit: { rules: [{ type: 'stop_loss', enabled: 'yes', config: { pct: 5 } }] } })
+    expect(badEnabled.status).toBe(400)
+    expect(badEnabled.body.error.message).toMatch(/Exit rule enabled must be true or false/)
+
+    const abovePriceChange = await save({ ...base, exit: { rules: [{ type: 'price_change', config: { sessions: 5, pct: 3, operator: 'above' } }] } })
+    expect(abovePriceChange.status).toBe(400)
+    expect(abovePriceChange.body.error.message).toMatch(/Price-change exit must trigger on a fall/)
+  })
+})

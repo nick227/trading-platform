@@ -155,6 +155,29 @@ describe('direction integrity (c43d5ca)', () => {
     expect((await eventsOf('bot_none', 'execution_skipped')).map((e) => e.metadata?.reason)).toContain('no_position')
   })
 
+  it('EXIT: a buy bot with a stop-loss sells its own shares, sized by its per-order limit', async () => {
+    ae.closes = { SPY: { session: SESSION, close: 480 } } // 11% below the 540.25 cost
+    await holding('bot_x', 3)
+    await holding('bot_other', 5)
+    await mkBot('bot_x', { direction: 'buy', maxOrderNotional: 1000, exit: { rules: [{ type: 'stop_loss', config: { pct: 10 } }] } },
+      [{ type: 'price_threshold', config: { operator: 'above', price: 10_000 } }]) // entry never passes
+    await tick('bot_x')
+    await drain()
+    const sells = (await ordersOf('bot_x')).filter((o) => o.direction === 'sell')
+    expect(sells).toHaveLength(1)
+    expect(sells[0]).toMatchObject({ quantity: 2, status: 'filled' }) // floor(1000 / 480), of its own 3
+    const ev = (await eventsOf('bot_x', 'decision_made')).find((e) => e.metadata?.exit)
+    expect(ev.metadata.exit).toMatchObject({ rule: 'stop_loss' })
+  })
+
+  it('EXIT: never sells without its own shares (no naked or borrowed selling)', async () => {
+    ae.closes = { SPY: { session: SESSION, close: 480 } }
+    await holding('bot_other', 5)
+    await mkBot('bot_y', { direction: 'buy', exit: { rules: [{ type: 'stop_loss', config: { pct: 1 } }] } }, [{ type: 'price_threshold', config: { operator: 'above', price: 10_000 } }])
+    await tick('bot_y')
+    expect((await ordersOf('bot_y')).filter((o) => o.direction === 'sell')).toHaveLength(0)
+  })
+
   it('SELL: a sell bot sells the shares it holds (unchanged behaviour)', async () => {
     await holding('bot_s', 3)
     await mkBot('bot_s', { direction: 'sell' })

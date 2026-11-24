@@ -13,7 +13,7 @@ import { evaluateTimeWindow } from './rules/timeWindow.js'
 import { cooldownDecision, windowMsFromConfig } from './rules/cooldown.js'
 import { dailyLossDecision } from './rules/dailyLoss.js'
 import { trendFilterDecision } from './rules/trendFilter.js'
-import { priceChangeDecision, relativeVolumeDecision } from './rules/marketConditions.js'
+import { priceChangeDecision, relativeVolumeDecision, stopLossDecision } from './rules/marketConditions.js'
 
 /** Trade direction from bot config: 'buy' | 'sell' | null (never defaulted). */
 export function deriveDirection(bot) {
@@ -96,6 +96,43 @@ export function ruleDecision(rule, inputs) {
     case 'time_window': return evaluateTimeWindow(config, inputs.now)
     case 'relative_volume': return relativeVolumeDecision(config, { volume: inputs.volume, avgVolume: inputs.avgVolume })
     case 'price_change': return priceChangeDecision(config, { closes: inputs.closes })
+    case 'stop_loss': return stopLossDecision(config, { price: inputs.price, avgCost: inputs.avgCost })
     default: return { pass: true }
   }
+}
+
+// ── Exits ─────────────────────────────────────────────────────────────────────
+// A buy bot may carry exit rules (config.exit.rules). When it holds shares of its own (FIFO
+// lots) and ANY exit rule triggers, it sells exactly those shares — never another bot's, never
+// short. Exits are checked before entry rules; the sell passes the same risk policy and limits.
+
+export const EXIT_RULE_TYPES = Object.freeze(['stop_loss', 'trend_filter', 'price_change'])
+
+export function exitRulesOf(bot) {
+  const rules = bot?.config?.exit?.rules
+  return Array.isArray(rules) ? rules.filter((r) => r && r.enabled !== false && EXIT_RULE_TYPES.includes(r.type)) : []
+}
+
+/** Any-of: { exit: true, rule, result } for the first exit rule that triggers, else { exit: false }. */
+export async function runExitRules(rules, evaluateOne) {
+  for (const rule of rules ?? []) {
+    const result = await evaluateOne(rule)
+    if (result.pass) return { exit: true, rule, result }
+  }
+  return { exit: false }
+}
+
+/**
+ * Shares one exit order sells: the bot's own shares, at most its per-order limit (the same cap
+ * as its buys, which keeps each exit within the normal risk policy's per-trade limit). An exit
+ * continues at later closes while its condition still holds. Never forces an order that exceeds the cap.
+ */
+export function exitQuantity({ bot, price, held }) {
+  const q = Math.max(0, Math.floor(Number(held) || 0))
+  const cap = Number(bot.config?.maxOrderNotional ?? bot.config?.maxPerOrder)
+  if (!(q > 0)) return 0
+  if (!(cap > 0) || !(price > 0)) return q
+  const maxAllowed = Math.floor(cap / price)
+  if (maxAllowed <= 0) return 0
+  return Math.min(q, maxAllowed)
 }

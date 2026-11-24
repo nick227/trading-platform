@@ -23,7 +23,7 @@
  */
 import { calculateFifoAccounting, realizedPnlSince } from '../../../server/src/services/botAccountingService.js'
 import { maxDrawdown } from '../../../server/src/services/portfolioValuationService.js'
-import { computeBuyQuantity, deriveDirection, ruleDecision, runRulePipeline, sellableFrom } from '../engine/decisionCore.js'
+import { computeBuyQuantity, deriveDirection, exitQuantity, exitRulesOf, ruleDecision, runExitRules, runRulePipeline, sellableFrom } from '../engine/decisionCore.js'
 import {
   DEFAULT_RISK_SETTINGS, RISK_POLICY_VERSION, closedTradeWinRate, drawdownStress, executionConfidence,
   gateVerdict, legacyRiskChecks, portfolioExposure, scoreWinRate, stressInputs,
@@ -104,7 +104,7 @@ export async function runBacktest({ bot, symbols, start, end, executionModel = '
     cash += order.direction === 'buy' ? -cost : cost
     const id = `bt_${++seq}`
     fills.push({ id, ticker: order.ticker, direction: order.direction, quantity: order.quantity, price: order.refPrice, filledQuantity: order.quantity,
-      filledPrice: price, fees: 0, commission: 0, status: 'filled', createdAt: order.decidedAt, filledAt: at, session, decidedSession: order.decidedSession })
+      filledPrice: price, fees: 0, commission: 0, status: 'filled', createdAt: order.decidedAt, filledAt: at, session, decidedSession: order.decidedSession, exit: order.exit ?? null })
     order.status = 'filled'
   }
 
@@ -129,28 +129,44 @@ export async function runBacktest({ bot, symbols, start, end, executionModel = '
       const bar = barOn(t, d)
       if (!bar || data.unusable?.includes(t)) { skip('no_session_bar'); continue }
       if (pending.some((o) => o.ticker === t)) { skip('inflight_exists'); continue }
-      const side = deriveDirection(bot)
-      if (!side) { skip('missing_direction'); continue }
-      if (rules.length === 0) { skip('no_rules_configured'); continue }
+      const configured = deriveDirection(bot)
+      if (!configured) { skip('missing_direction'); continue }
+      const exitRules = exitRulesOf(bot)
+      if (rules.length === 0 && exitRules.length === 0) { skip('no_rules_configured'); continue }
 
       const accountQty = holdings()[t]?.quantity ?? 0
       const lastAttemptAt = attempts.filter((a) => a.ticker === t).reduce((m, a) => Math.max(m, a.at), 0)
       const realizedToday = realizedPnlSince(fills, dayStart(d))
       const inputs = {
-        ticker: t, side, price: bar[4], now, market: { isOpen: true, marketOpen: null, marketClose: null },
+        ticker: t, side: configured, price: bar[4], now, market: { isOpen: true, marketOpen: null, marketClose: null },
         positions: accountQty ? [{ symbol: t, qty: accountQty }] : [], lastAttemptAt,
         realizedLossToday: Math.abs(Math.min(0, realizedToday)), regime: null,
         volume: bar[5], avgVolume: avgVolume20(data.bars[t], index[t].get(d)),
         closes: data.bars[t].slice(Math.max(0, index[t].get(d) - 60), index[t].get(d) + 1).map((b) => b[4]),
+        avgCost: holdings()[t]?.avgPrice ?? null,
       }
-      // Rule pipeline (same order and short-circuit as live).
-      const outcome = await runRulePipeline(rules, (rule) => {
+      const withRegime = (rule) => {
         if (rule.type === 'trend_filter') inputs.regime = regimeAt(data.regimes?.[String(rule.config?.symbol ?? 'SPY').toUpperCase()], d)
         return ruleDecision(rule, inputs)
-      })
-      if (!outcome.pass) { skip(outcome.result.reason ?? `${outcome.rule.type}_blocked`); continue }
+      }
+      // Exits first (as live): holding its own shares, any exit rule sells them.
+      let side = configured
+      let exitBy = null
+      if (exitRules.length && accountQty > 0) {
+        inputs.side = 'sell'
+        const ex = await runExitRules(exitRules, withRegime)
+        if (ex.exit) { side = 'sell'; exitBy = ex.rule.type }
+      }
+      if (!exitBy) {
+        if (rules.length === 0) { skip('no_entry_rules'); continue }
+        inputs.side = configured
+        // Rule pipeline (same order and short-circuit as live).
+        const outcome = await runRulePipeline(rules, withRegime)
+        if (!outcome.pass) { skip(outcome.result.reason ?? `${outcome.rule.type}_blocked`); continue }
+      }
 
-      const quantity = side === 'buy' ? computeBuyQuantity({ bot, price: bar[4] }) : sellableFrom(accountQty, accountQty)
+      const quantity = side === 'buy' ? computeBuyQuantity({ bot, price: bar[4] })
+        : exitBy ? exitQuantity({ bot, price: bar[4], held: sellableFrom(accountQty, accountQty) }) : sellableFrom(accountQty, accountQty)
       if (!(quantity > 0)) { skip(side === 'sell' ? 'no_position' : 'invalid_quantity'); continue }
 
       // Normal risk policy on point-in-time inputs.
@@ -205,8 +221,8 @@ export async function runBacktest({ bot, symbols, start, end, executionModel = '
         continue
       }
 
-      const order = { ticker: t, direction: side, quantity: qty, refPrice: bar[4], decidedAt: now, decidedSession: d, waited: 0, scores }
-      events.push({ session: d, ticker: t, type: 'order', side, quantity: qty, price: bar[4], basis: risk.basis, scores })
+      const order = { ticker: t, direction: side, quantity: qty, refPrice: bar[4], decidedAt: now, decidedSession: d, waited: 0, scores, exit: exitBy }
+      events.push({ session: d, ticker: t, type: 'order', side, quantity: qty, price: bar[4], basis: risk.basis, scores, ...(exitBy ? { exit: exitBy } : {}) })
       if (executionModel === 'same_close') fill(order, bar[4], now, d)
       else pending.push(order)
     }
@@ -260,7 +276,7 @@ function summarize({ bot, symbols, start, end, executionModel, startingCash, ses
   const finalPnl = curve.length ? curve[curve.length - 1].pnl : 0
   const trades = fills.map((f) => ({
     session: f.session, decidedSession: f.decidedSession, ticker: f.ticker, side: f.direction, quantity: f.filledQuantity,
-    price: f.filledPrice, decisionPrice: f.price, realizedPnl: f.direction === 'sell' ? (fifo.perExecutionPnl.get(f.id) ?? 0) : null,
+    price: f.filledPrice, decisionPrice: f.price, exit: f.exit ?? null, realizedPnl: f.direction === 'sell' ? (fifo.perExecutionPnl.get(f.id) ?? 0) : null,
   }))
   const exposureDays = equity.filter((p) => p.marketValue > 0).length
   return {

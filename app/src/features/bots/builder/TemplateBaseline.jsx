@@ -5,8 +5,8 @@ import { loadPublicStrategy, summaryLine } from '../../strategies/strategiesApi'
 /** The behaviour a platform test covers — not symbols, capital or name, which every user sets. */
 export function behaviourKey(d) {
   if (!d) return ''
-  const { direction, triggerType, trigger, marketHours, cooldown, positionLimit, dailyLoss, relVolume, priceChange, research } = d
-  return JSON.stringify({ direction, triggerType, op: trigger?.operator, marketHours, cooldown, positionLimit, dailyLoss, relVolume, priceChange, research })
+  const { direction, triggerType, trigger, marketHours, cooldown, positionLimit, dailyLoss, relVolume, priceChange, research, exit } = d
+  return JSON.stringify({ direction, triggerType, op: trigger?.operator, marketHours, cooldown, positionLimit, dailyLoss, relVolume, priceChange, research, exit })
 }
 
 /**

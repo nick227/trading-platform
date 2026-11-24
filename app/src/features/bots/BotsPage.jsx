@@ -109,8 +109,8 @@ function StartingPoint({ f, open, onToggle }) {
           <div>
             <h4>Platform backtest</h4>
             <p className="tl-small m0" data-testid="featured-evidence-detail">
-              {['5Y', '1Y', 'forward'].map((w) => (
-                <span key={w} className="tl-evidence-line">{w === '5Y' ? '5 years' : w === '1Y' ? 'Last year' : 'Since published'}: {summaryLine(f.evidence?.windows?.[w])}</span>
+              {['5Y', '1Y', 'holdout', 'forward'].filter((w) => w !== 'holdout' || f.evidence?.windows?.holdout).map((w) => (
+                <span key={w} className="tl-evidence-line">{{ '5Y': '5 years', '1Y': 'Last year', holdout: 'Holdout (out of sample)', forward: 'Since published' }[w]}: {summaryLine(f.evidence?.windows?.[w])}</span>
               ))}
             </p>
             <p className="tl-small" style={{ margin: '6px 0 18px' }}>

@@ -2,9 +2,9 @@ import { get } from '../../api/client'
 
 /** TradeLoom's standardized strategy evidence (public; no login needed). */
 export const loadPublicStrategies = () => get('/public/strategies')
-export const loadPublicStrategy = (templateId) => get(`/public/strategies/${encodeURIComponent(templateId)}`)
+export const loadPublicStrategy = (templateId, version = null) => get(`/public/strategies/${encodeURIComponent(templateId)}`, version ? { version } : {})
 
-export const WINDOW_LABELS = { '5Y': '5 years', '1Y': 'Last year', forward: 'Since published' }
+export const WINDOW_LABELS = { '5Y': '5 years', '1Y': 'Last year', forward: 'Since published', development: 'Development', holdout: 'Holdout (out of sample)' }
 
 export const pctText = (n) => (n === null || n === undefined ? '—' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}%`)
 

@@ -41,6 +41,10 @@ export function ruleConfigError(type, config = {}) {
       if (c.operator !== 'above' && c.operator !== 'below') return 'Price change must be a rise ("above") or a fall ("below").'
       return Number.isFinite(p) && p > 0 && p <= 100 ? null : 'Price change must be between 0% and 100%.'
     }
+    case 'stop_loss': {
+      const p = Number(c.pct)
+      return Number.isFinite(p) && p > 0 && p <= 90 ? null : 'Stop-loss must be between 0% and 90% below cost.'
+    }
     case 'trend_filter':
       return typeof (c.symbol ?? 'SPY') === 'string' ? null : 'Trend filter needs a symbol.'
     default:

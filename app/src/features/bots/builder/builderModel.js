@@ -125,6 +125,7 @@ export function initCreateDraft(template, data = {}, pinnedTicker = null) {
       hours: cd ? cooldownHours(cd.config) : '24',
     },
     ...marketConditionDrafts(rules),
+    exit: exitDraftFrom(config),
     positionLimit: {
       on: Boolean(pos && pos.enabled !== false),
       maxShares: String(pos?.config?.maxShares ?? pos?.config?.maxQuantity ?? 100),
@@ -225,6 +226,7 @@ export function initEditDraft(bot) {
       hours: cd ? cooldownHours(cd.config) : '24',
     },
     ...marketConditionDrafts(rules),
+    exit: exitDraftFrom(config),
     positionLimit: {
       on: Boolean(pos && pos.enabled !== false),
       maxShares: String(pos?.config?.maxShares ?? pos?.config?.maxQuantity ?? 100),
@@ -239,7 +241,7 @@ export function initEditDraft(bot) {
   }
 }
 
-const EDITABLE_FIELDS = ['name', 'symbolsText', 'direction', 'capital', 'maxPerOrder', 'triggerType', 'trigger', 'research', 'marketHours', 'cooldown', 'positionLimit', 'dailyLoss', 'relVolume', 'priceChange', 'removedRuleIds', 'removedRuleTypes']
+const EDITABLE_FIELDS = ['name', 'symbolsText', 'direction', 'capital', 'maxPerOrder', 'triggerType', 'trigger', 'research', 'marketHours', 'cooldown', 'positionLimit', 'dailyLoss', 'relVolume', 'priceChange', 'exit', 'removedRuleIds', 'removedRuleTypes']
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
 /**
@@ -338,6 +340,17 @@ export function validateBuilderDraft(draft, { buyingPower = null, tradableSymbol
     if (dl === null || dl <= 0) errors.dailyLoss = 'Enter an amount greater than $0.'
   }
 
+  // Exits
+  if (draft.exit?.stopLoss?.on) {
+    const p = toNumberOrNull(draft.exit.stopLoss.pct)
+    if (p === null || p <= 0 || p > 90) errors.exit = 'Stop-loss must be between 0% and 90%.'
+  }
+  if (!errors.exit && draft.exit?.reversal?.on) {
+    const n = toNumberOrNull(draft.exit.reversal.sessions)
+    const p = toNumberOrNull(draft.exit.reversal.pct)
+    if (n === null || !Number.isInteger(n) || n < 1 || n > 60 || p === null || p <= 0 || p > 100) errors.exit = 'Reversal: 1–60 sessions and a fall between 0% and 100%.'
+  }
+
   // Market-aware conditions
   if (draft.relVolume?.on) {
     const r = toNumberOrNull(draft.relVolume.minRatio)
@@ -354,6 +367,31 @@ export function validateBuilderDraft(draft, { buyingPower = null, tradableSymbol
 }
 
 const MANAGED_RULES = new Set(['price_threshold', 'trend_filter', 'market_hours', 'cooldown', 'position_limit', 'daily_loss', 'relative_volume', 'price_change'])
+/** Draft fields for exits (config.exit.rules): stop-loss, trend turns down, momentum reverses. */
+export function exitDraftFrom(config) {
+  const rules = Array.isArray(config?.exit?.rules) ? config.exit.rules : []
+  const of = (type, pred = () => true) => rules.find((r) => r.type === type && pred(r))
+  const sl = of('stop_loss')
+  const tf = of('trend_filter')
+  const rv = of('price_change', (r) => r.config?.operator === 'below')
+  return {
+    stopLoss: { on: Boolean(sl), pct: String(sl?.config?.pct ?? 10) },
+    trend: { on: Boolean(tf), symbol: tf?.config?.symbol ?? 'SPY' },
+    reversal: { on: Boolean(rv), sessions: String(rv?.config?.sessions ?? 10), pct: String(rv?.config?.pct ?? 5) },
+  }
+}
+
+/** config.exit from the draft; null when no exit is on. */
+export function exitConfigFromDraft(d) {
+  const e = d?.exit
+  if (!e || d.triggerType === 'alpha_research' || (d.direction && d.direction !== 'buy')) return null
+  const rules = []
+  if (e.stopLoss?.on) rules.push({ type: 'stop_loss', config: { pct: toNumberOrNull(e.stopLoss.pct) ?? 10 } })
+  if (e.trend?.on) rules.push({ type: 'trend_filter', config: { symbol: e.trend.symbol || 'SPY', confirmationBars: 2, requiredRegime: 'risk_off' } })
+  if (e.reversal?.on) rules.push({ type: 'price_change', config: { sessions: Math.round(toNumberOrNull(e.reversal.sessions) ?? 10), operator: 'below', pct: toNumberOrNull(e.reversal.pct) ?? 5 } })
+  return rules.length ? { rules } : null
+}
+
 /** Draft fields for the market-aware conditions (relative volume, price change). */
 function marketConditionDrafts(rules) {
   const rv = findRule(rules, 'relative_volume')
@@ -628,6 +666,11 @@ export function buildConfigPatch(draft, baseConfig = {}) {
       patch.maxOrderNotional = maxOrderNum
     }
 
+    const wantExit = exitConfigFromDraft(draft)
+    if (JSON.stringify(wantExit) !== JSON.stringify(exitConfigFromDraft({ ...draft, exit: exitDraftFrom(baseConfig) }))) {
+      patch.exit = wantExit ?? null // null removes all exits
+    }
+
     const isResearch = draft.triggerType === 'alpha_research'
     const wasResearch = baseConfig.signalSource === 'alpha_research'
     if (isResearch !== wasResearch) {
@@ -657,6 +700,8 @@ export function buildConfigPatch(draft, baseConfig = {}) {
   } else {
     // Create mode: send complete configured core values
     patch.tickers = symbols
+    const exitCfg = exitConfigFromDraft(draft)
+    patch.exit = exitCfg ?? null
     const direction = draft.triggerType === 'alpha_research' ? draft.direction : (draft.direction || 'buy')
     if (direction) patch.direction = direction
     if (capitalNum !== null) patch.allocatedAmount = capitalNum
@@ -709,6 +754,10 @@ export function buildBotFromDraft(draft, original = {}) {
   if (origConfig.requiredRegime !== undefined) nextConfig.requiredRegime = origConfig.requiredRegime
   if (origConfig.maxSnapshotAgeHours !== undefined) nextConfig.maxSnapshotAgeHours = origConfig.maxSnapshotAgeHours
   if (origConfig.preferences !== undefined) nextConfig.preferences = origConfig.preferences
+
+  const exitCfg = exitConfigFromDraft(draft)
+  if (exitCfg) nextConfig.exit = exitCfg
+  else delete nextConfig.exit
 
   if (draft.triggerType === 'alpha_research') {
     nextConfig.signalSource = 'alpha_research'

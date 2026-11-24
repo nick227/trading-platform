@@ -16,6 +16,7 @@ import { isDeepStrictEqual } from 'node:util'
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { ruleConfigError } from '../utils/ruleConfig.js'
+import { EXIT_RULE_TYPES } from '../../../worker/src/engine/decisionCore.js'
 import { isResearchDriven, resolveResearchPolicy } from '../../../worker/src/engine/researchDecision.js'
 import { getEmergencyStop } from './emergencyStopService.js'
 import { simulationConfig } from './simulationService.js'
@@ -64,6 +65,23 @@ export function assertValidConfig(config) {
   if (config.direction !== undefined && config.direction !== 'buy' && config.direction !== 'sell') throw invalid('Direction must be "buy" or "sell".', { field: 'direction' })
   for (const [field, label] of [['allocatedAmount', 'Capital'], ['maxOrderNotional', 'Per-order limit'], ['quantity', 'Quantity']]) {
     if (config[field] !== undefined && !positive(config[field])) throw invalid(`${label} must be greater than 0.`, { field })
+  }
+  if (config.exit !== undefined && config.exit !== null) {
+    const rules = config.exit?.rules
+    if (!isPlain(config.exit) || !Array.isArray(rules)) throw invalid('Exit must be { rules: [...] }.', { field: 'exit' })
+    if (rules.length && (config.direction !== 'buy' || isResearchDriven({ config }))) throw invalid('Exit rules apply to buy bots: they sell only the shares the bot bought.', { field: 'exit' })
+    if (rules.length > 4) throw invalid('At most 4 exit rules.', { field: 'exit' })
+    const seen = new Set()
+    for (const r of rules) {
+      if (!isPlain(r)) throw invalid('Each exit rule must be an object.', { field: 'exit' })
+      if (!EXIT_RULE_TYPES.includes(r?.type)) throw invalid(`Exit rules can be ${EXIT_RULE_TYPES.join(', ')}.`, { field: 'exit' })
+      if (seen.has(r.type)) throw invalid(`Duplicate exit rule type: ${r.type}.`, { field: 'exit' })
+      seen.add(r.type)
+      if (r.enabled !== undefined && typeof r.enabled !== 'boolean') throw invalid('Exit rule enabled must be true or false.', { field: 'exit' })
+      if (r.type === 'price_change' && r.config?.operator !== 'below') throw invalid('Price-change exit must trigger on a fall ("below").', { field: 'exit' })
+      const err = ruleConfigError(r.type, r.config ?? {})
+      if (err) throw invalid(err, { field: 'exit' })
+    }
   }
   if (isResearchDriven({ config })) {
     const resolved = resolveResearchPolicy(config)

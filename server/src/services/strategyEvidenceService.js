@@ -16,6 +16,7 @@
  * session before the window starts — a level known at the time, stated with the results.
  */
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import prisma from '../loaders/prisma.js'
 import { engineClient } from '../clients/engine.js'
 import { DEFAULT_TRADABLE_SYMBOLS, simulationConfig } from './simulationService.js'
@@ -39,8 +40,19 @@ export const ASSUMPTIONS = Object.freeze([
   'Decides at each session’s close and fills at the next session’s open. No commissions.',
   'Same rules and normal risk policy as TradeLoom paper trading.',
   'Parameters are the strategy’s published defaults; TradeLoom does not tune them on this data.',
+  'Stop-loss rules evaluate on daily closing prices and fill at the next session’s open; they cannot guarantee the exact stop price against overnight gaps.',
   '“Forward” covers only sessions completed after this version was first published.',
 ])
+
+/** Evaluation design (development/holdout split, objective, benchmark) for redesigned strategies. */
+const DESIGN = (() => {
+  try {
+    const all = JSON.parse(readFileSync(new URL('../../prisma/seeds/strategy-design.json', import.meta.url), 'utf8'))
+    delete all._comment
+    return all
+  } catch { return {} }
+})()
+export const designFor = (templateId) => DESIGN[templateId] ?? null
 
 const isoDate = (d) => d.toISOString().slice(0, 10)
 const sha = (v) => createHash('sha256').update(canonical(v)).digest('hex')
@@ -68,7 +80,10 @@ export function canonicalStrategy(template) {
     reason = 'The strategy has no buy or sell direction.'
   }
   const standard = { capital: STANDARD.capital, startingCash: STANDARD.startingCash, executionModel: STANDARD.executionModel, fees: STANDARD.fees }
-  const definition = { templateId: template.id, config, rules, parameters, standard }
+  // Design (dev/holdout split, objective) is part of a redesigned version's identity; versions
+  // without one keep the definition — and the id — they were first published with.
+  const design = designFor(template.id)
+  const definition = { templateId: template.id, config, rules, parameters, standard, ...(design ? { design } : {}) }
   return { id: `sv_${sha(definition).slice(0, 16)}`, definition, backtestable, reason }
 }
 
@@ -86,6 +101,12 @@ export function resolveRules(definition, bars, windowStart) {
     return r
   })
   return rules.includes(null) ? { rules: null, parameters: resolved } : { rules, parameters: resolved }
+}
+
+function nextDay(d) {
+  const x = new Date(`${d}T00:00:00Z`)
+  x.setUTCDate(x.getUTCDate() + 1)
+  return isoDate(x)
 }
 
 function windowStart(end, years) {
@@ -121,6 +142,12 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
     }
     const existing = new Set((await prismaClient.strategyEvidence.findMany({ where: { strategyVersionId: v.id, endDate: end }, select: { symbol: true, window: true } })).map((e) => `${e.symbol}|${e.window}`))
     const windows = [...STANDARD.windows.map((w) => ({ id: w.id, start: windowStart(end, w.years) })), { id: 'forward', start: null }]
+    const devEnd = v.definition.design?.developmentEnd
+    if (devEnd) {
+      // Development: the 4 years the design could see. Holdout: everything after — out of sample.
+      windows.push({ id: 'development', start: windowStart(devEnd, 4), end: devEnd })
+      windows.push({ id: 'holdout', start: nextDay(devEnd) })
+    }
     const todo = symbols.flatMap((s) => windows.filter((w) => !existing.has(`${s}|${w.id}`)).map((w) => ({ symbol: s, window: w })))
     if (!todo.length) continue
     const base = { strategyVersionId: v.id, templateId: template.id, endDate: end, executionModel: STANDARD.executionModel, riskPolicyVersion: RISK_POLICY_VERSION }
@@ -135,7 +162,7 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
     const bySymbol = new Map()
     for (const t of todo) bySymbol.set(t.symbol, [...(bySymbol.get(t.symbol) ?? []), t.window])
     for (const [symbol, wins] of bySymbol) {
-      const earliest = windowStart(end, Math.max(...STANDARD.windows.map((w) => w.years)))
+      const earliest = [windowStart(end, Math.max(...STANDARD.windows.map((w) => w.years))), ...wins.map((w) => w.start).filter(Boolean)].sort()[0]
       let ds
       try {
         ds = await loadDataset({ symbols: [symbol], start: earliest, end, regimeSymbols: regimeSymbolsOf(v.definition.rules) }, { engine })
@@ -161,7 +188,7 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
         }
         const r = await runBacktest({
           bot: { id: `platform:${v.id}`, config: { ...v.definition.config, tickers: [symbol] }, rules },
-          symbols: [symbol], start, end, executionModel: STANDARD.executionModel, startingCash: STANDARD.startingCash, riskSettings: {}, restrictMode: 'block', data: ds.data,
+          symbols: [symbol], start, end: w.end ?? end, executionModel: STANDARD.executionModel, startingCash: STANDARD.startingCash, riskSettings: {}, restrictMode: 'block', data: ds.data,
         })
         await save(symbol, w, {
           startDate: start, status: 'ok', dataFingerprint: ds.fingerprint, parameters,
@@ -170,6 +197,7 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
             buyAndHold: { returnPct: r.buyAndHold.returnPct, maxDrawdown: r.buyAndHold.maxDrawdown, curve: downsample(r.buyAndHold.points.map((p) => ({ date: p.date, equity: p.equity })), 260) },
             curve: downsample(r.curve, 260), skips: r.skips, issues: ds.issues.filter((i) => i.ticker === symbol),
             riskBlocks: r.events.filter((e) => e.type === 'risk_blocked').length, refusals: r.events.filter((e) => e.type === 'refused').length,
+            exits: r.trades.filter((tr) => tr.exit).length, trades: r.trades.slice(-60),
           },
         })
         await yieldEvery()
@@ -199,6 +227,11 @@ export function summarize(rows) {
     medianBuyAndHoldPct: median(ok.map((r) => r.results.buyAndHold.returnPct)),
     beatBuyAndHold: ok.filter((r) => r.results.metrics.returnPct > r.results.buyAndHold.returnPct).length,
     worstDrawdownPct: ok.reduce((w, r) => Math.max(w, r.results.metrics.maxDrawdown?.pct ?? 0), 0) || null,
+    medianDrawdownPct: median(ok.map((r) => r.results.metrics.maxDrawdown?.pct ?? 0)),
+    medianBuyAndHoldDrawdownPct: median(ok.map((r) => r.results.buyAndHold.maxDrawdown?.pct ?? 0)),
+    lowerDrawdownThanBuyAndHold: ok.filter((r) => (r.results.metrics.maxDrawdown?.pct ?? 0) < (r.results.buyAndHold.maxDrawdown?.pct ?? 0)).length,
+    medianTimeInMarketPct: median(ok.map((r) => r.results.metrics.timeInMarketPct)),
+    exits: ok.reduce((s, r) => s + (r.results.exits ?? 0), 0),
     trades: ok.reduce((s, r) => s + r.results.metrics.trades, 0),
     status: ok.length ? 'ok' : rows[0]?.status ?? 'pending',
     reason: ok.length ? null : rows[0]?.reason ?? null,
@@ -226,29 +259,36 @@ export async function listPublicStrategies({ prismaClient = prisma } = {}) {
       templateId: t.id, name: t.name, description: t.description, tags: t.tags ?? [],
       version: version ? { id: version.id, firstSession: version.firstSession, backtestable: version.backtestable, reason: version.reason } : null,
       asOf: endDate,
-      windows: { '5Y': byWindow('5Y'), '1Y': byWindow('1Y'), forward: byWindow('forward') },
+      windows: Object.fromEntries(['5Y', '1Y', 'forward', 'development', 'holdout'].map((w) => [w, byWindow(w)]).filter(([w, x]) => x.status !== 'pending' || ['5Y', '1Y', 'forward'].includes(w))),
+      design: designFor(t.id) && version?.id === canonicalStrategy(t).id ? designFor(t.id) : null,
     }
   }))
 }
 
-export async function getPublicStrategy(templateId, { prismaClient = prisma } = {}) {
+export async function getPublicStrategy(templateId, { prismaClient = prisma, versionId = null } = {}) {
   const t = await prismaClient.botTemplate.findUnique({ where: { id: templateId } })
   if (!t) return null
-  const v = canonicalStrategy(t)
-  const version = await prismaClient.strategyVersion.findUnique({ where: { id: v.id } })
+  const current = canonicalStrategy(t)
+  // Any published version of this strategy can be inspected; results stay with their version.
+  const stored = versionId ? await prismaClient.strategyVersion.findUnique({ where: { id: versionId } }) : null
+  if (versionId && (!stored || stored.templateId !== templateId)) return null
+  const v = stored ? { id: stored.id, definition: stored.definition, backtestable: stored.backtestable, reason: stored.reason } : current
+  const version = stored ?? await prismaClient.strategyVersion.findUnique({ where: { id: v.id } })
   const { endDate, rows } = version ? await latestRows(prismaClient, version.id) : { endDate: null, rows: [] }
-  const previous = await prismaClient.strategyVersion.findMany({ where: { templateId }, orderBy: { createdAt: 'desc' } })
+  const all = await prismaClient.strategyVersion.findMany({ where: { templateId }, orderBy: { createdAt: 'desc' } })
   const strip = (r) => ({ symbol: r.symbol, window: r.window, startDate: r.startDate, endDate: r.endDate, status: r.status, reason: r.reason,
     parameters: r.parameters, dataFingerprint: r.dataFingerprint, riskPolicyVersion: r.riskPolicyVersion, results: r.results })
+  const windows = ['5Y', '1Y', 'forward', ...(v.definition.design ? ['development', 'holdout'] : [])]
   return {
     templateId: t.id, name: t.name, description: t.description, tags: t.tags ?? [],
-    version: { id: v.id, published: Boolean(version), firstSession: version?.firstSession ?? null, backtestable: v.backtestable, reason: v.reason },
+    version: { id: v.id, current: v.id === current.id, published: Boolean(version), firstSession: version?.firstSession ?? null, backtestable: v.backtestable, reason: v.reason },
     definition: v.definition,
-    standard: { ...STANDARD, windows: STANDARD.windows.map((w) => w.id).concat('forward'), executionModelLabel: EXECUTION_MODELS[STANDARD.executionModel].label },
+    design: v.definition.design ?? null,
+    standard: { ...STANDARD, windows, executionModelLabel: EXECUTION_MODELS[STANDARD.executionModel].label },
     assumptions: ASSUMPTIONS,
     asOf: endDate,
-    summary: { '5Y': summarize(rows.filter((r) => r.window === '5Y')), '1Y': summarize(rows.filter((r) => r.window === '1Y')), forward: summarize(rows.filter((r) => r.window === 'forward')) },
+    summary: Object.fromEntries(windows.map((w) => [w, summarize(rows.filter((r) => r.window === w))])),
     results: rows.map(strip),
-    versions: previous.map((p) => ({ id: p.id, firstSession: p.firstSession, current: p.id === v.id })),
+    versions: all.map((p) => ({ id: p.id, firstSession: p.firstSession, current: p.id === current.id, selected: p.id === v.id })),
   }
 }

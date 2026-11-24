@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import Disclosure from '../../ui/Disclosure'
 import ValueChart from '../../ui/ValueChart'
 import { describeGuards } from '../../ui/describeBot'
@@ -23,7 +23,13 @@ function Summary({ s }) {
       <div className="tl-stat"><dt>Median return</dt><dd className={tone(s.medianReturnPct)}>{pctText(s.medianReturnPct)}<small>across {plural(s.symbolsTested, 'symbol')}</small></dd></div>
       <div className="tl-stat"><dt>Buy &amp; hold</dt><dd className={tone(s.medianBuyAndHoldPct)}>{pctText(s.medianBuyAndHoldPct)}<small>beat on {s.beatBuyAndHold} of {s.symbolsTested}</small></dd></div>
       <div className="tl-stat"><dt>Worst drawdown</dt><dd>{s.worstDrawdownPct ? `${s.worstDrawdownPct.toFixed(2)}%` : '—'}<small>any symbol</small></dd></div>
-      <div className="tl-stat"><dt>Trades</dt><dd>{s.trades}<small>traded on {s.symbolsTraded} of {s.symbolsTested}</small></dd></div>
+      <div className="tl-stat"><dt>Trades</dt><dd>{s.trades}<small>traded on {s.symbolsTraded} of {s.symbolsTested}{s.exits ? ` · ${s.exits} exit sells` : ''}</small></dd></div>
+      {s.medianDrawdownPct !== undefined && s.medianDrawdownPct !== null && (
+        <div className="tl-stat" data-testid="drawdown-benchmark"><dt>Median drawdown</dt><dd>{s.medianDrawdownPct.toFixed(2)}%<small>buy &amp; hold {s.medianBuyAndHoldDrawdownPct?.toFixed(2)}% · lower on {s.lowerDrawdownThanBuyAndHold} of {s.symbolsTested}</small></dd></div>
+      )}
+      {s.medianTimeInMarketPct !== undefined && s.medianTimeInMarketPct !== null && (
+        <div className="tl-stat"><dt>Time in market</dt><dd>{s.medianTimeInMarketPct.toFixed(0)}%<small>median share of sessions holding</small></dd></div>
+      )}
     </dl>
   )
 }
@@ -31,12 +37,15 @@ function Summary({ s }) {
 /** Public: one strategy version's standardized results, configuration and assumptions. */
 export default function StrategyDetail() {
   const { templateId } = useParams()
+  const [params] = useSearchParams()
+  const versionParam = params.get('version')
   const [state, setState] = useState({ status: 'loading', s: null })
   const [win, setWin] = useState('5Y')
   const [sym, setSym] = useState(null)
   useEffect(() => {
-    loadPublicStrategy(templateId).then((s) => setState({ status: 'done', s })).catch((e) => setState({ status: e?.status === 404 ? 'missing' : 'error', s: null }))
-  }, [templateId])
+    setState({ status: 'loading', s: null })
+    loadPublicStrategy(templateId, versionParam).then((s) => setState({ status: 'done', s })).catch((e) => setState({ status: e?.status === 404 ? 'missing' : 'error', s: null }))
+  }, [templateId, versionParam])
   const s = state.s
   const rows = useMemo(() => (s?.results ?? []).filter((r) => r.window === win), [s, win])
   const chosen = rows.find((r) => r.symbol === sym && r.status === 'ok') ?? rows.find((r) => r.status === 'ok' && r.results.metrics.trades > 0) ?? null
@@ -63,17 +72,33 @@ export default function StrategyDetail() {
         <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Open in Workshop</Link>
       </header>
 
+      {!s.version.current && (
+        <div className="tl-notice" data-testid="earlier-version">An earlier version of this strategy, kept with its results for the record. <Link to={`/strategies/${encodeURIComponent(s.templateId)}`}>See the current version</Link></div>
+      )}
       {!s.version.backtestable && <div className="tl-notice" data-testid="not-backtestable">{s.version.reason}</div>}
+      {s.design && (
+        <section className="tl-section" aria-labelledby="design-title" data-testid="strategy-design">
+          <div className="tl-section-head"><h2 className="tl-section-title" id="design-title">What it’s for, and how it’s judged</h2></div>
+          <dl className="tl-facts">
+            <dt>Objective</dt><dd>{s.design.objective}</dd>
+            <dt>Benchmark</dt><dd>{s.design.benchmark}</dd>
+            <dt>Parameters</dt><dd>{s.design.parameterBasis}</dd>
+            <dt>Out of sample</dt><dd>Designed with data through {sessionDate(s.design.developmentEnd, { year: true })}; “Holdout” covers only later sessions.</dd>
+          </dl>
+        </section>
+      )}
 
       <section className="tl-section" aria-labelledby="results-title">
         <div className="tl-section-head">
           <h2 className="tl-section-title" id="results-title">Standardized results</h2>
           <div className="tl-seg" role="group" aria-label="Window">
-            {['5Y', '1Y', 'forward'].map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w]}</button>)}
+            {(s.standard?.windows ?? ['5Y', '1Y', 'forward']).map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w] ?? w}</button>)}
           </div>
         </div>
         <Summary s={s.summary?.[win]} />
         {win === 'forward' && <p className="tl-small tl-muted">Only sessions completed after this version was published — results it could not have been tuned on.</p>}
+        {win === 'holdout' && <p className="tl-small tl-muted">Sessions after {sessionDate(s.design?.developmentEnd, { year: true })}, which weren’t used when this version was designed.</p>}
+        {win === 'development' && <p className="tl-small tl-muted">The period the design could see. In-sample: treat these results with more caution than the holdout.</p>}
         {chosen && (
           <div style={{ marginTop: 14 }}>
             <ValueChart points={chosen.results.curve.map((p) => ({ t: p.date, v: p.equity }))} baseline={chosen.results.capital} baselineLabel={`Start ${moneyWhole(chosen.results.capital)}`}
@@ -109,7 +134,7 @@ export default function StrategyDetail() {
       <section className="tl-section" aria-labelledby="def-title">
         <div className="tl-section-head"><h2 className="tl-section-title" id="def-title">The strategy as tested</h2></div>
         <ul className="tl-rule-list" data-testid="tested-definition">
-          <li>{def.config.direction === 'sell' ? 'Sells' : 'Buys'} each symbol it’s tested on</li>
+          <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>
           {guards.map((g) => <li key={g}>{g}</li>)}
           {def.parameters?.triggerPrice === 'close_before_window' && <li>Trigger price: the symbol’s close on the last session before the test window (standardized; shown per result)</li>}
         </ul>
@@ -122,6 +147,16 @@ export default function StrategyDetail() {
           {rows[0]?.riskPolicyVersion && <li>Risk policy {rows[0].riskPolicyVersion}.</li>}
           {s.versions.length > 1 && <li>{plural(s.versions.length, 'version')} published; results always belong to the version they were produced for.</li>}
         </ul>
+        {s.versions.length > 1 && (
+          <ul className="tl-backtest-notes" data-testid="version-list">
+            {s.versions.map((v) => (
+              <li key={v.id}>
+                {v.selected ? <strong>{v.id.slice(3, 11)}</strong> : <Link to={v.current ? `/strategies/${encodeURIComponent(s.templateId)}` : `/strategies/${encodeURIComponent(s.templateId)}?version=${v.id}`}>{v.id.slice(3, 11)}</Link>}
+                {' '}· published {sessionDate(v.firstSession, { year: true })}{v.current ? ' · current' : ''}
+              </li>
+            ))}
+          </ul>
+        )}
         {rows.some((r) => r.parameters?.triggerPrice) && (
           <p className="tl-small tl-muted">Standardized triggers: {rows.filter((r) => r.parameters?.triggerPrice).map((r) => `${r.symbol} ${money(r.parameters.triggerPrice)} (${sessionDate(r.parameters.triggerFrom, { year: true })})`).join(' · ')}</p>
         )}

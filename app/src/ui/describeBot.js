@@ -46,6 +46,11 @@ export function describeGuards({ config = {}, rules = [] } = {}, { template = fa
   if (rv && rv.enabled !== false && isPos(rv.config?.minRatio)) out.push(`Only when volume is at least ${rv.config.minRatio}× its 20-day average`)
   const pc = findRule(rules, 'price_change')
   if (pc && pc.enabled !== false && isPos(pc.config?.pct)) out.push(`Only after the price ${pc.config.operator === 'below' ? 'fell' : 'rose'} ${pc.config.pct}% or more over ${pc.config.sessions} sessions`)
+  for (const e of Array.isArray(config.exit?.rules) ? config.exit.rules : []) {
+    if (e.type === 'stop_loss') out.push(`Sells its shares if the price falls ${e.config?.pct}% below what it paid`)
+    if (e.type === 'trend_filter') out.push(`Sells its shares when ${e.config?.symbol ?? 'SPY'}’s trend turns down`)
+    if (e.type === 'price_change' && e.config?.operator === 'below') out.push(`Sells its shares after a ${e.config?.pct}% fall over ${e.config?.sessions} sessions`)
+  }
   const pos = findRule(rules, 'position_limit')?.config
   if (pos?.maxPositions === 1) out.push('Holds at most one position')
   else if (isPos(pos?.maxShares)) out.push(`Holds at most ${pos.maxShares} shares per symbol`)

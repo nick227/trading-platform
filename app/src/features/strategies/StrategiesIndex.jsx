@@ -32,7 +32,9 @@ export default function StrategiesIndex() {
                 {['5Y', '1Y'].map((w) => (
                   <div key={w}><dt>{w === '5Y' ? '5 years' : 'Last year'}</dt><dd>{summaryLine(s.windows?.[w])}</dd></div>
                 ))}
-                <div><dt>Beat buy &amp; hold (5y)</dt><dd>{s.windows?.['5Y']?.status === 'ok' ? `${s.windows['5Y'].beatBuyAndHold} of ${s.windows['5Y'].symbolsTested} symbols` : '—'}</dd></div>
+                {s.windows?.holdout
+                  ? <div><dt>Holdout (out of sample)</dt><dd>{summaryLine(s.windows.holdout)}</dd></div>
+                  : <div><dt>Beat buy &amp; hold (5y)</dt><dd>{s.windows?.['5Y']?.status === 'ok' ? `${s.windows['5Y'].beatBuyAndHold} of ${s.windows['5Y'].symbolsTested} symbols` : '—'}</dd></div>}
               </dl>
             </li>
           ))}

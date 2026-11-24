@@ -51,3 +51,20 @@ describe('public strategy evidence', () => {
     expect(screen.getByTestId('template-baseline')).toHaveTextContent('Modified from the platform-tested defaults.')
   })
 })
+
+describe('redesigned versions', () => {
+  it('shows objective, benchmark, development/holdout windows, drawdown comparison and earlier versions', async () => {
+    const design = { developmentEnd: '2025-11-21', objective: 'Limit losses on each position.', benchmark: 'Buy & hold; judged mainly on maximum drawdown.', parameterBasis: 'Conventional values, not fitted.' }
+    const sum = { status: 'ok', symbolsTested: 2, symbolsTraded: 2, medianReturnPct: 10, medianBuyAndHoldPct: 20, beatBuyAndHold: 0, worstDrawdownPct: 15, trades: 30, exits: 6, medianDrawdownPct: 12, medianBuyAndHoldDrawdownPct: 30, lowerDrawdownThanBuyAndHold: 2, medianTimeInMarketPct: 80 }
+    get.mockResolvedValue({ ...strategy, templateId: 'tmpl_loss_guard', design, version: { ...strategy.version, current: true }, standard: { windows: ['5Y', '1Y', 'forward', 'development', 'holdout'] },
+      summary: { ...strategy.summary, development: sum, holdout: { ...sum, medianReturnPct: -1 } },
+      versions: [{ id: 'sv_new0000000000000', current: true, selected: true, firstSession: '2026-11-24' }, { id: 'sv_old0000000000000', current: false, selected: false, firstSession: '2026-11-23' }] })
+    render(<MemoryRouter initialEntries={['/strategies/tmpl_loss_guard']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByTestId('strategy-design')).toHaveTextContent('Designed with data through Nov 21, 2025')
+    fireEvent.click(screen.getByRole('button', { name: 'Holdout (out of sample)' }))
+    expect(screen.getByTestId('window-summary')).toHaveTextContent('−1.00%')
+    expect(screen.getByTestId('drawdown-benchmark')).toHaveTextContent('12.00%buy & hold 30.00% · lower on 2 of 2')
+    fireEvent.click(screen.getByRole('button', { name: /How these results are produced/ }))
+    expect(within(screen.getByTestId('version-list')).getByRole('link', { name: 'old00000' })).toHaveAttribute('href', '/strategies/tmpl_loss_guard?version=sv_old0000000000000')
+  })
+})

@@ -30,3 +30,13 @@ export function priceChangeDecision(config, { closes }) {
     ? { pass: true, detail: `${change}% over ${n} sessions` }
     : { pass: false, reason: config.operator === 'below' ? 'price_change_fall_not_met' : 'price_change_rise_not_met', detail: `${change}% over ${n} sessions` }
 }
+
+/** Exit: the price has fallen at least pct% below the bot's own FIFO average cost. */
+export function stopLossDecision(config, { price, avgCost }) {
+  const pct = Number(config.pct)
+  if (!(avgCost > 0) || !(price > 0)) return { pass: false, reason: 'stop_loss_no_position' }
+  const drop = Math.round(((1 - price / avgCost) * 100) * 100) / 100
+  return drop >= pct
+    ? { pass: true, detail: `${drop}% below average cost ${avgCost}` }
+    : { pass: false, reason: 'stop_loss_not_hit', detail: `${drop}% below average cost (exits at ${pct}%)` }
+}
