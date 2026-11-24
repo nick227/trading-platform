@@ -133,3 +133,27 @@ describe('simulator scoring: unknown inputs are not applicable (thresholds uncha
     expect(r.action).not.toBe('approve')
   })
 })
+
+describe('bot win rate comes from closed trades (FIFO realized P&L), not Execution.pnl', () => {
+  const now = new Date()
+  const f = (id, direction, qty, price) => ({ id, ticker: 'SPY', direction, status: 'filled', filledQuantity: qty, filledPrice: price, fees: 0, pnl: 0, brokerOrderId: `simdaily_2026-11-23_${id}`, filledAt: now, createdAt: now })
+  const score = (fills, nullWhenUnknown = true) => executionConfidenceService.scoreBotWinRate('b', 'p', { nullWhenUnknown, loadFills: async () => fills })
+
+  it('an accumulation bot with only buys has an unknown win rate (the overnight SPY case), not 0%', async () => {
+    vi.restoreAllMocks()
+    expect(await score([f('b1', 'buy', 1, 689.81), f('b2', 'buy', 1, 722.29)])).toBeNull()
+    expect(await score([f('b1', 'buy', 1, 689.81)], false)).toBe(50)
+  })
+  it('counts realized wins and losses on sells', async () => {
+    vi.restoreAllMocks()
+    expect(await score([f('b1', 'buy', 2, 100), f('s1', 'sell', 1, 110), f('s2', 'sell', 1, 120)])).toBe(90)
+    expect(await score([f('b1', 'buy', 2, 100), f('s1', 'sell', 1, 90), f('s2', 'sell', 1, 95)])).toBe(30)
+  })
+  it('the overnight case now approves on liquidity alone (75 meets the threshold)', async () => {
+    vi.restoreAllMocks()
+    vi.spyOn(executionConfidenceService, 'scoreBotWinRate').mockImplementation((botId, pid, opts) => executionConfidenceService.constructor.prototype.scoreBotWinRate.call(executionConfidenceService, botId, pid, { ...opts, loadFills: async () => [f('b1', 'buy', 1, 689.81)] }))
+    const e = await executionConfidenceService.calculateExecutionConfidence({ botId: 'b' }, 'p', { price: 722.29, volume: 87055065, avgVolume: 58295275 }, { unknownAsNotApplicable: true })
+    expect(e.score).toBe(75)
+    expect(riskDecisionMatrix.applyDecisionMatrix({ operational: 95, exposure: 88, stress: 75, execution: e.score }, {}, 'p').action).toBe('approve')
+  })
+})
