@@ -93,6 +93,7 @@ const lastResearchEventAt = new Map()  // throttle key → ms
 const botRegistry  = new Map()  // botId → bot (with rules)
 const tickerIndex  = new Map()  // ticker → Set<botId>
 export const REFUSAL_BACKOFF_MS = 15 * 60_000
+export const SESSION_DONE_LOG_MS = 60 * 60_000
 export const inflightMap = new Map()  // `${botId}:${ticker}` → true
 const lastSkipEventAt = new Map()
 const lastRuleBlockEventAt = new Map()
@@ -277,8 +278,9 @@ export async function evaluateBot(bot, ticker) {
   if (simNow.enabled && simNow.mode === 'paper_daily') {
     const session = await simSessionOrNull(simNow)
     if (session && (await prisma.execution.findFirst({ where: { botId: bot.id, ticker, simSession: session }, select: { id: true } }))) {
+      // Hourly heartbeat, not every tick: the state can't change until the next close.
       await maybeLogRuleBlock(bot, ticker, bot.config?.direction ?? null, { id: 'session_once', type: 'session_once', name: 'Once per session' },
-        { reason: 'acted_this_session', detail: session })
+        { reason: 'acted_this_session', detail: session }, { windowMs: SESSION_DONE_LOG_MS })
       return
     }
   }
@@ -977,7 +979,7 @@ async function maybeLogInflightSkip(bot, ticker, inflightKey) {
   })
 }
 
-async function maybeLogRuleBlock(bot, ticker, side, rule, result) {
+async function maybeLogRuleBlock(bot, ticker, side, rule, result, { windowMs = SKIP_EVENT_WINDOW_MS } = {}) {
   // Throttle identical block events to prevent DB write amplification on fast tick streams.
   // Key includes rule.id + reason + side so we still see distinct blocks.
   const reason = result?.reason ?? 'unknown'
@@ -990,7 +992,7 @@ async function maybeLogRuleBlock(bot, ticker, side, rule, result) {
     for (let i = 0; i < evictCount; i++) lastRuleBlockEventAt.delete(iter.next().value)
   }
   const lastLoggedAt = lastRuleBlockEventAt.get(key) ?? 0
-  if (Date.now() - lastLoggedAt < SKIP_EVENT_WINDOW_MS) {
+  if (Date.now() - lastLoggedAt < windowMs) {
     return
   }
   lastRuleBlockEventAt.set(key, Date.now())

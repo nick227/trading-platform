@@ -3,6 +3,7 @@
 
 import prisma from '../../db/prisma.js'
 import { simulationConfig } from '../../../../server/src/services/simulationService.js'
+import { calculateFifoAccounting, loadBotFills } from '../../../../server/src/services/botAccountingService.js'
 
 export class ExecutionConfidenceService {
   constructor() {
@@ -147,43 +148,32 @@ export class ExecutionConfidenceService {
   }
 
   // Score bot win rate (0-100)
-  async scoreBotWinRate(botId, portfolioId, { nullWhenUnknown = false } = {}) {
+  // Win rate over the bot's CLOSED trades in the last 30 days: sells, with realized P&L from
+  // the authoritative FIFO accounting (Execution.pnl is not maintained). Open buys are not
+  // wins or losses, so a bot with no closed trade has an unknown win rate.
+  async scoreBotWinRate(botId, portfolioId, { nullWhenUnknown = false, loadFills = loadBotFills } = {}) {
     const unknown = nullWhenUnknown ? null : 50
     try {
       if (!botId) return unknown
+      const fills = await loadFills(botId)
+      const { perExecutionPnl } = calculateFifoAccounting(fills)
+      const since = Date.now() - 30 * 24 * 60 * 60 * 1000
+      const closed = fills.filter((f) => String(f.direction).toLowerCase() === 'sell' &&
+        new Date(f.filledAt ?? f.createdAt).getTime() >= since && perExecutionPnl.has(f.id))
+      if (closed.length === 0) return unknown
 
-      // Get recent bot performance
-      const recentTrades = await prisma.execution.findMany({
-        where: {
-          botId,
-          portfolioId,
-          createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }, // Last 30 days
-          status: 'filled'
-        },
-        select: {
-          pnl: true
-        },
-        take: 50
-      })
-
-      if (recentTrades.length === 0) return unknown
-
-      // Calculate win rate
-      const winningTrades = recentTrades.filter(t => t.pnl > 0).length
-      const winRate = winningTrades / recentTrades.length
-
-      // Map win rate to score
+      const winRate = closed.filter((f) => perExecutionPnl.get(f.id) > 0).length / closed.length
       if (winRate >= 0.6) return 90
       if (winRate >= 0.55) return 75
       if (winRate >= 0.5) return 60
       if (winRate >= 0.45) return 45
       return 30
-
     } catch (error) {
       console.error('Failed to score bot win rate:', error)
       return unknown
     }
   }
+
 
   // Get label for score
   getLabel(score) {

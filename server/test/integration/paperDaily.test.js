@@ -124,6 +124,9 @@ describe('paper_daily simulator', () => {
     const skips = (await h.db.botEvent.findMany({ where: { botId: 'bot_cd', type: 'execution_skipped' } })).map((e) => e.metadata?.reason)
     expect(skips).toContain('acted_this_session')
     expect(skips).not.toContain('cooldown_active')
+    // Hourly heartbeat, not one row per tick.
+    for (let i = 0; i < 5; i++) { vi.setSystemTime(new Date(Date.now() + 5 * 60_000)); await tickCd() }
+    expect((await h.db.botEvent.findMany({ where: { botId: 'bot_cd', type: 'execution_skipped' } })).filter((e) => e.metadata?.reason === 'acted_this_session')).toHaveLength(1)
   })
 
   it('acts again on the next session’s close (prices advance day to day)', async () => {
