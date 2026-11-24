@@ -7,6 +7,7 @@ import {
   deriveStatus,
   loadBotActivity,
   loadBotDashboard,
+  loadBotPerformanceHistory,
   loadBotRules,
   pauseBot,
   resumeBot,
@@ -15,6 +16,7 @@ import {
   summarizeFills,
 } from '../../../api/services/botDashboardService'
 import ActivityFeed from '../../../ui/ActivityFeed'
+import ValueChart from '../../../ui/ValueChart'
 import Disclosure from '../../../ui/Disclosure'
 import ResearchCard from '../../../ui/ResearchCard'
 import { EmergencyBanner, useEmergencyStop } from '../../../ui/Safety'
@@ -163,6 +165,40 @@ function PendingOrders({ executions, onCancelled }) {
   )
 }
 
+const MIN_HISTORY_POINTS = 5
+
+/** P&L at each daily close, from the bot's own FIFO fills (same model as the portfolio). */
+export function PerformanceHistory({ botId, winRate, closedTrades }) {
+  const [h, setH] = useState(undefined) // undefined loading · null unavailable
+  useEffect(() => {
+    let live = true
+    loadBotPerformanceHistory(botId).then((d) => live && setH(d ?? null)).catch(() => live && setH(null))
+    return () => { live = false }
+  }, [botId])
+  if (h === undefined) return <span className="tl-skel" style={{ height: 120, marginTop: 18 }} aria-label="Loading performance history" />
+  if (!h || !h.points?.length) return null
+  const pts = h.points.filter((p) => p.pnl !== null)
+  const dd = h.maxDrawdown
+  return (
+    <div className="tl-bot-history" data-testid="performance-history">
+      <dl className="tl-stats tl-stats--3" style={{ borderTop: 0 }}>
+        <div className="tl-stat"><dt>Return</dt><dd className={tone(h.returnPct)} data-testid="bot-return">{h.returnPct !== null && h.returnPct !== undefined ? `${h.returnPct > 0 ? '+' : h.returnPct < 0 ? '−' : ''}${Math.abs(h.returnPct).toFixed(2)}%` : '—'}<small>{h.allocation ? `on ${money(h.allocation)} capital` : 'no set capital'}</small></dd></div>
+        <div className="tl-stat"><dt>Max drawdown</dt><dd data-testid="bot-drawdown">{dd ? `−${money(dd.amount)}` : h.allocation ? 'None yet' : '—'}<small>{dd ? `${dd.pct !== null ? `${dd.pct.toFixed(2)}% · ` : ''}${sessionDate(dd.peakDate)} → ${sessionDate(dd.troughDate)}` : 'peak to trough'}</small></dd></div>
+        <div className="tl-stat"><dt>Win rate</dt><dd data-testid="bot-win-rate">{winRate !== null && winRate !== undefined ? `${Math.round(winRate * 100)}%` : '—'}<small>{closedTrades ? `of ${plural(closedTrades, 'closed trade')}` : 'no closed trades yet'}</small></dd></div>
+      </dl>
+      {pts.length >= MIN_HISTORY_POINTS ? (
+        <>
+          <ValueChart points={pts.map((p) => ({ t: p.date, v: p.pnl }))} markers={h.points.filter((p) => p.fills > 0).map((p) => ({ t: p.date, kind: 'buy', label: plural(p.fills, 'fill') }))}
+            baseline={0} baselineLabel="Break-even" height={180} label="Bot P&L at each daily close" />
+          <p className="tl-chart-caption">P&amp;L at each daily close since its first fill (net of fees). Dots mark days with fills.</p>
+        </>
+      ) : (
+        <p className="tl-chart-caption">A P&amp;L chart appears after {MIN_HISTORY_POINTS} sessions ({pts.length} so far).</p>
+      )}
+    </div>
+  )
+}
+
 function WhatHappened({ bot, fills, activity, onCancelled }) {
   const p = bot.performance
   const positions = Object.values(bot.openPositions ?? {})
@@ -191,6 +227,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
           <span data-testid="fill-summary" className="tl-visually-hidden">{fills ? plural(fills.filledOrders, 'fill') : ''}</span>
         </p>
       )}
+      {p && <PerformanceHistory botId={bot.id} winRate={p.winRate} closedTrades={p.closedTrades} />}
       {p?.valuation?.simulated && (
         <p className="tl-section-note" data-testid="performance-valuation">
           Holdings valued at the {[...new Set(Object.values(p.valuation.sessions ?? {}))].map((s) => sessionDate(s)).join(', ')} close · simulated fills. Capital isn’t set aside — it caps what this bot may spend.

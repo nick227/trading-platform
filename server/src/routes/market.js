@@ -3,10 +3,18 @@
 
 import prisma from '../loaders/prisma.js'
 import alphaEngineService from '../services/alphaEngineService.js'
+import { getAssetMetadata } from '../services/assetMetadataService.js'
 
 const QUOTE_TTL_MS = 30_000 // 30 seconds for UI freshness
 
 export default async function marketRoutes(app) {
+  // GET /api/market/assets/:symbol — company name, exchange, tradability (Alpaca, on demand).
+  app.get('/assets/:symbol', async (request, reply) => {
+    const data = await getAssetMetadata(request.params.symbol)
+    if (data.status === 'unsupported') return reply.code(404).send({ success: false, data })
+    return reply.send({ success: true, data })
+  })
+
   // GET /api/market/quote/:ticker
   app.get('/quote/:ticker', async (request, reply) => {
     try {

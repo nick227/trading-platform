@@ -242,17 +242,18 @@ describe('HomeDashboard', () => {
     expect(within(rows[1]).getByRole('button', { name: /Details/ })).toHaveTextContent('Details2 steps')
   })
 
-  it('shows the latest routine decision and its reason, collapsing repeats', async () => {
+  it('folds routine checks into one line and reveals their reasons on request', async () => {
     const skip = (id, at) => ({ id, type: 'execution_skipped', detail: 'x', metadata: { ticker: 'AAPL', reason: 'cooldown_active' }, createdAt: at })
     mockApi({ events: { bot_1: [skip('s1', '2026-11-20T16:00:00Z'), skip('s2', '2026-11-20T15:00:00Z'), skip('s3', '2026-11-20T14:00:00Z')] } })
     renderHome()
-    expect(await screen.findByTestId('activity-list')).toHaveTextContent('The bot traded AAPL recently and is waiting before trading it again.')
-    expect(screen.queryByTestId('routine-summary')).not.toBeInTheDocument()
-    expect(within(screen.getByTestId('activity-list')).getAllByRole('listitem')).toHaveLength(1)
+    const summary = await screen.findByTestId('routine-summary')
+    expect(summary).toHaveTextContent('No orders or decisions yet. 3 routine checks without a trade (cooldown)')
+    fireEvent.click(within(summary).getByRole('button', { name: 'Show them' }))
+    expect(screen.getByTestId('activity-list')).toHaveTextContent('The bot traded AAPL recently and is waiting before trading it again.')
     expect(screen.getByTestId('activity-list')).toHaveTextContent('×3')
   })
 
-  it('leads with the trade, not the hourly "Done for today" heartbeats that followed it', async () => {
+  it('features the latest meaningful event; the stream stays chronological and heartbeats fold away', async () => {
     const done = (id, at) => ({ id, type: 'execution_skipped', detail: 'x', metadata: { ticker: 'SPY', reason: 'acted_this_session' }, createdAt: at })
     const paused = { id: 'p1', type: 'bot_paused', detail: 'x', metadata: {}, createdAt: '2026-11-23T21:30:00Z' }
     mockApi({
@@ -262,10 +263,8 @@ describe('HomeDashboard', () => {
     renderHome()
     const rows = within(await screen.findByTestId('activity-list')).getAllByRole('listitem').filter((li) => li.parentElement.dataset.testid === 'activity-list')
     const titles = rows.map((r) => r.querySelector('.tl-feed-title').textContent.replace(/\s+/g, ' '))
-    expect(titles[0]).toBe('Momentum AAPLBought 3 SPY')
-    expect(titles.at(-1)).toMatch(/Done for today/) // routine last, collapsed into one counted row
-    expect(titles[1]).toBe('Mean ReversionPaused') // a decision outranks routine, even when older than the heartbeats
-    expect(titles[2]).toMatch(/×3$/)
+    expect(titles).toEqual(['Momentum AAPLBought 3 SPY', 'Mean ReversionPaused']) // newest first
+    expect(screen.getByTestId('routine-summary')).toHaveTextContent('3 routine checks without a trade (done for today)')
     expect(screen.getByTestId('latest-event')).toHaveTextContent('Latest: Momentum AAPL — Bought 3 SPY')
   })
 

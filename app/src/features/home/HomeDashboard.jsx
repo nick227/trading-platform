@@ -319,7 +319,7 @@ export default function HomeDashboard() {
                 {data.activityError ? (
                   <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{data.activityError}</div>
                 ) : (
-                  <ActivityFeed items={data.activity} limit={3} narrative showLensControl={false} order="priority"
+                  <ActivityFeed items={data.activity} limit={3} narrative showLensControl={false} routine="summary"
                     empty="Nothing yet — your bots’ trades and decisions appear here." />
                 )}
               </section>

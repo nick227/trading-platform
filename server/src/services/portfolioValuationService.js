@@ -234,11 +234,7 @@ export function buildValueSeries({ fills, closesByTicker, startingCash }) {
   return out
 }
 
-export async function valueHistory(userId, { prismaClient = prisma, config = simulationConfig(), engine = engineClient, range = '3M' } = {}) {
-  if (!config.enabled) return { source: 'unavailable', reason: 'Value history is derived from simulator fills; no broker history is stored.', points: [] }
-  const fills = await loadPortfolioFills(userId, { prismaClient, config })
-  if (!fills.length) return { source: 'simulator', startingCash: config.startingCash, points: [] }
-  const tickers = [...new Set(fills.map((f) => String(f.ticker).toUpperCase()))]
+async function loadCloses(tickers, range, engine) {
   const closesByTicker = {}
   await Promise.all(tickers.map(async (t) => {
     try {
@@ -247,6 +243,14 @@ export async function valueHistory(userId, { prismaClient = prisma, config = sim
       closesByTicker[t] = pts.filter((p) => p && p.t && Number(p.c) > 0).map((p) => ({ t: String(p.t).slice(0, 10), c: Number(p.c) }))
     } catch { closesByTicker[t] = [] }
   }))
+  return closesByTicker
+}
+
+export async function valueHistory(userId, { prismaClient = prisma, config = simulationConfig(), engine = engineClient, range = '3M' } = {}) {
+  if (!config.enabled) return { source: 'unavailable', reason: 'Value history is derived from simulator fills; no broker history is stored.', points: [] }
+  const fills = await loadPortfolioFills(userId, { prismaClient, config })
+  if (!fills.length) return { source: 'simulator', startingCash: config.startingCash, points: [] }
+  const closesByTicker = await loadCloses([...new Set(fills.map((f) => String(f.ticker).toUpperCase()))], range, engine)
   return {
     source: 'simulator',
     startingCash: config.startingCash,
@@ -255,4 +259,56 @@ export async function valueHistory(userId, { prismaClient = prisma, config = sim
   }
 }
 
-export default { valuePortfolio, valueHistory, buildValuation, buildValueSeries, loadPriceMarks, fillSession }
+/**
+ * Max peak-to-trough decline of an equity curve: { amount, pct, peakDate, troughDate } or null.
+ * pct is relative to the peak equity.
+ */
+export function maxDrawdown(points) {
+  let peak = null
+  let worst = null
+  for (const p of points) {
+    if (p.equity === null || p.equity === undefined) continue
+    if (!peak || p.equity > peak.equity) peak = p
+    const amount = peak.equity - p.equity
+    if (amount > 0 && (!worst || amount > worst.amount)) {
+      worst = { amount: round2(amount), pct: peak.equity > 0 ? Number(((amount / peak.equity) * 100).toFixed(2)) : null, peakDate: peak.date, troughDate: p.date }
+    }
+  }
+  return worst
+}
+
+/**
+ * One bot's P&L at each daily close since its first fill — the same series model as the
+ * portfolio (buildValueSeries) over the bot's own fills with zero starting cash, so every
+ * point is cash flows + holdings at that close, i.e. realized + unrealized P&L. No separate
+ * P&L calculation: the last point equals the bot's FIFO total P&L when closes agree.
+ * Equity = allocation + P&L (when the bot has an allocation) for drawdown and return.
+ */
+export async function botValueHistory(bot, { prismaClient = prisma, config = simulationConfig(), engine = engineClient, range = '1Y', loadFills = null } = {}) {
+  const rows = loadFills ? await loadFills(bot.id) : await prismaClient.execution.findMany({
+    where: { botId: bot.id, filledQuantity: { gt: 0 }, filledPrice: { gt: 0 } },
+    orderBy: [{ filledAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+  })
+  const all = rows.filter(isBrokerFill)
+  const fills = sortFills(config.enabled ? all.filter((e) => isSimulatedOrderId(e.brokerOrderId)) : all.filter((e) => !isSimulatedOrderId(e.brokerOrderId)))
+  const allocation = Number(bot.config?.allocatedAmount) > 0 ? Number(bot.config.allocatedAmount) : null
+  if (!fills.length) return { source: config.enabled ? 'simulator' : 'broker', allocation, points: [], maxDrawdown: null }
+  const closesByTicker = await loadCloses([...new Set(fills.map((f) => String(f.ticker).toUpperCase()))], range, engine)
+  const points = buildValueSeries({ fills, closesByTicker, startingCash: 0 }).map((p) => ({
+    date: p.date,
+    pnl: p.value,
+    equity: allocation !== null && p.value !== null ? round2(allocation + p.value) : null,
+    fills: p.fills,
+  }))
+  const last = [...points].reverse().find((p) => p.pnl !== null) ?? null
+  return {
+    source: config.enabled ? 'simulator' : 'broker',
+    priceSource: 'Alpha Engine daily close',
+    allocation,
+    points,
+    returnPct: allocation && last ? Number(((last.pnl / allocation) * 100).toFixed(2)) : null,
+    maxDrawdown: allocation ? maxDrawdown(points) : null,
+  }
+}
+
+export default { valuePortfolio, valueHistory, botValueHistory, buildValuation, buildValueSeries, loadPriceMarks, fillSession }

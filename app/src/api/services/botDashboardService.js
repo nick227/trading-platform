@@ -60,8 +60,17 @@ export function normalizePerformance(raw) {
     total,
     valuation: raw.valuation && typeof raw.valuation === 'object' ? raw.valuation : null,
     fees: toNumberOrNull(raw.fees),
+    // Closed trades from the same FIFO pass as realized P/L (null until one closes).
+    closedTrades: toNumberOrNull(raw.closedTrades),
+    winRate: toNumberOrNull(raw.winRate),
     asOf: raw.asOf ?? raw.as_of ?? null,
   }
+}
+
+/** The bot's P&L at each daily close, with return and max drawdown against its allocation. */
+export async function loadBotPerformanceHistory(botId, range = '1Y') {
+  const res = await get(`/bots/${encodeURIComponent(botId)}/performance/history`, { range })
+  return res?.data ?? res
 }
 
 export function normalizeBot(raw) {
