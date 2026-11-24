@@ -22,6 +22,7 @@ import { fetchVerifiedResearchTrace, recordResearchDecision } from '../../../ser
 import { linkResearchDecisionToExecution } from '../../../server/src/services/executionResearchService.js'
 import { calculateFifoAccounting, loadBotFills } from '../../../server/src/services/botAccountingService.js'
 import { computeBuyQuantity as coreBuyQuantity, deriveDirection, runRulePipeline, sellableFrom } from './decisionCore.js'
+import { priceChangeDecision, relativeVolumeDecision } from './rules/marketConditions.js'
 import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
 import { currentSimSession, simulationConfig } from '../../../server/src/services/simulationService.js'
 
@@ -66,6 +67,30 @@ export async function marketDataFor(ticker, tick) {
     marketContextCache.set(ticker, ctx)
   }
   return { ...out, ...ctx.value }
+}
+
+const closesCache = new Map() // `${ticker}|${end}` → { at, closes }
+
+/**
+ * Completed daily closes up to the current session (the simulator's session, else today),
+ * ascending — Alpha Engine's clean session bars. Enough for a `sessions` lookback.
+ */
+export async function recentCloses(ticker, sessions) {
+  const sim = simulationConfig()
+  const end = (sim.enabled ? await simSessionOrNull(sim) : null) ?? new Date().toISOString().slice(0, 10)
+  const key = `${ticker}|${end}`
+  const hit = closesCache.get(key)
+  if (hit && Date.now() - hit.at < 10 * 60_000 && hit.closes.length > sessions) return hit.closes
+  const start = new Date(`${end}T00:00:00Z`)
+  start.setUTCDate(start.getUTCDate() - Math.ceil(sessions * 1.6) - 10)
+  try {
+    const r = await engineClient.getDailyBars(ticker, start.toISOString().slice(0, 10), end)
+    const closes = (Array.isArray(r?.bars) ? r.bars : []).map((b) => Number(b[4])).filter((c) => c > 0)
+    closesCache.set(key, { at: Date.now(), closes })
+    return closes
+  } catch {
+    return []
+  }
 }
 
 // Simulator (historical replay): locate the replay session's publication and judge it at
@@ -829,6 +854,14 @@ async function evaluateRule(rule, bot, ticker, positions, ctx = {}) {
 
     case 'time_window':
       return evaluateTimeWindow(rule.config)
+
+    case 'relative_volume': {
+      const md = await marketDataFor(ticker, priceCache.get(ticker))
+      return relativeVolumeDecision(rule.config ?? {}, { volume: md.volume, avgVolume: md.avgVolume })
+    }
+
+    case 'price_change':
+      return priceChangeDecision(rule.config ?? {}, { closes: await recentCloses(ticker, Number(rule.config?.sessions) || 1) })
 
     default:
       log.warn({ ruleType: rule.type }, 'unknown_rule_type')

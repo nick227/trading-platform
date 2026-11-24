@@ -31,6 +31,16 @@ export function ruleConfigError(type, config = {}) {
     case 'market_hours':
       for (const k of ['allowPremarket', 'allowAfterHours']) if (c[k] !== undefined && typeof c[k] !== 'boolean') return 'Market-hours options must be true or false.'
       return null
+    case 'relative_volume': {
+      const r = Number(c.minRatio)
+      return Number.isFinite(r) && r > 0 && r <= 10 ? null : 'Relative volume must be between 0 and 10× its average.'
+    }
+    case 'price_change': {
+      const n = Number(c.sessions), p = Number(c.pct)
+      if (!(Number.isInteger(n) && n >= 1 && n <= 60)) return 'Price change looks back 1–60 sessions.'
+      if (c.operator !== 'above' && c.operator !== 'below') return 'Price change must be a rise ("above") or a fall ("below").'
+      return Number.isFinite(p) && p > 0 && p <= 100 ? null : 'Price change must be between 0% and 100%.'
+    }
     case 'trend_filter':
       return typeof (c.symbol ?? 'SPY') === 'string' ? null : 'Trend filter needs a symbol.'
     default:
