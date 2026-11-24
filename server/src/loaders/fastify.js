@@ -10,7 +10,12 @@ import { trustProxyFromEnv } from '../middleware/authThrottle.js'
 
 export default async function createApp({ trustProxy = trustProxyFromEnv() } = {}) {
   const app = fastify({
-    logger: true,
+    logger: {
+      // Request logs carry method + path only: no client address, headers, cookies or bodies.
+      serializers: {
+        req: (req) => ({ method: req.method, url: String(req.url ?? '').split('?')[0] }),
+      },
+    },
     // Behind Railway: edge → web (app/serve.mjs) → API is 2 hops, so TRUST_PROXY=2.
     // Unset keeps request.ip = socket peer; auth throttling then uses account buckets only.
     trustProxy,

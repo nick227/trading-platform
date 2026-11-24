@@ -1113,7 +1113,7 @@ select.tl-input--inline { width: auto; padding-right: 4px; }
 .tl-workshop-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tl-pos); }
 .tl-workshop-status .tl-workshop-attention { color: var(--tl-neg); }
 .tl-workshop-recorded { margin-left: auto; font-size: 11px; color: var(--tl-muted); }
-.tl-workshop-status .tl-workshop-latest { font-size: 13px; color: var(--tl-ink-2); }
+.tl-workshop-status .tl-workshop-latest { display: inline; font-size: 13px; color: var(--tl-ink-2); }
 .tl-workshop-latest strong { font-weight: 600; }
 .tl-workshop-model { margin: 18px 0 0; font-size: 13px; color: var(--tl-ink-2); max-width: 70ch; }
 .tl-workshop-model strong { color: var(--tl-ink); font-weight: 600; }

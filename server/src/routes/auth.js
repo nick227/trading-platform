@@ -14,6 +14,7 @@ export default async function authRoutes(fastify, opts = {}) {
   fastify.addHook('onClose', async () => clearInterval(sweep))
 
   const tooMany = (reply, wait, error) => {
+    reply.request.log.warn({ retryAfterSeconds: wait }, 'auth_throttled') // no email, no address
     reply.header('Retry-After', String(wait))
     return reply.code(429).send({ error, retryAfterSeconds: wait })
   }
@@ -83,6 +84,22 @@ export default async function authRoutes(fastify, opts = {}) {
     })
 
     return { id: user.id, email: user.email, fullName: user.fullName }
+  })
+
+  // GET /api/auth/client-address — proxy-chain diagnostic for setting TRUST_PROXY.
+  // Off (404) unless CLIENT_ADDRESS_PROBE_KEY is set; the caller must send that key.
+  // Reports only what this request carried, never stored and never logged.
+  fastify.get('/client-address', async (request, reply) => {
+    const key = process.env.CLIENT_ADDRESS_PROBE_KEY
+    if (!key || request.headers['x-probe-key'] !== key) return reply.code(404).send({ error: 'Not Found' })
+    return {
+      socket: request.socket?.remoteAddress ?? null,
+      xForwardedFor: request.headers['x-forwarded-for'] ?? null,
+      xRealIp: request.headers['x-real-ip'] ?? null,
+      trustProxy: fastify.initialConfig.trustProxy ?? false,
+      ip: request.ip,
+      ips: request.ips ?? null,
+    }
   })
 
   // POST /api/auth/logout

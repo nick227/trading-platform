@@ -114,3 +114,17 @@ describe('registration throttling', () => {
     for (let i = 0; i < 3; i++) expect((await register(`fresh${i}@example.test`)).statusCode).toBe(201)
   })
 })
+
+describe('client-address probe', () => {
+  let app
+  beforeAll(async () => { app = await build({ trustProxy: false }) })
+  afterAll(() => { delete process.env.CLIENT_ADDRESS_PROBE_KEY; return app.close() })
+
+  it('is invisible unless its key is configured and sent', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/auth/client-address' })).statusCode).toBe(404)
+    process.env.CLIENT_ADDRESS_PROBE_KEY = 'k'
+    expect((await app.inject({ method: 'GET', url: '/api/auth/client-address', headers: { 'x-probe-key': 'nope' } })).statusCode).toBe(404)
+    const ok = await app.inject({ method: 'GET', url: '/api/auth/client-address', headers: { 'x-probe-key': 'k', 'x-forwarded-for': '1.2.3.4' }, remoteAddress: '10.0.0.5' })
+    expect(ok.json()).toMatchObject({ socket: '10.0.0.5', xForwardedFor: '1.2.3.4', ip: '10.0.0.5' })
+  })
+})
