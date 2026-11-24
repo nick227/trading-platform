@@ -48,6 +48,9 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
 
   const openLotsByTicker = new Map() // ticker -> Array<{ id, remainingQty, price, filledAt }>
   const perExecutionPnl = new Map()  // executionId -> realizedPnl
+  // Closed trades = sells that closed attributable lots; a win realized a positive P/L.
+  let closedTrades = 0
+  let winningTrades = 0
   let realizedPnlTotal = 0
   let realizedNetTotal = 0
   let totalFees = 0
@@ -100,6 +103,11 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
       // and is reported so the mismatch is visible.
       if (remainingToSell > 1e-7) {
         unattributedSellQty[ticker] = (unattributedSellQty[ticker] ?? 0) + remainingToSell
+      }
+
+      if (qty - remainingToSell > 1e-7) {
+        closedTrades += 1
+        if (fillRealizedPnl > 1e-9) winningTrades += 1
       }
 
       realizedPnlTotal += fillRealizedPnl
@@ -176,6 +184,9 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
     unrealizedPnl,
     totalPnl,
     fees: Number(totalFees.toFixed(2)),
+    closedTrades,
+    winningTrades,
+    winRate: closedTrades > 0 ? Number((winningTrades / closedTrades).toFixed(4)) : null,
     asOf: new Date().toISOString()
   }
 

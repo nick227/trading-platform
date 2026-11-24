@@ -43,6 +43,7 @@ describe('botAccountingService - FIFO accounting engine', () => {
       unrealizedPnl: null, // No market valuation provided -> null, never invented
       totalPnl: null,
       fees: 1.5,
+      closedTrades: 0, winningTrades: 0, winRate: null, // nothing closed yet
       asOf: expect.any(String)
     })
     expect(result.openPositions.AAPL).toMatchObject({
@@ -74,6 +75,7 @@ describe('botAccountingService - FIFO accounting engine', () => {
       unrealizedPnl: 150, // 10 * (165 - 150)
       totalPnl: 150,
       fees: 1.0,
+      closedTrades: 0, winningTrades: 0, winRate: null,
       asOf: expect.any(String)
     })
     expect(result.openPositions.AAPL.unrealizedPnl).toBe(150)
@@ -185,5 +187,18 @@ describe('botAccountingService - FIFO accounting engine', () => {
       avgPrice: 50
     })
     expect(result.openPositions.AAPL).toBeUndefined()
+  })
+})
+
+describe('closed-trade win rate (from the same FIFO pass)', () => {
+  const f = (id, direction, qty, price, at) => ({ id, ticker: 'AAPL', direction, filledQuantity: qty, filledPrice: price, fees: 0, filledAt: new Date(at) })
+  it('counts sells that closed lots; a partial close is one trade; unattributed sells are not trades', () => {
+    const r = calculateFifoAccounting([
+      f('b1', 'buy', 10, 100, '2026-01-01'), f('s1', 'sell', 4, 110, '2026-01-02'), // win
+      f('s2', 'sell', 6, 90, '2026-01-03'), // loss
+      f('s3', 'sell', 5, 120, '2026-01-04'), // nothing left to close: not a trade
+    ])
+    expect(r.performance).toMatchObject({ closedTrades: 2, winningTrades: 1, winRate: 0.5, realizedPnl: -20 })
+    expect(r.unattributedSellQuantity).toEqual({ AAPL: 5 })
   })
 })

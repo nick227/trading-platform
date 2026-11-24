@@ -20,6 +20,7 @@ import { riskManager } from '../risk/riskManagement.js'
 import { engineClient } from '../../../server/src/clients/engine.js'
 import { fetchVerifiedResearchTrace, recordResearchDecision } from '../../../server/src/services/researchTraceService.js'
 import { linkResearchDecisionToExecution } from '../../../server/src/services/executionResearchService.js'
+import { calculateFifoAccounting, loadBotFills } from '../../../server/src/services/botAccountingService.js'
 import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
 import { currentSimSession, simulationConfig } from '../../../server/src/services/simulationService.js'
 
@@ -390,6 +391,9 @@ export async function evaluateBot(bot, ticker) {
 
   // Ensure positions are loaded for execution
   await ensurePositionsLoaded()
+  // Shared portfolio: several bots can hold the same symbol. A bot sells only what it bought
+  // (its own FIFO lots), never another bot's shares — and never more than the account holds.
+  if (evaluationResult.signal === 'sell') currentQty = await sellableQuantity(bot.id, ticker, currentQty)
   // Sync context so createExecution sees the loaded values (context was created before load)
   context.positions = positions ?? []
   context.currentQty = currentQty
@@ -415,6 +419,13 @@ export async function evaluateBot(bot, ticker) {
 
   // Create execution if signal is valid
   await createExecution(bot, ticker, evaluationResult, tick, context)
+}
+
+/** min(this bot's attributable FIFO quantity, the account's position) for a sell. */
+export async function sellableQuantity(botId, ticker, accountQty) {
+  const t = String(ticker).toUpperCase()
+  const held = calculateFifoAccounting(await loadBotFills(botId, { prismaClient: prisma })).openPositions?.[t]?.quantity ?? 0
+  return Math.max(0, Math.min(held, Number(accountQty) || 0))
 }
 
 // Helper function to create execution

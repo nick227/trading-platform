@@ -135,6 +135,26 @@ describe('direction integrity (c43d5ca)', () => {
     expect((await ordersOf('bot_b2')).map((o) => o.direction)).toEqual(['buy'])
   })
 
+  it('SELL with a shared symbol: each bot sells only its own lots, and the sell fills', async () => {
+    await holding('bot_s1', 1)
+    await holding('bot_other', 2) // account holds 3 SPY across two bots
+    await mkBot('bot_s1', { direction: 'sell' })
+    await tick('bot_s1')
+    await drain()
+    const sells = (await ordersOf('bot_s1')).filter((x) => x.direction === 'sell')
+    expect(sells).toHaveLength(1)
+    expect(sells[0]).toMatchObject({ quantity: 1, status: 'filled' }) // not 3, not refused
+    expect((await ordersOf('bot_other')).filter((x) => x.direction === 'sell')).toHaveLength(0)
+  })
+
+  it('SELL with a shared symbol: a bot holding none never sells another bot’s shares', async () => {
+    await holding('bot_other', 2)
+    await mkBot('bot_none', { direction: 'sell' })
+    await tick('bot_none')
+    expect((await ordersOf('bot_none')).filter((x) => x.direction === 'sell')).toHaveLength(0)
+    expect((await eventsOf('bot_none', 'execution_skipped')).map((e) => e.metadata?.reason)).toContain('no_position')
+  })
+
   it('SELL: a sell bot sells the shares it holds (unchanged behaviour)', async () => {
     await holding('bot_s', 3)
     await mkBot('bot_s', { direction: 'sell' })

@@ -9,6 +9,7 @@ import { Field, Input, Select } from '../../../components/ui/Field'
 import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { money, sessionDate } from '../../../ui/format'
 import AlgorithmStep from './AlgorithmStep'
+import SymbolContext from './SymbolContext'
 import AlgorithmIdentity, { algorithmIdentity } from '../../../ui/AlgorithmIdentity'
 import { loadWizardData, parseSymbols } from './builderData'
 import {
@@ -427,6 +428,18 @@ export default function AlgorithmBuilder() {
                   />
                 )}
               </Field>
+              <SymbolContext
+                selected={parseSymbols(draft.symbolsText)}
+                supported={tradableSymbols}
+                onToggle={(sym) => {
+                  setServerFieldErrors((s) => ({ ...s, symbols: null }))
+                  setDraft((d) => {
+                    const cur = parseSymbols(d.symbolsText)
+                    const next = cur.includes(sym) ? cur.filter((x) => x !== sym) : [...cur, sym]
+                    return { ...d, symbolsText: next.join(', ') }
+                  })
+                }}
+              />
 
             </AlgorithmStep>
           {/* ── Section 1: When ────────────────────────────────────────── */}
