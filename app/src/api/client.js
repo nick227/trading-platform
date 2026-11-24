@@ -1,6 +1,9 @@
 function buildUrl(path, params = {}) {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'
-  const baseUrl = process.env.VITE_API_URL || `${origin}/api`
+  const envUrl = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
+    ? import.meta.env.VITE_API_URL
+    : (typeof process !== 'undefined' && process.env?.VITE_API_URL ? process.env.VITE_API_URL : null)
+  const baseUrl = envUrl || `${origin}/api`
   
   const url = new URL(`${baseUrl}${path}`)
   for (const [key, val] of Object.entries(params)) {
