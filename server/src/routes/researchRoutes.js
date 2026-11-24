@@ -41,6 +41,11 @@ export async function symbolResearch(symbol, { engine = engineClient, config = s
     edgeOverBaseline: q.edgeOverBaseline ?? null,
     genuineOutOfSample: q.genuineOutOfSample ?? null,
     run: found.run,
+    // Publication health (integrity gates, enough holdout) vs whether bots may trade it.
+    // Eligibility mirrors the bot engine's locked evidence rule, from the publication's own evidence.
+    operationalStatus: found.run?.runStatus ?? null,
+    eligibleForTrading: q.edgeOverBaseline === true && q.genuineOutOfSample === true && found.run?.intelligenceConfidenceTier === 'full',
+    qualityVerdict: found.researchQuality?.verdict ?? null,
   }
 }
 

@@ -12,8 +12,9 @@ import { verifyResearchTrace } from '../../src/services/researchTraceService.js'
 const { traces } = JSON.parse(readFileSync(new URL('../fixtures/alpha-engine/traces.json', import.meta.url), 'utf8'))
 const now = new Date('2026-11-20T15:00:00Z') // 30 minutes after the fixtures were observed
 const fullRun = { run: { intelligenceConfidenceTier: 'full', rankedUnderDegradedRun: false, runStatus: 'SUCCESS' } }
-// Legacy fixtures predate publications (no evaluation evidence), so edge is tested separately.
-const policy = { ...RESEARCH_POLICY_DEFAULTS, requireEdgeOverBaseline: false }
+// Evidence requirements are tested on their own below; here they're off so each other gate
+// can be exercised in isolation (pred_qqq_weak carries staging-like no-edge evidence).
+const policy = { ...RESEARCH_POLICY_DEFAULTS, requireEdgeOverBaseline: false, requireOutOfSample: false }
 const decide = (id, over = {}) => evaluateResearchDecision({ trace: traces[id], located: fullRun, policy, price: traces[id].evidence.snapshot.entryPrice, now, ...over })
 
 describe('Alpha Engine fixtures', () => {
@@ -120,23 +121,33 @@ describe('seeded bot templates', () => {
   })
 })
 
-describe('edge over baseline', () => {
-  const withEval = (edge) => {
+describe('evidence requirements (edge over baseline, out of sample)', () => {
+  const withEval = (edge, oos) => {
     const t = structuredClone(traces.pred_spy_buy)
-    t.evidence.snapshot.ranking = { evaluation: { edgeOverBaseline: edge, genuineOutOfSample: false } }
+    t.evidence.snapshot.ranking = { evaluation: { edgeOverBaseline: edge, genuineOutOfSample: oos } }
     return t
   }
   const strict = { ...RESEARCH_POLICY_DEFAULTS }
-  it('is required by default and read from the verified evidence', () => {
-    expect(strict.requireEdgeOverBaseline).toBe(true)
-    expect(evaluateResearchDecision({ trace: withEval(false), located: fullRun, policy: strict, price: 540, now })).toMatchObject({ decision: 'rejected', reason: 'no_edge_over_baseline' })
-    expect(evaluateResearchDecision({ trace: traces.pred_spy_buy, located: fullRun, policy: strict, price: 540, now })).toMatchObject({ decision: 'rejected', reason: 'no_edge_over_baseline' })
-    expect(evaluateResearchDecision({ trace: withEval(true), located: fullRun, policy: strict, price: 540, now })).toMatchObject({ decision: 'accepted', context: { edgeOverBaseline: true, genuineOutOfSample: false } })
+  const run = (trace) => evaluateResearchDecision({ trace, located: fullRun, policy: strict, price: 540, now })
+
+  it('are both required by default and read from the verified evidence', () => {
+    expect(strict).toMatchObject({ requireEdgeOverBaseline: true, requireOutOfSample: true })
+    expect(run(withEval(false, false))).toMatchObject({ decision: 'rejected', reason: 'no_edge_over_baseline' })
+    expect(run(withEval(true, false))).toMatchObject({ decision: 'rejected', reason: 'not_out_of_sample', context: { edgeOverBaseline: true, genuineOutOfSample: false } })
+    expect(run(withEval(null, null))).toMatchObject({ decision: 'rejected', reason: 'no_edge_over_baseline' }) // missing evidence
+    expect(run(withEval(true, true))).toMatchObject({ decision: 'accepted', context: { edgeOverBaseline: true, genuineOutOfSample: true } })
   })
-  it('can be switched off explicitly, and the evidence is still recorded', () => {
-    const r = evaluateResearchDecision({ trace: withEval(false), located: fullRun, policy: { ...strict, requireEdgeOverBaseline: false }, price: 540, now })
-    expect(r).toMatchObject({ decision: 'accepted', context: { edgeOverBaseline: false } })
+
+  it('weak research like staging’s (48.4% vs 49.9%, not out of sample) is never executable', () => {
+    const t = structuredClone(traces.pred_spy_buy)
+    t.evidence.snapshot.ranking = structuredClone(traces.pred_qqq_weak.evidence.snapshot.ranking)
+    expect(run(t)).toMatchObject({ decision: 'rejected', reason: 'no_edge_over_baseline' })
+  })
+
+  it('cannot be switched off through a bot’s configuration (beta lock)', () => {
+    const resolved = resolveResearchPolicy({ research: { requireEdgeOverBaseline: false, minConfidence: 0.45 } })
+    expect(resolved).toMatchObject({ ok: true, policy: { requireEdgeOverBaseline: true, requireOutOfSample: true, minConfidence: 0.45 } })
+    expect(evaluateResearchDecision({ trace: withEval(false, false), located: fullRun, policy: resolved.policy, price: 540, now })).toMatchObject({ decision: 'rejected', reason: 'no_edge_over_baseline' })
     expect(resolveResearchPolicy({ research: { requireEdgeOverBaseline: 'no' } })).toEqual({ ok: false, reason: 'invalid_requireEdgeOverBaseline' })
   })
 })
-

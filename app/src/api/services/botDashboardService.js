@@ -270,7 +270,8 @@ const MATRIX_TEXT = {
 }
 
 const RESEARCH_REASON_TEXT = {
-  no_edge_over_baseline: 'Its holdout didn’t beat the always-up baseline, and this bot only trades research with an edge.',
+  no_edge_over_baseline: 'Its holdout didn’t beat the always-up baseline. Research must show an edge before a bot can trade it.',
+  not_out_of_sample: 'Its edge wasn’t measured on genuinely out-of-sample data. Research must be validated out of sample before a bot can trade it.',
   below_min_confidence: 'Its score was below this bot’s minimum.',
   stale_prediction: 'The research was older than this bot allows.',
   entry_price_drift: 'The price had moved too far from the research’s entry price.',

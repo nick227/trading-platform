@@ -31,7 +31,9 @@ export default function ResearchCard({ symbol, compact = false }) {
   const hit = r.holdout?.hitRate
   const base = r.holdout?.baselineRate
   const gap = hit !== null && hit !== undefined && base !== null && base !== undefined ? (hit - base) * 100 : null
-  const verdict = r.edgeOverBaseline === true
+  const verdict = r.edgeOverBaseline === true && r.genuineOutOfSample === false
+    ? <span className="tl-verdict tl-verdict--noedge">Edge not out of sample</span>
+    : r.edgeOverBaseline === true
     ? <span className="tl-verdict tl-verdict--edge">Beat its baseline</span>
     : r.edgeOverBaseline === false
       ? <span className="tl-verdict tl-verdict--noedge">No proven edge</span>
@@ -59,6 +61,14 @@ export default function ResearchCard({ symbol, compact = false }) {
       <p className="tl-small tl-muted m0">
         {r.model ? `${r.model} · ` : ''}published for {sessionDate(r.marketDate, { year: true })}{r.mode === 'historical_replay' ? ' (historical replay)' : ''}
         {r.genuineOutOfSample === false ? ' · pseudo-out-of-sample' : ''}. Research is an input you can test, not a recommendation.
+      </p>
+      <p className="tl-small m0" data-testid={`research-eligibility-${symbol}`}>
+        {r.operationalStatus === 'HEALTHY' ? 'Publication passed its integrity checks' : 'Publication did not pass all quality checks'}
+        {' · '}
+        {r.eligibleForTrading
+          ? <strong>Eligible for research bots</strong>
+          : <strong>Not eligible for bots to trade</strong>}
+        {!r.eligibleForTrading && <span className="tl-muted"> — research must beat its baseline out of sample.</span>}
       </p>
     </div>
   )

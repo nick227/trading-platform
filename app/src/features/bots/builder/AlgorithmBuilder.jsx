@@ -910,22 +910,10 @@ export default function AlgorithmBuilder() {
                       )}
                     </Field>
                   </div>
-                  <label className="tl-check">
-                    <input
-                      type="checkbox"
-                      checked={draft.research.requireEdge}
-                      onChange={(e) =>
-                        setDraft((d) => ({
-                          ...d,
-                          research: { ...d.research, requireEdge: e.target.checked },
-                        }))
-                      }
-                    />
-                    <span>
-                      Only research whose holdout beat the always-up baseline{' '}
-                      <span className="tl-muted tl-small">(uncheck to experiment with unproven signals)</span>
-                    </span>
-                  </label>
+                  <p className="tl-small tl-muted m0" data-testid="research-evidence-rule">
+                    <strong>Evidence required.</strong> The bot only trades research whose holdout beat the
+                    always-up baseline on out-of-sample data. This can’t be turned off in the beta.
+                  </p>
                 </div>
               )}
             </div>

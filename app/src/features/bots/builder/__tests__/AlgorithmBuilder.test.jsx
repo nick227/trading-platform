@@ -259,12 +259,10 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
 
     fireEvent.change(editField('Minimum research score'), { target: { value: '45' } })
 
-    // Open More Settings and toggle edge requirement
+    // The evidence requirement is stated, not toggleable.
     fireEvent.click(within(screen.getByTestId('section-more')).getByRole('button', { name: /Limits & schedule/ }))
-    const edgeToggle = screen.getByRole('checkbox', { name: /Only research whose holdout beat the always-up baseline/ })
-    expect(edgeToggle).toBeChecked()
-    fireEvent.click(edgeToggle)
-    expect(edgeToggle).not.toBeChecked()
+    expect(screen.getByTestId('research-evidence-rule')).toHaveTextContent('can’t be turned off')
+    expect(screen.queryByRole('checkbox', { name: /holdout beat the always-up baseline/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     await waitFor(() => expect(post).toHaveBeenCalled())
@@ -272,7 +270,7 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
       config: expect.objectContaining({
         research: expect.objectContaining({
           minConfidence: 0.45,
-          requireEdgeOverBaseline: false,
+          requireEdgeOverBaseline: true,
         }),
       }),
     }))
