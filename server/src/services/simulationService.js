@@ -36,7 +36,16 @@ export function simulationConfig(env = process.env) {
     clock: validSession ? sessionClock(raw) : null,
     referenceTicker: String(env.SIM_REFERENCE_TICKER ?? 'SPY').toUpperCase(),
     maxSessionAgeDays: Number.isFinite(maxAgeDays) && maxAgeDays > 0 ? maxAgeDays : 5,
+    // paper_daily trades only symbols with a fresh daily close: Alpha Engine's live universe.
+    tradableSymbols: daily ? tradableSymbolsFrom(env) : null,
   }
+}
+
+export const DEFAULT_TRADABLE_SYMBOLS = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'JPM', 'XOM', 'META']
+function tradableSymbolsFrom(env) {
+  const raw = String(env.SIM_TRADABLE_SYMBOLS ?? '').trim()
+  const list = raw ? raw.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean) : DEFAULT_TRADABLE_SYMBOLS
+  return [...new Set(list)]
 }
 
 /** The moment a session's daily close is attributed to (decisions, research clock, fills). */

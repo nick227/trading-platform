@@ -75,6 +75,7 @@ export async function loadBotsPage() {
   const templateRules = new Map(featured.map((f) => [f.id, f.rules]))
   const myBots = rawBots.map((b) => ({
     ...normalizeBot(b, activityById.get(b.id) ?? null),
+    rulesAvailable: Array.isArray(b.rules) || templateRules.has(b.templateId),
     rules: Array.isArray(b.rules) ? b.rules : templateRules.get(b.templateId) ?? [],
     templateName: featured.find((f) => f.id === b.templateId)?.name ?? null,
     fillCount: (activityById.get(b.id)?.executions ?? []).filter((x) => x.filledQuantity > 0).length,

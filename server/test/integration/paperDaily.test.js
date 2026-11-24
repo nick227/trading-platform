@@ -189,3 +189,17 @@ describe('worker schema gate (deploy-order safety)', () => {
     await expect(waitForSchema({ client: missing, sleep: async () => {}, timeoutMs: 10, now: () => (t += 6) })).rejects.toMatchObject({ code: 'P2022' })
   })
 })
+
+describe('paper_daily tradable symbols (server is authoritative)', () => {
+  it('rejects symbols without a fresh daily close, inline on tickers; exposes the list to the app', async () => {
+    const as = { Authorization: `Bearer ${token}` }
+    const bad = await request(app.server).post('/api/bots/configuration').set(as).send({ portfolioId: 'por_a', name: 'x', config: { tickers: ['SPY', 'TSLA'] } })
+    expect(bad.status).toBe(400)
+    expect(bad.body.error).toMatchObject({ code: 'INVALID_CONFIG', field: 'tickers' })
+    expect(bad.body.error.message).toMatch(/^TSLA isn’t available in paper trading\. Choose from SPY, QQQ/)
+    const ok = await request(app.server).post('/api/bots/configuration').set(as).send({ portfolioId: 'por_a', name: 'y', config: { tickers: ['spy', 'msft'] } })
+    expect(ok.status).toBe(201)
+    const st = await request(app.server).get('/api/account/broker-credentials').set(as)
+    expect(st.body.tradableSymbols).toEqual(['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'JPM', 'XOM', 'META'])
+  })
+})

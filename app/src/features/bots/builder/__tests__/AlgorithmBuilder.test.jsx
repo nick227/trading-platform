@@ -104,13 +104,22 @@ function renderBuilder(entry = '/bots/new') {
   )
 }
 
+function editField(label) {
+  const field = screen.getByLabelText(label)
+  const step = field.closest('[data-testid^="section-"]')
+  const toggle = step?.querySelector('button[aria-expanded]')
+  if (toggle?.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle)
+  expect(field).toBeVisible()
+  return field
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   authState.brokerStatus = SIM
 })
 
 describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
-  it('renders strategy summary, preloads template, and lists 3 expandable sections', async () => {
+  it('renders the algorithm with collapsed editors and a live strategy sentence', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_golden_cross')
 
@@ -123,13 +132,34 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     expect(screen.getByTestId('section-trade')).toBeInTheDocument()
     expect(screen.getByTestId('section-more')).toBeInTheDocument()
 
-    // Section 1 and 2 default open
+    expect(screen.getByRole('button', { name: 'Edit watch' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Edit when' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Edit act' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByLabelText('Symbols')).not.toBeVisible()
+
+    // Preloaded draft values
     expect(screen.getByLabelText('Bot name')).toHaveValue('Golden Cross Hunter · SPY')
     expect(screen.getByLabelText('Symbols')).toHaveValue('SPY, QQQ, IWM')
-    expect(screen.getByLabelText('Simulated capital')).toHaveValue('5000')
+    expect(screen.getByLabelText('Capital allocated')).toHaveValue('5000')
 
     // Submit button
     expect(screen.getByTestId('submit-builder-btn')).toHaveTextContent('Start bot')
+  })
+
+  it('edits in place, closes the previous step, and preserves changes in the sentence', async () => {
+    mockApi()
+    renderBuilder('/bots/new?template=tmpl_price')
+    await screen.findByLabelText('Bot name')
+    fireEvent.change(editField('Symbols'), { target: { value: 'MSFT' } })
+    expect(screen.getByRole('button', { name: 'Done editing watch' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.change(editField('Trigger price'), { target: { value: '350' } })
+    expect(screen.getByRole('button', { name: 'Edit watch' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByLabelText('Symbols')).not.toBeVisible()
+    expect(screen.getByTestId('builder-summary')).toHaveTextContent('MSFT')
+    expect(screen.getByTestId('builder-summary')).toHaveTextContent('$350')
+    fireEvent.click(screen.getByRole('button', { name: 'Done editing when' }))
+    expect(editField('Symbols')).toHaveValue('MSFT')
+    expect(post).not.toHaveBeenCalled()
   })
 
   it('allows switching starting point from the template selector', async () => {
@@ -150,10 +180,10 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     renderBuilder('/bots/new?template=tmpl_price')
     await screen.findByLabelText('Bot name')
 
-    fireEvent.change(screen.getByLabelText('Bot name'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('Symbols'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('Simulated capital'), { target: { value: '0' } })
+    fireEvent.change(editField('Bot name'), { target: { value: '' } })
+    fireEvent.change(editField('Symbols'), { target: { value: '' } })
+    fireEvent.change(editField('Trigger price'), { target: { value: '' } })
+    fireEvent.change(editField('Capital allocated'), { target: { value: '0' } })
 
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
 
@@ -161,6 +191,7 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     expect(screen.getByText('Add at least one symbol.')).toBeInTheDocument()
     expect(screen.getByText('Enter the price that should trigger an order.')).toBeInTheDocument()
     expect(screen.getByText('Amount must be greater than $0.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Bot name')).toHaveFocus()
     expect(post).not.toHaveBeenCalled()
   })
 
@@ -171,9 +202,9 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     renderBuilder('/bots/new?template=tmpl_price')
     await screen.findByLabelText('Bot name')
 
-    fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '215' } })
-    fireEvent.change(screen.getByLabelText('Simulated capital'), { target: { value: '4000' } })
-    fireEvent.change(screen.getByLabelText('Max spend per order'), { target: { value: '800' } })
+    fireEvent.change(editField('Trigger price'), { target: { value: '215' } })
+    fireEvent.change(editField('Capital allocated'), { target: { value: '4000' } })
+    fireEvent.change(editField('Max spend per order'), { target: { value: '800' } })
 
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
 
@@ -222,14 +253,14 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     expect(screen.getByText('(0–100; a score, not a probability)')).toBeInTheDocument()
 
     // Test research score validation
-    fireEvent.change(screen.getByLabelText('Minimum research score'), { target: { value: '150' } })
+    fireEvent.change(editField('Minimum research score'), { target: { value: '150' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(screen.getByText('Use a score from 0 to 100.')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Minimum research score'), { target: { value: '45' } })
+    fireEvent.change(editField('Minimum research score'), { target: { value: '45' } })
 
     // Open More Settings and toggle edge requirement
-    fireEvent.click(within(screen.getByTestId('section-more')).getByRole('button', { name: /3\. More settings/ }))
+    fireEvent.click(within(screen.getByTestId('section-more')).getByRole('button', { name: /Limits & schedule/ }))
     const edgeToggle = screen.getByRole('checkbox', { name: /Only research whose holdout beat the always-up baseline/ })
     expect(edgeToggle).toBeChecked()
     fireEvent.click(edgeToggle)
@@ -260,6 +291,7 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(await screen.findByTestId('submit-error')).toHaveTextContent('Simulated capital exceeds maximum.')
     expect(screen.getAllByText('Simulated capital exceeds maximum.')).toHaveLength(2)
+    expect(screen.getByLabelText('Capital allocated')).toHaveFocus()
   })
 })
 
@@ -298,15 +330,19 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Edit Momentum Scalper' })).toBeInTheDocument()
     expect(screen.getByLabelText('Bot name')).toHaveValue('Momentum Scalper')
     expect(screen.getByLabelText('Symbols')).toHaveValue('NVDA, AMD')
-    expect(screen.getByLabelText('Simulated capital')).toHaveValue('6000')
+    expect(screen.getByLabelText('Capital allocated')).toHaveValue('6000')
     expect(screen.getByLabelText('Max spend per order')).toHaveValue('1200')
     expect(screen.getByLabelText('Trigger price')).toHaveValue('140')
 
-    // Modify capital, order limit, and trigger price
-    fireEvent.change(screen.getByLabelText('Simulated capital'), { target: { value: '8000' } })
-    fireEvent.change(screen.getByLabelText('Max spend per order'), { target: { value: '1500' } })
-    fireEvent.change(screen.getByLabelText('Trigger price'), { target: { value: '145' } })
+    expect(screen.getByText('Saved configuration')).toBeInTheDocument()
 
+    // Modify capital, order limit, and trigger price
+    fireEvent.change(editField('Capital allocated'), { target: { value: '8000' } })
+    fireEvent.change(editField('Max spend per order'), { target: { value: '1500' } })
+    fireEvent.change(editField('Trigger price'), { target: { value: '145' } })
+
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+    expect(put).not.toHaveBeenCalled()
     const saveBtn = screen.getByTestId('submit-builder-btn')
     expect(saveBtn).toHaveTextContent('Save changes')
     fireEvent.click(saveBtn)
@@ -344,7 +380,7 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     renderBuilder('/bots/bot_live1/edit')
     await screen.findByLabelText('Bot name')
 
-    fireEvent.change(screen.getByLabelText('Simulated capital'), { target: { value: '9000' } })
+    fireEvent.change(editField('Capital allocated'), { target: { value: '9000' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
 
     await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
@@ -357,7 +393,7 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
     expect(staleNotice).toHaveTextContent(/changed since you opened it/)
 
     // User draft is NOT discarded: value 9000 remains in the input
-    expect(screen.getByLabelText('Simulated capital')).toHaveValue('9000')
+    expect(screen.getByLabelText('Capital allocated')).toHaveValue('9000')
 
     // Blind overwrite button is REMOVED (Correction 2)
     expect(screen.queryByTestId('overwrite-btn')).not.toBeInTheDocument()
@@ -382,7 +418,7 @@ describe('Algorithm Builder — Editing Journey (/bots/:id/edit)', () => {
       expect(screen.queryByTestId('stale-bot-notice')).not.toBeInTheDocument()
     })
     await waitFor(() => expect(screen.getByLabelText('Max spend per order')).toHaveValue('1800'))
-    expect(screen.getByLabelText('Simulated capital')).toHaveValue('9000')
+    expect(screen.getByLabelText('Capital allocated')).toHaveValue('9000')
 
     // Saving again sends only the user's edit, guarded by the new version
     put.mockResolvedValueOnce({ ...freshBot, updatedAt: '2026-11-22T23:50:00.000Z' })

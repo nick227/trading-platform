@@ -73,7 +73,7 @@ beforeEach(() => {
 })
 
 describe('HomeDashboard', () => {
-  it('leads with the reconciled portfolio value, change and composition', async () => {
+  it('shows the reconciled portfolio value, change and composition', async () => {
     mockApi()
     renderHome()
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('$99,966.75')
@@ -86,6 +86,20 @@ describe('HomeDashboard', () => {
     expect(screen.getByText('Cash').nextSibling).toHaveTextContent('$98,253.95')
     // With only two sessions the one-day change equals the total, so it isn't repeated.
     expect(screen.queryByTestId('balance-today')).not.toBeInTheDocument()
+  })
+
+  it('summarizes enabled and paused bots and updates after a pause', async () => {
+    mockApi({ botList: [{ ...bots[0], rules: [{ type: 'price_threshold', config: { price: 350 } }] }, bots[1]] })
+    put.mockResolvedValue({})
+    renderHome()
+    const status = await screen.findByTestId('workshop-status')
+    expect(status).toHaveTextContent('1 running')
+    expect(status).toHaveTextContent('1 paused')
+    expect(status).toHaveTextContent('No recorded activity loaded')
+    fireEvent.click(screen.getByRole('button', { name: 'Pause Momentum AAPL' }))
+    await waitFor(() => expect(status).toHaveTextContent('0 running'))
+    expect(status).toHaveTextContent('2 paused')
+    expect(screen.getByText('Price Scout')).toBeInTheDocument()
   })
 
   it('lists holdings from the valuation and expands one in place', async () => {
@@ -108,6 +122,8 @@ describe('HomeDashboard', () => {
     const [running, paused] = await screen.findAllByTestId('bot-card')
     expect(within(running).getByTestId('bot-status')).toHaveTextContent('Running')
     expect(within(running).getByText('$2,500 capital')).toBeInTheDocument()
+    expect(within(running).getByText('P&L unavailable')).toBeInTheDocument()
+    expect(within(running).queryByText('Scheduled Trader')).not.toBeInTheDocument()
     expect(within(running).getByRole('link', { name: /Momentum AAPL/ })).toHaveAttribute('href', '/bots/bot_1')
     expect(within(running).getAllByRole('button').map((b) => b.textContent)).toEqual(['Pause'])
     expect(within(paused).getByTestId('bot-status')).toHaveTextContent('Paused')
@@ -220,18 +236,18 @@ describe('HomeDashboard', () => {
     const rows = within(await screen.findByTestId('activity-list')).getAllByRole('listitem').filter((li) => li.parentElement.dataset.testid === 'activity-list')
     // One row per trade: the AAPL order and its fill are a single row with a decision trail.
     expect(rows.map((r) => r.querySelector('.tl-feed-title').textContent.replace(/\s+/g, ' '))).toEqual([
-      'Sell order placed · MSFT · Mean Reversion',
-      'Bought 5 AAPL · Momentum AAPL',
+      'Mean ReversionSell order placed · MSFT',
+      'Momentum AAPLBought 5 AAPL',
     ])
     expect(within(rows[1]).getByRole('button', { name: /Details/ })).toHaveTextContent('Details2 steps')
   })
 
-  it('folds routine checks into one summary line', async () => {
+  it('shows the latest routine decision and its reason, collapsing repeats', async () => {
     const skip = (id, at) => ({ id, type: 'execution_skipped', detail: 'x', metadata: { ticker: 'AAPL', reason: 'cooldown_active' }, createdAt: at })
     mockApi({ events: { bot_1: [skip('s1', '2026-11-20T16:00:00Z'), skip('s2', '2026-11-20T15:00:00Z'), skip('s3', '2026-11-20T14:00:00Z')] } })
     renderHome()
-    expect(await screen.findByTestId('routine-summary')).toHaveTextContent('3 routine checks without a trade (cooldown)')
-    fireEvent.click(screen.getByRole('button', { name: 'Show them' }))
+    expect(await screen.findByTestId('activity-list')).toHaveTextContent('The bot traded AAPL recently and is waiting before trading it again.')
+    expect(screen.queryByTestId('routine-summary')).not.toBeInTheDocument()
     expect(within(screen.getByTestId('activity-list')).getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByTestId('activity-list')).toHaveTextContent('×3')
   })

@@ -547,3 +547,13 @@ describe('lossless saves (integration defects B3/B4)', () => {
     expect(buildConfigPatch(initEditDraft(legacy), legacy.config)).toEqual({})
   })
 })
+
+describe('paper trading symbol list', () => {
+  const base = { name: 'B', symbolsText: 'AAPL, TSLA', capital: '1000', maxPerOrder: '500', triggerType: 'schedule', direction: 'buy', cooldown: { on: false }, positionLimit: { on: false }, dailyLoss: { on: false }, marketHours: { on: false } }
+  it('flags symbols outside the paper-trading list, naming them and the choices', () => {
+    const e = validateBuilderDraft(base, { tradableSymbols: ['SPY', 'AAPL'] })
+    expect(e.symbols).toBe('TSLA isn’t available in paper trading. Choose from SPY, AAPL.')
+    expect(validateBuilderDraft({ ...base, symbolsText: 'aapl' }, { tradableSymbols: ['SPY', 'AAPL'] }).symbols).toBeUndefined()
+    expect(validateBuilderDraft(base, {}).symbols).toBeUndefined()
+  })
+})
