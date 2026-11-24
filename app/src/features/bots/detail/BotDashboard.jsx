@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { get, post } from '../../../api/client'
 import Sheet from '../../../components/Sheet'
 import {
@@ -167,6 +167,55 @@ function PendingOrders({ executions, onCancelled }) {
 
 const MIN_HISTORY_POINTS = 5
 
+/** A paused copy to experiment with; opens it in the Workshop. */
+export function DuplicateButton({ botId }) {
+  const navigate = useNavigate()
+  const [state, setState] = useState({ busy: false, error: null })
+  async function duplicate() {
+    setState({ busy: true, error: null })
+    try {
+      const copy = await post(`/bots/${encodeURIComponent(botId)}/clone`, {})
+      navigate(`/bots/${copy.id}/edit`)
+    } catch (err) {
+      setState({ busy: false, error: err?.serverMessage || 'Couldn’t duplicate this bot.' })
+    }
+  }
+  return (
+    <>
+      <button type="button" className="tl-btn" onClick={duplicate} disabled={state.busy} data-testid="duplicate-bot-btn" title="A paused copy to experiment with">
+        {state.busy ? 'Duplicating…' : 'Duplicate'}
+      </button>
+      {state.error && <span className="tl-small tl-neg" role="alert">{state.error}</span>}
+    </>
+  )
+}
+
+/** The bot's latest backtest (hypothetical) beside its paper results. */
+export function LatestBacktest({ botId }) {
+  const [run, setRun] = useState(undefined)
+  useEffect(() => {
+    let live = true
+    get('/backtests', { botId, limit: 1 }).then((rows) => live && setRun((Array.isArray(rows) ? rows : []).find((r) => r.status === 'succeeded') ?? null)).catch(() => live && setRun(null))
+    return () => { live = false }
+  }, [botId])
+  if (!run) {
+    return run === null ? (
+      <p className="tl-section-note" data-testid="latest-backtest-none">No backtest yet. <Link to={`/bots/${botId}/edit`}>Backtest it in the Workshop</Link> to see how these settings would have done historically.</p>
+    ) : null
+  }
+  const m = run.results?.metrics ?? {}
+  const pct = (n) => (n === null || n === undefined ? '—' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}%`)
+  return (
+    <p className="tl-section-note" data-testid="latest-backtest">
+      <span className="tl-tag">Hypothetical</span>{' '}
+      Backtest {sessionDate(run.startDate, { year: true })} – {sessionDate(run.endDate, { year: true })}{run.executionModel === 'same_close' ? ' (same-close fills)' : ''}:{' '}
+      <strong className={tone(m.returnPct)}>{pct(m.returnPct)}</strong> vs buy &amp; hold {pct(run.results?.buyAndHold?.returnPct)}
+      {m.maxDrawdown ? ` · max drawdown ${m.maxDrawdown.pct?.toFixed(2)}%` : ''}
+      {m.winRate !== null && m.winRate !== undefined ? ` · ${Math.round(m.winRate * 100)}% of closed trades won` : ''}. Past results, not paper fills. <Link to={`/bots/${botId}/edit`}>Run another</Link>
+    </p>
+  )
+}
+
 /** P&L at each daily close, from the bot's own FIFO fills (same model as the portfolio). */
 export function PerformanceHistory({ botId, winRate, closedTrades }) {
   const [h, setH] = useState(undefined) // undefined loading · null unavailable
@@ -228,6 +277,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
         </p>
       )}
       {p && <PerformanceHistory botId={bot.id} winRate={p.winRate} closedTrades={p.closedTrades} />}
+      {!isResearchBot(bot.config) && <LatestBacktest botId={bot.id} />}
       {p?.valuation?.simulated && (
         <p className="tl-section-note" data-testid="performance-valuation">
           Holdings valued at the {[...new Set(Object.values(p.valuation.sessions ?? {}))].map((s) => sessionDate(s)).join(', ')} close · simulated fills. Capital isn’t set aside — it caps what this bot may spend.
@@ -436,6 +486,7 @@ export default function BotDashboard() {
               {busy ? 'Saving…' : bot.enabled ? 'Pause' : 'Resume'}
             </button>
             <Link to={`/bots/${bot.id}/edit`} className="tl-btn" data-testid="edit-bot-btn">Edit bot</Link>
+            <DuplicateButton botId={bot.id} />
             <button type="button" className="tl-btn tl-btn--quiet tl-btn--danger" onClick={() => setSheet('stop')} disabled={busy}>Stop</button>
           </div>
         )}

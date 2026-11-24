@@ -9,6 +9,16 @@ const MODELS = [
   { id: 'next_open', label: 'Next open', hint: 'Decides at each close, fills at the next session’s open (realistic).' },
   { id: 'same_close', label: 'Same close', hint: 'Fills at the close it observed, like paper trading (optimistic).' },
 ]
+const VARIANT_PARAMS = [
+  { id: 'triggerPrice', label: 'Trigger price', placeholder: 'e.g. 480, 500, 520', format: (v) => money(v) },
+  { id: 'cooldownDays', label: 'Cooldown (days)', placeholder: 'e.g. 3, 7, 14', format: (v) => plural(v, 'day') },
+  { id: 'maxOrderNotional', label: 'Per-order limit', placeholder: 'e.g. 500, 1000, 2000', format: (v) => moneyWhole(v) },
+  { id: 'allocatedAmount', label: 'Capital', placeholder: 'e.g. 2500, 5000, 10000', format: (v) => moneyWhole(v) },
+]
+export function parseVariantValues(text) {
+  const vals = [...new Set(String(text ?? '').split(/[\s,]+/).map((x) => Number(x.replace(/[$,]/g, ''))).filter((n) => Number.isFinite(n) && n > 0))]
+  return vals.slice(0, 3)
+}
 const POLL_MS = 1500
 const MAX_POLLS = 160
 
@@ -71,7 +81,36 @@ function whyQuiet(r) {
   return reasons
 }
 
-export function BacktestResults({ run }) {
+/** Like-for-like comparison: same data, same fill model, only the parameter differs. */
+export function VariantTable({ variants, param, onApply }) {
+  const p = VARIANT_PARAMS.find((x) => x.id === param)
+  const best = variants.reduce((b, v) => (v.metrics.returnPct > (b?.metrics.returnPct ?? -Infinity) ? v : b), null)
+  return (
+    <div data-testid="bt-variants">
+      <table className="tl-table">
+        <thead><tr><th>Variant</th><th className="r">Return</th><th className="r tl-hide-sm">Max drawdown</th><th className="r">Trades</th><th className="r tl-hide-sm">Win rate</th><th /></tr></thead>
+        <tbody>
+          {variants.map((v) => {
+            const value = v.set?.[param]
+            return (
+              <tr key={v.label} data-testid="bt-variant-row">
+                <td>{value !== undefined && p ? `${p.label}: ${p.format(value)}` : v.label}{v === best && variants.length > 1 ? <span className="tl-tag" style={{ marginLeft: 6 }}>Best return</span> : null}</td>
+                <td className={`r ${tone(v.metrics.returnPct)}`}>{signedPct(v.metrics.returnPct)}</td>
+                <td className="r tl-hide-sm">{v.metrics.maxDrawdown ? `${v.metrics.maxDrawdown.pct?.toFixed(2)}%` : '—'}</td>
+                <td className="r">{v.metrics.trades}</td>
+                <td className="r tl-hide-sm">{v.metrics.winRate !== null && v.metrics.winRate !== undefined ? `${Math.round(v.metrics.winRate * 100)}%` : '—'}</td>
+                <td className="r">{value !== undefined && onApply ? <button type="button" className="tl-link-btn tl-small" onClick={() => onApply({ [param]: value })}>Use this</button> : null}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <p className="tl-small tl-muted m0">Same prices, fill model and risk policy for every row; only {p ? p.label.toLowerCase() : 'the parameter'} changes. Past results don’t predict future ones.</p>
+    </div>
+  )
+}
+
+export function BacktestResults({ run, variantParam = null, onApplyVariant = null }) {
   const r = run.results
   const m = r.metrics
   const bh = r.buyAndHold
@@ -103,6 +142,7 @@ export function BacktestResults({ run }) {
       {m.trades > 0 && quiet.length > 0 && (
         <p className="tl-small tl-muted" data-testid="bt-why-quiet">Most days without a trade: {quiet.join('; ')}.</p>
       )}
+      {r.variants?.length > 1 && <VariantTable variants={r.variants} param={variantParam} onApply={onApplyVariant} />}
       {issues.length > 0 && (
         <ul className="tl-backtest-notes" data-testid="bt-data-notes">
           {issues.slice(0, 6).map((t) => <li key={t}>{t}</li>)}
@@ -143,9 +183,12 @@ export function BacktestResults({ run }) {
  * Workshop Backtest: runs what's on screen (saved or not) against past daily sessions.
  * Results are hypothetical and kept apart from the bot's paper trades.
  */
-export default function BacktestPanel({ preview, blockedReason = null }) {
+export default function BacktestPanel({ preview, blockedReason = null, linkBotId = null, onApplyVariant = null }) {
   const [range, setRange] = useState('1Y')
   const [model, setModel] = useState('next_open')
+  const [variantParam, setVariantParam] = useState('triggerPrice')
+  const [variantText, setVariantText] = useState('')
+  const [ranParam, setRanParam] = useState(null)
   const [state, setState] = useState({ status: 'idle', run: null, error: null })
   const live = useRef(true)
   useEffect(() => () => { live.current = false }, [])
@@ -166,7 +209,13 @@ export default function BacktestPanel({ preview, blockedReason = null }) {
   async function start() {
     setState({ status: 'queued', run: null, error: null })
     try {
-      const created = await post('/backtests', { config: preview.config, rules: preview.rules, range, executionModel: model })
+      const values = parseVariantValues(variantText)
+      setRanParam(values.length ? variantParam : null)
+      const created = await post('/backtests', {
+        config: preview.config, rules: preview.rules, range, executionModel: model,
+        ...(linkBotId ? { linkBotId } : {}),
+        ...(values.length ? { variants: values.map((v) => ({ set: { [variantParam]: v } })) } : {}),
+      })
       await poll(created.id)
     } catch (err) {
       setState({ status: 'error', run: null, error: err?.serverMessage || 'The backtest couldn’t start.' })
@@ -194,10 +243,21 @@ export default function BacktestPanel({ preview, blockedReason = null }) {
         </button>
       </div>
       <p className="tl-small tl-muted m0">{MODELS.find((m) => m.id === model).hint}</p>
+      <Disclosure label="Compare variants" meta="optional" testId="bt-variant-setup">
+        <div className="tl-backtest-variants">
+          <label className="tl-small" htmlFor="bt-variant-param">Vary</label>
+          <select id="bt-variant-param" className="tl-input tl-input--sm" value={variantParam} onChange={(e) => setVariantParam(e.target.value)} disabled={busy}>
+            {VARIANT_PARAMS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+          <input aria-label="Variant values" className="tl-input tl-input--sm" placeholder={VARIANT_PARAMS.find((x) => x.id === variantParam).placeholder}
+            value={variantText} onChange={(e) => setVariantText(e.target.value)} disabled={busy} data-testid="bt-variant-values" />
+          <span className="tl-small tl-muted">Up to 3 values, run on the same data as your current settings.</span>
+        </div>
+      </Disclosure>
       {blockedReason && <p className="tl-small" data-testid="backtest-blocked">{blockedReason}</p>}
       {state.status === 'error' && <div className="tl-notice tl-notice--error" role="alert" data-testid="backtest-error" style={{ marginTop: 12 }}>{state.error}</div>}
       {busy && <span className="tl-skel" style={{ height: 160, marginTop: 14 }} aria-label="Backtest running" />}
-      {state.status === 'done' && state.run && <BacktestResults run={state.run} />}
+      {state.status === 'done' && state.run && <BacktestResults run={state.run} variantParam={ranParam} onApplyVariant={onApplyVariant} />}
     </section>
   )
 }

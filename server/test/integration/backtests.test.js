@@ -9,6 +9,10 @@ import { createMemoryPrisma } from '../support/memoryPrisma.js'
 const h = vi.hoisted(() => ({ db: null }))
 vi.mock('../../src/loaders/prisma.js', () => ({ default: new Proxy({}, { get: (_, k) => h.db[k] }) }))
 vi.mock('../../../worker/src/db/prisma.js', () => ({ default: new Proxy({}, { get: (_, k) => h.db[k] }) }))
+vi.mock('../../src/services/alpacaClockService.js', async (orig) => ({
+  ...(await orig()),
+  getUserAlpacaCredentialsOrThrow: async () => ({ apiKey: 'k', apiSecret: 's', paper: true, baseUrl: 'https://paper-api.alpaca.markets' })
+}))
 
 const { default: createApp } = await import('../../src/loaders/fastify.js')
 const { default: registerRoutes } = await import('../../src/loaders/routes.js')
@@ -106,5 +110,52 @@ describe('processing', () => {
     await h.db.backtestRun.updateMany({ where: { status: 'queued' }, data: { status: 'running', startedAt: new Date(Date.now() - 31 * 60_000) } })
     expect((await failStaleBacktests()).count).toBe(1)
     expect((await post({ botId: 'bot_a' })).status).toBe(202)
+  })
+})
+
+describe('experiments (M3)', () => {
+  it('clones a bot paused, with every rule and its lineage', async () => {
+    await h.db.botRule.create({ data: { id: 'r2', botId: 'bot_a', name: 'Cooldown', type: 'cooldown', config: { cooldownHours: 48 }, enabled: false } })
+    const r = await request(app.server).post('/api/bots/bot_a/clone').set(as(tokenA)).send({})
+    expect(r.status).toBe(201)
+    const copy = r.body.data
+    expect(copy).toMatchObject({ name: 'Momentum (copy)', enabled: false, config: { tickers: ['SPY', 'NVDA'], allocatedAmount: 5000, clonedFrom: { botId: 'bot_a', name: 'Momentum' } } })
+    const rules = await h.db.botRule.findMany({ where: { botId: copy.id } })
+    expect(rules.map((x) => [x.type, x.enabled])).toEqual([['price_threshold', true], ['cooldown', false]])
+    expect((await request(app.server).post('/api/bots/bot_a/clone').set(as(tokenB)).send({})).status).toBe(404)
+  })
+
+  it('runs variants on the same data and reports each against the current settings', async () => {
+    const { body, status } = await post({ botId: 'bot_a', range: '1Y', executionModel: 'same_close', variants: [
+      { set: { triggerPrice: 1000 } }, { set: { cooldownDays: 200 } }, { label: 'Bigger orders', set: { maxOrderNotional: 2500 } },
+    ] })
+    expect(status).toBe(202)
+    expect(body.data.configSnapshot.variants.map((v) => v.label)).toEqual(['Trigger price 1000', 'Cooldown (days) 200', 'Bigger orders'])
+    const run = await processNextBacktest({ engine })
+    const v = run.results.variants
+    expect(v.map((x) => x.label)).toEqual(['Current', 'Trigger price 1000', 'Cooldown (days) 200', 'Bigger orders'])
+    expect(v[0].metrics).toEqual(run.results.metrics)
+    expect(v[1].metrics.trades).toBe(0) // never above 1000
+    expect(v[2].metrics.trades).toBeLessThan(v[0].metrics.trades)
+    expect(v.every((x) => x.curve.length <= 260)).toBe(true)
+  })
+
+  it('validates variants', async () => {
+    const code = async (variants) => (await post({ botId: 'bot_a', variants })).body.error?.code
+    expect(await code([{ set: {} }])).toBe('invalid_variants')
+    expect(await code([{ set: { warpFactor: 9 } }])).toBe('invalid_variants')
+    expect(await code([{ set: { triggerPrice: -1 } }])).toBe('invalid_variants')
+    expect(await code([1, 2, 3, 4].map((p) => ({ set: { triggerPrice: p } })))).toBe('too_many_variants')
+  })
+
+  it('compares bots: paper results and the latest linked backtest', async () => {
+    await post({ config: { tickers: ['SPY'], direction: 'buy', allocatedAmount: 5000, maxOrderNotional: 1000 }, rules: [{ type: 'price_threshold', config: { operator: 'above', price: 50 } }], linkBotId: 'bot_a', range: '1Y' })
+    await processNextBacktest({ engine })
+    const r = await request(app.server).get('/api/bots/compare').set(as(tokenA))
+    expect(r.status).toBe(200)
+    const row = r.body.data.find((x) => x.id === 'bot_a')
+    expect(row).toMatchObject({ name: 'Momentum', allocation: 5000, paper: { closedTrades: 0 }, backtest: { executionModel: 'next_open', range: { end: '2026-11-23' } } })
+    expect(typeof row.backtest.returnPct).toBe('number')
+    expect((await request(app.server).get('/api/bots/compare').set(as(tokenB))).body.data).toEqual([])
   })
 })

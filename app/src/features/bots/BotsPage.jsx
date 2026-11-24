@@ -9,6 +9,7 @@ import { EmergencyBanner, useEmergencyStop } from '../../ui/Safety'
 import { useBotControls } from '../../ui/useBotControls'
 import { listJoin, money, plural, ratioPct, sessionDate, signedMoney } from '../../ui/format'
 import { loadBotsPage } from './botsApi'
+import CompareBots from './compare/CompareBots'
 
 // Below these, results are an anecdote, not evidence.
 export const MIN_CLOSED_TRADES = 5
@@ -186,6 +187,7 @@ export default function BotsPage() {
               {d.myBotsError
                 ? <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.myBotsError}</div>
                 : <ul className="tl-list tl-machine-list">{d.myBots.map((b) => <BotRow key={b.id} bot={b} busy={Boolean(controls.busy[b.id])} error={controls.errors[b.id]} onToggle={controls.toggle} from="bots" />)}</ul>}
+              {!d.myBotsError && d.myBots.length > 1 && <div style={{ marginTop: 18 }}><CompareBots /></div>}
             </section>
           )}
 

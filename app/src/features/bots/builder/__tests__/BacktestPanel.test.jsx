@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { get, post } from '../../../../api/client'
 import BacktestPanel from '../BacktestPanel'
 
@@ -44,5 +44,29 @@ describe('BacktestPanel', () => {
     expect(await screen.findByTestId('backtest-error')).toHaveTextContent('You already have a backtest running.')
     rerender(<BacktestPanel preview={preview} blockedReason="Research bots can’t be backtested yet." />)
     expect(screen.getByTestId('run-backtest')).toBeDisabled()
+  })
+})
+
+describe('BacktestPanel variants', () => {
+  it('sends up to three values for one parameter, compares them, and applies a choice to the draft', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const variants = [
+      { label: 'Current', set: {}, metrics: { returnPct: 1, trades: 3, winRate: null, maxDrawdown: null }, curve },
+      { label: 'Trigger price 480', set: { triggerPrice: 480 }, metrics: { returnPct: 4, trades: 5, winRate: 0.6, maxDrawdown: { pct: 3 } }, curve },
+    ]
+    post.mockResolvedValue({ id: 'bt_2' })
+    get.mockResolvedValue({ ...done, results: { ...done.results, variants } })
+    const onApply = vi.fn()
+    render(<BacktestPanel preview={preview} linkBotId="bot_a" onApplyVariant={onApply} />)
+    fireEvent.click(screen.getByRole('button', { name: /Compare variants/ }))
+    fireEvent.change(screen.getByTestId('bt-variant-values'), { target: { value: '480, $500, 520, 540, -3' } })
+    fireEvent.click(screen.getByTestId('run-backtest'))
+    expect(post).toHaveBeenCalledWith('/backtests', expect.objectContaining({ linkBotId: 'bot_a',
+      variants: [{ set: { triggerPrice: 480 } }, { set: { triggerPrice: 500 } }, { set: { triggerPrice: 520 } }] }))
+    await vi.advanceTimersByTimeAsync(2000)
+    const rows = await screen.findAllByTestId('bt-variant-row')
+    expect(rows[1]).toHaveTextContent('Trigger price: $480.00Best return')
+    fireEvent.click(within(rows[1]).getByRole('button', { name: 'Use this' }))
+    expect(onApply).toHaveBeenCalledWith({ triggerPrice: 480 })
   })
 })
