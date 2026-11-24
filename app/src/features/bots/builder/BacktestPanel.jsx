@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from '../../../api/client'
 import Disclosure from '../../../ui/Disclosure'
 import ValueChart from '../../../ui/ValueChart'
@@ -10,10 +10,10 @@ const MODELS = [
   { id: 'same_close', label: 'Same close', hint: 'Fills at the close it observed, like paper trading (optimistic).' },
 ]
 const VARIANT_PARAMS = [
-  { id: 'triggerPrice', label: 'Trigger price', placeholder: 'e.g. 480, 500, 520', format: (v) => money(v) },
-  { id: 'cooldownDays', label: 'Cooldown (days)', placeholder: 'e.g. 3, 7, 14', format: (v) => plural(v, 'day') },
-  { id: 'maxOrderNotional', label: 'Per-order limit', placeholder: 'e.g. 500, 1000, 2000', format: (v) => moneyWhole(v) },
-  { id: 'allocatedAmount', label: 'Capital', placeholder: 'e.g. 2500, 5000, 10000', format: (v) => moneyWhole(v) },
+  { id: 'triggerPrice', label: 'Trigger price', placeholder: 'e.g. 480, 500, 520', format: (v) => money(v), appliesTo: (bot) => bot?.config?.triggerType === 'price_threshold' || bot?.rules?.some((r) => r.type === 'price_threshold') },
+  { id: 'cooldownDays', label: 'Cooldown (days)', placeholder: 'e.g. 3, 7, 14', format: (v) => plural(v, 'day'), appliesTo: () => true },
+  { id: 'maxOrderNotional', label: 'Per-order limit', placeholder: 'e.g. 500, 1000, 2000', format: (v) => moneyWhole(v), appliesTo: () => true },
+  { id: 'allocatedAmount', label: 'Capital', placeholder: 'e.g. 2500, 5000, 10000', format: (v) => moneyWhole(v), appliesTo: () => true },
 ]
 export function parseVariantValues(text) {
   const vals = [...new Set(String(text ?? '').split(/[\s,]+/).map((x) => Number(x.replace(/[$,]/g, ''))).filter((n) => Number.isFinite(n) && n > 0))]
@@ -88,7 +88,8 @@ function whyQuiet(r) {
 /** Like-for-like comparison: same data, same fill model, only the parameter differs. */
 export function VariantTable({ variants, param, onApply }) {
   const p = VARIANT_PARAMS.find((x) => x.id === param)
-  const best = variants.reduce((b, v) => (v.metrics.returnPct > (b?.metrics.returnPct ?? -Infinity) ? v : b), null)
+  const activeVariants = variants.filter((v) => (v.metrics?.trades ?? 0) > 0)
+  const best = activeVariants.reduce((b, v) => (v.metrics.returnPct > (b?.metrics.returnPct ?? -Infinity) ? v : b), null)
   return (
     <div data-testid="bt-variants">
       <table className="tl-table">
@@ -96,9 +97,17 @@ export function VariantTable({ variants, param, onApply }) {
         <tbody>
           {variants.map((v) => {
             const value = v.set?.[param]
+            const isZeroTrade = (v.metrics?.trades ?? 0) === 0
             return (
               <tr key={v.label} data-testid="bt-variant-row">
-                <td>{value !== undefined && p ? `${p.label}: ${p.format(value)}` : v.label}{v === best && variants.length > 1 ? <span className="tl-tag" style={{ marginLeft: 6 }}>Best return</span> : null}</td>
+                <td>
+                  {value !== undefined && p ? `${p.label}: ${p.format(value)}` : v.label}
+                  {isZeroTrade ? (
+                    <span className="tl-tag" style={{ marginLeft: 6, opacity: 0.7 }}>Inactive (0 trades)</span>
+                  ) : (
+                    v === best && activeVariants.length > 1 ? <span className="tl-tag" style={{ marginLeft: 6 }}>Best return</span> : null
+                  )}
+                </td>
                 <td className={`r ${tone(v.metrics.returnPct)}`}>{signedPct(v.metrics.returnPct)}</td>
                 <td className="r tl-hide-sm">{v.metrics.maxDrawdown ? `${v.metrics.maxDrawdown.pct?.toFixed(2)}%` : '—'}</td>
                 <td className="r">{v.metrics.trades}</td>
@@ -135,9 +144,18 @@ export function BacktestResults({ run, variantParam = null, onApplyVariant = nul
       </dl>
       {r.curve.length >= 2 && (
         <>
-          <ValueChart points={r.curve.map((p) => ({ t: p.date, v: p.equity }))} baseline={r.capital} baselineLabel={`Start ${moneyWhole(r.capital)}`}
-            markers={[]} height={200} label="Hypothetical bot value at each daily close" minSpan={r.capital * 0.01} />
-          <p className="tl-chart-caption">Bot value (its capital plus P&amp;L) at each close. Buy &amp; hold puts the same capital into the same symbols on day one.</p>
+          <ValueChart
+            points={r.curve.map((p) => ({ t: p.date, v: p.equity }))}
+            secondaryPoints={(r.buyAndHold?.points ?? r.buyAndHold?.curve ?? []).map((p) => ({ t: p.date, v: p.equity }))}
+            secondaryLabel="Buy & hold"
+            baseline={r.capital}
+            baselineLabel={`Start ${moneyWhole(r.capital)}`}
+            markers={[]}
+            height={200}
+            label="Hypothetical bot value at each daily close"
+            minSpan={r.capital * 0.01}
+          />
+          <p className="tl-chart-caption">Bot value (its capital plus P&amp;L) at each close vs buy &amp; hold on the same day-one capital and symbols.</p>
         </>
       )}
       {m.trades === 0 && quiet.length > 0 && (
@@ -187,15 +205,24 @@ export function BacktestResults({ run, variantParam = null, onApplyVariant = nul
  * Workshop Backtest: runs what's on screen (saved or not) against past daily sessions.
  * Results are hypothetical and kept apart from the bot's paper trades.
  */
-export default function BacktestPanel({ preview, blockedReason = null, linkBotId = null, onApplyVariant = null }) {
-  const [range, setRange] = useState('1Y')
+export default function BacktestPanel({ preview, blockedReason = null, linkBotId = null, onApplyVariant = null, initialRange = '1Y' }) {
+  const [range, setRange] = useState(initialRange)
   const [model, setModel] = useState('next_open')
-  const [variantParam, setVariantParam] = useState('triggerPrice')
+  const applicableParams = useMemo(() => {
+    return VARIANT_PARAMS.filter((p) => !p.appliesTo || p.appliesTo(preview))
+  }, [preview])
+  const [variantParam, setVariantParam] = useState(() => applicableParams[0]?.id ?? 'triggerPrice')
   const [variantText, setVariantText] = useState('')
   const [ranParam, setRanParam] = useState(null)
   const [state, setState] = useState({ status: 'idle', run: null, error: null })
   const live = useRef(true)
   useEffect(() => () => { live.current = false }, [])
+
+  useEffect(() => {
+    if (!applicableParams.some((p) => p.id === variantParam)) {
+      setVariantParam(applicableParams[0]?.id ?? 'maxOrderNotional')
+    }
+  }, [applicableParams, variantParam])
 
   async function poll(id) {
     for (let i = 0; i < MAX_POLLS && live.current; i++) {
@@ -251,9 +278,9 @@ export default function BacktestPanel({ preview, blockedReason = null, linkBotId
         <div className="tl-backtest-variants">
           <label className="tl-small" htmlFor="bt-variant-param">Vary</label>
           <select id="bt-variant-param" className="tl-input tl-input--sm" value={variantParam} onChange={(e) => setVariantParam(e.target.value)} disabled={busy}>
-            {VARIANT_PARAMS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            {applicableParams.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
           </select>
-          <input aria-label="Variant values" className="tl-input tl-input--sm" placeholder={VARIANT_PARAMS.find((x) => x.id === variantParam).placeholder}
+          <input aria-label="Variant values" className="tl-input tl-input--sm" placeholder={VARIANT_PARAMS.find((x) => x.id === variantParam)?.placeholder}
             value={variantText} onChange={(e) => setVariantText(e.target.value)} disabled={busy} data-testid="bt-variant-values" />
           <span className="tl-small tl-muted">Up to 3 values, run on the same data as your current settings.</span>
         </div>

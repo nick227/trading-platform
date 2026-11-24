@@ -40,6 +40,16 @@ function WhatItDoes({ bot }) {
       </div>
       <p className="tl-lead-sentence">{describeAction(bot)}</p>
       <ul className="tl-rule-list" data-testid="rule-summary">{describeGuards(bot).map((g) => <li key={g}>{g}</li>)}</ul>
+      <div style={{ marginTop: 14 }}>
+        <Disclosure label="Platform risk guardrails" testId="risk-guardrails">
+          <ul className="tl-backtest-notes">
+            <li><strong>Volume &amp; liquidity:</strong> Orders are held when symbol trading volume is thin or below average.</li>
+            <li><strong>Allocation limit:</strong> Total open holdings are strictly capped by this bot’s capital allocation ({bot.allocation ? money(bot.allocation) : 'unlimited'}).</li>
+            <li><strong>Order pacing:</strong> The bot evaluates once per daily close; cooldown periods prevent repeat orders after fills.</li>
+            <li><strong>Concentration &amp; risk:</strong> Automated pre-trade risk policy blocks orders that exceed concentration or stress thresholds.</li>
+          </ul>
+        </Disclosure>
+      </div>
     </section>
   )
 }
@@ -206,13 +216,21 @@ export function LatestBacktest({ botId }) {
   const m = run.results?.metrics ?? {}
   const pct = (n) => (n === null || n === undefined ? '—' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}%`)
   return (
-    <p className="tl-section-note" data-testid="latest-backtest">
-      <span className="tl-tag">Hypothetical</span>{' '}
-      Backtest {sessionDate(run.startDate, { year: true })} – {sessionDate(run.endDate, { year: true })}{run.executionModel === 'same_close' ? ' (same-close fills)' : ''}:{' '}
-      <strong className={tone(m.returnPct)}>{pct(m.returnPct)}</strong> vs buy &amp; hold {pct(run.results?.buyAndHold?.returnPct)}
-      {m.maxDrawdown ? ` · max drawdown ${m.maxDrawdown.pct?.toFixed(2)}%` : ''}
-      {m.winRate !== null && m.winRate !== undefined ? ` · ${Math.round(m.winRate * 100)}% of closed trades won` : ''}. Past results, not paper fills. <Link to={`/bots/${botId}/edit`}>Run another</Link>
-    </p>
+    <div className="tl-section-note" data-testid="latest-backtest" style={{ marginTop: 16, padding: '12px 14px', background: 'var(--tl-surface-2)', borderRadius: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <span>
+          <span className="tl-tag">Historical expectation</span>{' '}
+          Backtest {sessionDate(run.startDate, { year: true })} – {sessionDate(run.endDate, { year: true })}{run.executionModel === 'same_close' ? ' (same-close fills)' : ''}:{' '}
+          <strong className={tone(m.returnPct)}>{pct(m.returnPct)}</strong> vs buy &amp; hold {pct(run.results?.buyAndHold?.returnPct)}
+          {m.maxDrawdown ? ` · max drawdown ${m.maxDrawdown.pct?.toFixed(2)}%` : ''}
+          {m.winRate !== null && m.winRate !== undefined ? ` · ${Math.round(m.winRate * 100)}% of closed trades won` : ''}.
+        </span>
+        <Link to={`/bots/${botId}/edit`} className="tl-small" style={{ fontWeight: 550 }}>Workshop backtest →</Link>
+      </div>
+      <p className="tl-small tl-muted" style={{ margin: '6px 0 0' }}>
+        Historical backtest simulations model idealized past market conditions and do not establish guaranteed risk bounds. Live paper trading reflects actual daily session fills, slippage and prevailing market liquidity.
+      </p>
+    </div>
   )
 }
 

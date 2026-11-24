@@ -27,14 +27,30 @@ export default function StrategiesIndex() {
               <Link to={`/strategies/${encodeURIComponent(s.templateId)}`} className="tl-strategy-link">
                 <span className="tl-strategy-name">{s.name}</span>
                 <span className="tl-small tl-muted">{s.description}</span>
+                <span className="tl-strategy-cta">View evidence →</span>
               </Link>
               <dl className="tl-strategy-windows">
-                {['5Y', '1Y'].map((w) => (
-                  <div key={w}><dt>{w === '5Y' ? '5 years' : 'Last year'}</dt><dd>{summaryLine(s.windows?.[w])}</dd></div>
-                ))}
-                {s.windows?.holdout
-                  ? <div><dt>Holdout (out of sample)</dt><dd>{summaryLine(s.windows.holdout)}</dd></div>
-                  : <div><dt>Beat buy &amp; hold (5y)</dt><dd>{s.windows?.['5Y']?.status === 'ok' ? `${s.windows['5Y'].beatBuyAndHold} of ${s.windows['5Y'].symbolsTested} symbols` : '—'}</dd></div>}
+                <div>
+                  <dt>5 years</dt>
+                  <dd>{summaryLine(s.windows?.['5Y'])}</dd>
+                  {s.windows?.['5Y']?.status === 'ok' && (
+                    <span className="tl-sub">{s.windows['5Y'].beatBuyAndHold} of {s.windows['5Y'].symbolsTested} symbols beat</span>
+                  )}
+                </div>
+                <div>
+                  <dt>Last year</dt>
+                  <dd>{summaryLine(s.windows?.['1Y'])}</dd>
+                </div>
+                <div>
+                  <dt>Holdout (out of sample)</dt>
+                  <dd>
+                    {s.windows?.holdout
+                      ? summaryLine(s.windows.holdout)
+                      : s.windows?.['5Y']?.status === 'not_backtestable'
+                        ? 'Not backtestable'
+                        : '—'}
+                  </dd>
+                </div>
               </dl>
             </li>
           ))}

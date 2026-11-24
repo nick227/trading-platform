@@ -3,10 +3,11 @@ import { useAuth } from '../app/AuthProvider'
 import { prefetchByPath } from '../app/pagePrefetch'
 import ModeBadge from './ModeBadge'
 
-// Two destinations. Account lives behind the avatar; everything else is reached through content.
+// Primary destinations: Home, Strategies and Bots. Account lives behind the avatar.
 const routes = [
   { path: '/', label: 'Home', match: (p) => p === '/' || p === '/portfolio' || p === '/history' },
-  { path: '/bots', label: 'Bots', match: (p) => p === '/bots' || p.startsWith('/bots/') || p.startsWith('/strategies/') },
+  { path: '/strategies', label: 'Strategies', match: (p) => p.startsWith('/strategies') },
+  { path: '/bots', label: 'Bots', match: (p) => p.startsWith('/bots') },
 ]
 
 function Mark() {
@@ -66,7 +67,17 @@ export default function Nav() {
               </Link>
             </>
           ) : (
-            <Link to="/auth" className="tl-nav-link">Sign in</Link>
+            <>
+              <Link
+                to="/strategies"
+                className={`tl-nav-link ${location.pathname.startsWith('/strategies') ? 'is-active' : ''}`}
+                aria-current={location.pathname.startsWith('/strategies') ? 'page' : undefined}
+                onMouseEnter={() => prefetchByPath('/strategies')}
+              >
+                Strategies
+              </Link>
+              <Link to="/auth" className="tl-nav-link">Sign in</Link>
+            </>
           )}
         </div>
       </div>

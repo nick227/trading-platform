@@ -56,6 +56,11 @@ describe('Market data credentials & broker isolation', () => {
   })
 
   describe('User broker client isolation', () => {
+    beforeEach(() => {
+      delete process.env.BROKER_MODE
+      delete process.env.WORKER_ORDER_PROCESSING
+    })
+
     it('returns null when user has no broker account', async () => {
       vi.spyOn(workerPrisma.brokerAccount, 'findUnique').mockResolvedValue(null)
       const client = await getBrokerClient('user-without-broker')

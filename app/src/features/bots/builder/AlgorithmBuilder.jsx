@@ -56,6 +56,7 @@ export default function AlgorithmBuilder() {
   const tradableSymbols = Array.isArray(brokerStatus?.tradableSymbols) && brokerStatus.tradableSymbols.length ? brokerStatus.tradableSymbols : null
   const pinnedTicker = params.get('ticker')
   const templateQuery = params.get('template')
+  const windowQuery = params.get('window')
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -232,7 +233,14 @@ export default function AlgorithmBuilder() {
           ? 'Benchmark trend confirmation'
           : 'Regular schedule'
 
-  const tradeMetaText = `${draft.direction === 'sell' ? 'Sell shares held' : draft.direction === 'buy' ? 'Buy' : 'Follow research'}${draft.maxPerOrder ? ` · up to ${money(Number(draft.maxPerOrder))} per order` : ' · set an order limit'}`
+  const exitSummaries = [
+    draft.exit?.stopLoss?.on && `Stop-loss ${draft.exit.stopLoss.pct ?? 10}%`,
+    draft.exit?.trend?.on && `Exit when ${draft.exit.trend.symbol ?? 'SPY'} trend turns down`,
+    draft.exit?.reversal?.on && `Exit on ${draft.exit.reversal.pct ?? 5}% drop over ${draft.exit.reversal.sessions ?? 10} sessions`,
+  ].filter(Boolean)
+  const exitSummaryText = exitSummaries.length > 0 ? ` · Exit & Protect: ${exitSummaries.join(', ')}` : ''
+
+  const tradeMetaText = `${draft.direction === 'sell' ? 'Sell shares held' : draft.direction === 'buy' ? 'Buy' : 'Follow research'}${draft.maxPerOrder ? ` · up to ${money(Number(draft.maxPerOrder))} per order` : ' · set an order limit'}${exitSummaryText}`
   const hasChanges = isEdit && JSON.stringify(draft) !== JSON.stringify(loadedDraft)
 
   const settingsMetaText =
@@ -734,35 +742,43 @@ export default function AlgorithmBuilder() {
               </div>
 
               {draft.triggerType !== 'alpha_research' && (draft.direction ?? 'buy') === 'buy' && (
-                <fieldset className="tl-conditions" data-testid="exit-conditions">
-                  <legend className="tl-label">Exit <span className="tl-muted tl-small">(optional — sells only this bot’s own shares, when any is met)</span></legend>
-                  <label className="tl-check">
-                    <input type="checkbox" checked={Boolean(draft.exit?.stopLoss?.on)} data-testid="exit-stoploss"
-                      onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), stopLoss: { ...(d.exit?.stopLoss ?? { pct: '10' }), on: e.target.checked } } }))} />
-                    <span>Price falls</span>
-                    <input className="tl-input tl-input--inline" inputMode="decimal" aria-label="Stop-loss percent" value={draft.exit?.stopLoss?.pct ?? '10'} disabled={!draft.exit?.stopLoss?.on}
-                      onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), stopLoss: { ...(d.exit?.stopLoss ?? {}), pct: e.target.value } } }))} />
-                    <span>% below what it paid</span>
-                  </label>
-                  <label className="tl-check">
-                    <input type="checkbox" checked={Boolean(draft.exit?.trend?.on)} data-testid="exit-trend"
-                      onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), trend: { ...(d.exit?.trend ?? { symbol: 'SPY' }), on: e.target.checked } } }))} />
-                    <span>{draft.exit?.trend?.symbol ?? 'SPY'}’s trend turns down (below its 200-day average)</span>
-                  </label>
-                  <label className="tl-check">
-                    <input type="checkbox" checked={Boolean(draft.exit?.reversal?.on)} data-testid="exit-reversal"
-                      onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), reversal: { ...(d.exit?.reversal ?? { sessions: '10', pct: '5' }), on: e.target.checked } } }))} />
-                    <span>Price falls</span>
-                    <input className="tl-input tl-input--inline" inputMode="decimal" aria-label="Reversal percent" value={draft.exit?.reversal?.pct ?? '5'} disabled={!draft.exit?.reversal?.on}
-                      onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), reversal: { ...(d.exit?.reversal ?? {}), pct: e.target.value } } }))} />
-                    <span>% over</span>
-                    <input className="tl-input tl-input--inline" inputMode="numeric" aria-label="Reversal sessions" value={draft.exit?.reversal?.sessions ?? '10'} disabled={!draft.exit?.reversal?.on}
-                      onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), reversal: { ...(d.exit?.reversal ?? {}), sessions: e.target.value } } }))} />
-                    <span>sessions</span>
-                  </label>
-                  {touched && errors.exit && <p className="tl-field-error" role="alert">{errors.exit}</p>}
-                  <p className="tl-help" style={{ margin: 0 }}>Each exit order sells up to the per-order limit; if the condition still holds, it continues at the next close.</p>
-                </fieldset>
+                <div className="tl-exit-protect-card" data-testid="exit-conditions">
+                  <div className="tl-exit-protect-head">
+                    <div>
+                      <strong className="tl-label" style={{ display: 'block', fontSize: '14.5px' }}>Exit &amp; Protect</strong>
+                      <p className="tl-help" style={{ marginTop: 2 }}>Defensive rules to protect capital (sells only this bot’s own shares, when any condition is met)</p>
+                    </div>
+                    {exitSummaries.length > 0 && <span className="tl-tag">{exitSummaries.length} active</span>}
+                  </div>
+                  <fieldset className="tl-conditions" style={{ border: 0, padding: 0, margin: 0 }}>
+                    <label className="tl-check">
+                      <input type="checkbox" checked={Boolean(draft.exit?.stopLoss?.on)} data-testid="exit-stoploss"
+                        onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), stopLoss: { ...(d.exit?.stopLoss ?? { pct: '10' }), on: e.target.checked } } }))} />
+                      <span>Price falls</span>
+                      <input className="tl-input tl-input--inline" inputMode="decimal" aria-label="Stop-loss percent" value={draft.exit?.stopLoss?.pct ?? '10'} disabled={!draft.exit?.stopLoss?.on}
+                        onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), stopLoss: { ...(d.exit?.stopLoss ?? {}), pct: e.target.value } } }))} />
+                      <span>% below what it paid</span>
+                    </label>
+                    <label className="tl-check">
+                      <input type="checkbox" checked={Boolean(draft.exit?.trend?.on)} data-testid="exit-trend"
+                        onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), trend: { ...(d.exit?.trend ?? { symbol: 'SPY' }), on: e.target.checked } } }))} />
+                      <span>{draft.exit?.trend?.symbol ?? 'SPY'}’s trend turns down (below its 200-day average)</span>
+                    </label>
+                    <label className="tl-check">
+                      <input type="checkbox" checked={Boolean(draft.exit?.reversal?.on)} data-testid="exit-reversal"
+                        onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), reversal: { ...(d.exit?.reversal ?? { sessions: '10', pct: '5' }), on: e.target.checked } } }))} />
+                      <span>Price falls</span>
+                      <input className="tl-input tl-input--inline" inputMode="decimal" aria-label="Reversal percent" value={draft.exit?.reversal?.pct ?? '5'} disabled={!draft.exit?.reversal?.on}
+                        onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), reversal: { ...(d.exit?.reversal ?? {}), pct: e.target.value } } }))} />
+                      <span>% over</span>
+                      <input className="tl-input tl-input--inline" inputMode="numeric" aria-label="Reversal sessions" value={draft.exit?.reversal?.sessions ?? '10'} disabled={!draft.exit?.reversal?.on}
+                        onChange={(e) => setDraft((d) => ({ ...d, exit: { ...(d.exit ?? {}), reversal: { ...(d.exit?.reversal ?? {}), sessions: e.target.value } } }))} />
+                      <span>sessions</span>
+                    </label>
+                    {touched && errors.exit && <p className="tl-field-error" role="alert">{errors.exit}</p>}
+                    <p className="tl-help" style={{ margin: '8px 0 0' }}>Each exit order sells up to the per-order limit; if the condition still holds, it continues at the next close.</p>
+                  </fieldset>
+                </div>
               )}
             </div>
           </AlgorithmStep>
@@ -1012,6 +1028,7 @@ export default function AlgorithmBuilder() {
 
         <BacktestPanel
           preview={builtBot}
+          initialRange={windowQuery === '5Y' || templateQuery ? '5Y' : windowQuery === '3Y' ? '3Y' : '1Y'}
           linkBotId={isEdit && !hasChanges ? botId : null}
           onApplyVariant={(set) => setDraft((d) => {
             const next = { ...d }

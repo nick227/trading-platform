@@ -78,7 +78,9 @@ function AppLayout() {
       .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
       .join(' ')
 
-    const pageName = routeNameMap[location.pathname] || fallbackPage || 'Home'
+    const pageName = routeNameMap[location.pathname] ||
+      (location.pathname.startsWith('/strategies/') ? 'Strategy Evidence' :
+       location.pathname.startsWith('/bots/') ? 'Bot Details' : fallbackPage) || 'Home'
     pageTitleService.setTitle(pageName)
   }, [location.pathname])
 

@@ -9,8 +9,8 @@ class PageTitleService {
   }
 
   constructor() {
-    this.appName = 'Lumantic Trading Platform'
-    this.homeTitle = 'AI Trading Command Center'
+    this.appName = 'TradeLoom'
+    this.homeTitle = 'Automated Trading'
   }
 
   setHomeTitle(homeTitle) {

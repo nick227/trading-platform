@@ -4,6 +4,7 @@ import Disclosure from '../../ui/Disclosure'
 import ValueChart from '../../ui/ValueChart'
 import { describeGuards } from '../../ui/describeBot'
 import { money, moneyWhole, plural, sessionDate, tone } from '../../ui/format'
+import pageTitleService from '../../services/pageTitleService'
 import { WINDOW_LABELS, loadPublicStrategy, pctText, summaryLine } from './strategiesApi'
 
 const SKIP_TEXT = {
@@ -44,7 +45,10 @@ export default function StrategyDetail() {
   const [sym, setSym] = useState(null)
   useEffect(() => {
     setState({ status: 'loading', s: null })
-    loadPublicStrategy(templateId, versionParam).then((s) => setState({ status: 'done', s })).catch((e) => setState({ status: e?.status === 404 ? 'missing' : 'error', s: null }))
+    loadPublicStrategy(templateId, versionParam).then((s) => {
+      setState({ status: 'done', s })
+      if (s?.name) pageTitleService.setTitle(s.name)
+    }).catch((e) => setState({ status: e?.status === 404 ? 'missing' : 'error', s: null }))
   }, [templateId, versionParam])
   const s = state.s
   const rows = useMemo(() => (s?.results ?? []).filter((r) => r.window === win), [s, win])
@@ -69,7 +73,7 @@ export default function StrategyDetail() {
             {s.version.firstSession ? ` · published ${sessionDate(s.version.firstSession, { year: true })}` : ''}
           </p>
         </div>
-        <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Open in Workshop</Link>
+        <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Open in Workshop</Link>
       </header>
 
       {!s.version.current && (
@@ -101,9 +105,17 @@ export default function StrategyDetail() {
         {win === 'development' && <p className="tl-small tl-muted">The period the design could see. In-sample: treat these results with more caution than the holdout.</p>}
         {chosen && (
           <div style={{ marginTop: 14 }}>
-            <ValueChart points={chosen.results.curve.map((p) => ({ t: p.date, v: p.equity }))} baseline={chosen.results.capital} baselineLabel={`Start ${moneyWhole(chosen.results.capital)}`}
-              height={200} label={`${s.name} on ${chosen.symbol}`} minSpan={chosen.results.capital * 0.01} />
-            <p className="tl-chart-caption">{chosen.symbol}: strategy value at each close ({pctText(chosen.results.metrics.returnPct)}) — buy &amp; hold {pctText(chosen.results.buyAndHold.returnPct)} with the same capital.</p>
+            <ValueChart
+              points={chosen.results.curve.map((p) => ({ t: p.date, v: p.equity }))}
+              secondaryPoints={chosen.results.buyAndHold?.curve?.map((p) => ({ t: p.date, v: p.equity }))}
+              secondaryLabel="Buy & hold"
+              baseline={chosen.results.capital}
+              baselineLabel={`Start ${moneyWhole(chosen.results.capital)}`}
+              height={200}
+              label={`${s.name} on ${chosen.symbol}`}
+              minSpan={chosen.results.capital * 0.01}
+            />
+            <p className="tl-chart-caption">{chosen.symbol}: strategy value at each close ({pctText(chosen.results.metrics.returnPct)}) vs buy &amp; hold {pctText(chosen.results.buyAndHold.returnPct)} with the same capital.</p>
           </div>
         )}
         {rows.length > 0 && (

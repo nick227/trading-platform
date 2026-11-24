@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Nav from '../Nav'
 import { getTradingMode } from '../ModeBadge'
@@ -19,20 +19,24 @@ beforeEach(() => {
 })
 
 describe('Nav', () => {
-  it('shows exactly two destinations plus an account link for signed-in users', () => {
+  it('shows exactly three destinations plus an account link for signed-in users', () => {
     renderNav()
     const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Bots'])
+    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Strategies', 'Bots'])
     expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/profile')
     for (const removed of ['Portfolio', 'Orders', 'Opportunities', 'Templates', 'Profile']) {
       expect(screen.queryByRole('link', { name: removed })).not.toBeInTheDocument()
     }
   })
 
-  it('marks the active section, including nested bot routes', () => {
+  it('marks the active section, including nested bot routes and strategy routes', () => {
     renderNav('/bots/bot_1')
     expect(screen.getByRole('link', { name: 'Bots' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
+
+    cleanup()
+    renderNav('/strategies/tmpl_spy_trend_filter')
+    expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('always shows paper/live status', () => {
@@ -46,9 +50,10 @@ describe('Nav', () => {
     expect(screen.getByTestId('mode-badge')).toHaveTextContent('Live account — trading disabled')
   })
 
-  it('shows Sign in and no mode badge when signed out', () => {
+  it('shows Strategies, Sign in and no mode badge when signed out', () => {
     authState.user = null
     renderNav()
+    expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute('href', '/strategies')
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/auth')
     expect(screen.queryByTestId('mode-badge')).not.toBeInTheDocument()
   })

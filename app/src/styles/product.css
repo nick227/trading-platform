@@ -358,6 +358,12 @@ body {
 .tl-chart-axis { fill: var(--tl-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .tl-chart-line { fill: none; stroke: var(--tl-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .tl-chart-line--neutral { stroke: var(--tl-ink); }
+.tl-chart-line--secondary { stroke: var(--tl-faint); stroke-width: 1.75; stroke-dasharray: 4 3; stroke-linejoin: round; }
+.tl-chart-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--tl-muted); margin-top: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.tl-chart-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.tl-chart-legend-swatch { width: 14px; height: 2px; background: var(--tl-accent); display: inline-block; border-radius: 1px; }
+.tl-chart-legend-swatch--secondary { width: 14px; height: 0; border-top: 2px dashed var(--tl-faint); background: transparent; }
+.tl-chart-legend-swatch--base { width: 14px; height: 0; border-top: 1px dashed var(--tl-line-strong); background: transparent; }
 .tl-chart-base { stroke: var(--tl-faint); stroke-width: 1; stroke-dasharray: 3 4; }
 .tl-chart-cross { stroke: var(--tl-line-strong); stroke-width: 1; }
 .tl-chart-dot { fill: var(--tl-surface); stroke: var(--tl-accent); stroke-width: 2; }
@@ -414,6 +420,8 @@ body {
 .tl-table tbody tr.tl-row-click:hover { background: var(--tl-surface-2); }
 .tl-table tbody tr.tl-row-open { background: var(--tl-surface-2); }
 .tl-table tbody tr.tl-row-open td { border-bottom-color: transparent; }
+.tl-table tbody tr[aria-selected='true'] { background: var(--tl-surface-2); }
+.tl-table tbody tr[aria-selected='true'] td:first-child strong { color: var(--tl-accent); }
 .tl-sym { font-weight: 640; letter-spacing: 0.01em; color: var(--tl-ink); }
 .tl-sub { display: block; font-size: 12.5px; color: var(--tl-muted); font-weight: 450; margin-top: 2px; }
 
@@ -547,6 +555,7 @@ body {
 
 .tl-field { display: grid; gap: 6px; margin-top: 18px; }
 .tl-field:first-child { margin-top: 0; }
+div[style*='grid'] > .tl-field, .tl-grid > .tl-field { margin-top: 0; }
 .tl-label { font-size: 14px; font-weight: 580; color: var(--tl-ink); }
 .tl-help { font-size: 13px; color: var(--tl-muted); margin: 0; }
 .tl-input {
@@ -563,10 +572,33 @@ body {
 }
 .tl-input:focus { outline: none; border-color: var(--tl-accent); box-shadow: 0 0 0 3px var(--tl-accent-soft); }
 .tl-input[aria-invalid='true'] { border-color: var(--tl-neg); }
+.tl-input:disabled {
+  background: var(--tl-surface-2);
+  color: var(--tl-muted);
+  -webkit-text-fill-color: var(--tl-muted);
+  border-color: var(--tl-line);
+  cursor: not-allowed;
+  opacity: 0.85;
+}
 .tl-input-prefix { position: relative; max-width: 360px; }
 .tl-input-prefix > span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--tl-muted); }
 .tl-input-prefix .tl-input { padding-left: 26px; }
 .tl-field-error { font-size: 13px; color: var(--tl-neg); margin: 0; }
+
+.tl-exit-protect-card {
+  margin-top: 22px;
+  padding: 16px 18px;
+  border: 1px solid var(--tl-line);
+  border-radius: var(--tl-radius);
+  background: var(--tl-surface-2);
+}
+.tl-exit-protect-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
@@ -1179,6 +1211,8 @@ select.tl-input--inline { width: auto; }
 .tl-strategy-card { border: 1px solid var(--tl-line); border-radius: 14px; padding: 18px 20px; display: grid; gap: 12px; }
 .tl-strategy-link { display: grid; gap: 4px; color: inherit; text-decoration: none; }
 .tl-strategy-name { font-family: 'Space Grotesk', var(--tl-font); font-size: 18px; font-weight: 600; color: var(--tl-ink); }
+.tl-strategy-cta { display: inline-block; font-size: 13px; font-weight: 550; color: var(--tl-accent); margin-top: 4px; }
+.tl-strategy-link:hover .tl-strategy-cta { text-decoration: underline; }
 .tl-strategy-windows { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
 .tl-strategy-windows dt { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--tl-muted); }
 .tl-strategy-windows dd { margin: 2px 0 0; font-size: 13.5px; }

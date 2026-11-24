@@ -22,6 +22,8 @@ export function niceTicks(lo, hi, count = 3) {
  */
 export default function ValueChart({
   points,
+  secondaryPoints = null,
+  secondaryLabel = 'Buy & hold',
   markers = [],
   baseline = null,
   baselineLabel = null,
@@ -49,12 +51,14 @@ export default function ValueChart({
   }, [])
 
   const spark = variant === 'spark'
-  const pad = spark ? { t: 3, r: 3, b: 3, l: 3 } : { t: 12, r: 8, b: 26, l: 8 }
-  const data = useMemo(() => (points ?? []).filter((p) => p && p.v !== null && p.v !== undefined && Number.isFinite(Number(p.v))), [points])
+  const pad = spark ? { t: 3, r: 3, b: 3, l: 3 } : { t: 14, r: 48, b: 26, l: 8 }
+  const data = useMemo(() => (points ?? []).map((p) => ({ t: p?.t ?? p?.date, v: Number(p?.v ?? p?.equity) })).filter((p) => p && Number.isFinite(p.v)), [points])
+  const secData = useMemo(() => (secondaryPoints ?? []).map((p) => ({ t: p?.t ?? p?.date, v: Number(p?.v ?? p?.equity) })).filter((p) => p && Number.isFinite(p.v)), [secondaryPoints])
 
   const geo = useMemo(() => {
     if (!width || data.length === 0) return null
     const vals = data.map((p) => Number(p.v))
+    for (const p of secData) vals.push(Number(p.v))
     if (baseline !== null && !spark) vals.push(baseline)
     let lo = Math.min(...vals)
     let hi = Math.max(...vals)
@@ -68,10 +72,17 @@ export default function ValueChart({
     const x = (i) => pad.l + (data.length === 1 ? iw / 2 : (i / (data.length - 1)) * iw)
     const y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * ih
     const path = data.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(Number(p.v)).toFixed(1)}`).join('')
+    const index = new Map(data.map((p, i) => [String(p.t).slice(0, 10), i]))
+    const secPath = secData.length > 1
+      ? secData.map((p, i) => {
+          const key = String(p.t).slice(0, 10)
+          const ptIdx = index.has(key) ? index.get(key) : (i / (secData.length - 1)) * (data.length - 1)
+          return `${i ? 'L' : 'M'}${x(ptIdx).toFixed(1)},${y(Number(p.v)).toFixed(1)}`
+        }).join('')
+      : null
     const ticks = niceTicks(lo, hi, 3)
-    const index = new Map(data.map((p, i) => [p.t, i]))
-    return { x, y, path, ticks, index, iw, ih }
-  }, [width, data, baseline, height, spark, minSpan, pad.l, pad.r, pad.t, pad.b])
+    return { x, y, path, secPath, ticks, index, iw, ih }
+  }, [width, data, secData, baseline, height, spark, minSpan, pad.l, pad.r, pad.t, pad.b])
 
   const onMove = (e) => {
     if (!geo || spark || data.length === 0) return
@@ -89,14 +100,17 @@ export default function ValueChart({
 
   const lineClass = `tl-chart-line ${tone === 'neutral' ? 'tl-chart-line--neutral' : ''}`
   const h = hover !== null ? data[hover] : null
+  const hoverKey = h ? String(h.t).slice(0, 10) : null
+  const secH = hoverKey ? (secData.find((p) => String(p.t).slice(0, 10) === hoverKey) ?? (hover < secData.length ? secData[hover] : null)) : null
   const hoverMarkers = h ? markerPts.filter((m) => m.i === hover) : []
   const xLabels = data.length > 1 ? [0, Math.floor((data.length - 1) / 2), data.length - 1].filter((v, i, a) => a.indexOf(v) === i) : [0]
+  const hasMultiYear = data.length > 1 && String(data[0].t).slice(0, 4) !== String(data[data.length - 1].t).slice(0, 4)
 
   return (
     <div
       className="tl-chart"
       ref={ref}
-      style={{ height }}
+      style={{ minHeight: height }}
       onMouseMove={onMove}
       onMouseLeave={() => setHover(null)}
       onTouchStart={onMove}
@@ -110,15 +124,16 @@ export default function ValueChart({
           {!spark && geo.ticks.map((v) => (
             <g key={v}>
               <line className="tl-chart-grid" x1={pad.l} x2={width - pad.r} y1={geo.y(v)} y2={geo.y(v)} />
-              <text className="tl-chart-axis" x={width - pad.r} y={geo.y(v) - 5} textAnchor="end">{formatTick(v, geo.ticks.length > 1 ? geo.ticks[1] - geo.ticks[0] : 1)}</text>
+              <text className="tl-chart-axis" x={width - 4} y={geo.y(v) + 4} textAnchor="end">{formatTick(v, geo.ticks.length > 1 ? geo.ticks[1] - geo.ticks[0] : 1)}</text>
             </g>
           ))}
           {baseline !== null && !spark && (
             <g>
               <line className="tl-chart-base" x1={pad.l} x2={width - pad.r} y1={geo.y(baseline)} y2={geo.y(baseline)} />
-              {baselineLabel && <text className="tl-chart-axis" x={pad.l} y={geo.y(baseline) - 5}>{baselineLabel}</text>}
+              {baselineLabel && <text className="tl-chart-axis" x={pad.l + 4} y={geo.y(baseline) - 6}>{baselineLabel}</text>}
             </g>
           )}
+          {geo.secPath && <path className="tl-chart-line tl-chart-line--secondary" d={geo.secPath} />}
           {data.length > 1 && <path className={lineClass} d={geo.path} />}
           {data.length === 1 && <circle className="tl-chart-dot" cx={geo.x(0)} cy={geo.y(Number(data[0].v))} r={4} />}
           {markerPts.map((m, k) => (
@@ -134,7 +149,7 @@ export default function ValueChart({
           ))}
           {!spark && xLabels.map((i) => (
             <text key={i} className="tl-chart-axis" x={geo.x(i)} y={height - 6} textAnchor={i === 0 && data.length > 1 ? 'start' : i === data.length - 1 && data.length > 1 ? 'end' : 'middle'}>
-              {sessionDate(data[i].t)}
+              {sessionDate(data[i].t, { year: hasMultiYear })}
             </text>
           ))}
           {h && (
@@ -147,9 +162,28 @@ export default function ValueChart({
       )}
       {h && geo && (
         <div className="tl-chart-tip" style={{ left: Math.min(Math.max(geo.x(hover), 70), width - 70) }}>
-          <span>{sessionDate(h.t, { year: true })}</span><br />
-          {formatValue(h.v)}
+          <span>{sessionDate(h.t, { year: true })}</span>
+          <div>{label ? 'Strategy' : 'Value'}: <strong>{formatValue(h.v)}</strong></div>
+          {secH && <div>{secondaryLabel}: <strong>{formatValue(secH.v)}</strong></div>}
           {hoverMarkers.map((m, k) => <div key={k}>{m.label}</div>)}
+        </div>
+      )}
+      {secData.length > 0 && !spark && (
+        <div className="tl-chart-legend" aria-hidden="true">
+          <span className="tl-chart-legend-item">
+            <span className="tl-chart-legend-swatch" />
+            <span>{label || 'Strategy'}</span>
+          </span>
+          <span className="tl-chart-legend-item">
+            <span className="tl-chart-legend-swatch tl-chart-legend-swatch--secondary" />
+            <span>{secondaryLabel}</span>
+          </span>
+          {baseline !== null && baselineLabel && (
+            <span className="tl-chart-legend-item">
+              <span className="tl-chart-legend-swatch tl-chart-legend-swatch--base" />
+              <span>{baselineLabel}</span>
+            </span>
+          )}
         </div>
       )}
     </div>
