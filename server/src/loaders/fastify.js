@@ -16,10 +16,13 @@ export default async function createApp({ trustProxy = trustProxyFromEnv() } = {
         req: (req) => ({ method: req.method, url: String(req.url ?? '').split('?')[0] }),
       },
     },
-    // Behind Railway: edge → web (app/serve.mjs) → API is 2 hops, so TRUST_PROXY=2.
+    // Railway: TRUST_PROXY=railway (see authThrottle.js railwayTrust for the verified chain).
     // Unset keeps request.ip = socket peer; auth throttling then uses account buckets only.
     trustProxy,
   })
+
+  // initialConfig drops function-valued trustProxy, so record it explicitly for auth throttling.
+  app.decorate('clientIpTrusted', Boolean(trustProxy))
 
   const isProduction = process.env.NODE_ENV === 'production'
   const corsOrigins = (process.env.CORS_ORIGIN ?? '')

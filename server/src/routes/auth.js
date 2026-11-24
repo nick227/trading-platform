@@ -8,7 +8,7 @@ export default async function authRoutes(fastify, opts = {}) {
   const cookieSameSite = isProduction ? 'none' : 'lax'
 
   // request.ip is the real client only when trustProxy is configured (see authThrottle.js).
-  const throttle = opts.throttle ?? new AuthThrottle({ clientIpTrusted: Boolean(fastify.initialConfig.trustProxy) })
+  const throttle = opts.throttle ?? new AuthThrottle({ clientIpTrusted: Boolean(fastify.clientIpTrusted) })
   const sweep = setInterval(() => throttle.sweep(), 5 * 60_000)
   sweep.unref?.()
   fastify.addHook('onClose', async () => clearInterval(sweep))
@@ -96,7 +96,7 @@ export default async function authRoutes(fastify, opts = {}) {
       socket: request.socket?.remoteAddress ?? null,
       xForwardedFor: request.headers['x-forwarded-for'] ?? null,
       xRealIp: request.headers['x-real-ip'] ?? null,
-      trustProxy: fastify.initialConfig.trustProxy ?? false,
+      clientIpTrusted: Boolean(fastify.clientIpTrusted),
       ip: request.ip,
       ips: request.ips ?? null,
     }
