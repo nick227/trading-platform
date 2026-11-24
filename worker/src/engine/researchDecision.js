@@ -20,9 +20,19 @@ export const RESEARCH_POLICY_DEFAULTS = Object.freeze({
   maxPredictionAgeHours: 96, // daily pipeline + weekend gap
   maxEntryDriftPct: 5,
   allowedHorizons: null, // null = any published horizon
-  // Only trade research whose (recomputed, published) holdout beat the always-up baseline.
+  // Only trade research whose (recomputed, published) holdout beat the always-up baseline…
   requireEdgeOverBaseline: true,
+  // …on genuinely out-of-sample data.
+  requireOutOfSample: true,
 })
+
+/**
+ * Beta rule: the evidence requirements are not user-configurable. A stored
+ * `requireEdgeOverBaseline: false` (older bots, API clients) is accepted for compatibility
+ * but has no effect — resolveResearchPolicy, the only path from a bot's config to the
+ * execution policy, always turns both requirements on.
+ */
+export const RESEARCH_EVIDENCE_LOCKED = true
 
 const MAX_FUTURE_SKEW_MS = 5 * 60_000
 
@@ -54,7 +64,7 @@ export function resolveResearchPolicy(config) {
   }
   if (raw.requireEdgeOverBaseline != null) {
     if (typeof raw.requireEdgeOverBaseline !== 'boolean') return { ok: false, reason: 'invalid_requireEdgeOverBaseline' }
-    policy.requireEdgeOverBaseline = raw.requireEdgeOverBaseline
+    if (!RESEARCH_EVIDENCE_LOCKED) policy.requireEdgeOverBaseline = raw.requireEdgeOverBaseline
   }
   if (raw.allowedHorizons != null) {
     if (!Array.isArray(raw.allowedHorizons) || raw.allowedHorizons.length === 0 ||
@@ -130,6 +140,9 @@ export function evaluateResearchDecision({ trace, located, policy, price, config
   context.genuineOutOfSample = evaluation ? evaluation.genuineOutOfSample === true : null
   if (policy.requireEdgeOverBaseline && context.edgeOverBaseline !== true) {
     return out('rejected', 'no_edge_over_baseline', { signal, ageHours })
+  }
+  if (policy.requireOutOfSample && context.genuineOutOfSample !== true) {
+    return out('rejected', 'not_out_of_sample', { signal, ageHours })
   }
 
   // 6. Bot direction filter.
