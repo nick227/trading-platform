@@ -297,5 +297,48 @@
         }
       }
     ]
+  },
+  {
+    "id": "tmpl_ai_catalyst_momentum",
+    "name": "AI Catalyst & Momentum",
+    "description": "Autonomous OpenAI-powered strategy combining technical momentum with fundamental catalysts. Evaluates liquid US equities daily after market close and submits risk-governed paper orders.",
+    "botType": "strategy_based",
+    "tags": [
+      "ai",
+      "llm",
+      "openai",
+      "catalyst",
+      "momentum"
+    ],
+    "config": {
+      "signalSource": "ai_catalyst_momentum",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "tickers": [
+        "SPY",
+        "QQQ",
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "AMZN",
+        "GOOGL",
+        "JPM",
+        "XOM",
+        "META"
+      ],
+      "capitalMode": "allocated",
+      "allocatedAmount": 10000,
+      "maxOrderNotional": 2000
+    },
+    "rules": [
+      {
+        "name": "Market Hours",
+        "type": "market_hours",
+        "config": {
+          "allowPremarket": false,
+          "allowAfterHours": false
+        }
+      }
+    ]
   }
 ]

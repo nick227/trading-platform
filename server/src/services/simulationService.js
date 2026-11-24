@@ -23,8 +23,8 @@ export function simulationConfig(env = process.env) {
   const raw = String(env.SIM_REPLAY_SESSION ?? '').trim()
   const daily = raw.toLowerCase() === 'latest'
   const validSession = SESSION_RE.test(raw) && !Number.isNaN(Date.parse(`${raw}T00:00:00Z`))
-  const startingCash = Number(env.SIM_STARTING_CASH ?? 100_000)
-  const maxAgeDays = Number(env.SIM_MAX_SESSION_AGE_DAYS ?? 5)
+  const startingCash = Number(env.SIM_STARTING_CASH || 100_000)
+  const maxAgeDays = Number(env.SIM_MAX_SESSION_AGE_DAYS || 5)
   return {
     requested,
     enabled: requested && (daily || validSession) && Number.isFinite(startingCash) && startingCash > 0,

@@ -72,7 +72,10 @@ export function canonicalStrategy(template) {
   const parameters = unsetTrigger ? { triggerPrice: 'close_before_window' } : {}
   let backtestable = true
   let reason = null
-  if (isResearchDriven({ config })) {
+  if (config.signalSource === 'ai_catalyst_momentum' || template.id === 'tmpl_ai_catalyst_momentum' || template.botType === 'strategy_based') {
+    backtestable = false
+    reason = 'Autonomous AI strategies are evaluated on verified forward paper trading from publication date, avoiding historical prompt look-ahead.'
+  } else if (isResearchDriven({ config })) {
     backtestable = false
     reason = 'Research strategies can’t be backtested yet: Alpha Engine has no point-in-time research history to replay.'
   } else if (config.direction !== 'buy' && config.direction !== 'sell') {

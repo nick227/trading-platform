@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { get } from '../../api/client'
 import Disclosure from '../../ui/Disclosure'
 import ValueChart from '../../ui/ValueChart'
 import { describeGuards } from '../../ui/describeBot'
@@ -43,12 +44,21 @@ export default function StrategyDetail() {
   const [state, setState] = useState({ status: 'loading', s: null })
   const [win, setWin] = useState('5Y')
   const [sym, setSym] = useState(null)
+  const [aiData, setAiData] = useState(null)
+
   useEffect(() => {
     setState({ status: 'loading', s: null })
     loadPublicStrategy(templateId, versionParam).then((s) => {
       setState({ status: 'done', s })
       if (s?.name) pageTitleService.setTitle(s.name)
     }).catch((e) => setState({ status: e?.status === 404 ? 'missing' : 'error', s: null }))
+
+    get(`/ai/strategies/${encodeURIComponent(templateId)}/decisions`)
+      .then((res) => {
+        const data = res?.decisions ? res : res?.data
+        if (data?.decisions) setAiData(data)
+      })
+      .catch(() => {})
   }, [templateId, versionParam])
   const s = state.s
   const rows = useMemo(() => (s?.results ?? []).filter((r) => r.window === win), [s, win])
@@ -68,7 +78,10 @@ export default function StrategyDetail() {
           <h1 className="tl-title">{s.name}</h1>
           <p className="tl-lede">{s.description}</p>
           <p className="tl-small tl-muted m0">
-            <span className="tl-tag">Platform-tested</span> Version {s.version.id.slice(3, 11)}
+            <span className="tl-tag">Platform-tested</span>
+            {s.tags?.includes('ai') && <span className="tl-tag" style={{ marginLeft: 6 }}>AI / LLM</span>}
+            {s.tags?.includes('openai') && <span className="tl-tag" style={{ marginLeft: 6 }}>OpenAI</span>}
+            {' '}Version {s.version.id.slice(3, 11)}
             {s.asOf ? ` · results through ${sessionDate(s.asOf, { year: true })}` : ' · results pending'}
             {s.version.firstSession ? ` · published ${sessionDate(s.version.firstSession, { year: true })}` : ''}
           </p>
@@ -142,6 +155,55 @@ export default function StrategyDetail() {
           </div>
         )}
       </section>
+
+      {(s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum') && (
+        <section className="tl-section" aria-labelledby="ai-feed-title" data-testid="ai-decision-feed">
+          <div className="tl-section-head">
+            <h2 className="tl-section-title" id="ai-feed-title">Autonomous AI Research &amp; Decision Feed</h2>
+            <span className="tl-tag">OpenAI GPT-4o-mini</span>
+          </div>
+          <p className="tl-small tl-muted">Daily post-close research synthesized across 10 liquid US equities. Every decision (including disciplined HOLD decisions), investment thesis, and cited evidence is permanently preserved.</p>
+          {aiData?.decisions?.length > 0 ? (
+            <div className="tl-ai-feed" style={{ marginTop: 14 }}>
+              {aiData.decisions.map((d) => (
+                <div key={d.id} className="tl-card" style={{ marginBottom: 12, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span className="tl-small" style={{ fontWeight: 600 }}>{d.detail}</span>
+                    <span className="tl-small tl-muted">{sessionDate(d.createdAt, { year: true })}</span>
+                  </div>
+                  {d.metadata?.marketSummary && (
+                    <p className="tl-small tl-muted" style={{ margin: '4px 0 8px' }}>
+                      <em>Market synthesis:</em> {d.metadata.marketSummary}
+                    </p>
+                  )}
+                  {Array.isArray(d.metadata?.symbolEvaluations) && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8, marginTop: 8 }}>
+                      {d.metadata.symbolEvaluations.map((ev) => (
+                        <div key={ev.symbol} style={{ background: 'var(--tl-surface-2, #1a1a1a)', padding: '8px 10px', borderRadius: 4, fontSize: '0.82rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <strong>{ev.symbol}</strong>
+                            <span style={{ fontWeight: 600, color: ev.action === 'BUY' ? 'var(--tl-green, #10b981)' : ev.action === 'SELL' ? 'var(--tl-red, #ef4444)' : 'var(--tl-muted, #888)' }}>
+                              [{ev.action}] ({Math.round(ev.confidence * 100)}%)
+                            </span>
+                          </div>
+                          <div className="tl-muted" style={{ lineHeight: 1.3 }}>{ev.thesis}</div>
+                          {Array.isArray(ev.evidence) && ev.evidence.length > 0 && (
+                            <div className="tl-small tl-muted" style={{ marginTop: 4, fontSize: '0.75rem', borderTop: '1px solid var(--tl-border, #333)', paddingTop: 4 }}>
+                              {ev.evidence.map((item, idx) => <span key={idx} style={{ display: 'block' }}>• {item}</span>)}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="tl-small tl-muted" style={{ marginTop: 8 }}>Awaiting next autonomous post-close research run.</p>
+          )}
+        </section>
+      )}
 
       <section className="tl-section" aria-labelledby="def-title">
         <div className="tl-section-head"><h2 className="tl-section-title" id="def-title">The strategy as tested</h2></div>

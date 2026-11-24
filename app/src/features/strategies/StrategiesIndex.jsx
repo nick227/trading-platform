@@ -25,7 +25,10 @@ export default function StrategiesIndex() {
           {state.rows.map((s) => (
             <li key={s.templateId} className="tl-strategy-card" data-testid="strategy-card">
               <Link to={`/strategies/${encodeURIComponent(s.templateId)}`} className="tl-strategy-link">
-                <span className="tl-strategy-name">{s.name}</span>
+                <span className="tl-strategy-name">
+                  {s.name}
+                  {s.tags?.includes('ai') && <span className="tl-tag" style={{ marginLeft: 8, fontSize: '0.75rem', verticalAlign: 'middle' }}>AI / LLM</span>}
+                </span>
                 <span className="tl-small tl-muted">{s.description}</span>
                 <span className="tl-strategy-cta">View evidence →</span>
               </Link>

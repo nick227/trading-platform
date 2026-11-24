@@ -23,5 +23,10 @@
     "objective": "Limit losses on each position.",
     "benchmark": "Buy & hold of the same symbol; judged mainly on maximum drawdown.",
     "parameterBasis": "Monthly entries and a 10% stop below average cost — conventional values, not fitted."
+  },
+  "tmpl_ai_catalyst_momentum": {
+    "objective": "Autonomous AI allocating capital across liquid US equities based on technical momentum and fundamental catalysts.",
+    "benchmark": "Equal-weighted buy & hold across the 10 universe symbols; judged on forward paper risk-adjusted return and drawdowns.",
+    "parameterBasis": "OpenAI GPT-4o-mini structured decision engine evaluating daily post-close market data and portfolio state."
   }
 }
