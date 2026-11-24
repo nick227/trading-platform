@@ -245,3 +245,19 @@ describe('create and edit persist the same algorithm identically', () => {
     expect(await rulesOf('bot_r')).toHaveLength(0)
   })
 })
+
+describe('rule names (BotRule.name is required in the database)', () => {
+  it('every rule type has a default name, and unnamed rules of every type are saved with one', async () => {
+    const { RULE_TYPES, RULE_NAMES } = await import('../../src/services/botConfigService.js')
+    expect(RULE_TYPES.filter((t) => !RULE_NAMES[t])).toEqual([])
+    const res = await post({ portfolioId: 'por_usr_a', name: 'Conditions', config: { tickers: ['SPY'], direction: 'buy', allocatedAmount: 1000 }, rules: [
+      { type: 'price_threshold', config: { operator: 'above', price: 10 } },
+      { type: 'relative_volume', config: { minRatio: 1.3 } },
+      { type: 'price_change', config: { sessions: 5, operator: 'above', pct: 3 } },
+    ] })
+    expect(res.status).toBe(201)
+    expect((await rulesOf(res.body.data.id)).map((r) => [r.type, r.name])).toEqual([
+      ['price_threshold', 'Price trigger'], ['relative_volume', 'Relative volume'], ['price_change', 'Price change'],
+    ])
+  })
+})
