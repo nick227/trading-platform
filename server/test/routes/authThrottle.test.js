@@ -128,3 +128,40 @@ describe('client-address probe', () => {
     expect(ok.json()).toMatchObject({ socket: '10.0.0.5', xForwardedFor: '1.2.3.4', ip: '10.0.0.5' })
   })
 })
+
+describe('TRUST_PROXY=railway (header shapes recorded on staging)', () => {
+  let app
+  beforeAll(async () => {
+    app = fastify({ trustProxy: trustProxyFromEnv('railway') })
+    app.get('/ip', async (req) => ({ ip: req.ip }))
+    await app.ready()
+  })
+  afterAll(() => app.close())
+  const ip = async (remoteAddress, xff) => (await app.inject({ method: 'GET', url: '/ip', remoteAddress, headers: xff ? { 'x-forwarded-for': xff } : {} })).json().ip
+
+  it('edge → API: the client, not the edge node', async () => {
+    expect(await ip('::ffff:100.64.0.2', '136.62.60.81, 79.127.177.113')).toBe('136.62.60.81')
+  })
+  it('edge → web → API: the same client', async () => {
+    expect(await ip('fd12:4257:2ddc:1:3000:10a:f12:c8e', '136.62.60.81, 79.127.177.114, ::ffff:100.64.0.2')).toBe('136.62.60.81')
+  })
+  it('a non-Railway peer cannot claim another address', async () => {
+    expect(await ip('203.0.113.50', '6.6.6.6')).toBe('203.0.113.50')
+    expect(await ip('100.128.0.1', '6.6.6.6')).toBe('100.128.0.1') // outside 100.64.0.0/10
+  })
+})
+
+describe('createApp wiring', () => {
+  it('TRUST_PROXY=railway turns on per-IP buckets in the auth routes', async () => {
+    const { default: createApp } = await import('../../src/loaders/fastify.js')
+    const app = await createApp({ trustProxy: trustProxyFromEnv('railway') })
+    await app.register(authRoutes, { prefix: '/api/auth' })
+    await app.ready()
+    expect(app.clientIpTrusted).toBe(true)
+    process.env.CLIENT_ADDRESS_PROBE_KEY = 'k'
+    const r = await app.inject({ method: 'GET', url: '/api/auth/client-address', remoteAddress: '::ffff:100.64.0.2', headers: { 'x-probe-key': 'k', 'x-forwarded-for': '136.62.60.81, 79.127.177.113' } })
+    delete process.env.CLIENT_ADDRESS_PROBE_KEY
+    expect(r.json()).toMatchObject({ ip: '136.62.60.81', clientIpTrusted: true })
+    await app.close()
+  })
+})

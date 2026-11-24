@@ -22,13 +22,36 @@ export const LIMITS = {
   registerClient: { max: 20, windowMs: 60 * MIN },
 }
 
+const ipv4 = (a) => String(a).replace(/^::ffff:/i, '')
+/** Railway-internal peers: the edge → service hop (100.64.0.0/10) and the private network (fd00::/8). */
+export function isRailwayInternal(addr) {
+  const a = ipv4(addr)
+  const m = /^100\.(\d+)\.\d+\.\d+$/.exec(a)
+  if (m) return Number(m[1]) >= 64 && Number(m[1]) <= 127
+  return /^fd[0-9a-f]{2}:/i.test(a)
+}
+
 /**
- * Fastify trustProxy from TRUST_PROXY: a hop count ("2"), "true", or a comma-separated
- * list of addresses/CIDRs. Unset → false (request.ip is the socket peer).
+ * TRUST_PROXY=railway — verified on staging 2026-11-24: Railway's edge discards any
+ * client-sent X-Forwarded-For and sets "<client>, <edge node>"; the web proxy then appends
+ * its peer. Paths differ in hop count (edge → API vs edge → web → API) and edge node IPs
+ * vary, so no fixed count works. Instead: trust the forwarding chain only when the socket
+ * peer is Railway-internal, and then take its left-most entry (the edge-set client).
+ * A peer that isn't internal never gets its headers trusted.
+ */
+export function railwayTrust(address, hop) {
+  return hop === 0 ? isRailwayInternal(address) : true
+}
+
+/**
+ * Fastify trustProxy from TRUST_PROXY: "railway" (see railwayTrust), a hop count ("2"),
+ * "true", or a comma-separated list of addresses/CIDRs. Unset → false (request.ip is the
+ * socket peer, and auth throttling uses account buckets only).
  */
 export function trustProxyFromEnv(value = process.env.TRUST_PROXY) {
   const v = String(value ?? '').trim()
   if (!v || v === 'false' || v === '0') return false
+  if (v === 'railway') return railwayTrust
   if (v === 'true') return true
   if (/^\d+$/.test(v)) return Number(v)
   return v.split(',').map((s) => s.trim()).filter(Boolean)
