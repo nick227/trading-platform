@@ -4,6 +4,7 @@
 import { portfolioRiskHistory, portfolioRiskSnapshot } from '../accountSnapshot.js'
 import prisma from '../../db/prisma.js'
 import { riskDecisionMatrix } from './RiskDecisionMatrix.js'
+import { DEFAULT_RISK_SETTINGS, legacyRiskChecks, riskScoreFromChecks } from '../riskCore.js'
 
 export class RiskGateService {
   constructor() {
@@ -167,102 +168,23 @@ export class RiskGateService {
     }
   }
 
-  // Core risk checks
-  async checkDailyLoss(portfolioState, riskSettings) {
-    const dailyLoss = portfolioState.dailyLoss || 0
-    const maxDailyLoss = riskSettings.maxDailyLoss
-    
-    return {
-      type: 'daily_loss',
-      passed: dailyLoss <= maxDailyLoss,
-      current: dailyLoss,
-      limit: maxDailyLoss,
-      severity: dailyLoss > maxDailyLoss * 0.8 ? 'high' : 'medium'
-    }
+  // Core risk checks: riskCore.legacyRiskChecks (one policy for live and historical runs).
+  async activeReservations(portfolioId) {
+    return prisma.executionReservation.count({ where: { portfolioId, status: 'active', expiresAt: { gt: new Date() } } })
   }
 
-  async checkPositionSize(positionValue, portfolioState, riskSettings) {
-    const maxPositionValue = portfolioState.totalValue * riskSettings.maxPositionSize
-    
-    return {
-      type: 'position_size',
-      passed: positionValue <= maxPositionValue,
-      current: positionValue,
-      limit: maxPositionValue,
-      severity: positionValue > maxPositionValue * 0.9 ? 'high' : 'medium'
-    }
+  check(type, { positionValue = 0, portfolioState, riskSettings, activeReservations = 0 }) {
+    return legacyRiskChecks({ positionValue, portfolioState, settings: riskSettings, activeReservations }).find((c) => c.type === type)
   }
-
-  async checkAccountBalance(portfolioState, riskSettings) {
-    const balance = portfolioState.cashBalance || 0
-    const minBalance = riskSettings.minAccountBalance
-    
-    return {
-      type: 'account_balance',
-      passed: balance >= minBalance,
-      current: balance,
-      limit: minBalance,
-      severity: balance < minBalance * 0.5 ? 'critical' : 'high'
-    }
-  }
-
-  async checkLeverageRatio(positionValue, portfolioState, riskSettings) {
-    const totalExposure = portfolioState.totalExposure + positionValue
-    const leverageRatio = totalExposure / portfolioState.totalValue
-    const maxLeverage = riskSettings.maxLeverage
-    
-    return {
-      type: 'leverage_ratio',
-      passed: leverageRatio <= maxLeverage,
-      current: leverageRatio,
-      limit: maxLeverage,
-      severity: leverageRatio > maxLeverage * 0.9 ? 'high' : 'medium'
-    }
-  }
-
-  async checkDrawdown(portfolioState, riskSettings) {
-    const drawdown = portfolioState.drawdown || 0
-    const maxDrawdown = riskSettings.maxDrawdown
-    
-    return {
-      type: 'drawdown',
-      passed: drawdown <= maxDrawdown,
-      current: drawdown,
-      limit: maxDrawdown,
-      severity: drawdown > maxDrawdown * 0.9 ? 'critical' : 'high'
-    }
-  }
-
+  async checkDailyLoss(portfolioState, riskSettings) { return this.check('daily_loss', { portfolioState, riskSettings }) }
+  async checkPositionSize(positionValue, portfolioState, riskSettings) { return this.check('position_size', { positionValue, portfolioState, riskSettings }) }
+  async checkAccountBalance(portfolioState, riskSettings) { return this.check('account_balance', { portfolioState, riskSettings }) }
+  async checkLeverageRatio(positionValue, portfolioState, riskSettings) { return this.check('leverage_ratio', { positionValue, portfolioState, riskSettings }) }
+  async checkDrawdown(portfolioState, riskSettings) { return this.check('drawdown', { portfolioState, riskSettings }) }
   async checkConcurrentTrades(portfolioId, riskSettings) {
-    const activeReservations = await prisma.executionReservation.count({
-      where: {
-        portfolioId,
-        status: 'active',
-        expiresAt: { gt: new Date() }
-      }
-    })
-    
-    return {
-      type: 'concurrent_trades',
-      passed: activeReservations < riskSettings.maxConcurrentTrades,
-      current: activeReservations,
-      limit: riskSettings.maxConcurrentTrades,
-      severity: activeReservations >= riskSettings.maxConcurrentTrades ? 'high' : 'low'
-    }
+    return this.check('concurrent_trades', { portfolioState: { totalValue: 1, totalExposure: 0 }, riskSettings, activeReservations: await this.activeReservations(portfolioId) })
   }
-
-  async checkRiskPerTrade(positionValue, portfolioState, riskSettings) {
-    const riskPerTrade = positionValue / portfolioState.totalValue
-    const maxRiskPerTrade = riskSettings.maxRiskPerTrade
-    
-    return {
-      type: 'risk_per_trade',
-      passed: riskPerTrade <= maxRiskPerTrade,
-      current: riskPerTrade,
-      limit: maxRiskPerTrade,
-      severity: riskPerTrade > maxRiskPerTrade * 0.9 ? 'high' : 'medium'
-    }
-  }
+  async checkRiskPerTrade(positionValue, portfolioState, riskSettings) { return this.check('risk_per_trade', { positionValue, portfolioState, riskSettings }) }
 
   // Get portfolio state (simplified)
   async getPortfolioState(portfolioId) {
@@ -304,19 +226,7 @@ export class RiskGateService {
       const owner = await prisma.user.findUnique({ where: { id: portfolio.userId }, select: { riskSettings: true } })
       const userSettings = owner?.riskSettings && typeof owner.riskSettings === 'object' ? owner.riskSettings : {}
       
-      // Default risk limits
-      const defaults = {
-        maxDailyLoss: 1000,
-        maxPositionSize: 0.1,
-        maxOpenPositions: 10,
-        maxLeverage: 2.0,
-        maxDrawdown: 0.15,
-        minAccountBalance: 1000,
-        maxConcurrentTrades: 5,
-        maxRiskPerTrade: 0.02
-      }
-
-      return { ...defaults, ...userSettings }
+      return { ...DEFAULT_RISK_SETTINGS, ...userSettings }
     } catch (error) {
       console.error('Failed to get risk settings:', error)
       return this.getDefaultRiskSettings()
@@ -325,19 +235,9 @@ export class RiskGateService {
 
   // Helper methods
   calculateRiskScore(riskChecks) {
-    let score = 100
-    riskChecks.forEach(check => {
-      if (!check.passed) {
-        switch (check.severity) {
-          case 'critical': score -= 25; break
-          case 'high': score -= 15; break
-          case 'medium': score -= 10; break
-          case 'low': score -= 5; break
-        }
-      }
-    })
-    return Math.max(0, score)
+    return riskScoreFromChecks(riskChecks)
   }
+
 
   generateRecommendations(failedChecks, riskSettings) {
     const recommendations = []
@@ -403,17 +303,9 @@ export class RiskGateService {
 
 
   getDefaultRiskSettings() {
-    return {
-      maxDailyLoss: 1000,
-      maxPositionSize: 0.1,
-      maxOpenPositions: 10,
-      maxLeverage: 2.0,
-      maxDrawdown: 0.15,
-      minAccountBalance: 1000,
-      maxConcurrentTrades: 5,
-      maxRiskPerTrade: 0.02
-    }
+    return { ...DEFAULT_RISK_SETTINGS }
   }
+
 }
 
 export const riskGateService = new RiskGateService()

@@ -16,6 +16,7 @@ import ordersRoutes from '../routes/orders.js'
 import botRoutes from '../routes/bots/index.js'
 import riskRoutes from '../routes/risk.js'
 import metricsRoutes from '../routes/metrics.js'
+import backtestRoutes from '../routes/backtests.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { engineClient } from '../clients/engine.js'
 
@@ -32,6 +33,7 @@ export default async function registerRoutes(app) {
   await app.register(async (secured) => {
     secured.addHook('preHandler', authenticate)
     await secured.register(botRoutes, { prefix: '/api/bots' })
+    await secured.register(backtestRoutes, { prefix: '/api/backtests' })
   })
   await app.register(executionRoutes,   { prefix: '/api/executions' })
   await app.register(portfolioRoutes,   { prefix: '/api/portfolios' })

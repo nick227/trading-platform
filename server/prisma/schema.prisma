@@ -631,3 +631,33 @@ model TickerConcentrationLimit {
   @@index([portfolioId])
   @@index([ticker])
 }
+
+// Hypothetical historical runs of a bot configuration. Never mixed with Execution: results
+// (hypothetical trades, equity curve, metrics) live here only. One active run per user
+// (activeKey = userId while queued/running, null after).
+model BacktestRun {
+  id                String    @id @db.VarChar(191)
+  userId            String    @db.VarChar(191)
+  botId             String?   @db.VarChar(191)
+  status            String    @db.VarChar(32)    // queued | running | succeeded | failed
+  activeKey         String?   @unique @db.VarChar(191)
+  name              String?   @db.VarChar(191)
+  symbols           Json
+  startDate         String    @db.VarChar(10)
+  endDate           String    @db.VarChar(10)
+  executionModel    String    @db.VarChar(32)    // next_open | same_close
+  riskPolicyVersion String    @db.VarChar(64)
+  configSnapshot    Json                         // immutable: bot config, enabled rules, owner risk settings, restrict mode
+  configHash        String    @db.VarChar(64)
+  dataFingerprint   String?   @db.VarChar(64)
+  dataIssues        Json?
+  results           Json?
+  error             String?   @db.VarChar(500)
+  createdAt         DateTime  @default(now())
+  startedAt         DateTime?
+  finishedAt        DateTime?
+
+  @@index([userId, createdAt])
+  @@index([botId, createdAt])
+  @@index([status, createdAt])
+}

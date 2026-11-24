@@ -81,49 +81,13 @@ export async function evaluateOrderEligibility(execution, { broker, now = new Da
     }
 
     const fills = await loadBotFills(bot.id, { prismaClient })
-    const accounting = calculateFifoAccounting(fills)
     const others = await prismaClient.execution.findMany({
       where: { botId: bot.id, id: { not: execution.id }, status: { in: ACTIVE_EXECUTION_STATUSES } },
       select: { direction: true, ticker: true, quantity: true, price: true, filledQuantity: true }
     })
-
-    if (direction === 'buy') {
-      const maxOrder = num(config.maxOrderNotional)
-      if (maxOrder !== null && maxOrder > 0 && notional > maxOrder + 1e-6) {
-        return refuse('max_order_value', { notional, maxOrderNotional: maxOrder })
-      }
-      const allocation = num(config.allocatedAmount)
-      if (allocation !== null && allocation > 0) {
-        const inUse = accounting.capitalInUse ?? 0
-        // Unfilled remainder of this bot's other open buys is committed against its allocation.
-        const pending = others
-          .filter((o) => String(o.direction).toLowerCase() === 'buy')
-          .reduce((s, o) => s + Math.max(0, (num(o.quantity) ?? 0) - (num(o.filledQuantity) ?? 0)) * (num(o.price) ?? 0), 0)
-        if (inUse + pending + notional > allocation + 1e-6) {
-          return refuse('bot_allocation_exceeded', { allocation, inUse, pending, notional })
-        }
-      }
-    } else if (direction === 'sell') {
-      const ticker = String(execution.ticker).toUpperCase()
-      const held = accounting.openPositions?.[ticker]?.quantity ?? 0
-      const pendingSells = others
-        .filter((o) => String(o.direction).toLowerCase() === 'sell' && String(o.ticker).toUpperCase() === ticker)
-        .reduce((s, o) => s + Math.max(0, (num(o.quantity) ?? 0) - (num(o.filledQuantity) ?? 0)), 0)
-      if (quantity > held - pendingSells + 1e-7) {
-        return refuse('sell_exceeds_attributable_holdings', { quantity, held, pendingSells })
-      }
-    } else {
-      return refuse('invalid_direction', { direction: execution.direction })
-    }
-
-    // Bot daily loss: realized FIFO P/L today against the bot's daily_loss rule / config.
     const rules = await prismaClient.botRule.findMany({ where: { botId: bot.id, type: 'daily_loss', enabled: true } })
-    const limits = [num(config.maxDailyLoss), ...rules.map((r) => num(r.config?.maxLoss))].filter((v) => v !== null && v > 0)
-    if (limits.length > 0) {
-      const limit = Math.min(...limits)
-      const today = realizedPnlSince(fills, startOfDay(now))
-      if (today <= -limit) return refuse('daily_loss_limit', { realizedToday: today, limit })
-    }
+    const botLevel = botEligibility({ direction, ticker: execution.ticker, quantity, notional, config, fills, others, dailyLossRules: rules, now })
+    if (!botLevel.allowed) return botLevel
   } else if (direction !== 'buy' && direction !== 'sell') {
     return refuse('invalid_direction', { direction: execution.direction })
   }
@@ -150,4 +114,49 @@ export async function evaluateOrderEligibility(execution, { broker, now = new Da
   }
 
   return { allowed: true, notional }
+}
+
+/**
+ * Bot-level limits as a pure decision (live: inputs from the database; backtest: from the
+ * simulated run). fills: the bot's broker fills; others: its other active orders; dailyLossRules:
+ * enabled daily_loss rules ({ config: { maxLoss } }).
+ */
+export function botEligibility({ direction, ticker, quantity, notional, config, fills, others, dailyLossRules = [], now }) {
+  const accounting = calculateFifoAccounting(fills)
+  if (direction === 'buy') {
+    const maxOrder = num(config.maxOrderNotional)
+    if (maxOrder !== null && maxOrder > 0 && notional > maxOrder + 1e-6) {
+      return refuse('max_order_value', { notional, maxOrderNotional: maxOrder })
+    }
+    const allocation = num(config.allocatedAmount)
+    if (allocation !== null && allocation > 0) {
+      const inUse = accounting.capitalInUse ?? 0
+      // Unfilled remainder of this bot's other open buys is committed against its allocation.
+      const pending = others
+        .filter((o) => String(o.direction).toLowerCase() === 'buy')
+        .reduce((s, o) => s + Math.max(0, (num(o.quantity) ?? 0) - (num(o.filledQuantity) ?? 0)) * (num(o.price) ?? 0), 0)
+      if (inUse + pending + notional > allocation + 1e-6) {
+        return refuse('bot_allocation_exceeded', { allocation, inUse, pending, notional })
+      }
+    }
+  } else if (direction === 'sell') {
+    const t = String(ticker).toUpperCase()
+    const held = accounting.openPositions?.[t]?.quantity ?? 0
+    const pendingSells = others
+      .filter((o) => String(o.direction).toLowerCase() === 'sell' && String(o.ticker).toUpperCase() === t)
+      .reduce((s, o) => s + Math.max(0, (num(o.quantity) ?? 0) - (num(o.filledQuantity) ?? 0)), 0)
+    if (quantity > held - pendingSells + 1e-7) {
+      return refuse('sell_exceeds_attributable_holdings', { quantity, held, pendingSells })
+    }
+  } else {
+    return refuse('invalid_direction', { direction })
+  }
+  // Bot daily loss: realized FIFO P/L today against the bot's daily_loss rule / config.
+  const limits = [num(config.maxDailyLoss), ...dailyLossRules.map((r) => num(r.config?.maxLoss))].filter((v) => v !== null && v > 0)
+  if (limits.length > 0) {
+    const limit = Math.min(...limits)
+    const today = realizedPnlSince(fills, startOfDay(now))
+    if (today <= -limit) return refuse('daily_loss_limit', { realizedToday: today, limit })
+  }
+  return { allowed: true }
 }

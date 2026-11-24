@@ -29,7 +29,7 @@ function parseHHMM(value) {
   return minutes
 }
 
-function getMinutesNowInTz(timezone) {
+function getMinutesNowInTz(timezone, now = new Date()) {
   let dtf = dtfByTz.get(timezone)
   if (!dtf) {
     dtf = new Intl.DateTimeFormat('en-US', {
@@ -41,7 +41,7 @@ function getMinutesNowInTz(timezone) {
     dtfByTz.set(timezone, dtf)
   }
 
-  const parts = dtf.formatToParts(new Date())
+  const parts = dtf.formatToParts(now)
   let hh = NaN, mm = NaN
   for (const p of parts) {
     if (p.type === 'hour')   hh = Number(p.value)
@@ -52,7 +52,8 @@ function getMinutesNowInTz(timezone) {
 }
 
 // config: { start: "09:35", end: "09:55", timezone?: "America/New_York" }
-export function evaluateTimeWindow(config) {
+/** `now`: the decision time (live: the wall clock; backtest: the session's close). */
+export function evaluateTimeWindow(config, now = new Date()) {
   if (!config || typeof config !== 'object') {
     return { pass: false, reason: 'time_window_invalid_config', detail: 'config must be an object' }
   }
@@ -71,7 +72,7 @@ export function evaluateTimeWindow(config) {
     return { pass: false, reason: 'time_window_invalid_config', detail: 'start/end must be HH:MM' }
   }
 
-  const nowMin = getMinutesNowInTz(timezone)
+  const nowMin = getMinutesNowInTz(timezone, now)
   if (nowMin == null) {
     return { pass: false, reason: 'time_window_clock_unavailable' }
   }

@@ -352,6 +352,18 @@ export const engineClient = {
     }
   },
 
+  /** Clean daily session bars [date, o, h, l, c, v] over [start, end] (backtests). */
+  async getDailyBars(ticker, start, end) {
+    const params = new URLSearchParams({ ticker: String(ticker).toUpperCase(), start, end })
+    return engineFetch('/api/market/daily-bars?' + params.toString())
+  },
+
+  /** Point-in-time regime per session over [start, end] (backtests). */
+  async getRegimeHistory(ticker, start, end) {
+    const params = new URLSearchParams({ start, end })
+    return engineFetch(`/api/regime/${encodeURIComponent(String(ticker).toUpperCase())}/history?` + params.toString())
+  },
+
   /** Daily close of one session (latest on/before `session`) from Alpha Engine's own bars. */
   async getSessionClose(ticker, session = null) {
     const params = new URLSearchParams({ ticker: String(ticker).toUpperCase() })

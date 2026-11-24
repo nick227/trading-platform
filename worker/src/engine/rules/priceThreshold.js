@@ -6,9 +6,11 @@ export function evaluatePriceThreshold(config, ticker) {
   if (!quote) {
     return { pass: false, reason: 'stale_price_data', stale: true }
   }
+  return priceThresholdDecision(config, quote.last ?? quote.ask)
+}
 
-  const current = quote.last ?? quote.ask
-
+/** Pure decision over an observed price (live: fresh quote; backtest: the session close). */
+export function priceThresholdDecision(config, current) {
   if (current == null) {
     return { pass: false, reason: 'no_price_available' }
   }
