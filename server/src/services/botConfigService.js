@@ -50,7 +50,7 @@ export function mergeConfig(base, patch) {
 const positive = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0
 
 /** Checks on the merged bot config. Fields absent from the config are not required here. */
-function assertValidConfig(config) {
+export function assertValidConfig(config) {
   const t = config.tickers
   if (!Array.isArray(t) || t.length === 0 || !t.every((s) => typeof s === 'string' && s.trim())) throw invalid('Add at least one symbol.', { field: 'tickers' })
   const tradable = simulationConfig().tradableSymbols

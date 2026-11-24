@@ -86,6 +86,7 @@ const DEFAULTS = {
 // Single-column @unique constraints from schema.prisma (NULLs never conflict, as in MySQL).
 const UNIQUE = {
   execution: ['clientOrderId', 'activeIntentKey', 'brokerOrderId'],
+  backtestRun: ['activeKey'],
 }
 
 function assertUnique(name, all, candidate, self = null) {
@@ -163,7 +164,7 @@ function model(store, name) {
 export function createMemoryPrisma() {
   const store = {}
   const client = { _store: store }
-  for (const name of ['execution', 'executionAudit', 'bot', 'botRule', 'botEvent', 'user', 'portfolio', 'brokerAccount', 'botTemplate']) {
+  for (const name of ['execution', 'executionAudit', 'bot', 'botRule', 'botEvent', 'user', 'portfolio', 'brokerAccount', 'botTemplate', 'backtestRun']) {
     client[name] = model(store, name)
   }
   client.$transaction = async (arg) => {

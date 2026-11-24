@@ -206,3 +206,30 @@ describe('paper_daily tradable symbols (server is authoritative)', () => {
     expect(st.body.tradableSymbols).toEqual(['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'JPM', 'XOM', 'META'])
   })
 })
+
+describe('historical runner parity with paper_daily (same_close model)', () => {
+  it('makes the same orders, sizes and fill prices as the live engine over consecutive sessions', async () => {
+    const { runBacktest } = await import('../../../worker/src/backtest/historicalRunner.js')
+    // Five sessions; the bot buys above 100 with 10,000 capital and 1,000 per order → 1 share/session
+    // at ~540 until... capital is never hit here, so it buys once per session (paper_daily limit).
+    const sessions = [['2026-11-20', 540.25], ['2026-11-23', 545.1], ['2026-11-24', 98.5], ['2026-11-25', 550.75], ['2026-11-26', 552]]
+    for (const [d, c] of sessions) {
+      setSession(d, c, { at: `${d}T23:00:00Z` })
+      await tick(); await drain()
+    }
+    const live = (await orders()).filter((o) => o.status === 'filled').map((o) => ({ session: o.simSession, side: o.direction, quantity: o.filledQuantity, price: o.filledPrice }))
+
+    // Same bars for the runner: 20 earlier sessions supply the liquidity average (volume 2e6),
+    // and each traded session has volume 3e6 — what the mocked Alpha Engine reports live.
+    const prior = []
+    for (let t = Date.UTC(2026, 10, 19); prior.length < 20; t -= 86_400_000) { const d = new Date(t); if (d.getUTCDay() % 6) prior.unshift(d.toISOString().slice(0, 10)) }
+    const bars = [...prior.map((d) => [d, 500, 501, 499, 500, 2e6]), ...sessions.map(([d, c]) => [d, c, c, c, c, 3e6])]
+    const b = await bot()
+    const hist = await runBacktest({ bot: { id: b.id, config: b.config, rules: b.rules }, symbols: ['SPY'], start: sessions[0][0], end: sessions.at(-1)[0],
+      executionModel: 'same_close', startingCash: 100_000, data: { bars: { SPY: bars }, calendar: bars.map((x) => x[0]), regimes: {}, unusable: [] } })
+    const historical = hist.trades.map((t) => ({ session: t.session, side: t.side, quantity: t.quantity, price: t.price }))
+
+    expect(live.map((o) => o.session)).toEqual(['2026-11-20', '2026-11-23', '2026-11-25', '2026-11-26']) // 98.5 is below the rule
+    expect(historical).toEqual(live)
+  })
+})

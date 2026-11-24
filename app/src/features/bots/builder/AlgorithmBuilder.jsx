@@ -10,6 +10,7 @@ import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { money, sessionDate } from '../../../ui/format'
 import AlgorithmStep from './AlgorithmStep'
 import SymbolContext from './SymbolContext'
+import BacktestPanel from './BacktestPanel'
 import AlgorithmIdentity, { algorithmIdentity } from '../../../ui/AlgorithmIdentity'
 import { loadWizardData, parseSymbols } from './builderData'
 import {
@@ -932,6 +933,17 @@ export default function AlgorithmBuilder() {
             </div>
           </Disclosure>
         </section>
+
+        <BacktestPanel
+          preview={builtBot}
+          blockedReason={
+            draft.triggerType === 'alpha_research'
+              ? 'Research bots can’t be backtested yet: Alpha Engine has no point-in-time research history to replay.'
+              : errors.symbols || errors.triggerPrice || errors.capital || errors.maxPerOrder
+                ? 'Fix the highlighted fields to run a backtest.'
+                : null
+          }
+        />
 
         {/* Confirmation checkbox outside simulator */}
         {needsConfirm && (
