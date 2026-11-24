@@ -19,6 +19,58 @@ import { canonical, dataFingerprint, normalizeDataset } from '../../../worker/sr
 
 export const BACKTEST_LIMITS = Object.freeze({ maxDays: 366 * 5 + 1, maxSymbols: 5, warmupDays: 45, calendarTicker: 'SPY', staleRunMs: 30 * 60_000 })
 const RANGES = { '1Y': 1, '3Y': 3, '5Y': 5 }
+export const MAX_VARIANTS = 3
+
+/**
+ * Parameters a variant may change, each mapped onto the bot's config or its first rule of a
+ * type (the one the Workshop edits). Values are validated like any saved bot.
+ */
+export const VARIANT_PARAMS = Object.freeze({
+  triggerPrice: { label: 'Trigger price', apply: (b, v) => setRule(b, 'price_threshold', (c) => ({ ...c, price: v })) },
+  cooldownDays: { label: 'Cooldown (days)', apply: (b, v) => setRule(b, 'cooldown', (c) => { const { windowMs: _w, minutes: _m, ...rest } = c; return { ...rest, cooldownHours: v * 24 } }, { cooldownHours: v * 24 }) },
+  maxOrderNotional: { label: 'Per-order limit', apply: (b, v) => ({ ...b, config: { ...b.config, maxOrderNotional: v } }) },
+  allocatedAmount: { label: 'Capital', apply: (b, v) => ({ ...b, config: { ...b.config, allocatedAmount: v } }) },
+})
+
+function setRule(bot, type, edit, createWith = null) {
+  const i = bot.rules.findIndex((r) => r.type === type)
+  if (i < 0) {
+    if (!createWith) throw bad('variant_not_applicable', `This algorithm has no ${type.replace('_', ' ')} rule to vary.`)
+    return { ...bot, rules: [...bot.rules, { type, config: createWith }] }
+  }
+  return { ...bot, rules: bot.rules.map((r, j) => (j === i ? { ...r, config: edit(r.config ?? {}) } : r)) }
+}
+
+function buildVariants(base, variants) {
+  if (variants == null) return []
+  if (!Array.isArray(variants)) throw bad('invalid_variants', 'Variants must be a list.')
+  if (variants.length > MAX_VARIANTS) throw bad('too_many_variants', `Compare at most ${MAX_VARIANTS} variants at a time.`)
+  return variants.map((v, k) => {
+    const set = v?.set && typeof v.set === 'object' ? v.set : {}
+    const keys = Object.keys(set)
+    if (!keys.length) throw bad('invalid_variants', 'Each variant must change at least one parameter.')
+    let bot = structuredClone(base)
+    for (const key of keys) {
+      const p = VARIANT_PARAMS[key]
+      const value = Number(set[key])
+      if (!p) throw bad('invalid_variants', `Unknown parameter: ${key}`)
+      if (!(Number.isFinite(value) && value > 0)) throw bad('invalid_variants', `${p.label} must be greater than 0.`)
+      bot = p.apply(bot, value)
+    }
+    try { assertValidConfig(bot.config) } catch (err) { throw bad(err.code ?? 'invalid_variants', err.message) }
+    bot.rules = normalizeRules(bot.rules)
+    const label = typeof v.label === 'string' && v.label.trim() ? v.label.trim().slice(0, 60)
+      : keys.map((key) => `${VARIANT_PARAMS[key].label} ${set[key]}`).join(', ')
+    return { label: label || `Variant ${k + 1}`, set: Object.fromEntries(keys.map((key) => [key, Number(set[key])])), bot }
+  })
+}
+
+/** At most `n` evenly spaced points (keeps first and last). */
+export function downsample(points, n = 260) {
+  if (points.length <= n) return points
+  const step = (points.length - 1) / (n - 1)
+  return Array.from({ length: n }, (_, i) => points[Math.round(i * step)])
+}
 
 export class BacktestError extends Error {
   constructor(status, code, message, details = {}) {
@@ -86,6 +138,13 @@ export async function createBacktest(userId, input = {}, { prismaClient = prisma
   } else {
     botConfig = input.config ?? {}
     rules = normalizeRules(input.rules ?? [])
+    // The Workshop links a run of an unchanged saved bot to that bot (for historical vs paper).
+    if (input.linkBotId) {
+      const linked = await prismaClient.bot.findUnique({ where: { id: String(input.linkBotId) } })
+      if (!linked || linked.userId !== userId || linked.deletedAt) throw new BacktestError(404, 'not_found', 'Bot not found')
+      botId = linked.id
+      name = name ?? linked.name
+    }
   }
   try { assertValidConfig({ ...botConfig, tickers: botConfig.tickers ?? input.symbols }) } catch (err) {
     throw bad(err.code ?? 'invalid_config', err.message, err.details ?? {})
@@ -109,8 +168,11 @@ export async function createBacktest(userId, input = {}, { prismaClient = prisma
   const owner = await prismaClient.user.findUnique({ where: { id: userId }, select: { riskSettings: true } })
   const rs = owner?.riskSettings && typeof owner.riskSettings === 'object' ? owner.riskSettings : {}
   const { emergencyStop: _es, ...riskSettings } = rs
+  const baseBot = { config: { ...botConfig, tickers: symbols }, rules }
+  const variants = buildVariants(baseBot, input.variants)
   const snapshot = {
-    bot: { config: { ...botConfig, tickers: symbols }, rules },
+    bot: baseBot,
+    ...(variants.length ? { variants } : {}),
     riskSettings,
     restrictMode: ['block', 'reduce'].includes(process.env.RISK_RESTRICT_MODE) ? process.env.RISK_RESTRICT_MODE : 'block',
     startingCash: sim.startingCash ?? 100_000,
@@ -194,6 +256,21 @@ export async function processNextBacktest({ prismaClient = prisma, engine = engi
       throw new BacktestError(409, 'risk_policy_changed', 'The risk policy changed since this backtest was requested. Run it again.')
     }
     results.coverage = coverage
+    // Variants: the same data (same fingerprint), execution model and risk policy; only the
+    // changed parameters differ, so the comparison is like for like.
+    if (snap.variants?.length) {
+      const base = { label: 'Current', set: {}, metrics: results.metrics, curve: downsample(results.curve) }
+      const runs = [base]
+      for (const v of snap.variants) {
+        const r = await runBacktest({
+          bot: { id: next.botId ?? 'draft', config: v.bot.config, rules: v.bot.rules },
+          symbols: next.symbols, start: next.startDate, end: next.endDate, executionModel: next.executionModel,
+          startingCash: snap.startingCash, riskSettings: snap.riskSettings, restrictMode: snap.restrictMode, data,
+        })
+        runs.push({ label: v.label, set: v.set, metrics: r.metrics, curve: downsample(r.curve), skips: r.skips })
+      }
+      results.variants = runs
+    }
     return await prismaClient.backtestRun.update({ where: { id: next.id }, data: {
       status: 'succeeded', activeKey: null, finishedAt: now(), dataFingerprint: fingerprint, dataIssues: issues, results,
     } })

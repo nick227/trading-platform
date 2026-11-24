@@ -68,6 +68,53 @@ export default async function botsRoutes(app, opts) {
   app.put('/:id/configuration', { schema: { body: SAVE_BODY } }, async (request, reply) =>
     handleSave(request, reply, { ...request.body, id: request.params.id }))
 
+  // POST /api/bots/:id/clone { name? } — a paused copy (config + every rule, in order) to
+  // experiment with. Same transactional save as any new bot; lineage kept in config.clonedFrom.
+  app.post('/:id/clone', { schema: { body: { type: ['object', 'null'], additionalProperties: false, properties: { name: { type: 'string' } } } } }, async (request, reply) => {
+    const src = await prisma.bot.findUnique({ where: { id: request.params.id } })
+    if (!src || src.userId !== request.user.id || src.deletedAt) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Bot not found' } })
+    const rules = await prisma.botRule.findMany({ where: { botId: src.id }, orderBy: { createdAt: 'asc' } })
+    const { clonedFrom: _prev, ...config } = src.config ?? {}
+    const name = (request.body?.name ?? `${src.name} (copy)`).slice(0, 100)
+    return handleSave(request, reply, {
+      portfolioId: src.portfolioId, name, enabled: false,
+      config: { ...config, clonedFrom: { botId: src.id, name: src.name, at: new Date().toISOString() } },
+      rules: rules.map((r) => ({ type: r.type, name: r.name, config: r.config ?? {}, enabled: r.enabled !== false })),
+    })
+  })
+
+  // GET /api/bots/compare — every bot side by side: paper results (FIFO, the same numbers as
+  // the bot page) and its latest linked backtest (hypothetical, labelled as such).
+  app.get('/compare', async (request) => {
+    const userId = request.user.id
+    const { data: bots } = await botsService.getBots({ userId, limit: 50 })
+    const latest = await prisma.backtestRun.findMany({ where: { userId, status: 'succeeded', botId: { in: bots.map((b) => b.id) } }, orderBy: { createdAt: 'desc' } })
+    const byBot = new Map()
+    for (const r of latest) if (!byBot.has(r.botId)) byBot.set(r.botId, r)
+    const rows = await Promise.all(bots.map(async (b) => {
+      let history = null
+      try { history = await botValueHistory(b, { range: '1Y' }) } catch { /* unavailable */ }
+      const bt = byBot.get(b.id)
+      const p = b.performance
+      return {
+        id: b.id, name: b.name, enabled: b.enabled, symbols: b.config?.tickers ?? [], clonedFrom: b.config?.clonedFrom ?? null,
+        allocation: Number(b.config?.allocatedAmount) > 0 ? Number(b.config.allocatedAmount) : null,
+        paper: {
+          totalPnl: p?.totalPnl ?? null, realizedPnl: p?.realizedPnl ?? null, winRate: p?.winRate ?? null, closedTrades: p?.closedTrades ?? 0,
+          orders: b._count?.executions ?? null, capitalInUse: b.capitalInUse ?? null,
+          returnPct: history?.returnPct ?? null, maxDrawdown: history?.maxDrawdown ?? null, sessions: history?.points?.length ?? 0,
+        },
+        backtest: bt ? {
+          id: bt.id, range: { start: bt.startDate, end: bt.endDate }, executionModel: bt.executionModel, createdAt: bt.createdAt,
+          returnPct: bt.results?.metrics?.returnPct ?? null, maxDrawdown: bt.results?.metrics?.maxDrawdown ?? null,
+          winRate: bt.results?.metrics?.winRate ?? null, trades: bt.results?.metrics?.trades ?? null,
+          buyAndHoldReturnPct: bt.results?.buyAndHold?.returnPct ?? null,
+        } : null,
+      }
+    }))
+    return { data: rows }
+  })
+
   // GET /api/bots
   app.get('/', async (request, reply) => {
     const result = await botsService.getBots({ ...request.query, userId: request.user.id })

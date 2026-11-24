@@ -936,6 +936,15 @@ export default function AlgorithmBuilder() {
 
         <BacktestPanel
           preview={builtBot}
+          linkBotId={isEdit && !hasChanges ? botId : null}
+          onApplyVariant={(set) => setDraft((d) => {
+            const next = { ...d }
+            if (set.triggerPrice !== undefined) next.trigger = { ...(d.trigger ?? {}), price: String(set.triggerPrice) }
+            if (set.cooldownDays !== undefined) next.cooldown = { ...(d.cooldown ?? {}), on: true, hours: String(set.cooldownDays * 24) }
+            if (set.maxOrderNotional !== undefined) next.maxPerOrder = String(set.maxOrderNotional)
+            if (set.allocatedAmount !== undefined) next.capital = String(set.allocatedAmount)
+            return next
+          })}
           blockedReason={
             draft.triggerType === 'alpha_research'
               ? 'Research bots can’t be backtested yet: Alpha Engine has no point-in-time research history to replay.'

@@ -1167,3 +1167,5 @@ select.tl-input--inline { width: auto; padding-right: 4px; }
 .tl-backtest-notes { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--tl-ink-2); display: grid; gap: 3px; }
 .tl-stats--4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 760px) { .tl-stats--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tl-backtest { padding: 16px; } }
+.tl-backtest-variants { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 6px; }
+.tl-backtest-variants .tl-input--sm { min-height: 36px; padding: 6px 10px; font-size: 13px; max-width: 220px; }
