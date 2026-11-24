@@ -1,10 +1,22 @@
 import bcrypt from 'bcryptjs'
 import prisma from '../loaders/prisma.js'
 import { authenticate } from '../middleware/authenticate.js'
+import { AuthThrottle } from '../middleware/authThrottle.js'
 
-export default async function authRoutes(fastify) {
+export default async function authRoutes(fastify, opts = {}) {
   const isProduction = process.env.NODE_ENV === 'production'
   const cookieSameSite = isProduction ? 'none' : 'lax'
+
+  // request.ip is the real client only when trustProxy is configured (see authThrottle.js).
+  const throttle = opts.throttle ?? new AuthThrottle({ clientIpTrusted: Boolean(fastify.initialConfig.trustProxy) })
+  const sweep = setInterval(() => throttle.sweep(), 5 * 60_000)
+  sweep.unref?.()
+  fastify.addHook('onClose', async () => clearInterval(sweep))
+
+  const tooMany = (reply, wait, error) => {
+    reply.header('Retry-After', String(wait))
+    return reply.code(429).send({ error, retryAfterSeconds: wait })
+  }
 
   // POST /api/auth/register
   fastify.post('/register', async (request, reply) => {
@@ -12,6 +24,11 @@ export default async function authRoutes(fastify) {
     if (!email || !password || !fullName) {
       return reply.code(400).send({ error: 'email, password, and fullName are required' })
     }
+
+    const who = { ip: request.ip, email }
+    const wait = throttle.retryAfter('register', who)
+    if (wait > 0) return tooMany(reply, wait, 'Too many sign-up attempts. Please try again later.')
+    throttle.record('register', who)
 
     const existing = await prisma.user.findUnique({ where: { email } })
     if (existing) return reply.code(409).send({ error: 'Email already registered' })
@@ -42,13 +59,19 @@ export default async function authRoutes(fastify) {
       return reply.code(400).send({ error: 'email and password are required' })
     }
 
+    const who = { ip: request.ip, email }
+    const wait = throttle.retryAfter('login', who)
+    if (wait > 0) return tooMany(reply, wait, 'Too many failed sign-in attempts. Please wait a few minutes and try again.')
+
     const user = await prisma.user.findUnique({
       where: { email },
       include: { subscription: true }
     })
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      throttle.record('login', who)
       return reply.code(401).send({ error: 'Invalid credentials' })
     }
+    throttle.clear(who)
 
     const token = fastify.jwt.sign({ sub: user.id }, { expiresIn: '7d' })
     reply.setCookie('access_token', token, {

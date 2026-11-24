@@ -1,12 +1,13 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import ActivityFeed from '../../ui/ActivityFeed'
+import ActivityFeed, { latestMeaningful } from '../../ui/ActivityFeed'
+import { useAuth } from '../../app/AuthProvider'
 import BotRow from '../../ui/BotRow'
 import ValueChart from '../../ui/ValueChart'
 import { EmergencyBanner, SafetyBar, useEmergencyStop } from '../../ui/Safety'
 import { Chevron } from '../../ui/Disclosure'
 import { useBotControls } from '../../ui/useBotControls'
-import { dateTime, listJoin, money, moneyWhole, plural, sessionDate, shares, signedMoney, signedPct, tone } from '../../ui/format'
+import { ago, dateTime, listJoin, money, moneyWhole, plural, sessionDate, shares, signedMoney, signedPct, tone } from '../../ui/format'
 import HoldingDetail from './HoldingDetail'
 import { loadHome } from './homeApi'
 
@@ -201,12 +202,39 @@ function MyBots({ bots, error, controls }) {
   )
 }
 
-function WorkshopOverview({ bots, error, activity }) {
+/** What the simulator does — stated up front so nobody mistakes it for intraday trading. */
+export function TradingModel({ brokerStatus }) {
+  if (!brokerStatus?.simulated || brokerStatus.mode !== 'paper_daily') return null
+  const symbols = brokerStatus.tradableSymbols ?? []
+  return (
+    <p className="tl-workshop-model" data-testid="trading-model">
+      <strong>Paper trading on daily closes.</strong>{' '}
+      Bots check once per trading day after the market closes and fill at that close
+      {symbols.length ? <> — {symbols.length} symbols ({symbols.join(', ')})</> : null}. Not intraday, not real money.
+    </p>
+  )
+}
+
+/** The newest trade, refusal, risk event or decision — never a routine heartbeat. */
+function LatestEvent({ activity }) {
+  const ev = latestMeaningful(activity)
+  if (!ev) {
+    const check = (activity ?? []).find((i) => i.at && Number.isFinite(Date.parse(i.at)))
+    return <span className="tl-workshop-recorded">{check ? `No trades or decisions yet · last check ${ago(check.at)}` : 'No recorded activity yet'}</span>
+  }
+  const what = ev.symbol && !ev.title.includes(ev.symbol) ? `${ev.title} · ${ev.symbol}` : ev.title
+  return (
+    <a className="tl-workshop-recorded tl-workshop-latest" href="#activity" data-testid="latest-event" title={dateTime(ev.at)}>
+      Latest: {ev.botName ? <strong>{ev.botName}</strong> : null}{ev.botName ? ' — ' : ''}{what} · {ago(ev.at)}
+    </a>
+  )
+}
+
+function WorkshopOverview({ bots, error, activity, brokerStatus }) {
   const running = bots.filter((bot) => bot.running).length
   const paused = bots.filter((bot) => bot.status === 'paused').length
   const attention = bots.filter((bot) => bot.status === 'error').length
   const stopped = bots.filter((bot) => bot.stopped).length
-  const latest = (activity ?? []).find((item) => item.at && Number.isFinite(Date.parse(item.at)))
   return (
     <header className="tl-workshop-overview">
       <div className="tl-workshop-heading">
@@ -216,13 +244,14 @@ function WorkshopOverview({ bots, error, activity }) {
         </div>
         <Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot <span aria-hidden="true">↗</span></Link>
       </div>
+      <TradingModel brokerStatus={brokerStatus} />
       {error ? <p className="tl-muted">Bot status unavailable</p> : (
         <div className="tl-workshop-status" aria-label="Workshop status" data-testid="workshop-status">
           <a href="#bots"><span className={`tl-workshop-dot${running ? '' : ' is-idle'}`} aria-hidden="true" /><strong>{running}</strong> running</a>
           <a href="#bots"><strong>{paused}</strong> paused</a>
           {stopped > 0 && <a href="#bots"><strong>{stopped}</strong> stopped</a>}
           {attention > 0 && <a className="tl-workshop-attention" href="#bots">{attention} running with an error</a>}
-          <span className="tl-workshop-recorded">{latest ? `Latest recorded activity · ${dateTime(latest.at)}` : 'No recorded activity loaded'}</span>
+          {bots.length > 0 && <LatestEvent activity={activity} />}
         </div>
       )}
     </header>
@@ -248,6 +277,7 @@ export default function HomeDashboard() {
   const [state, setState] = useState({ loading: true, data: null })
   const [open, setOpen] = useState(null)
   const { stop, activate, clear } = useEmergencyStop()
+  const { brokerStatus } = useAuth() ?? {}
 
   const refresh = useCallback(async () => {
     const data = await loadHome()
@@ -277,7 +307,7 @@ export default function HomeDashboard() {
         <HomeSkeleton />
       ) : (
         <>
-          <WorkshopOverview bots={data.bots} error={data.botsError} activity={data.activity} />
+          <WorkshopOverview bots={data.bots} error={data.botsError} activity={data.activity} brokerStatus={brokerStatus} />
           <div className={`tl-workshop-dashboard${data.bots.length ? '' : ' tl-workshop-dashboard--empty'}`}>
             <Portfolio valuation={data.valuation} history={data.history} error={data.valuationError} />
             {data.bots.length > 0 && (
@@ -289,7 +319,7 @@ export default function HomeDashboard() {
                 {data.activityError ? (
                   <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{data.activityError}</div>
                 ) : (
-                  <ActivityFeed items={data.activity} limit={3} narrative showLensControl={false}
+                  <ActivityFeed items={data.activity} limit={3} narrative showLensControl={false} order="priority"
                     empty="Nothing yet — your bots’ trades and decisions appear here." />
                 )}
               </section>

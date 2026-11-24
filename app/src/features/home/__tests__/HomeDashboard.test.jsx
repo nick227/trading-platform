@@ -95,7 +95,7 @@ describe('HomeDashboard', () => {
     const status = await screen.findByTestId('workshop-status')
     expect(status).toHaveTextContent('1 running')
     expect(status).toHaveTextContent('1 paused')
-    expect(status).toHaveTextContent('No recorded activity loaded')
+    expect(status).toHaveTextContent('No recorded activity yet')
     fireEvent.click(screen.getByRole('button', { name: 'Pause Momentum AAPL' }))
     await waitFor(() => expect(status).toHaveTextContent('0 running'))
     expect(status).toHaveTextContent('2 paused')
@@ -250,6 +250,30 @@ describe('HomeDashboard', () => {
     expect(screen.queryByTestId('routine-summary')).not.toBeInTheDocument()
     expect(within(screen.getByTestId('activity-list')).getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByTestId('activity-list')).toHaveTextContent('×3')
+  })
+
+  it('leads with the trade, not the hourly "Done for today" heartbeats that followed it', async () => {
+    const done = (id, at) => ({ id, type: 'execution_skipped', detail: 'x', metadata: { ticker: 'SPY', reason: 'acted_this_session' }, createdAt: at })
+    const paused = { id: 'p1', type: 'bot_paused', detail: 'x', metadata: {}, createdAt: '2026-11-23T21:30:00Z' }
+    mockApi({
+      executions: { bot_1: [{ id: 'e1', botId: 'bot_1', ticker: 'SPY', direction: 'buy', quantity: 3, filledQuantity: 3, status: 'filled', filledPrice: 600, createdAt: '2026-11-23T22:08:00Z', filledAt: '2026-11-23T22:08:05Z' }] },
+      events: { bot_1: [done('d3', '2026-11-24T01:08:00Z'), done('d2', '2026-11-24T00:08:00Z'), done('d1', '2026-11-23T23:08:00Z')], bot_2: [paused] },
+    })
+    renderHome()
+    const rows = within(await screen.findByTestId('activity-list')).getAllByRole('listitem').filter((li) => li.parentElement.dataset.testid === 'activity-list')
+    const titles = rows.map((r) => r.querySelector('.tl-feed-title').textContent.replace(/\s+/g, ' '))
+    expect(titles[0]).toBe('Momentum AAPLBought 3 SPY')
+    expect(titles.at(-1)).toMatch(/Done for today/) // routine last, collapsed into one counted row
+    expect(titles[1]).toBe('Mean ReversionPaused') // a decision outranks routine, even when older than the heartbeats
+    expect(titles[2]).toMatch(/×3$/)
+    expect(screen.getByTestId('latest-event')).toHaveTextContent('Latest: Momentum AAPL — Bought 3 SPY')
+  })
+
+  it('states the daily-close paper-trading model up front', async () => {
+    authState.brokerStatus = { connected: true, paper: true, simulated: true, mode: 'paper_daily', tradableSymbols: ['SPY', 'AAPL'] }
+    mockApi()
+    renderHome()
+    expect(await screen.findByTestId('trading-model')).toHaveTextContent('Paper trading on daily closes. Bots check once per trading day after the market closes and fill at that close — 2 symbols (SPY, AAPL). Not intraday, not real money.')
   })
 
   it('keeps the page usable when one source fails', async () => {
