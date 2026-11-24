@@ -8,7 +8,7 @@ function envNumber(name, fallback) {
   return Number.isFinite(value) ? value : fallback
 }
 
-const caps = {
+export const RISK_CAPS = {
   maxDailyNotional: envNumber('WORKER_MAX_DAILY_NOTIONAL_PER_USER', 250_000),
   maxDailyExecutions: envNumber('WORKER_MAX_DAILY_EXECUTIONS_PER_USER', 200),
   maxConcurrentActiveOrders: envNumber('WORKER_MAX_CONCURRENT_ACTIVE_ORDERS_PER_USER', 20),
@@ -53,11 +53,16 @@ export async function evaluateRiskCaps(execution) {
     })
   ])
 
-  // symbolExecutions is a strict subset of dailyFilledExecutions — filter in memory
-  // rather than making a separate DB round-trip.
-  const symbolExecutions = dailyFilledExecutions.filter(r => r.ticker === execution.ticker)
 
-  const pendingNotional = execution.quantity * execution.price
+  return riskCapsDecision({ pendingNotional: execution.quantity * execution.price, ticker: execution.ticker, dailyRows, activeCount, dailyFilledExecutions })
+}
+
+/**
+ * Pure user-wide caps over today's orders (dailyRows: { quantity, price }), active order
+ * count and today's fills ({ ticker, direction, filledPrice, filledQuantity, price, quantity }).
+ */
+export function riskCapsDecision({ pendingNotional, ticker, dailyRows, activeCount, dailyFilledExecutions, caps = RISK_CAPS }) {
+  const symbolExecutions = dailyFilledExecutions.filter(r => r.ticker === ticker)
   const dailyNotional = dailyRows.reduce((sum, r) => sum + (r.quantity ?? 0) * (r.price ?? 0), 0)
   if (dailyNotional + pendingNotional > caps.maxDailyNotional) {
     return block('max_daily_notional', {

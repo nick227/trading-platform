@@ -2,6 +2,7 @@
 // Measures how structurally risky the portfolio is
 
 import { portfolioRiskSnapshot } from '../accountSnapshot.js'
+import { scoreSingleTickerConcentration, scoreSectorConcentration, scoreLeverage, scoreCorrelation } from '../riskCore.js'
 
 export class PortfolioExposureService {
   /**
@@ -59,136 +60,49 @@ export class PortfolioExposureService {
   async scoreSingleTickerConcentration(portfolioId) {
     try {
       const holdings = await this.holdings(portfolioId)
-
-      if (holdings.length === 0) return 100
-
-      // Calculate total portfolio value
-      const totalValue = holdings.reduce((sum, h) => sum + Math.abs(h.value), 0)
-      
-      if (totalValue === 0) return 100
-
-      // Find largest position
-      const maxPosition = Math.max(...holdings.map(h => Math.abs(h.value)))
-      const maxPct = maxPosition / totalValue
-
-      // Score based on concentration
-      if (maxPct <= 0.10) return 100
-      if (maxPct <= 0.15) return 85
-      if (maxPct <= this.thresholds.singleTickerMax) return 70
-      if (maxPct <= 0.30) return 45
-      if (maxPct <= 0.50) return 25
-      return 10
-
+      return scoreSingleTickerConcentration(holdings)
     } catch (error) {
-      console.error('Failed to score single ticker concentration:', error)
+      console.error('Failed to score scoreSingleTickerConcentration:', error)
       return 50
     }
   }
+
 
   // Score sector concentration (0-100)
   async scoreSectorConcentration(portfolioId) {
     try {
       const holdings = await this.holdings(portfolioId)
-
-      if (holdings.length === 0) return 100
-
-      // Simple sector mapping (V1 - can be enhanced with sector API)
-      const sectorMap = {
-        'AAPL': 'technology', 'MSFT': 'technology', 'GOOGL': 'technology', 'NVDA': 'technology',
-        'JPM': 'financials', 'BAC': 'financials', 'WFC': 'financials',
-        'XOM': 'energy', 'CVX': 'energy',
-        'JNJ': 'healthcare', 'PFE': 'healthcare',
-        'AMZN': 'consumer', 'TSLA': 'consumer'
-      }
-
-      // Calculate sector exposure
-      const sectorExposure = {}
-      let totalValue = 0
-
-      holdings.forEach(h => {
-        const value = Math.abs(h.value)
-        const sector = sectorMap[h.ticker] || 'other'
-        sectorExposure[sector] = (sectorExposure[sector] || 0) + value
-        totalValue += value
-      })
-
-      if (totalValue === 0) return 100
-
-      // Find max sector exposure
-      const maxSectorExposure = Math.max(...Object.values(sectorExposure))
-      const maxSectorPct = maxSectorExposure / totalValue
-
-      // Score based on sector concentration
-      if (maxSectorPct <= 0.25) return 100
-      if (maxSectorPct <= 0.35) return 80
-      if (maxSectorPct <= this.thresholds.sectorMax) return 65
-      if (maxSectorPct <= 0.50) return 40
-      if (maxSectorPct <= 0.70) return 20
-      return 5
-
+      return scoreSectorConcentration(holdings)
     } catch (error) {
-      console.error('Failed to score sector concentration:', error)
+      console.error('Failed to score scoreSectorConcentration:', error)
       return 50
     }
   }
+
 
   // Score leverage (0-100)
   async scoreLeverage(portfolioId) {
     try {
       const snap = await portfolioRiskSnapshot(portfolioId)
-      // Gross long exposure relative to equity (both from the shared valuation).
-      const leverage = snap.marketValue / snap.equity
-
-      // Score based on leverage
-      if (leverage <= 1.0) return 100
-      if (leverage <= 1.2) return 90
-      if (leverage <= this.thresholds.leverageMax) return 75
-      if (leverage <= 2.0) return 50
-      if (leverage <= 3.0) return 25
-      return 10
-
+      return scoreLeverage(snap.marketValue, snap.equity)
     } catch (error) {
-      console.error('Failed to score leverage:', error)
+      console.error('Failed to score scoreLeverage:', error)
       return 50
     }
   }
+
 
   // Score correlation clustering (0-100)
   async scoreCorrelation(portfolioId) {
     try {
       const holdings = await this.holdings(portfolioId)
-
-      if (holdings.length < 2) return 100
-
-      // V1: Simple correlation check based on ticker similarity
-      // In production, would use actual correlation matrix
-      const tickers = holdings.map(h => h.ticker)
-      
-      // Check for correlated pairs (simplified V1)
-      const correlatedPairs = [
-        ['AAPL', 'MSFT'], ['GOOGL', 'META'], ['JPM', 'BAC'],
-        ['XOM', 'CVX'], ['JNJ', 'PFE']
-      ]
-
-      let correlationCount = 0
-      correlatedPairs.forEach(pair => {
-        if (tickers.includes(pair[0]) && tickers.includes(pair[1])) {
-          correlationCount++
-        }
-      })
-
-      // Score based on correlation count
-      if (correlationCount === 0) return 100
-      if (correlationCount === 1) return 80
-      if (correlationCount === 2) return 60
-      if (correlationCount === 3) return 40
-      return 20
-
+      return scoreCorrelation(holdings)
     } catch (error) {
-      console.error('Failed to score correlation:', error)
+      console.error('Failed to score scoreCorrelation:', error)
       return 50
     }
   }
+
 
   // Get detailed exposure information
   async getExposureDetails(portfolioId) {

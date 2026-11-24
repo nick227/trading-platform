@@ -21,6 +21,7 @@ import { engineClient } from '../../../server/src/clients/engine.js'
 import { fetchVerifiedResearchTrace, recordResearchDecision } from '../../../server/src/services/researchTraceService.js'
 import { linkResearchDecisionToExecution } from '../../../server/src/services/executionResearchService.js'
 import { calculateFifoAccounting, loadBotFills } from '../../../server/src/services/botAccountingService.js'
+import { computeBuyQuantity as coreBuyQuantity, deriveDirection, runRulePipeline, sellableFrom } from './decisionCore.js'
 import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
 import { currentSimSession, simulationConfig } from '../../../server/src/services/simulationService.js'
 
@@ -340,17 +341,14 @@ export async function evaluateBot(bot, ticker) {
       return
     }
 
-    // Run rule pipeline - first failure short-circuits
-    for (const rule of bot.rules ?? []) {
-      if (rule.type === 'position_limit' || rule.type === 'trend_filter') {
-        await ensurePositionsLoaded()
-      }
-
-      const result = await evaluateRule(rule, bot, ticker, positions ?? [], { side })
-      if (!result.pass) {
-        await maybeLogRuleBlock(bot, ticker, side, rule, result)
-        return
-      }
+    // Rule pipeline (decisionCore): first failure short-circuits.
+    const rules = await runRulePipeline(bot.rules, async (rule) => {
+      if (rule.type === 'position_limit' || rule.type === 'trend_filter') await ensurePositionsLoaded()
+      return evaluateRule(rule, bot, ticker, positions ?? [], { side })
+    })
+    if (!rules.pass) {
+      await maybeLogRuleBlock(bot, ticker, side, rules.rule, rules.result)
+      return
     }
 
     // If we get here, all rules passed - continue with execution
@@ -425,7 +423,7 @@ export async function evaluateBot(bot, ticker) {
 export async function sellableQuantity(botId, ticker, accountQty) {
   const t = String(ticker).toUpperCase()
   const held = calculateFifoAccounting(await loadBotFills(botId, { prismaClient: prisma })).openPositions?.[t]?.quantity ?? 0
-  return Math.max(0, Math.min(held, Number(accountQty) || 0))
+  return sellableFrom(held, accountQty)
 }
 
 // Helper function to create execution
@@ -840,12 +838,6 @@ async function evaluateRule(rule, bot, ticker, positions, ctx = {}) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Derive trade direction from bot config. Strictly require 'buy' or 'sell'; never default.
-function deriveDirection(bot) {
-  const dir = bot.config?.direction
-  if (dir === 'buy' || dir === 'sell') return dir
-  return null
-}
 
 function buildActiveIntentKey(botId, ticker, direction) {
   return `bot:${botId}:${ticker}:${direction}`
@@ -915,36 +907,7 @@ function getPositionQty(positions, ticker) {
 }
 
 function computeBuyQuantity({ bot, quote }) {
-  const price = Number(quote?.last ?? quote?.ask ?? 0)
-  if (!Number.isFinite(price) || price <= 0) {
-    return 0
-  }
-
-  // Allocated sizing (Bot #1)
-  const allocated = bot.config?.allocatedAmount ?? bot.config?.capital
-  const capitalMode = bot.config?.capitalMode
-  if (capitalMode === 'allocated' || allocated != null) {
-    const allocatedAmount = Number(allocated ?? 0)
-    const riskOnExposure = Number(bot.config?.riskOnExposure ?? 1)
-    const maxOrderNotional = bot.config?.maxOrderNotional != null 
-      ? Number(bot.config.maxOrderNotional) 
-      : (bot.config?.maxPerOrder != null ? Number(bot.config.maxPerOrder) : null)
-
-    if (!Number.isFinite(allocatedAmount) || allocatedAmount <= 0) return 0
-    if (!Number.isFinite(riskOnExposure) || riskOnExposure <= 0) return 0
-
-    let notional = allocatedAmount * riskOnExposure
-    if (Number.isFinite(maxOrderNotional) && maxOrderNotional > 0) {
-      notional = Math.min(notional, maxOrderNotional)
-    }
-
-    const shares = Math.floor(notional / price)
-    return shares > 0 ? shares : 0
-  }
-
-  // Legacy sizing
-  const qty = Number(bot.config?.quantity ?? 1)
-  return Number.isFinite(qty) && qty > 0 ? qty : 0
+  return coreBuyQuantity({ bot, price: quote?.last ?? quote?.ask ?? 0 })
 }
 
 async function logBotEvent(bot, type, detail, ticker, metadata = {}) {

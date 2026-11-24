@@ -5,27 +5,11 @@ import { executionConfidenceService } from './ExecutionConfidenceService.js'
 import { portfolioExposureService } from './PortfolioExposureService.js'
 import { drawdownStressService } from './DrawdownStressService.js'
 import { operationalRiskService } from './OperationalRiskService.js'
+import { RISK_THRESHOLDS, applyDecisionMatrix } from '../riskCore.js'
 
 export class RiskDecisionMatrix {
   constructor() {
-    this.thresholds = {
-      operational: {
-        critical: 40,
-        warning: 60
-      },
-      exposure: {
-        critical: 35,
-        warning: 50
-      },
-      stress: {
-        critical: 40,
-        warning: 60
-      },
-      execution: {
-        critical: 50,
-        warning: 75
-      }
-    }
+    this.thresholds = RISK_THRESHOLDS
   }
 
   // Evaluate trade request using 4-score decision matrix
@@ -100,94 +84,9 @@ export class RiskDecisionMatrix {
     }
   }
 
-  // Apply decision matrix logic
+  // Apply decision matrix logic (riskCore: one policy for live and historical runs)
   applyDecisionMatrix(scores, signal, portfolioId) {
-    const { operational, exposure, stress, execution } = scores
-
-    // Priority 1: Operational health - if systems can't execute, no trades
-    if (operational < this.thresholds.operational.critical) {
-      return {
-        action: 'reject',
-        reason: 'operational_critical',
-        positionMultiplier: 0,
-        details: `Operational score ${operational} below critical threshold ${this.thresholds.operational.critical}`
-      }
-    }
-
-    if (operational < this.thresholds.operational.warning) {
-      return {
-        action: 'reject',
-        reason: 'operational_degraded',
-        positionMultiplier: 0,
-        details: `Operational score ${operational} in warning zone`
-      }
-    }
-
-    // Priority 2: Portfolio exposure - if too concentrated, only allow diversifying trades
-    if (exposure < this.thresholds.exposure.critical) {
-      return {
-        action: 'restrict',
-        reason: 'exposure_critical',
-        positionMultiplier: 0,
-        details: `Exposure score ${exposure} below critical - only hedging/diversifying trades allowed`,
-        allowedTradeTypes: ['hedge', 'diversify']
-      }
-    }
-
-    if (exposure < this.thresholds.exposure.warning) {
-      return {
-        action: 'restrict',
-        reason: 'exposure_warning',
-        positionMultiplier: 0.5,
-        details: `Exposure score ${exposure} in warning zone - reduced size only if diversifying`
-      }
-    }
-
-    // Priority 3: Drawdown stress - if account stressed, throttle trading
-    if (stress < this.thresholds.stress.critical) {
-      return {
-        action: 'restrict',
-        reason: 'stress_critical',
-        positionMultiplier: 0.25,
-        details: `Stress score ${stress} below critical - recovery mode, minimal trading`
-      }
-    }
-
-    if (stress < this.thresholds.stress.warning) {
-      return {
-        action: 'restrict',
-        reason: 'stress_warning',
-        positionMultiplier: 0.5,
-        details: `Stress score ${stress} in warning zone - half size max`
-      }
-    }
-
-    // Priority 4: Execution confidence - if signal weak, reject or reduce size
-    if (execution < this.thresholds.execution.critical) {
-      return {
-        action: 'reject',
-        reason: 'execution_weak',
-        positionMultiplier: 0,
-        details: `Execution confidence ${execution} below critical - signal not trustworthy`
-      }
-    }
-
-    if (execution < this.thresholds.execution.warning) {
-      return {
-        action: 'restrict',
-        reason: 'execution_moderate',
-        positionMultiplier: 0.7,
-        details: `Execution confidence ${execution} in warning zone - reduced size`
-      }
-    }
-
-    // All scores healthy - approve trade
-    return {
-      action: 'approve',
-      reason: 'all_scores_healthy',
-      positionMultiplier: 1.0,
-      details: `All risk scores within healthy ranges`
-    }
+    return applyDecisionMatrix(scores, this.thresholds)
   }
 
   // Get overall risk summary for dashboard

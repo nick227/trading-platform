@@ -7,7 +7,7 @@ import { ACTIVE_EXECUTION_STATUSES, REFUSAL_WHERE } from '../../queues/execution
 const cooldownCache = new Map() // `${botId}:${ticker}` → { lastAt, fetchedAt }
 const COOLDOWN_CACHE_TTL_MS = 30_000
 
-function windowMsFromConfig(config) {
+export function windowMsFromConfig(config) {
   if (!config || typeof config !== 'object') return null
 
   if (config.windowMs != null) {
@@ -79,6 +79,11 @@ export async function evaluateCooldown(config, botId, ticker, { fresh = false, p
     cooldownCache.set(cacheKey, { lastAt, fetchedAt: now })
   }
 
+  return cooldownDecision(windowMs, lastAt, now)
+}
+
+/** Pure decision: the bot's last order attempt for this ticker at `lastAt` (ms; 0 = none). */
+export function cooldownDecision(windowMs, lastAt, now) {
   if (lastAt && now - lastAt < windowMs) {
     const minsAgo = Math.round((now - lastAt) / 60_000)
     return {

@@ -36,11 +36,16 @@ export async function evaluateTrendFilter(config) {
     regimeCache.set(symbol, { data: latest, fetchedAt: now })
   }
 
+  return trendFilterDecision({ confirmationBars, maxSnapshotAgeHours, requiredRegime }, latest, Date.now())
+}
+
+/** Pure decision over the latest known regime snapshot ({ regime, asOf, createdAt, inputsJson }). */
+export function trendFilterDecision({ confirmationBars, maxSnapshotAgeHours, requiredRegime }, latest, now) {
   if (!latest) {
     return { pass: false, reason: 'trend_filter_missing_snapshot', detail: 'no MarketRegime snapshot found' }
   }
 
-  const ageHours = (Date.now() - latest.createdAt.getTime()) / 3_600_000
+  const ageHours = (now - latest.createdAt.getTime()) / 3_600_000
   if (Number.isFinite(maxSnapshotAgeHours) && ageHours > maxSnapshotAgeHours) {
     return {
       pass: false,

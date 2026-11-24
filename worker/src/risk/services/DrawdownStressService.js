@@ -3,6 +3,7 @@
 
 import { brokerAccountSnapshot } from '../accountSnapshot.js'
 import prisma from '../../db/prisma.js'
+import { scoreDrawdown, scoreDailyLoss, scoreLosingStreak, scoreVolatility } from '../riskCore.js'
 
 export class DrawdownStressService {
   constructor() {
@@ -57,144 +58,56 @@ export class DrawdownStressService {
       const peak = Number(peakRow?.peakEquity)
       if (!peakRow || !(peak > 0)) return 100
       const { equity } = await brokerAccountSnapshot(portfolioId)
-
-      const drawdown = (peak - equity) / peak
-
-      // Score based on drawdown percentage
-      if (drawdown <= 0.02) return 100
-      if (drawdown <= this.thresholds.drawdownWarning) return 85
-      if (drawdown <= 0.075) return 65
-      if (drawdown <= this.thresholds.drawdownCritical) return 40
-      if (drawdown <= 0.15) return 20
-      return 5
-
+      return scoreDrawdown(peak, equity)
     } catch (error) {
       console.error('Failed to score drawdown:', error)
       return 50
     }
   }
 
+
   // Score daily loss (0-100)
   async scoreDailyLoss(portfolioId) {
     try {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
-
-      const trades = await prisma.execution.findMany({
-        where: {
-          portfolioId,
-          createdAt: { gte: today },
-          status: 'filled'
-        },
-        select: {
-          pnl: true
-        }
-      })
-
-      const dailyLoss = trades.reduce((sum, t) => sum + Math.min(0, t.pnl), 0)
-      
-      if (dailyLoss === 0) return 100
+      const trades = await prisma.execution.findMany({ where: { portfolioId, createdAt: { gte: today }, status: 'filled' }, select: { pnl: true } })
+      const pnls = trades.map((t) => t.pnl)
+      // Equity is only read when there is a loss (as before: a zero loss never needs it).
+      if (pnls.reduce((sum, p) => sum + Math.min(0, p), 0) === 0) return 100
       const { equity } = await brokerAccountSnapshot(portfolioId)
-
-      const dailyLossPct = Math.abs(dailyLoss) / equity
-
-      // Score based on daily loss percentage
-      if (dailyLossPct <= 0.005) return 100
-      if (dailyLossPct <= this.thresholds.dailyLossWarning) return 85
-      if (dailyLossPct <= 0.015) return 65
-      if (dailyLossPct <= this.thresholds.dailyLossCritical) return 40
-      if (dailyLossPct <= 0.03) return 20
-      return 5
-
+      return scoreDailyLoss(pnls, equity)
     } catch (error) {
       console.error('Failed to score daily loss:', error)
       return 50
     }
   }
 
+
   // Score losing streak (0-100)
   async scoreLosingStreak(portfolioId) {
     try {
-      const trades = await prisma.execution.findMany({
-        where: {
-          portfolioId,
-          status: 'filled'
-        },
-        select: {
-          pnl: true,
-          createdAt: true
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 20
-      })
-
-      if (trades.length === 0) return 100
-
-      // Count consecutive losses
-      let streak = 0
-      for (const trade of trades) {
-        if (trade.pnl < 0) {
-          streak++
-        } else {
-          break
-        }
-      }
-
-      // Score based on losing streak
-      if (streak === 0) return 100
-      if (streak <= 2) return 90
-      if (streak <= this.thresholds.losingStreakLimit) return 60
-      if (streak <= 7) return 35
-      if (streak <= 10) return 15
-      return 5
-
+      const trades = await prisma.execution.findMany({ where: { portfolioId, status: 'filled' }, select: { pnl: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 20 })
+      return scoreLosingStreak(trades.map((t) => t.pnl))
     } catch (error) {
       console.error('Failed to score losing streak:', error)
       return 50
     }
   }
 
+
   // Score volatility (0-100)
   async scoreVolatility(portfolioId) {
     try {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-
-      const trades = await prisma.execution.findMany({
-        where: {
-          portfolioId,
-          createdAt: { gte: sevenDaysAgo },
-          status: 'filled'
-        },
-        select: {
-          pnl: true
-        }
-      })
-
-      if (trades.length < 5) return 100
-
-      // Calculate standard deviation of returns
-      const returns = trades.map(t => t.pnl)
-      const mean = returns.reduce((sum, r) => sum + r, 0) / returns.length
-      const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length
-      const stdDev = Math.sqrt(variance)
-
-      // Normalize by average trade size
-      const avgTradeSize = returns.reduce((sum, r) => sum + Math.abs(r), 0) / returns.length
-      const normalizedVolatility = avgTradeSize > 0 ? stdDev / avgTradeSize : 0
-
-      // Score based on normalized volatility
-      if (normalizedVolatility <= 0.5) return 100
-      if (normalizedVolatility <= 1.0) return 85
-      if (normalizedVolatility <= this.thresholds.volatilitySpike) return 70
-      if (normalizedVolatility <= 3.0) return 45
-      if (normalizedVolatility <= 5.0) return 25
-      return 10
-
+      const trades = await prisma.execution.findMany({ where: { portfolioId, createdAt: { gte: sevenDaysAgo }, status: 'filled' }, select: { pnl: true } })
+      return scoreVolatility(trades.map((t) => t.pnl))
     } catch (error) {
       console.error('Failed to score volatility:', error)
       return 50
     }
   }
+
 
   // Get detailed stress information
   async getStressDetails(portfolioId) {

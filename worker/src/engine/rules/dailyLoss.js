@@ -38,6 +38,11 @@ export async function evaluateDailyLoss(config, portfolioId) {
     lossCache.set(portfolioId, { loss, fetchedAt: now, dayStart: dayKey })
   }
 
+  return dailyLossDecision(maxLoss, loss)
+}
+
+/** Pure decision: today's realized loss (positive number) against the limit. */
+export function dailyLossDecision(maxLoss, loss) {
   if (loss >= maxLoss) {
     return {
       pass:   false,
