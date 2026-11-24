@@ -10,6 +10,7 @@ import { useBotControls } from '../../ui/useBotControls'
 import { listJoin, money, plural, ratioPct, sessionDate, signedMoney } from '../../ui/format'
 import { loadBotsPage } from './botsApi'
 import CompareBots from './compare/CompareBots'
+import { summaryLine } from '../strategies/strategiesApi'
 
 // Below these, results are an anecdote, not evidence.
 export const MIN_CLOSED_TRADES = 5
@@ -36,13 +37,6 @@ function period(r) {
   return r.firstSession === r.lastSession ? `on ${sessionDate(r.firstSession)}` : `${sessionDate(r.firstSession)} – ${sessionDate(r.lastSession)}`
 }
 
-function ResultsSummary({ results: r }) {
-  if (!r) return <><b className="tl-faint">—</b>Results unavailable</>
-  const m = resultsMaturity(r)
-  if (m === 'none') return <><b className="tl-faint">Not tried yet</b>{r.runningBots ? `${plural(r.runningBots, 'bot')} running` : 'No bots use it yet'}</>
-  if (m === 'early') return <><b className="tl-faint">Too early to judge</b>{plural(r.fills, 'fill')} {period(r)}</>
-  return <><b>{signedMoney(r.totalPnl)}</b>{plural(r.closedTrades, 'closed trade')} · {period(r)}</>
-}
 
 function Research({ research }) {
   const h = research.holdout
@@ -90,7 +84,10 @@ function StartingPoint({ f, open, onToggle }) {
             {!f.available && <span className="tl-tag tl-tag--warn">Not available yet</span>}
           </span>
         </span>
-        <span className="tl-featured-results"><ResultsSummary results={r} /></span>
+        <span className="tl-featured-results" data-testid="featured-evidence">
+          <b>{summaryLine(f.evidence?.windows?.['5Y'])}</b>
+          {f.evidence?.windows?.['5Y']?.status === 'ok' ? `Platform backtest · 5 years · ${f.evidence.windows['5Y'].symbolsTested} symbols` : 'Platform backtest'}
+        </span>
       </button>
       {open && (
         <div className="tl-featured-body">
@@ -110,7 +107,18 @@ function StartingPoint({ f, open, onToggle }) {
             </div>
           </div>
           <div>
-            <h4>Results so far</h4>
+            <h4>Platform backtest</h4>
+            <p className="tl-small m0" data-testid="featured-evidence-detail">
+              {['5Y', '1Y', 'forward'].map((w) => (
+                <span key={w} className="tl-evidence-line">{w === '5Y' ? '5 years' : w === '1Y' ? 'Last year' : 'Since published'}: {summaryLine(f.evidence?.windows?.[w])}</span>
+              ))}
+            </p>
+            <p className="tl-small" style={{ margin: '6px 0 18px' }}>
+              <Link to={`/strategies/${encodeURIComponent(f.id)}`}>Full evidence and assumptions →</Link>
+              <span className="tl-muted"> Standardized test of these defaults; your changes make it a different configuration.</span>
+            </p>
+            <h4>Paper results from bots built on it</h4>
+            <p className="tl-small tl-muted" style={{ margin: '0 0 6px' }}>Not a standardized test: users choose their own symbols, capital, settings and start dates.</p>
             {!r ? (
               <p className="tl-small tl-muted m0">Results are unavailable right now.</p>
             ) : m === 'none' ? (

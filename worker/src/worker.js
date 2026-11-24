@@ -14,6 +14,7 @@ import { startReplayFeed } from './market/replayFeed.js'
 import { waitForSchema } from './db/schemaGate.js'
 import { decrypt } from './utils/encryption.js'
 import { startBacktestLoop, stopBacktestLoop } from './backtest/backtestLoop.js'
+import { startStrategyEvidenceLoop, stopStrategyEvidenceLoop } from './backtest/strategyEvidenceLoop.js'
 
 // Initialize quote sync to server
 startQuoteSync()
@@ -86,6 +87,7 @@ async function main() {
     startHeartbeat()
     await startBotEngine()
     startBacktestLoop()
+    startStrategyEvidenceLoop()
     startReplayFeed({
       session: sim.session,
       resolveSession: sim.mode === 'paper_daily' ? () => currentSimSession({ config: sim }) : null,
@@ -117,6 +119,7 @@ async function main() {
   // Start the heartbeat
   startHeartbeat()
   startBacktestLoop()
+  startStrategyEvidenceLoop()
 
   // Market data uses an explicit service-level credential for shared price streaming.
   // Never use an arbitrary customer account (brokerAccount.findFirst) for shared infrastructure.
@@ -232,6 +235,7 @@ async function shutdown(signal) {
   disconnect()
   if (heartbeatTimer) clearInterval(heartbeatTimer)
   stopBacktestLoop()
+  stopStrategyEvidenceLoop()
   if (orderWorkerPromise) await Promise.race([orderWorkerPromise, sleep(2_000)])
   await prisma.$disconnect()
   process.exit(0)

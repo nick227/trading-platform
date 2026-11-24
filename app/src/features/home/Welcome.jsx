@@ -11,6 +11,9 @@ export default function Welcome() {
       <p className="text-sm">
         <strong>Paper trading only.</strong> TradeLoom does not hold deposits, and live trading is disabled.
       </p>
+      <p className="text-sm">
+        <Link to="/strategies">See how every platform strategy performed historically</Link> — tested the same way, including the ones that didn’t work. No account needed.
+      </p>
       <Link to="/auth" className="btn btn-primary">Sign in or create an account</Link>
     </main>
   )

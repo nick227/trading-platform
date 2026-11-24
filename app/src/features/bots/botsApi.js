@@ -55,10 +55,11 @@ export function normalizeFeatured(template, platformRow) {
 }
 
 export async function loadBotsPage() {
-  const [catalog, platform, bots] = await Promise.all([
+  const [catalog, platform, bots, evidence] = await Promise.all([
     settle(get('/bots/catalog')),
     settle(get('/strategies/platform')),
     settle(get('/bots')),
+    settle(get('/public/strategies')),
   ])
 
   const templates = catalog.ok
@@ -66,7 +67,8 @@ export async function loadBotsPage() {
     : []
   const platformRows = platform.ok ? asArray(platform.value) : []
   const byId = new Map(platformRows.map((p) => [p.id, p]))
-  const featured = templates.map((t) => normalizeFeatured(t, byId.get(t.id)))
+  const evidenceById = new Map((evidence.ok ? asArray(evidence.value) : []).map((e) => [e.templateId, e]))
+  const featured = templates.map((t) => ({ ...normalizeFeatured(t, byId.get(t.id)), evidence: evidenceById.get(t.id) ?? null }))
 
   const rawBots = bots.ok ? asArray(bots.value) : []
   const tracked = rawBots.slice(0, ACTIVITY_BOT_LIMIT)

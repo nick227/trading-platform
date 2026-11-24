@@ -663,3 +663,39 @@ model BacktestRun {
   @@index([botId, createdAt])
   @@index([status, createdAt])
 }
+
+// A platform strategy as tested: the template's rules and config plus the standardized test
+// parameters, content-addressed. Results never move to a different version.
+model StrategyVersion {
+  id               String   @id @db.VarChar(64)   // sv_<sha256 prefix> of the definition
+  templateId       String   @db.VarChar(191)
+  definition       Json                           // { config, rules, parameters, standard }
+  backtestable     Boolean
+  reason           String?  @db.VarChar(300)      // why not, when not backtestable
+  firstSession     String   @db.VarChar(10)       // last completed session when first published
+  createdAt        DateTime @default(now())
+
+  @@index([templateId, createdAt])
+}
+
+// Immutable published result: one strategy version × symbol × window, ending on a session.
+model StrategyEvidence {
+  id                String   @id @db.VarChar(191)
+  strategyVersionId String   @db.VarChar(64)
+  templateId        String   @db.VarChar(191)
+  symbol            String   @db.VarChar(16)
+  window            String   @db.VarChar(16)      // 5Y | 1Y | forward
+  startDate         String?  @db.VarChar(10)
+  endDate           String   @db.VarChar(10)
+  status            String   @db.VarChar(32)      // ok | not_backtestable | no_data | awaiting_sessions
+  reason            String?  @db.VarChar(300)
+  executionModel    String   @db.VarChar(32)
+  riskPolicyVersion String   @db.VarChar(64)
+  dataFingerprint   String?  @db.VarChar(64)
+  parameters        Json?                          // resolved standardized parameters (e.g. trigger price)
+  results           Json?                          // metrics, buyAndHold, curve (downsampled), skips, issues
+  createdAt         DateTime @default(now())
+
+  @@unique([strategyVersionId, symbol, window, endDate])
+  @@index([templateId, endDate])
+}

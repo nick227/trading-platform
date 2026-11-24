@@ -22,8 +22,15 @@ const platform = [
   },
 ]
 
+const ok = (o) => ({ status: 'ok', symbolsTested: 10, symbolsTraded: 10, beatBuyAndHold: 2, worstDrawdownPct: 18.4, trades: 50, ...o })
+const evidence = [
+  { templateId: 'tmpl_dca', asOf: '2026-11-20', windows: { '5Y': ok({ medianReturnPct: 31.2, medianBuyAndHoldPct: 88.5 }), '1Y': ok({ medianReturnPct: -2.1, medianBuyAndHoldPct: 4 }), forward: { status: 'awaiting_sessions', symbolsTested: 0 } } },
+  { templateId: 'tmpl_research', asOf: '2026-11-20', windows: { '5Y': { status: 'not_backtestable', symbolsTested: 0 }, '1Y': { status: 'not_backtestable', symbolsTested: 0 }, forward: { status: 'not_backtestable', symbolsTested: 0 } } },
+]
+
 function mockApi({ bots = [], platformRows = platform } = {}) {
   get.mockImplementation(async (path, params = {}) => {
+    if (path === '/public/strategies') return evidence
     if (path === '/bots/catalog') return catalog
     if (path === '/strategies/platform') { if (platformRows instanceof Error) throw platformRows; return platformRows }
     if (path === '/bots') return bots
@@ -38,17 +45,15 @@ const renderPage = (path = '/bots') => render(<MemoryRouter initialEntries={[pat
 beforeEach(() => vi.clearAllMocks())
 
 describe('BotsPage', () => {
-  it('lists starting points in plain language, never presenting a small sample as performance', async () => {
+  it('leads each starting point with its standardized platform backtest, including non-results', async () => {
     mockApi()
     renderPage()
     const [dca, research] = await screen.findAllByTestId('featured-bot')
     expect(dca).toHaveTextContent('Buys a stock you choose on a fixed schedule — once every day, whatever the price.')
-    // 2 fills on one day: "too early to judge", and no headline P&L.
-    expect(dca).toHaveTextContent('Too early to judge2 fills on Nov 19')
+    expect(within(dca).getByTestId('featured-evidence')).toHaveTextContent('+31.20% median vs +88.50% buy & holdPlatform backtest · 5 years · 10 symbols')
+    // Users' paper fills are not a headline (2 fills on one day): no P&L in the row.
     expect(dca.querySelector('.tl-featured-row').textContent).not.toMatch(/\$52/)
-    // No fills → says so, never "$0.00" or "0%".
-    expect(research).toHaveTextContent('Not tried yet')
-    expect(research.textContent).not.toMatch(/\$0\.00|0%/)
+    expect(within(research).getByTestId('featured-evidence')).toHaveTextContent('Not backtestable')
     expect(research).toHaveTextContent('Latest research: no proven edge')
   })
 
@@ -58,6 +63,9 @@ describe('BotsPage', () => {
     const [dca] = await screen.findAllByTestId('featured-bot')
     fireEvent.click(within(dca).getByRole('button', { name: /DCA Accumulator/ }))
     expect(within(dca).getByText('At most one trade per symbol per day')).toBeInTheDocument()
+    expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Last year: −2.10% median vs +4.00% buy & hold')
+    expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Since published: Awaiting new sessions')
+    expect(within(dca).getByRole('link', { name: /Full evidence/ })).toHaveAttribute('href', '/strategies/tmpl_dca')
     expect(within(dca).getByTestId('featured-results')).toHaveTextContent('Too early to judge. 2 simulated fills from 1 bot on Nov 19, 0 closed trades (−$52.12 at the Nov 20 close). Results are shown once there are 5 closed trades across 5 sessions.')
     expect(within(dca).getByRole('link', { name: 'Start from this' })).toHaveAttribute('href', '/bots/new?template=tmpl_dca')
   })

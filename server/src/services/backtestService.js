@@ -210,31 +210,40 @@ export async function listBacktests(userId, { botId = null, limit = 10, prismaCl
 
 // ── Worker side ───────────────────────────────────────────────────────────────
 
-/** Fetches, validates and fingerprints everything a run needs. */
-export async function loadRunData(run, { engine = engineClient } = {}) {
-  const warm = new Date(`${run.startDate}T00:00:00Z`)
+/**
+ * Fetches, validates and fingerprints daily bars (plus the calendar ticker and any regime
+ * series) for [start − warm-up, end]. Shared by user backtests and platform strategy evidence.
+ */
+export async function loadDataset({ symbols, start, end, regimeSymbols = [] }, { engine = engineClient } = {}) {
+  const warm = new Date(`${start}T00:00:00Z`)
   warm.setUTCDate(warm.getUTCDate() - BACKTEST_LIMITS.warmupDays)
   const fetchStart = isoDate(warm)
-  const tickers = [...new Set([BACKTEST_LIMITS.calendarTicker, ...run.symbols])]
+  const tickers = [...new Set([BACKTEST_LIMITS.calendarTicker, ...symbols])]
   const raw = {}
   const sources = {}
   for (const t of tickers) {
-    const r = await engine.getDailyBars(t, fetchStart, run.endDate)
+    const r = await engine.getDailyBars(t, fetchStart, end)
     raw[t] = Array.isArray(r?.bars) ? r.bars : []
     sources[t] = r?.sha256 ?? null
   }
   const ds = normalizeDataset(raw, { calendarTicker: BACKTEST_LIMITS.calendarTicker })
-  const regimeSymbols = [...new Set((run.configSnapshot.bot.rules ?? []).filter((r) => r.type === 'trend_filter').map((r) => String(r.config?.symbol ?? 'SPY').toUpperCase()))]
   const regimes = {}
   for (const s of regimeSymbols) {
-    const r = await engine.getRegimeHistory(s, fetchStart, run.endDate)
+    const r = await engine.getRegimeHistory(s, fetchStart, end)
     regimes[s] = Array.isArray(r?.points) ? r.points : []
   }
-  const coverage = Object.fromEntries(run.symbols.map((t) => [t, ds.availability[t] ?? null]))
-  const late = run.symbols.filter((t) => coverage[t] && coverage[t].first > run.startDate)
+  const coverage = Object.fromEntries(symbols.map((t) => [t, ds.availability[t] ?? null]))
+  const late = symbols.filter((t) => coverage[t] && coverage[t].first > start)
   const issues = [...ds.issues, ...late.map((t) => ({ ticker: t, type: 'available_from', date: coverage[t].first }))]
   const fingerprint = dataFingerprint({ bars: ds.bars, regimes, issues, calendar: ds.calendar, sources })
   return { data: { bars: ds.bars, calendar: ds.calendar, regimes, unusable: ds.unusable }, issues, coverage, fingerprint }
+}
+
+export const regimeSymbolsOf = (rules) => [...new Set((rules ?? []).filter((r) => r.type === 'trend_filter').map((r) => String(r.config?.symbol ?? 'SPY').toUpperCase()))]
+
+/** Fetches, validates and fingerprints everything a run needs. */
+export async function loadRunData(run, { engine = engineClient } = {}) {
+  return loadDataset({ symbols: run.symbols, start: run.startDate, end: run.endDate, regimeSymbols: regimeSymbolsOf(run.configSnapshot.bot.rules) }, { engine })
 }
 
 /** Claims and runs the oldest queued backtest. Returns the finished run, or null if none. */

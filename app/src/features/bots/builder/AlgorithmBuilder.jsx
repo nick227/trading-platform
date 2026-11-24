@@ -11,6 +11,7 @@ import { money, sessionDate } from '../../../ui/format'
 import AlgorithmStep from './AlgorithmStep'
 import SymbolContext from './SymbolContext'
 import BacktestPanel from './BacktestPanel'
+import TemplateBaseline, { behaviourKey } from './TemplateBaseline'
 import AlgorithmIdentity, { algorithmIdentity } from '../../../ui/AlgorithmIdentity'
 import { loadWizardData, parseSymbols } from './builderData'
 import {
@@ -62,6 +63,7 @@ export default function AlgorithmBuilder() {
   const [originalBot, setOriginalBot] = useState(null)
   const [draft, setDraft] = useState(null)
   const [loadedDraft, setLoadedDraft] = useState(null) // as loaded from the server, for conflict rebase
+  const [templateDraft, setTemplateDraft] = useState(null) // create mode: the starting point as tested
   const [touched, setTouched] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -141,7 +143,9 @@ export default function AlgorithmBuilder() {
 
         setOriginalBot(selectedTemplate)
         if (selectedTemplate) {
-          setDraft(initCreateDraft(selectedTemplate, wd, pinnedTicker))
+          const d = initCreateDraft(selectedTemplate, wd, pinnedTicker)
+          setDraft(d)
+          setTemplateDraft(d)
         }
         setLoading(false)
       })
@@ -159,7 +163,9 @@ export default function AlgorithmBuilder() {
     if (!tmpl) return
     setParams({ template: tmpl.id, ...(pinnedTicker ? { ticker: pinnedTicker } : {}) }, { replace: true })
     setOriginalBot(tmpl)
-    setDraft(initCreateDraft(tmpl, wizardData, pinnedTicker))
+    const d = initCreateDraft(tmpl, wizardData, pinnedTicker)
+    setDraft(d)
+    setTemplateDraft(d)
     setTouched(false)
     setActiveStep(null)
     setSubmitError(null)
@@ -400,6 +406,9 @@ export default function AlgorithmBuilder() {
               </Field>
 
           </AlgorithmStep>
+          {!isEdit && originalBot?.id && templateDraft && (
+            <TemplateBaseline templateId={originalBot.id} modified={behaviourKey(draft) !== behaviourKey(templateDraft)} />
+          )}
           {isEdit && <p className="tl-algorithm-save-note">{hasChanges ? 'Your bot keeps its saved configuration until you save these changes.' : 'Changes here apply only when you save.'}</p>}
           <div className="tl-algorithm-flow">
             <AlgorithmStep label="Watch" summary={parseSymbols(draft.symbolsText).join(', ') || 'Choose symbols'} mark="○" open={activeStep === 'watch'} onToggle={() => openStep('watch')} testId="section-watch">
