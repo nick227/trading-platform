@@ -17,9 +17,8 @@
  * Differences from live that are inherent to history, recorded in result.assumptions:
  *   - operational risk (broker/quote/queue health) has no history: scored at its healthy 100;
  *   - the run is an isolated portfolio holding only this bot (no other bots' positions);
- *   - stress inputs mirror live exactly (no recorded equity peak; Execution.pnl is not
- *     maintained, so per-fill P&L is unknown) — the drawdown legacy check uses the run's own
- *     value history, as live does;
+ *   - stress uses the run's own peak equity and FIFO realized P&L of its closed trades —
+ *     the same inputs live trading builds from the portfolio (riskCore.stressInputs);
  *   - the clock at each decision is the session close (21:00 UTC).
  */
 import { calculateFifoAccounting, realizedPnlSince } from '../../../server/src/services/botAccountingService.js'
@@ -27,7 +26,7 @@ import { maxDrawdown } from '../../../server/src/services/portfolioValuationServ
 import { computeBuyQuantity, deriveDirection, ruleDecision, runRulePipeline, sellableFrom } from '../engine/decisionCore.js'
 import {
   DEFAULT_RISK_SETTINGS, RISK_POLICY_VERSION, closedTradeWinRate, drawdownStress, executionConfidence,
-  gateVerdict, legacyRiskChecks, portfolioExposure, scoreWinRate,
+  gateVerdict, legacyRiskChecks, portfolioExposure, scoreWinRate, stressInputs,
 } from '../risk/riskCore.js'
 import { resolveRiskOutcome } from '../risk/riskOutcome.js'
 import { botEligibility } from '../risk/orderEligibility.js'
@@ -168,14 +167,12 @@ export async function runBacktest({ bot, symbols, start, end, executionModel = '
         winRateScore: scoreWinRate(closedTradeWinRate(fills, fifo.perExecutionPnl, now.getTime())), unknownAsNotApplicable: true,
       })
       const heldValues = Object.entries(fifo.openPositions).map(([ticker, p]) => ({ ticker, value: p.quantity * (lastClose[ticker] ?? p.avgPrice) }))
-      // Per-fill P&L is unknown to live stress scoring (Execution.pnl is not maintained): same here.
-      const todays = fills.filter((f) => f.session === d).map(() => null)
-      const recent = [...fills].reverse().slice(0, 20).map(() => null)
-      const week = fills.filter((f) => now - f.createdAt <= 7 * 86_400_000).map(() => null)
+      // Stress: the run's own peak equity and FIFO realized P&L of its closed trades (as live).
+      const stressIn = stressInputs({ fills, perExecutionPnl: fifo.perExecutionPnl, peakEquity: peak, equity: eq, now: now.getTime(), dayStart: dayStart(d).getTime() })
       const scores = {
         operational: OPERATIONAL_SCORE_HISTORICAL,
         exposure: portfolioExposure({ holdings: heldValues, marketValue, equity: eq }).score,
-        stress: drawdownStress({ peakEquity: null, equity: eq, todaysPnls: todays, recentPnls: recent, weekPnls: week }).score,
+        stress: drawdownStress(stressIn).score,
         execution: exec.score,
       }
       const checks = legacyRiskChecks({
