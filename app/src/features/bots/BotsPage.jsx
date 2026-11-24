@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import ActivityFeed from '../../ui/ActivityFeed'
 import { Chevron } from '../../ui/Disclosure'
 import BotRow from '../../ui/BotRow'
+import AlgorithmIdentity from '../../ui/AlgorithmIdentity'
 import { describeAction, describeGuards, isResearchBot, needsTriggerPrice } from '../../ui/describeBot'
 import { EmergencyBanner, useEmergencyStop } from '../../ui/Safety'
 import { useBotControls } from '../../ui/useBotControls'
@@ -80,7 +81,7 @@ function StartingPoint({ f, open, onToggle }) {
     <li id={`featured-${f.id}`} data-testid="featured-bot">
       <button type="button" className="tl-featured-row" aria-expanded={open} onClick={onToggle}>
         <span>
-          <span className="tl-featured-name"><span>{f.name}</span><Chevron open={open} /></span>
+          <span className="tl-featured-name"><AlgorithmIdentity bot={f} compact /><span>{f.name}</span><Chevron open={open} /></span>
           <span className="tl-featured-sentence" style={{ display: 'block' }}>{describeAction(f, { template: true })}</span>
           <span className="tl-tags">
             <span className="tl-tag">{behaviorTag(f)}</span>
@@ -166,7 +167,7 @@ export default function BotsPage() {
       <header className="tl-header">
         <div>
           <h1 className="tl-title">Bots</h1>
-          <p className="tl-lede">Automate a trading idea with conditions you choose, and test it on simulated money.</p>
+          <p className="tl-lede">Build a trading idea. Give it rules. See what it does.</p>
         </div>
         <Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot</Link>
       </header>
@@ -184,7 +185,7 @@ export default function BotsPage() {
               </div>
               {d.myBotsError
                 ? <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.myBotsError}</div>
-                : <ul className="tl-list">{d.myBots.map((b) => <BotRow key={b.id} bot={b} busy={Boolean(controls.busy[b.id])} error={controls.errors[b.id]} onToggle={controls.toggle} from="bots" />)}</ul>}
+                : <ul className="tl-list tl-machine-list">{d.myBots.map((b) => <BotRow key={b.id} bot={b} busy={Boolean(controls.busy[b.id])} error={controls.errors[b.id]} onToggle={controls.toggle} from="bots" />)}</ul>}
             </section>
           )}
 
