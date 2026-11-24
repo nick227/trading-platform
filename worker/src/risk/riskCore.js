@@ -50,7 +50,8 @@ const SECTOR_MAP = Object.freeze({
 const CORRELATED_PAIRS = Object.freeze([['AAPL', 'MSFT'], ['GOOGL', 'META'], ['JPM', 'BAC'], ['XOM', 'CVX'], ['JNJ', 'PFE']])
 
 export const RISK_POLICY_VERSION = `normal-${createHash('sha256').update(JSON.stringify({
-  RISK_THRESHOLDS, EXECUTION_WEIGHTS, DEFAULT_RISK_SETTINGS, EXPOSURE_LIMITS, STRESS_LIMITS, SECTOR_MAP, CORRELATED_PAIRS, formulas: 1,
+  RISK_THRESHOLDS, EXECUTION_WEIGHTS, DEFAULT_RISK_SETTINGS, EXPOSURE_LIMITS, STRESS_LIMITS, SECTOR_MAP, CORRELATED_PAIRS, formulas: 2,
+  // 2: stress uses a maintained equity peak and FIFO realized P&L of closed trades.
 })).digest('hex').slice(0, 12)}`
 
 // ── Decision matrix ──────────────────────────────────────────────────────────
@@ -251,9 +252,28 @@ export function portfolioExposure({ holdings, marketValue, equity }) {
 }
 
 // ── Drawdown stress ──────────────────────────────────────────────────────────
-// Live inputs come from EquityPeak and Execution.pnl (see DrawdownStressService). Callers
-// pass the same quantities: peakEquity (null when none recorded), today's per-fill P&L,
-// the 20 most recent fills' P&L newest first, and the last 7 days' P&L.
+// Inputs (live: DrawdownStressService; backtest: historicalRunner) come from stressInputs:
+// the highest equity the portfolio has reached, and the realized P&L of its closed trades.
+
+/**
+ * Stress inputs from portfolio fills. Closed trades are sells that closed FIFO lots
+ * (`perExecutionPnl` from calculateFifoAccounting); buys are neither wins nor losses.
+ * peakEquity: the highest equity reached (including now).
+ */
+export function stressInputs({ fills, perExecutionPnl, peakEquity, equity, now, dayStart }) {
+  const at = (f) => new Date(f.filledAt ?? f.createdAt).getTime()
+  const closed = fills
+    .filter((f) => String(f.direction).toLowerCase() === 'sell' && perExecutionPnl.has(f.id))
+    .sort((a, b) => at(b) - at(a))
+    .map((f) => ({ at: at(f), pnl: perExecutionPnl.get(f.id) }))
+  return {
+    peakEquity: Math.max(peakEquity ?? 0, equity),
+    equity,
+    todaysPnls: closed.filter((c) => c.at >= dayStart).map((c) => c.pnl),
+    recentPnls: closed.slice(0, 20).map((c) => c.pnl),
+    weekPnls: closed.filter((c) => now - c.at <= 7 * 86_400_000).map((c) => c.pnl),
+  }
+}
 
 export function scoreDrawdown(peakEquity, equity) {
   if (!(peakEquity > 0)) return 100

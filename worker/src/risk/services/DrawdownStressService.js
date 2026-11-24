@@ -1,9 +1,11 @@
 // Drawdown Stress Score Service
 // Measures how stressed the account trajectory is
 
-import { brokerAccountSnapshot } from '../accountSnapshot.js'
+import { portfolioRiskHistory, portfolioRiskSnapshot } from '../accountSnapshot.js'
 import prisma from '../../db/prisma.js'
-import { scoreDrawdown, scoreDailyLoss, scoreLosingStreak, scoreVolatility } from '../riskCore.js'
+import { calculateFifoAccounting } from '../../../../server/src/services/botAccountingService.js'
+import { loadPortfolioFills } from '../../../../server/src/services/portfolioValuationService.js'
+import { drawdownStress, scoreDrawdown, scoreDailyLoss, scoreLosingStreak, scoreVolatility, stressInputs } from '../riskCore.js'
 
 export class DrawdownStressService {
   constructor() {
@@ -17,156 +19,71 @@ export class DrawdownStressService {
     }
   }
 
+  /**
+   * Stress inputs for a portfolio: the peak equity (EquityPeak, kept up to date here from the
+   * valuation history and current equity) and FIFO realized P&L of its closed trades.
+   * Throws when the portfolio can't be valued — the stress score then fails closed.
+   */
+  async loadInputs(portfolioId, { now = Date.now() } = {}) {
+    const snap = await portfolioRiskSnapshot(portfolioId)
+    const history = await portfolioRiskHistory(snap)
+    const row = await prisma.equityPeak.findUnique({ where: { portfolioId } })
+    const recorded = Number(row?.peakEquity) || 0
+    const peak = Math.max(recorded, history.peak ?? 0, snap.equity)
+    if (peak > recorded + 0.005) {
+      await prisma.equityPeak.upsert({
+        where: { portfolioId },
+        create: { portfolioId, peakEquity: peak.toFixed(2), peakDate: new Date(now) },
+        update: { peakEquity: peak.toFixed(2), peakDate: new Date(now) },
+      })
+    }
+    const fills = await loadPortfolioFills(snap.userId)
+    const { perExecutionPnl } = calculateFifoAccounting(fills)
+    const dayStart = new Date(now)
+    dayStart.setHours(0, 0, 0, 0)
+    return stressInputs({ fills, perExecutionPnl, peakEquity: peak, equity: snap.equity, now, dayStart: dayStart.getTime() })
+  }
+
   // Calculate drawdown stress score (0-100)
   async calculateDrawdownStress(portfolioId) {
     try {
-      const scores = {
-        drawdown: await this.scoreDrawdown(portfolioId),
-        dailyLoss: await this.scoreDailyLoss(portfolioId),
-        losingStreak: await this.scoreLosingStreak(portfolioId),
-        volatility: await this.scoreVolatility(portfolioId)
-      }
-
-      // Average of all scores (simple V1)
-      const avgScore = (scores.drawdown + scores.dailyLoss + scores.losingStreak + scores.volatility) / 4
-
+      const inputs = await this.loadInputs(portfolioId)
+      const r = drawdownStress(inputs)
       return {
-        score: Math.round(avgScore),
-        label: this.getLabel(avgScore),
-        breakdown: scores,
-        recommendation: this.getRecommendation(avgScore),
-        details: await this.getStressDetails(portfolioId)
+        score: r.score,
+        label: this.getLabel(r.avg),
+        breakdown: r.breakdown,
+        recommendation: this.getRecommendation(r.avg),
+        details: {
+          peakEquity: inputs.peakEquity,
+          currentEquity: inputs.equity,
+          drawdown: inputs.peakEquity > 0 ? (inputs.peakEquity - inputs.equity) / inputs.peakEquity : 0,
+          realizedToday: inputs.todaysPnls.reduce((s, p) => s + p, 0),
+          closedTradesConsidered: inputs.recentPnls.length,
+        },
       }
-
     } catch (error) {
       console.error('Failed to calculate drawdown stress:', error)
-      return {
-        score: 0,
-        label: 'weak',
-        breakdown: {},
-        recommendation: 'pause_all',
-        error: error.message
-      }
+      return { score: 0, label: 'weak', breakdown: {}, recommendation: 'pause_all', error: error.message }
     }
   }
 
-  // Score current drawdown (0-100)
-  async scoreDrawdown(portfolioId) {
-    try {
-      // Peak from EquityPeak; current equity from the owner's account (simulated in simulator mode).
-      const peakRow = await prisma.equityPeak.findUnique({ where: { portfolioId } })
-      const peak = Number(peakRow?.peakEquity)
-      if (!peakRow || !(peak > 0)) return 100
-      const { equity } = await brokerAccountSnapshot(portfolioId)
-      return scoreDrawdown(peak, equity)
-    } catch (error) {
-      console.error('Failed to score drawdown:', error)
+  // Individual sub-scores (same inputs as calculateDrawdownStress).
+  async scoreDrawdown(portfolioId) { return this.subScore(portfolioId, (i) => scoreDrawdown(i.peakEquity, i.equity)) }
+  async scoreDailyLoss(portfolioId) { return this.subScore(portfolioId, (i) => scoreDailyLoss(i.todaysPnls, i.equity)) }
+  async scoreLosingStreak(portfolioId) { return this.subScore(portfolioId, (i) => scoreLosingStreak(i.recentPnls)) }
+  async scoreVolatility(portfolioId) { return this.subScore(portfolioId, (i) => scoreVolatility(i.weekPnls)) }
+  async subScore(portfolioId, fn) {
+    try { return fn(await this.loadInputs(portfolioId)) } catch (error) {
+      console.error('Failed to score stress:', error)
       return 50
     }
   }
 
-
-  // Score daily loss (0-100)
-  async scoreDailyLoss(portfolioId) {
-    try {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const trades = await prisma.execution.findMany({ where: { portfolioId, createdAt: { gte: today }, status: 'filled' }, select: { pnl: true } })
-      const pnls = trades.map((t) => t.pnl)
-      // Equity is only read when there is a loss (as before: a zero loss never needs it).
-      if (pnls.reduce((sum, p) => sum + Math.min(0, p), 0) === 0) return 100
-      const { equity } = await brokerAccountSnapshot(portfolioId)
-      return scoreDailyLoss(pnls, equity)
-    } catch (error) {
-      console.error('Failed to score daily loss:', error)
-      return 50
-    }
-  }
-
-
-  // Score losing streak (0-100)
-  async scoreLosingStreak(portfolioId) {
-    try {
-      const trades = await prisma.execution.findMany({ where: { portfolioId, status: 'filled' }, select: { pnl: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 20 })
-      return scoreLosingStreak(trades.map((t) => t.pnl))
-    } catch (error) {
-      console.error('Failed to score losing streak:', error)
-      return 50
-    }
-  }
-
-
-  // Score volatility (0-100)
-  async scoreVolatility(portfolioId) {
-    try {
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      const trades = await prisma.execution.findMany({ where: { portfolioId, createdAt: { gte: sevenDaysAgo }, status: 'filled' }, select: { pnl: true } })
-      return scoreVolatility(trades.map((t) => t.pnl))
-    } catch (error) {
-      console.error('Failed to score volatility:', error)
-      return 50
-    }
-  }
-
-
-  // Get detailed stress information
   async getStressDetails(portfolioId) {
-    try {
-      const peakRow = await prisma.equityPeak.findUnique({ where: { portfolioId } })
-      const { equity: currentEquity } = await brokerAccountSnapshot(portfolioId)
-      const peakEquity = Number(peakRow?.peakEquity) || 0
-      const drawdown = peakEquity > 0 ? (peakEquity - currentEquity) / peakEquity : 0
-
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-
-      const trades = await prisma.execution.findMany({
-        where: {
-          portfolioId,
-          createdAt: { gte: today },
-          status: 'filled'
-        },
-        select: { pnl: true }
-      })
-
-      const dailyLoss = trades.reduce((sum, t) => sum + Math.min(0, t.pnl), 0)
-      const dailyLossPct = currentEquity > 0 ? Math.abs(dailyLoss) / currentEquity : 0
-
-      const recentTrades = await prisma.execution.findMany({
-        where: {
-          portfolioId,
-          status: 'filled'
-        },
-        select: { pnl: true, createdAt: true },
-        orderBy: { createdAt: 'desc' },
-        take: 20
-      })
-
-      let losingStreak = 0
-      for (const trade of recentTrades) {
-        if (trade.pnl < 0) {
-          losingStreak++
-        } else {
-          break
-        }
-      }
-
-      return {
-        currentEquity,
-        peakEquity,
-        drawdown: Math.round(drawdown * 100),
-        dailyLoss: Math.round(dailyLossPct * 100),
-        losingStreak,
-        tradesToday: trades.length
-      }
-
-    } catch (error) {
-      console.error('Failed to get stress details:', error)
-      return null
-    }
+    return (await this.calculateDrawdownStress(portfolioId)).details ?? null
   }
 
-  // Get label for score
   getLabel(score) {
     if (score >= 75) return 'good'
     if (score >= 50) return 'moderate'
