@@ -61,6 +61,7 @@ test.describe('visual geometry contract', () => {
           card: rect('.tl-card-shell'),
           firstAction: rect('[data-testid="equal-actions"] .tl-btn:first-child'),
           secondAction: rect('[data-testid="equal-actions"] .tl-btn:last-child'),
+          botActionWidths: [...document.querySelectorAll('.tl-bot-actions > .tl-btn')].map(el => el.getBoundingClientRect().width),
           positive: getComputedStyle(document.querySelector('.tl-btn--positive')).backgroundColor,
           warning: getComputedStyle(document.querySelector('.tl-btn--warning')).backgroundColor,
           destructive: getComputedStyle(document.querySelector('.tl-btn--danger-solid')).backgroundColor,
@@ -72,6 +73,7 @@ test.describe('visual geometry contract', () => {
       expect(geometry.firstAction.height).toBe(42)
       expect(geometry.secondAction.height).toBe(42)
       expect(Math.abs(geometry.firstAction.width - geometry.secondAction.width)).toBeLessThanOrEqual(1)
+      expect(Math.max(...geometry.botActionWidths) - Math.min(...geometry.botActionWidths)).toBeLessThanOrEqual(1)
       expect(new Set([geometry.positive, geometry.warning, geometry.destructive]).size).toBe(3)
       await page.screenshot({ path: testInfo.outputPath(`geometry-${width}.png`), fullPage: true })
     })
