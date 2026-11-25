@@ -32,3 +32,7 @@
   .tl-content-state { padding: var(--tl-card-padding-compact); }
 }
 @media (max-width: 400px) { .tl-content-facts, .tl-content-facts--3 { grid-template-columns: minmax(0, 1fr); gap: var(--tl-gap-related); } }
+
+.tl-content-rule-group { margin-top: var(--tl-gap-card); }
+.tl-content-subheading { font-size: 15px; font-weight: 620; margin: 0 0 var(--tl-gap-related); }
+.tl-content-rule-group .tl-rule-list { margin: 0; }
