@@ -1,3 +1,4 @@
+import { PageIdentity } from '../../components/content/ContentBlocks'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from '../../api/client'
@@ -38,12 +39,7 @@ export default function AccountPage() {
   return (
     <main className="tl-page tl-account-page">
       <EmergencyBanner stop={stop} onClear={clear} />
-      <header className="tl-header">
-        <div>
-          <h1 className="tl-title">Account</h1>
-          <p className="tl-lede">Your profile and simulation environment settings.</p>
-        </div>
-      </header>
+      <PageIdentity title="Your account" description="Manage your profile and see which trading environment is active." />
 
       <section className="tl-section" aria-labelledby="profile-title">
         <div className="tl-section-head"><h2 className="tl-section-title" id="profile-title">Profile</h2></div>
@@ -83,8 +79,8 @@ export default function AccountPage() {
             </div>
             <p className="tl-small tl-muted" style={{ margin: '0 0 16px', lineHeight: 1.5 }}>
               {brokerStatus.mode === 'paper_daily'
-                ? <>Bots trade simulated money in an isolated simulator: they act once per trading day on that day’s close (latest: {sessionDate(brokerStatus.session, { year: true })}). No broker is connected or needed, and live trading is disabled.</>
-                : <>Bots trade simulated money in an isolated simulator: fills replay the {sessionDate(brokerStatus.session, { year: true })} close. No broker is connected or needed, and live trading is disabled.</>}
+                ? <>This is a simulated trading account. Bots evaluate trades once per trading day, using the closing prices (latest session: {sessionDate(brokerStatus.session, { year: true })}). Real money is not used.</>
+                : <>This account simulates trades using prices from {sessionDate(brokerStatus.session, { year: true })} close. Real money is not used.</>}
             </p>
             <dl className="tl-facts tl-facts--left tl-account-card__facts">
               <dt>Portfolio equity</dt><dd>{valuation ? money(valuation.equity) : valuation === false ? 'Unavailable' : '…'}</dd>
