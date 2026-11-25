@@ -42,6 +42,8 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     await expect(root.getByText('Forward paper')).toHaveCount(0)
     await expect(root.getByText('v01234567')).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1)
+    // Capture from the top so sticky navigation remains at its actual document position.
+    await page.evaluate(() => { document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, 0) })
     await page.screenshot({ path: testInfo.outputPath(`strategy-summary-${width}.png`), fullPage: true })
     await page.getByRole('button', { name: 'Strategy design and comparison' }).click()
     await expect(root.getByText('Autonomous AI allocation across liquid equities')).toBeVisible()
@@ -50,6 +52,8 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     await page.getByRole('button', { name: 'Testing methods & limitations' }).click()
     await expect(root.getByText('Simulated trades are not a prediction of future results.')).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1)
+    // Capture from the top so sticky navigation remains at its actual document position.
+    await page.evaluate(() => { document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, 0) })
     await page.screenshot({ path: testInfo.outputPath(`strategy-expanded-${width}.png`), fullPage: true })
   })
 }
