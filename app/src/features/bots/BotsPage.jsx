@@ -45,7 +45,7 @@ function Research({ research }) {
     <div data-testid="featured-research">
       <h4>Research</h4>
       <p className="tl-small m0">
-        Latest verified publication from <strong>{research.model ?? 'Alpha Engine'}</strong>
+        <strong>{research.model ?? 'Alpha Engine'}</strong>
         {research.horizon ? `, ${research.horizon} horizon` : ''}{research.observedAt ? `, ${sessionDate(research.observedAt, { year: true })}` : ''}.
       </p>
       {gap !== null && (
@@ -55,7 +55,7 @@ function Research({ research }) {
       )}
       <p className="tl-small" style={{ margin: '6px 0 0' }}>
         {research.edgeOverBaseline === true ? <span className="tl-verdict tl-verdict--edge">Beat its baseline</span>
-          : research.edgeOverBaseline === false ? <span className="tl-verdict tl-verdict--noedge">No proven edge — by default this bot won’t act on it</span> : null}
+          : research.edgeOverBaseline === false ? <span className="tl-verdict tl-verdict--noedge">No verified edge · Trading blocked</span> : null}
       </p>
       <p className="tl-small tl-muted" style={{ margin: '6px 0 0' }}>
         {h?.samples ? `${h.samples.toLocaleString()} holdout samples` : 'Holdout size unknown'}
@@ -72,6 +72,8 @@ function StartingPoint({ f, open, onToggle }) {
   const guards = describeGuards(f, { template: true })
   const r = f.results
   const m = resultsMaturity(r)
+  const isAi = f.botType === 'strategy_based' || f.config?.signalSource === 'ai_catalyst_momentum'
+  const evidenceWindow = isAi ? 'forward' : '5Y'
   return (
     <li id={`featured-${f.id}`} data-testid="featured-bot">
       <button type="button" className="tl-featured-row" aria-expanded={open} onClick={onToggle}>
@@ -85,8 +87,8 @@ function StartingPoint({ f, open, onToggle }) {
           </span>
         </span>
         <span className="tl-featured-results" data-testid="featured-evidence">
-          <b>{summaryLine(f.evidence?.windows?.['5Y'])}</b>
-          {f.evidence?.windows?.['5Y']?.status === 'ok' ? `Platform backtest · 5 years · ${f.evidence.windows['5Y'].symbolsTested} symbols` : 'Platform backtest'}
+          <b>{summaryLine(f.evidence?.windows?.[evidenceWindow])}</b>
+          {isAi ? 'Forward paper' : f.evidence?.windows?.['5Y']?.status === 'ok' ? `Backtest · 5 years · ${f.evidence.windows['5Y'].symbolsTested} symbols` : 'Backtest'}
         </span>
       </button>
       {open && (
@@ -97,28 +99,24 @@ function StartingPoint({ f, open, onToggle }) {
               {guards.map((g) => <li key={g}>{g}</li>)}
               {needsTriggerPrice(f.rules) && <li>You set the trigger price</li>}
             </ul>
-            <p className="tl-small tl-muted" style={{ margin: '10px 0 0' }}>
-              You choose the symbols, capital and per-order limit, and can change every condition — now or later. Every order also passes the risk policy.
-            </p>
-            <div className="tl-detail-actions">
+                        <div className="tl-detail-actions">
               {f.available
-                ? <Link className="tl-btn" to={`/bots/new?template=${encodeURIComponent(f.id)}`}>Start from this</Link>
-                : <span className="tl-small tl-muted">Strategy-based bots can’t run in the bot engine yet.</span>}
+                ? <Link className="tl-btn" to={`/bots/new?template=${encodeURIComponent(f.id)}`}>Customize</Link>
+                : <span className="tl-small tl-muted">Not available in Workshop.</span>}
             </div>
           </div>
           <div>
-            <h4>Platform backtest</h4>
+            <h4>{isAi ? 'Forward paper' : 'Backtest'}</h4>
             <p className="tl-small m0" data-testid="featured-evidence-detail">
-              {['5Y', '1Y', 'holdout', 'forward'].filter((w) => w !== 'holdout' || f.evidence?.windows?.holdout).map((w) => (
+              {(isAi ? ['forward'] : ['5Y', '1Y', 'holdout', 'forward']).filter((w) => w !== 'holdout' || f.evidence?.windows?.holdout).map((w) => (
                 <span key={w} className="tl-evidence-line">{{ '5Y': '5 years', '1Y': 'Last year', holdout: 'Holdout (out of sample)', forward: 'Since published' }[w]}: {summaryLine(f.evidence?.windows?.[w])}</span>
               ))}
             </p>
             <p className="tl-small" style={{ margin: '6px 0 18px' }}>
-              <Link to={`/strategies/${encodeURIComponent(f.id)}`}>Full evidence and assumptions →</Link>
-              <span className="tl-muted"> Standardized test of these defaults; your changes make it a different configuration.</span>
+              <Link to={`/strategies/${encodeURIComponent(f.id)}`}>Results and methodology →</Link>
             </p>
-            <h4>Paper results from bots built on it</h4>
-            <p className="tl-small tl-muted" style={{ margin: '0 0 6px' }}>Not a standardized test: users choose their own symbols, capital, settings and start dates.</p>
+            <h4>Paper results</h4>
+            
             {!r ? (
               <p className="tl-small tl-muted m0">Results are unavailable right now.</p>
             ) : m === 'none' ? (
@@ -126,7 +124,7 @@ function StartingPoint({ f, open, onToggle }) {
             ) : m === 'early' ? (
               <p className="tl-small m0" data-testid="featured-results">
                 <strong>Too early to judge.</strong> {plural(r.fills, 'simulated fill')} from {plural(r.bots, 'bot')} {period(r)}, {plural(r.closedTrades, 'closed trade')}
-                {r.totalPnl !== null ? ` (${signedMoney(r.totalPnl)} at the ${sessionDate(r.pricesAsOf)} close)` : ''}. Results are shown once there are {MIN_CLOSED_TRADES} closed trades across {MIN_SESSIONS} sessions.
+                {r.totalPnl !== null ? ` (${signedMoney(r.totalPnl)} at the ${sessionDate(r.pricesAsOf)} close)` : ''}. At least {MIN_CLOSED_TRADES} closed trades across {MIN_SESSIONS} sessions required.
               </p>
             ) : (
               <>
@@ -138,7 +136,7 @@ function StartingPoint({ f, open, onToggle }) {
                   <dt>Bots</dt><dd>{r.bots}</dd>
                   <dt>Traded</dt><dd>{listJoin(r.symbols, 4) || '—'}</dd>
                 </dl>
-                <p className="tl-small tl-muted" style={{ margin: '8px 0 0' }}>Actual simulated fills from every bot built on this starting point, {period(r)}. Past simulated results don’t predict future ones.</p>
+                <p className="tl-small tl-muted" style={{ margin: '8px 0 0' }}>Simulated fills · {period(r)}. Results vary by bot settings.</p>
               </>
             )}
             {f.research && <div style={{ marginTop: 20 }}><Research research={f.research} /></div>}
