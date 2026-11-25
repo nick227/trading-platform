@@ -16,6 +16,11 @@ const fixture = `
           <button class="tl-btn tl-btn--primary">Create bot</button>
           <button class="tl-btn tl-btn--secondary">Run backtest</button>
         </div>
+        <div class="tl-action-row tl-action-row--equal" data-testid="equal-row" style="margin-top:20px">
+          <button class="tl-btn tl-btn--secondary">Details</button>
+          <button class="tl-btn tl-btn--primary">Open workshop</button>
+          <button class="tl-btn tl-btn--secondary">Compare</button>
+        </div>
         <div class="tl-bot-actions tl-action-row" style="margin-top:20px">
           <button class="tl-btn tl-btn--positive">Resume</button>
           <button class="tl-btn tl-btn--warning">Pause</button>
@@ -67,6 +72,9 @@ test.describe('visual geometry contract', () => {
           firstAction: rect('[data-testid="equal-actions"] .tl-btn:first-child'),
           secondAction: rect('[data-testid="equal-actions"] .tl-btn:last-child'),
           botActionWidths: [...document.querySelectorAll('.tl-bot-actions > .tl-btn')].map(el => el.getBoundingClientRect().width),
+          equalRowWidths: [...document.querySelectorAll('[data-testid="equal-row"] > .tl-btn')].map(el => el.getBoundingClientRect().width),
+          controlRadius: getComputedStyle(document.querySelector('.tl-btn--primary')).borderRadius,
+          cardRadius: getComputedStyle(document.querySelector('.tl-card-shell')).borderRadius,
           inputHeight: document.querySelector('.tl-input').getBoundingClientRect().height,
           positive: getComputedStyle(document.querySelector('.tl-btn--positive')).backgroundColor,
           warning: getComputedStyle(document.querySelector('.tl-btn--warning')).backgroundColor,
@@ -81,6 +89,9 @@ test.describe('visual geometry contract', () => {
       expect(geometry.inputHeight).toBe(42)
       expect(Math.abs(geometry.firstAction.width - geometry.secondAction.width)).toBeLessThanOrEqual(1)
       expect(Math.max(...geometry.botActionWidths) - Math.min(...geometry.botActionWidths)).toBeLessThanOrEqual(1)
+      expect(Math.max(...geometry.equalRowWidths) - Math.min(...geometry.equalRowWidths)).toBeLessThanOrEqual(1)
+      expect(geometry.controlRadius).toBe('9px')
+      expect(geometry.cardRadius).toBe('12px')
       expect(new Set([geometry.positive, geometry.warning, geometry.destructive]).size).toBe(3)
       await page.screenshot({ path: testInfo.outputPath(`geometry-${width}.png`), fullPage: true })
     })
