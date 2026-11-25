@@ -14,6 +14,8 @@ async function mockReadOnlySession(page) {
   await page.route('**/api/**', (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
+    // Vite serves frontend modules from /src/api/*; never mock those modules.
+    if (!path.startsWith('/api/')) return route.continue()
     if (request.method() !== 'GET') {
       return route.fulfill({
         status: 405, contentType: 'application/json',
