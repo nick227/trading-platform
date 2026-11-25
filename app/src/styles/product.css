@@ -1316,3 +1316,37 @@ select.tl-input--inline { width: auto; }
 .tl-featured-body .tl-detail-actions .tl-btn { min-width: var(--tl-action-min-width); }
 .tl-header > :first-child { min-width: 0; }
 .tl-header .tl-title { overflow-wrap: anywhere; }
+
+/* Visual MR5: responsive geometry, explicit containment and shared edges. */
+.tl-page, .tl-page > *, .tl-page section, .tl-page header { min-width: 0; }
+.tl-section-head { flex-wrap: wrap; align-items: center; }
+.tl-stats > *, .tl-featured-row > *, .tl-detail-grid > * { min-width: 0; }
+.tl-page .tl-table { width: 100%; }
+.tl-page .tl-table td, .tl-page .tl-table th { overflow-wrap: normal; }
+
+@media (max-width: 760px) {
+  :root { --tl-gutter: var(--tl-page-gutter-mobile); }
+  .tl-page { padding: 24px var(--tl-gutter) 80px; }
+  .tl-section { margin-top: 36px; }
+  .tl-header { align-items: stretch; gap: var(--tl-gap-related); }
+  .tl-header > .tl-btn { width: 100%; align-self: stretch; }
+  .tl-featured-results { text-align: left; }
+  .tl-featured-row { grid-template-columns: minmax(0, 1fr); gap: var(--tl-gap-inline); }
+  .tl-featured-body { grid-template-columns: minmax(0, 1fr); gap: var(--tl-gap-card); }
+  .tl-fact-rows > div { grid-template-columns: minmax(0, 1fr) auto; }
+  .tl-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tl-bot-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .tl-bot-actions > .tl-btn { width: 100%; min-width: 0; }
+  .tl-action-group { grid-template-columns: repeat(var(--tl-action-count, 2), minmax(0, 1fr)); }
+  .tl-strategy-card { border-radius: var(--tl-card-radius); padding: var(--tl-card-padding-compact); }
+}
+
+@media (max-width: 400px) {
+  .tl-stats, .tl-stats--3, .tl-stats--4, .tl-metric-grid { grid-template-columns: minmax(0, 1fr); }
+  .tl-stat + .tl-stat { border-left: 0; border-top: 1px solid var(--tl-line); }
+  .tl-header .tl-title { font-size: 26px; }
+  .tl-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .tl-facts dd { text-align: left; padding-bottom: var(--tl-gap-inline); }
+  .tl-action-group { grid-template-columns: minmax(0, 1fr); }
+  .tl-bot-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
