@@ -35,7 +35,7 @@ function ValueHistory({ points, startingCash }) {
   }
   const markers = points.filter((p) => p.fills > 0).map((p) => ({ t: p.t, kind: 'buy', label: plural(p.fills, 'fill') }))
   return (
-    <div style={{ marginTop: 22 }}>
+    <div className="tl-flow-chart">
       <ValueChart points={points} markers={markers} baseline={startingCash} baselineLabel={startingCash ? `Start ${moneyWhole(startingCash)}` : null} minSpan={(startingCash ?? 0) * 0.01} label="Portfolio value at each daily close" />
       <p className="tl-chart-caption">Value at each daily close since your first trade. Dots mark days with fills.</p>
     </div>
@@ -48,7 +48,7 @@ function Portfolio({ valuation, history, error }) {
       <section className="tl-section" aria-labelledby="portfolio-title">
         <h2 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>Portfolio</h2>
         <div className="tl-hero-value" data-testid="balance-equity">—</div>
-        <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error ?? 'Your portfolio value couldn’t be loaded.'} Refresh to try again.</div>
+        <div className="tl-notice tl-notice--error tl-flow-notice" role="alert">{error ?? 'Your portfolio value couldn’t be loaded.'} Refresh to try again.</div>
       </section>
     )
   }
@@ -57,7 +57,7 @@ function Portfolio({ valuation, history, error }) {
       <section className="tl-section" aria-labelledby="portfolio-title">
         <h2 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>Portfolio</h2>
         <div className="tl-hero-value" data-testid="balance-equity">—</div>
-        <div className="tl-notice" role="status" style={{ marginTop: 12 }}>
+        <div className="tl-notice tl-flow-notice" role="status">
           <span>No trading account is connected, so there’s no balance to show. <Link to="/profile">Connect a paper account</Link> to run bots.</span>
         </div>
       </section>
@@ -92,7 +92,7 @@ function Portfolio({ valuation, history, error }) {
       ) : (
         <>
           <ValueHistory points={pts} startingCash={v.startingCash} />
-          <dl className="tl-stats" style={{ marginTop: 22 }}>
+          <dl className="tl-stats tl-flow-metrics">
             <div className="tl-stat"><dt>Cash</dt><dd>{money(v.cash)}</dd></div>
             <div className="tl-stat"><dt>Invested</dt><dd>{money(v.marketValue)}<small>{plural(v.positions.length, 'holding')}</small></dd></div>
           </dl>
@@ -187,7 +187,7 @@ function MyBots({ bots, error, controls }) {
         </div>
       </div>
       {error ? (
-        <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{error}</div>
+        <div className="tl-notice tl-notice--error tl-flow-notice" role="alert">{error}</div>
       ) : bots.length === 0 ? (
         <div className="tl-empty">
           <p><strong>You don’t have any bots yet.</strong> A bot trades your simulated portfolio by conditions you set — a price trigger, a schedule, a trend, or Alpha Engine research — and you can pause it at any time.</p>
@@ -330,7 +330,7 @@ export default function HomeDashboard() {
           {data.bots.length === 0 && !data.botsError && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
           {(data.bots.length > 0 || data.botsError) && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
           <Holdings valuation={data.valuation} bots={data.bots} open={open} setOpen={setOpen} busy={controls.busy} onToggleBot={controls.toggle} />
-          <p className="tl-small tl-faint" style={{ marginTop: 56 }}>
+          <p className="tl-small tl-faint tl-flow-footer">
             {data.valuation?.simulated
               ? `Simulated money · ${data.valuation?.simMode === 'paper_daily' ? 'bots act once per trading day at the close' : 'fills replay historical closes'}, not broker executions · research is an input, not a recommendation.`
               : 'Paper trading only — live trading is disabled.'}
