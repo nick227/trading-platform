@@ -38,7 +38,12 @@ async function mockReadOnlySession(page) {
     else if (path === '/api/portfolios/default') data = { id: 'visual-portfolio' }
     return route.fulfill({
       status: 200, contentType: 'application/json',
-      body: JSON.stringify({ data }),
+      // Profile client reads raw JSON; the generic API client unwraps { data }.
+      body: JSON.stringify(
+        path === '/api/auth/me' || path === '/api/account/broker-credentials'
+          ? data
+          : { data },
+      ),
     })
   })
 }
