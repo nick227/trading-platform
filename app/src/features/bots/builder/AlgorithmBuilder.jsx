@@ -417,7 +417,7 @@ export default function AlgorithmBuilder() {
           {!isEdit && originalBot?.id && templateDraft && (
             <TemplateBaseline templateId={originalBot.id} modified={behaviourKey(draft) !== behaviourKey(templateDraft)} />
           )}
-          {isEdit && <p className="tl-algorithm-save-note">{hasChanges ? 'Your bot keeps its saved configuration until you save these changes.' : 'Changes here apply only when you save.'}</p>}
+          {isEdit && <p className="tl-algorithm-save-note">{hasChanges ? 'Unsaved changes' : 'Saved'}</p>}
           <div className="tl-algorithm-flow">
             <AlgorithmStep label="Watch" summary={parseSymbols(draft.symbolsText).join(', ') || 'Choose symbols'} mark="○" open={activeStep === 'watch'} onToggle={() => openStep('watch')} testId="section-watch">
               <Field
