@@ -69,6 +69,22 @@
   --tl-radius-lg: 14px;
   --tl-radius-pill: 9999px;
 
+  /* Canonical geometry contract — controls, surfaces and layout.
+   * Used by shared primitives; old values remain aliases until migration. */
+  --tl-control-height: 42px;
+  --tl-control-height-sm: 34px;
+  --tl-control-radius: 9px;
+  --tl-card-radius: 12px;
+  --tl-action-min-width: 120px;
+  --tl-action-min-width-sm: 88px;
+  --tl-card-padding: 24px;
+  --tl-card-padding-compact: 16px;
+  --tl-gap-related: 12px;
+  --tl-gap-inline: 8px;
+  --tl-gap-card: 20px;
+  --tl-gap-section: 44px;
+  --tl-page-gutter-mobile: 16px;
+
   /* Shadows & Elevation */
   --tl-shadow-sm: 0 1px 2px rgba(23, 23, 26, 0.05);
   --tl-shadow-md: 0 4px 12px rgba(23, 23, 26, 0.08);
