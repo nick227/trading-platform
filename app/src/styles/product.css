@@ -339,6 +339,8 @@ body {
   min-width: 0;
 }
 .tl-aligned-header > * { min-width: 0; }
+.tl-card-shell, .tl-section, .tl-header { min-width: 0; }
+.tl-card-shell > :where(header, section, main, footer) { min-width: 0; }
 
 /* Canonical horizontal axes for responsive forms and fact grids. */
 .tl-responsive-fields {
