@@ -87,6 +87,8 @@ jobs:
         run: npx prisma generate --schema=server/prisma/schema.prisma
       - name: Initialize disposable test schema
         run: npx prisma db push --schema=server/prisma/schema.prisma --skip-generate
+      - name: Seed published test strategy templates
+        run: node server/prisma/seed.js
       - name: Paper trading concurrency, risk and accounting tests
         working-directory: server
         run: >-
