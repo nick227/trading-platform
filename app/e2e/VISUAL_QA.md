@@ -1,51 +1,35 @@
-# TradeLoom — visual system release acceptance (MR8–MR13)
+# TradeLoom — visual release verification (MR14–MR21)
 
-## Verification commands
+## Route inventory
 
-From `app/` with dependencies installed:
+Use `app/docs/CANONICAL_VISUAL_ROUTE_MATRIX.md` as the source of truth for routes and state coverage.
+The inventory is checked against `AppShell.jsx`; redirects are not separate screens.
 
-```sh
+## Automated commands (run from `app/`)
+
+```bash
+npm install
 npm run build
-npm test -- --run
-npx playwright test -c playwright.config.js e2e/visual-geometry.spec.js e2e/visual-page-coverage.spec.js
+npm test
+npx playwright install chromium
+npx playwright test -c playwright.config.js e2e/visual-geometry.spec.js e2e/visual-page-coverage.spec.js e2e/visual-auth-coverage.spec.js
 ```
 
-Browser checks cover the real public Strategies route plus the deterministic CSS
-geometry fixture, each at 320, 375, 768, 1024, and 1440px.
-They assert page overflow, card edges and padding, control height/radius,
-semantic CTA colors, and grouped action widths. Screenshots are generated as
-test artifacts, **not** reviewed or approved automatically.
+The automated browser suite covers a deterministic CSS geometry fixture, **real public Strategies**, and **real authentication login/register presentation**, at 320 / 375 / 768 / 1024 / 1440px. It measures document overflow, card/control radii, equal-width actions, component edges, and input alignment, and writes screenshots to test artifacts.
 
-## Authenticated page acceptance
+## Required authenticated screenshot review (NOT covered by the browser suite)
 
-Review Dashboard/Workshop, Bot Dashboard, Bot Builder, Strategies Detail,
-Orders, Assets, and order-confirmation states at all five widths.
+- Dashboard + Workshop: populated/empty/loading; cards, metrics, navigation and destructive actions.
+- Bots + Bot Detail: wide/narrow headers, running/paused/failed states, orders/events/details.
+- Bot Builder: create/edit, errors, long conditions, submit disabled and connected data.
+- Assets / Asset Detail / Orders: search, long symbols, large tables, narrow cards and forms.
+- Order Confirmation: missing order, scheduled, queued, processing, partially filled, filled and failed. **Never place live orders for visual testing.**
+- Profile/account and Research: form errors, profile overflow, card and section alignment.
 
-1. Trace left/right alignment axes across headers, section edges, card shells,
-   form fields, metrics, and tables. Repeated cards need matching insets.
-2. Confirm intentional 8 / 12 / 20 / 24 / 44px rhythm, with 36px mobile sections.
-   Exception spacing needs design rationale.
-3. Verify 42px standard controls / 34px compact controls and 9px control radii,
-   with accessible mobile touch targets and keyboard focus.
-4. Inspect semantic primary, secondary, positive, warning, and destructive CTA
-   states: enabled, loading, disabled, focus, hover, and confirmation.
-5. Check overflowing symbols, long descriptions, expanded cards, large results
-   tables, and empty/error/loading forms; scroll tables in their own region.
-6. Compare layouts in actual screenshots, not only the CSS fixtures; no jagged
-   borders, unexpected gutters, broken baselines or excessive negative space.
-7. Verify orders and assets at narrow widths; ensure two-column content stacks
-   cleanly without clipping or introducing page-level scrolling.
-8. Confirm light/dark contrast as applicable, no content hidden by navigation,
-   and keyboard/assistive-technology access for interactive controls.
+At each width, inspect real rendered screenshots for horizontal/vertical axes, predictable rhythm, 42px regular controls and 34px compact controls, 9px control radius and 12px card radius, semantic CTA colors, keyboard focus, no inadvertent horizontal page scrolling, and internal scrolling of wide tables.
 
-## Release gate
+Do not claim a green final release until build, test suites, real-route screenshots, and authenticated state walkthroughs have actually been executed and visually reviewed.
 
-- Build and unit checks actually pass.
-- Browser tests actually pass at all five widths.
-- Authenticated screenshots inspected and visual exceptions resolved.
-- No trading/risk/API behavior changed.
-- Final PR rebased or retargeted onto `main` only after dependencies merge.
+## Status at PR creation
 
-**Status:** This checklist and tests are committed, but CI execution,
-authenticated browser verification, and screenshot sign-off are not established
-by the GitHub file-writing workflow.
+**Unverified:** CI passes, build/tests run, screenshot review and authenticated walkthrough. The code was pushed via the GitHub contents API, without an executable local checkout. This PR adds assertions and acceptance instructions; it is a draft.
