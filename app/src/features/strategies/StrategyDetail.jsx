@@ -96,7 +96,7 @@ export default function StrategyDetail() {
       {!s.version.current && (
         <div className="tl-notice" data-testid="earlier-version">An earlier version of this strategy, kept with its results for the record. <Link to={`/strategies/${encodeURIComponent(s.templateId)}`}>See the current version</Link></div>
       )}
-      {!s.version.backtestable && <div className="tl-notice" data-testid="not-backtestable">Forward paper only</div>}
+      {!s.version.backtestable && <div className="tl-notice" data-testid="not-backtestable">{s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum' ? 'Forward paper only' : s.version.reason || 'Not backtestable'}</div>}
       {s.design && (
         <Disclosure label="Strategy details" testId="strategy-design">
           <dl className="tl-facts">
