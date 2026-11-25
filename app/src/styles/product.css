@@ -1382,3 +1382,29 @@ select.tl-input--inline { width: auto; }
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/* Visual MR7: extend the canonical axes to real dashboard and strategy surfaces. */
+.tl-workshop-home .tl-workshop-heading { gap: var(--tl-gap-card); }
+.tl-workshop-home .tl-workshop-heading > * { min-width: 0; }
+.tl-workshop-home .tl-workshop-heading > .tl-btn { flex: 0 0 var(--tl-action-min-width); }
+.tl-workshop-home .tl-workshop-overview { margin-bottom: var(--tl-gap-section); }
+.tl-workshop-home .tl-workshop-dashboard { gap: var(--tl-gap-card); }
+.tl-workshop-home .tl-workshop-dashboard > .tl-section:first-child {
+  padding: var(--tl-card-padding);
+  border-radius: var(--tl-card-radius);
+}
+.tl-workshop-home .tl-workshop-dashboard .tl-section-head { gap: var(--tl-gap-related); }
+.tl-workshop-home .tl-machine-list { gap: var(--tl-gap-related); }
+.tl-strategy-list { gap: var(--tl-gap-related); }
+.tl-strategy-card.tl-card-shell { gap: var(--tl-gap-related); }
+.tl-strategy-card .tl-strategy-link,
+.tl-strategy-card .tl-strategy-windows,
+.tl-strategy-card .tl-strategy-windows > div { min-width: 0; }
+.tl-strategy-card .tl-strategy-name,
+.tl-strategy-card .tl-strategy-windows dd { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .tl-workshop-home .tl-workshop-heading > .tl-btn { flex: none; width: 100%; }
+  .tl-workshop-home .tl-workshop-overview { margin-bottom: 36px; }
+  .tl-workshop-home .tl-workshop-dashboard { grid-template-columns: minmax(0, 1fr); }
+  .tl-workshop-home .tl-workshop-dashboard > .tl-section:first-child { padding: var(--tl-card-padding-compact); }
+}

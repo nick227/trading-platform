@@ -11,13 +11,13 @@ export default function StrategiesIndex() {
   }, [])
   return (
     <main className="tl-page" data-testid="strategies-index">
-      <header className="tl-header"><h1 className="tl-title">Strategies</h1></header>
+      <header className="tl-header tl-aligned-header"><h1 className="tl-title">Strategies</h1></header>
       {state.status === 'loading' && <span className="tl-skel" style={{ height: 240 }} aria-label="Loading strategies" />}
       {state.status === 'error' && <div className="tl-notice tl-notice--error" role="alert">Strategy results couldn’t be loaded.</div>}
       {state.status === 'done' && (
         <ul className="tl-list tl-strategy-list">
           {state.rows.map((s) => (
-            <li key={s.templateId} className="tl-strategy-card" data-testid="strategy-card">
+            <li key={s.templateId} className="tl-strategy-card tl-card-shell" data-testid="strategy-card">
               <Link to={`/strategies/${encodeURIComponent(s.templateId)}`} className="tl-strategy-link">
                 <span className="tl-strategy-name">
                   {strategyDisplayName(s)}
