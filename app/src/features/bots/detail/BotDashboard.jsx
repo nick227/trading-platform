@@ -368,7 +368,7 @@ function StopSheet({ bot, onClose, onStopped }) {
       footer={
         <>
           <button type="button" className="tl-btn" onClick={onClose} disabled={busy}>Keep bot</button>
-          <button type="button" className="tl-btn tl-btn--danger" onClick={confirm} disabled={busy}>{busy ? 'Stopping…' : 'Stop bot'}</button>
+          <button type="button" className="tl-btn tl-btn--danger-solid" onClick={confirm} disabled={busy}>{busy ? 'Stopping…' : 'Stop bot'}</button>
         </>
       }
     >
