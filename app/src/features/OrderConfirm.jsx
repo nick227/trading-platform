@@ -493,7 +493,7 @@ export default function OrderConfirm() {
             <span className="tl-num">{priceLoading ? 'Loading...' : orderDetails ? `$${orderDetails.price.toFixed(2)}` : '...'}</span>
           </div>
           <div className="tl-order-confirm__row tl-order-confirm__row--total">
-            <span className="muted" className="tl-num">Total {order.type === 'BUY' ? 'Cost' : 'Proceeds'}:</span>
+            <span className="muted tl-num">Total {order.type === 'BUY' ? 'Cost' : 'Proceeds'}:</span>
             <span style={{ fontSize: '18px', fontWeight: 700, color: order.type === 'BUY' ? '#c0392b' : '#0a7a47' }}>
               {orderDetails ? `$${orderDetails.totalValue.toFixed(2)}` : '...'}
             </span>
@@ -548,7 +548,7 @@ export default function OrderConfirm() {
               </span>
             </div>
             <div className="tl-order-confirm__row tl-order-confirm__row--total">
-              <span className="muted" className="tl-num">Balance After {order.type === 'BUY' ? 'Order' : 'Sale'}:</span>
+              <span className="muted tl-num">Balance After {order.type === 'BUY' ? 'Order' : 'Sale'}:</span>
               <span style={{ fontSize: '16px', fontWeight: 700 }}>
                 {orderDetails ? `$${orderDetails.afterBalance.toLocaleString()}` : '...'}
               </span>
