@@ -84,7 +84,7 @@ describe('BotsPage', () => {
     fireEvent.click(within(dca).getByRole('button', { name: /DCA Accumulator/ }))
     expect(within(dca).getByText('At most one trade per symbol per day')).toBeInTheDocument()
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Last year: −2.10% median vs +4.00% buy & hold')
-    expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Since published: Awaiting new sessions')
+    expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Forward paper: Awaiting new sessions')
     expect(within(dca).getByRole('link', { name: /Results and methodology/ })).toHaveAttribute('href', '/strategies/tmpl_dca')
     expect(within(dca).getByTestId('featured-results')).toHaveTextContent('Too early to judge. 2 simulated fills from 1 bot on Nov 19, 0 closed trades (−$52.12 at the Nov 20 close). At least 5 closed trades across 5 sessions required.')
     expect(within(dca).getByRole('link', { name: 'Customize' })).toHaveAttribute('href', '/bots/new?template=tmpl_dca')
