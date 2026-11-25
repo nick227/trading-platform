@@ -146,14 +146,14 @@ button {
   min-width: var(--button-min-width);
   height: var(--button-height);
   padding: 0 28px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tl-control-radius);
 }
 
 .primary,
 .ghost {
   font-weight: 600;
   border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tl-control-radius);
   cursor: pointer;
   will-change: transform, opacity;
   transform: translateZ(0);
@@ -218,7 +218,7 @@ button {
 }
 
 .skeleton-button {
-  border-radius: var(--radius-pill);
+  border-radius: var(--tl-control-radius);
 }
 
 .skeleton-button-ghost {
@@ -281,6 +281,7 @@ button {
 
 
 .large-button {
+  min-height: var(--tl-control-height);
   height: auto;
-  border-radius: 0;
+  border-radius: var(--tl-control-radius);
 }
