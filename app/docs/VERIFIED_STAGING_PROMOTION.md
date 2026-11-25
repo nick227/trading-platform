@@ -13,7 +13,7 @@
 `.github/workflows/verified-staging-promotion.yml` runs on every PR, every push to `main`, or manual dispatch from `main`.
 
 1. Verify the frontend: locked dependency install, production build, all app Vitest tests and all five existing Playwright visual suites.
-2. Verify backend/worker: Prisma schema creation on a disposable MySQL 8 CI service (never Railway credentials or data), AI autonomous lifecycle, market calendar, accounting, exit rules, risk, evidence, AI strategy test suites, and worker entrypoint syntax.
+2. Verify backend/worker: Prisma schema creation on a disposable MySQL 8 CI service (never Railway credentials or data), market calendar, accounting, exit rules, risk integration, evidence, research decision, execution-research correlation and Alpha Engine client contract tests, plus worker entrypoint syntax.
 3. **Only** on a successful `main` push or a manual dispatch from `main`, and only when both verification jobs passed, fetch the branch refs and verify that:
    - `main` has not moved beyond the SHA actually tested;
    - `staging` is an ancestor of the verified `main` commit;
@@ -26,7 +26,7 @@ GitHub Actions explicitly grants `contents:write` **only to the promotion job**.
 
 ## Failure behavior
 
-- Failed build, unit test, server integration test, MySQL setup, or Playwright assertion: **do not update staging**.
+- Failed build, unit test, deterministic server test, MySQL setup, or Playwright assertion: **do not update staging**.
 - New `main` commit during verification: **do not promote the stale SHA**.
 - Divergent or unexpected `staging` history: **do not push; never reset or force-push**.
 - Railway failure, missing status, timeout, or unreachable public endpoint: **report failure; do not rewrite Git history or auto-rollback**.
@@ -37,7 +37,7 @@ GitHub Actions explicitly grants `contents:write` **only to the promotion job**.
 - The workflow needs GitHub Actions permission to push to `staging` using `GITHUB_TOKEN` (Settings → Actions → General / branch rules). If branch rules disallow the app token, leave them intact and authorize a suitable trusted deployment identity; do not bypass protection.
 - Promote manually by opening the workflow in GitHub Actions and choosing **Run workflow** on `main`. Never dispatch it from a feature branch to deploy that code.
 - Set appropriate branch protection/ruleset for `main` after confirming the new required verification jobs' names: **Frontend verification** and **Backend and worker verification**. The workflow alone does *not* enforce PR restrictions; it enforces promotion safety.
-- A successful status and read-only endpoint check do not replace a full end-to-end staging review (AI bot execution and database health require separate controlled verification).
+- A successful status and read-only endpoint check do not replace a full end-to-end staging review. In particular, the 12-case autonomous AI paper-trading lifecycle suite and the AI strategy integration suite depend on an operational Alpha Engine with point-in-time market data, so they are **not counted as passing CI gates**. They must be run and reviewed separately in an isolated, configured integration environment before claiming full AI execution verification. The seeded CI database alone cannot reproduce that external dependency.
 - For Railway deployments triggered by `GITHUB_TOKEN` pushes, verify once that Railway receives these events and publishes statuses. If not, use a sanctioned GitHub App deployment identity rather than a force-push or an unaudited token.
 
 ## Avoid obsolete manual synchronization
