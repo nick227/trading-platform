@@ -234,7 +234,7 @@ export default function AssetsIndex() {
             })()}
 
             <div className="mt-2 tl-asset-search-row">
-              <div style={{ flex: 1, minWidth: 280 }}>
+              <div className="tl-asset-search-field">
                 <input
                   value={query}
                   placeholder="Ticker or company…"
@@ -251,7 +251,7 @@ export default function AssetsIndex() {
                       }
                     }
                   }}
-                  style={{ width: '100%', padding: '0.75rem', border: '1px solid #e9ecef', borderRadius: 12, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                  className="field-input"
                 />
               </div>
 
