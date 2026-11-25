@@ -6,6 +6,8 @@ export const STRATEGY_COPY = Object.freeze({
   details: 'Details',
   noDecisions: 'No decisions yet.',
   noResults: 'No results yet.',
+  decisionsUnavailable: 'Decisions unavailable.',
+  loadingDecisions: 'Loading decisions',
 })
 
 export function strategyWindowOptions(windows = [], design = {}, { forwardOnly = false } = {}) {
