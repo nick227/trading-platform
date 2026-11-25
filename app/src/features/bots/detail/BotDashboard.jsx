@@ -489,22 +489,22 @@ export default function BotDashboard() {
       <EmergencyBanner stop={stop} onClear={clear} />
       <Link to={back.to} className="tl-back">← {back.label}</Link>
 
-      <header className="tl-header" style={{ alignItems: 'flex-start' }}>
+      <header className="tl-header tl-aligned-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div className="tl-action-row">
             <h1 className="tl-title">{bot.name}</h1>
             <span className={`tl-status tl-status--${status}`} data-testid="bot-status">{STATUS_LABELS[status] ?? status}</span>
           </div>
           <p className="tl-lede">{bot.tickers.length ? bot.tickers.join(', ') : 'No symbols'} · {research ? 'Research signal' : 'Rule-based'}{bot.allocation !== null ? ` · ${moneyWhole(bot.allocation)} capital` : ''}</p>
         </div>
         {!bot.stopped && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className={`tl-btn ${bot.enabled ? '' : 'tl-btn--primary'}`} onClick={toggle} disabled={busy} style={{ minWidth: 88 }}>
+          <div className="tl-action-row tl-bot-actions">
+            <button type="button" className={`tl-btn ${bot.enabled ? 'tl-btn--warning' : 'tl-btn--positive'}`} onClick={toggle} disabled={busy}>
               {busy ? 'Saving…' : bot.enabled ? 'Pause' : 'Resume'}
             </button>
             <Link to={`/bots/${bot.id}/edit`} className="tl-btn" data-testid="edit-bot-btn">Edit bot</Link>
             <DuplicateButton botId={bot.id} />
-            <button type="button" className="tl-btn tl-btn--quiet tl-btn--danger" onClick={() => setSheet('stop')} disabled={busy}>Stop</button>
+            <button type="button" className="tl-btn tl-btn--danger-solid" onClick={() => setSheet('stop')} disabled={busy}>Stop</button>
           </div>
         )}
       </header>
