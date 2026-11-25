@@ -1,3 +1,4 @@
+import { PageIdentity } from '../../../components/content/ContentBlocks'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { get, post, put } from '../../../api/client'
@@ -349,11 +350,7 @@ export default function AlgorithmBuilder() {
         ← {isEdit ? originalBot?.name || 'Bot' : 'Bots'}
       </Link>
 
-      <header className="tl-header tl-aligned-header">
-        <div>
-          <h1 className="tl-title">{isEdit ? `Edit ${originalBot?.name}` : 'New bot'}</h1>
-        </div>
-      </header>
+      <PageIdentity title={isEdit ? `Edit ${originalBot?.name}` : 'Create a simulated trading bot'} description={isEdit ? 'Review its trading rules and safety limits before saving changes.' : 'Choose an approach, set a simulated budget and review the conditions that control trades.'} />
 
       <ModeNotice mode={mode} />
 
@@ -361,7 +358,7 @@ export default function AlgorithmBuilder() {
       {!isEdit && wizardData?.templates && wizardData.templates.length > 0 && (
         <section className="tl-builder-starting-point">
           <Field
-            label="Starting point"
+            label="Choose a strategy"
           >
             {({ id }) => (
               <Select
@@ -942,7 +939,7 @@ export default function AlgorithmBuilder() {
               {/* Advanced Research bounds (when research is active) */}
               {draft.triggerType === 'alpha_research' && draft.research && (
                 <div className="tl-builder-subsection">
-                  <h4>Research limits</h4>
+                  <h4>When research can be used</h4>
                   <div className="tl-responsive-fields">
                     <Field
                       label="Maximum prediction age"

@@ -238,9 +238,9 @@ function WorkshopOverview({ bots, error, activity, brokerStatus }) {
   return (
     <header className="tl-workshop-overview">
       <div className="tl-workshop-heading tl-aligned-header">
-        <div><p className="tl-workshop-eyebrow">TradeLoom / Algorithm workshop</p>
-          <h1>Your ideas, in motion.</h1>
-          <p className="tl-muted">{error ? 'Your algorithms and portfolio, at a glance.' : bots.length ? 'Observe your algorithms. Understand their decisions.' : 'Turn a trading idea into your first algorithm.'}</p>
+        <div><p className="tl-workshop-eyebrow">Trading overview</p>
+          <h1>Your trading bots</h1>
+          <p className="tl-muted">{error ? 'Your algorithms and portfolio, at a glance.' : bots.length ? 'Review your simulated trading bots and the reasons behind their decisions.' : 'Create a bot to try a trading idea with simulated money.'}</p>
         </div>
         <Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot <span aria-hidden="true">↗</span></Link>
       </div>

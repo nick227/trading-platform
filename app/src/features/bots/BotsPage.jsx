@@ -1,3 +1,5 @@
+import { evidenceLabel } from '../../ui/contentPresentation'
+import { PageIdentity, ContentState } from '../../components/content/ContentBlocks'
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import ActivityFeed from '../../ui/ActivityFeed'
@@ -43,14 +45,14 @@ function Research({ research }) {
   const gap = h?.hitRate !== null && h?.hitRate !== undefined && h?.baselineRate !== null && h?.baselineRate !== undefined ? (h.hitRate - h.baselineRate) * 100 : null
   return (
     <div data-testid="featured-research">
-      <h4>Research</h4>
+      <h4>Research evidence</h4>
       <p className="tl-small m0">
         <strong>{research.model ?? 'Alpha Engine'}</strong>
         {research.horizon ? `, ${research.horizon} horizon` : ''}{research.observedAt ? `, ${sessionDate(research.observedAt, { year: true })}` : ''}.
       </p>
       {gap !== null && (
         <p className="tl-small" style={{ margin: '6px 0 0' }}>
-          Holdout hit rate {ratioPct(h.hitRate)} vs {ratioPct(h.baselineRate)} always-up baseline <span className={gap >= 0 ? 'tl-pos' : 'tl-neg'}>({gap >= 0 ? '+' : '−'}{Math.abs(gap).toFixed(1)} pts)</span>
+          Correct predictions in a later test {ratioPct(h.hitRate)} vs {ratioPct(h.baselineRate)} always-predict-up comparison <span className={gap >= 0 ? 'tl-pos' : 'tl-neg'}>({gap >= 0 ? '+' : '−'}{Math.abs(gap).toFixed(1)} pts)</span>
         </p>
       )}
       <p className="tl-small" style={{ margin: '6px 0 0' }}>
@@ -58,9 +60,9 @@ function Research({ research }) {
           : research.edgeOverBaseline === false ? <span className="tl-verdict tl-verdict--noedge">Did not beat baseline</span> : null}
       </p>
       <p className="tl-small tl-muted" style={{ margin: '6px 0 0' }}>
-        {h?.samples ? `${h.samples.toLocaleString()} holdout samples` : 'Holdout size unknown'}
+        {h?.samples ? `${h.samples.toLocaleString()} later-test samples` : 'Later-test sample count unavailable'}
         {h?.start && h?.end ? `, ${sessionDate(h.start, { year: true })} – ${sessionDate(h.end, { year: true })}` : ''}.
-        {research.genuineOutOfSample === false ? ' Pseudo-out-of-sample.' : ''}
+        {research.genuineOutOfSample === false ? ' Test separation is not independently verified.' : ''}
         {research.mode === 'historical_replay' ? ' Historical replay research, separate from the results above.' : ''}
         {research.verified ? ' Evidence is digest-verified.' : ''} Research is an input you can test, not a recommendation.
       </p>
@@ -88,13 +90,13 @@ function StartingPoint({ f, open, onToggle }) {
         </span>
         <span className="tl-featured-results" data-testid="featured-evidence">
           <b>{summaryLine(f.evidence?.windows?.[evidenceWindow])}</b>
-          {isAi ? 'Forward paper' : f.evidence?.windows?.['5Y']?.status === 'ok' ? `Backtest · 5 years · ${f.evidence.windows['5Y'].symbolsTested} symbols` : 'Backtest'}
+          {isAi ? evidenceLabel('forward') : f.evidence?.windows?.['5Y']?.status === 'ok' ? `Historical test · 5 years · ${f.evidence.windows['5Y'].symbolsTested} symbols` : 'Historical test'}
         </span>
       </button>
       {open && (
         <div className="tl-featured-body">
           <div>
-            <h4>Conditions</h4>
+            <h4>When it trades</h4>
             <ul className="tl-rule-list">
               {guards.map((g) => <li key={g}>{g}</li>)}
               {needsTriggerPrice(f.rules) && <li>You set the trigger price</li>}
@@ -109,13 +111,13 @@ function StartingPoint({ f, open, onToggle }) {
             <h4>Results</h4>
             <p className="tl-small m0" data-testid="featured-evidence-detail">
               {(isAi ? ['forward'] : ['5Y', '1Y', 'holdout', 'forward']).filter((w) => w !== 'holdout' || f.evidence?.windows?.holdout).map((w) => (
-                <span key={w} className="tl-evidence-line">{{ '5Y': '5 years', '1Y': 'Last year', holdout: 'Holdout', forward: isAi ? 'Since published' : 'Forward paper' }[w]}: {summaryLine(f.evidence?.windows?.[w])}</span>
+                <span key={w} className="tl-evidence-line">{evidenceLabel(w)}: {summaryLine(f.evidence?.windows?.[w])}</span>
               ))}
             </p>
             <p className="tl-small" style={{ margin: '6px 0 18px' }}>
               <Link to={`/strategies/${encodeURIComponent(f.id)}`}>Results and methodology →</Link>
             </p>
-            <h4>Bot results · Paper</h4>
+            <h4>Results from simulated bot trades</h4>
             
             {!r ? (
               <p className="tl-small tl-muted m0">Results are unavailable right now.</p>
@@ -171,12 +173,7 @@ export default function BotsPage() {
   return (
     <main className="tl-page" aria-busy={state.loading}>
       <EmergencyBanner stop={stop} onClear={clear} />
-      <header className="tl-header">
-        <div>
-          <h1 className="tl-title">Bots</h1>
-            </div>
-        <Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot</Link>
-      </header>
+      <PageIdentity title="Bots" description="Create and manage simulated trading bots. Review their rules and recorded activity before making changes." action={<Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot</Link>} />
 
       {state.loading ? (
         <div aria-hidden="true" data-testid="bots-loading">
@@ -198,7 +195,7 @@ export default function BotsPage() {
 
           <section className="tl-section" aria-labelledby="featured-title">
             <div className="tl-section-head">
-              <h2 className="tl-section-title" id="featured-title">Starting points</h2>
+              <h2 className="tl-section-title" id="featured-title">Choose a strategy to customize</h2>
               
             </div>
             {d.featuredError ? (
@@ -206,6 +203,7 @@ export default function BotsPage() {
             ) : (
               <>
                 {d.resultsError && <div className="tl-notice tl-notice--warn" role="status" style={{ marginTop: 16 }}>{d.resultsError}</div>}
+                {d.featured.length === 0 && <ContentState title="No starter strategies available" description="There are no published strategies to customize right now." />}
                 <ul className="tl-list tl-featured">
                   {d.featured.map((f) => <StartingPoint key={f.id} f={f} open={open === f.id} onToggle={() => setOpen(open === f.id ? null : f.id)} />)}
                 </ul>
