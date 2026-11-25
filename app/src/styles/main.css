@@ -16,6 +16,7 @@
 @import './animations.css';
 @import './utilities.css';
 @import './product.css';
+@import './content.css';
 
 html, body, #root {
   min-height: 100%;
