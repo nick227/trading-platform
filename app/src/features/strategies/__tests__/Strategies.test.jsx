@@ -12,7 +12,7 @@ const curve = [{ date: '2025-11-21', equity: 10000 }, { date: '2026-05-20', equi
 const res = (symbol, ret, bh, trades, extra = {}) => ({ symbol, window: '5Y', status: 'ok', startDate: '2021-11-20', endDate: '2026-11-20', riskPolicyVersion: 'normal-abc', parameters: { triggerPrice: 412.5, triggerFrom: '2021-11-19' },
   results: { capital: 10000, metrics: { returnPct: ret, trades, winRate: null, maxDrawdown: { pct: 12.5 } }, buyAndHold: { returnPct: bh }, curve, skips: trades ? {} : { no_position: 1255 } }, ...extra })
 const strategy = {
-  templateId: 'tmpl_momentum_buy', name: 'Momentum Buy', description: 'Buys above a threshold.', version: { id: 'sv_0123456789abcdef', published: true, firstSession: '2026-11-20', backtestable: true },
+  templateId: 'tmpl_momentum_buy', name: 'Momentum Buy', workshopAvailable: true, description: 'Buys above a threshold.', version: { id: 'sv_0123456789abcdef', published: true, firstSession: '2026-11-20', backtestable: true },
   definition: { config: { direction: 'buy', allocatedAmount: 10000, maxOrderNotional: 1000 }, rules: [{ type: 'price_threshold', config: { price: 0 } }, { type: 'cooldown', config: { windowMs: 3600000 } }], parameters: { triggerPrice: 'close_before_window' } },
   assumptions: ['Historical simulation on Alpha Engine daily bars — not a prediction of future results.'], asOf: '2026-11-20',
   summary: { '5Y': { status: 'ok', symbolsTested: 2, symbolsTraded: 1, medianReturnPct: 4, medianBuyAndHoldPct: 60, beatBuyAndHold: 0, worstDrawdownPct: 12.5, trades: 8 }, '1Y': { status: 'ok', symbolsTested: 2, symbolsTraded: 0, trades: 0 }, forward: { status: 'awaiting_sessions', symbolsTested: 0 } },
@@ -40,15 +40,21 @@ describe('public strategy evidence', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Since published' }))
     expect(screen.getByTestId('window-status')).toHaveTextContent('Awaiting new sessions')
   })
+  it('does not offer Workshop for an unavailable rule-based strategy', async () => {
+    get.mockResolvedValue({ ...strategy, workshopAvailable: false })
+    render(<MemoryRouter initialEntries={['/strategies/tmpl_momentum_buy']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByRole('heading', { name: 'Momentum Buy' })).toBeInTheDocument()
+    expect(screen.queryByTestId('open-in-workshop')).not.toBeInTheDocument()
+  })
   it('the Workshop marks departures from the tested defaults', async () => {
     get.mockResolvedValue(strategy)
     const d = { direction: 'buy', triggerType: 'price_threshold', trigger: { operator: 'above', price: '' }, cooldown: { on: true, hours: '1' } }
     expect(behaviourKey({ ...d, symbolsText: 'NVDA', capital: '2500' })).toBe(behaviourKey(d)) // symbols/capital aren't behaviour
     expect(behaviourKey({ ...d, cooldown: { on: true, hours: '24' } })).not.toBe(behaviourKey(d))
     const { rerender } = render(<MemoryRouter><TemplateBaseline templateId="tmpl_momentum_buy" modified={false} /></MemoryRouter>)
-    expect(await screen.findByTestId('template-baseline')).toHaveTextContent('Platform-tested defaults. 5-year standardized backtest: +4.00% median vs +60.00% buy & hold.')
+    expect(await screen.findByTestId('template-baseline')).toHaveTextContent('Strategy defaults · 5-year backtest: +4.00% median vs +60.00% buy & hold')
     rerender(<MemoryRouter><TemplateBaseline templateId="tmpl_momentum_buy" modified /></MemoryRouter>)
-    expect(screen.getByTestId('template-baseline')).toHaveTextContent('Modified from the platform-tested defaults.')
+    expect(screen.getByTestId('template-baseline')).toHaveTextContent('Modified strategy · Backtest your changes')
   })
 })
 
@@ -75,6 +81,7 @@ describe('AI strategy presentation', () => {
   const aiStrategy = {
     ...strategy,
     templateId: 'tmpl_ai_catalyst_momentum',
+    workshopAvailable: false,
     name: 'AI Momentum & Technical Breakout',
     tags: ['ai', 'openai'],
     version: { ...strategy.version, backtestable: false },
