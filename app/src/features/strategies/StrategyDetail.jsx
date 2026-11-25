@@ -112,7 +112,7 @@ export default function StrategyDetail() {
         <div className="tl-section-head">
           <h2 className="tl-section-title" id="results-title">{STRATEGY_COPY.results}</h2>
           <div className="tl-seg" role="group" aria-label="Window">
-            {strategyWindowOptions(s.standard?.windows ?? ['5Y', '1Y', 'forward'], s.design)
+            {strategyWindowOptions(s.standard?.windows ?? ['5Y', '1Y', 'forward'], s.design, { forwardOnly: s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum' })
               .map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w] ?? w}</button>)}
           </div>
         </div>
