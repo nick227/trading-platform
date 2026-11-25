@@ -165,7 +165,7 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
         if (bot) {
           try {
             const { computeAiBotForwardEquity } = await import('./ai/aiBotService.js')
-            forwardStats = await computeAiBotForwardEquity(bot.id, { asOfSession: end, prismaClient, engine })
+            forwardStats = await computeAiBotForwardEquity(bot.id, { asOfSession: end, includeReplay: false, prismaClient, engine })
           } catch {
             // fallback if computing equity encounters an error
           }

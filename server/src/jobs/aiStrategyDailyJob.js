@@ -56,35 +56,18 @@ export async function runAiStrategyDailyJob({
   }
 
   if (!activeSession) {
-    activeSession = '2026-11-20' // safe fallback
-  }
-
-  console.log(`[ai_daily_job] Active session for research: ${activeSession}`)
-
-  // 2. Idempotency check: did we already run this session for this bot?
-  if (!force) {
-    const existingEvents = await prismaClient.botEvent.findMany({
-      where: {
-        botId: bot.id,
-        type: 'decision_made'
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 5
-    })
-
-    const alreadyRun = existingEvents.some(e => e.metadata?.asOfSession === activeSession)
-    if (alreadyRun) {
-      console.log(`[ai_daily_job] Cycle for session ${activeSession} has already executed. Skipping. (use force=true to override)`)
-      return {
-        ok: true,
-        skipped: true,
-        session: activeSession,
-        reason: 'already_executed_for_session'
-      }
+    console.warn(`[ai_daily_job] Fresh market data is unavailable from market engine. Skipping daily research cycle.`)
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'fresh_market_data_unavailable'
     }
   }
 
-  // 3. Process pending executions targeting this completed session
+  console.log(`[ai_daily_job] Active session for research & execution: ${activeSession}`)
+
+  // 2. ALWAYS process pending eligible executions targeting this completed session FIRST
+  // Runs even if the research cycle was skipped or already completed for this session
   const fillResults = await processPendingAiExecutions(bot.id, {
     currentSession: activeSession,
     prismaClient,
@@ -94,15 +77,40 @@ export async function runAiStrategyDailyJob({
     console.log(`[ai_daily_job] Filled ${fillResults.filledExecutions.length} pending executions for session ${activeSession}`)
   }
 
-  // 4. Run autonomous AI research and decision cycle
-  const cycleResult = await executeAiStrategyCycle({
-    botId: bot.id,
-    session: activeSession,
-    providerName,
-    dryRun,
-    prismaClient,
-    engine
-  })
+  // 3. Idempotency check: did we already run this session for this bot?
+  let cycleResult = null
+  let researchSkipped = false
+  let skipReason = null
+
+  if (!force) {
+    const existingEvents = await prismaClient.botEvent.findMany({
+      where: {
+        botId: bot.id,
+        type: 'decision_made'
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    })
+
+    const alreadyRun = existingEvents.some(e => e.metadata?.asOfSession === activeSession)
+    if (alreadyRun) {
+      console.log(`[ai_daily_job] Cycle for session ${activeSession} has already executed. Skipping new research. (use force=true to override)`)
+      researchSkipped = true
+      skipReason = 'already_executed_for_session'
+    }
+  }
+
+  // 4. Run autonomous AI research and decision cycle if not skipped
+  if (!researchSkipped) {
+    cycleResult = await executeAiStrategyCycle({
+      botId: bot.id,
+      session: activeSession,
+      providerName,
+      dryRun,
+      prismaClient,
+      engine
+    })
+  }
 
   // 5. Compute forward portfolio equity & sync public strategy evidence
   const forwardEquity = await computeAiBotForwardEquity(bot.id, {
@@ -124,6 +132,8 @@ export async function runAiStrategyDailyJob({
     ok: true,
     session: activeSession,
     fills: fillResults,
+    researchSkipped,
+    skipReason,
     cycle: cycleResult,
     forwardEquity
   }

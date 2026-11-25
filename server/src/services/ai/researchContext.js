@@ -14,8 +14,8 @@ function computeSma(closes, period) {
   return round2(sum / period)
 }
 
-/** Known verified catalysts and company context for the 10 supported symbols. */
-export const VERIFIED_CATALYSTS = {
+/** Fundamental company profiles for the 10 supported symbols. */
+export const COMPANY_PROFILES = {
   SPY: 'S&P 500 benchmark index. Reflects broader market risk sentiment, interest rate expectations, and macro liquidity.',
   QQQ: 'Nasdaq 100 tech-heavy benchmark. Driven by semiconductor demand, enterprise software capex, and treasury yields.',
   AAPL: 'Apple Inc. Consumer hardware ecosystem, Apple Intelligence rollout, services revenue growth, and China supply chain dynamics.',
@@ -27,6 +27,8 @@ export const VERIFIED_CATALYSTS = {
   XOM: 'Exxon Mobil Corp. Integrated global energy producer, Permian basin production efficiency (Pioneer integration), global refining margins, and oil demand.',
   META: 'Meta Platforms Inc. Digital ad auction efficiency via Advantage+ AI, engagement on Reels, open-source Llama model deployment, and Reality Labs capex.'
 }
+
+export const VERIFIED_CATALYSTS = COMPANY_PROFILES
 
 /**
  * Assembles the point-in-time research context for all 10 symbols and portfolio state.
@@ -50,13 +52,17 @@ export async function assembleAiResearchContext({
     try {
       asOfSession = await currentSimSession({ config: sim, engine })
     } catch {
-      asOfSession = '2026-11-20' // fallback to latest known completed session
+      asOfSession = null
     }
   }
 
-  // Lookback range for bars: 45 calendar days is ~30 trading bars
+  if (!asOfSession) {
+    throw new Error('Fresh market data is unavailable: asOfSession could not be determined from market engine.')
+  }
+
+  // Lookback range for bars: 120 calendar days is ~80 trading bars, ensuring complete 50-bar windows
   const asOfDate = new Date(`${asOfSession}T00:00:00Z`)
-  const lookbackStart = new Date(asOfDate.getTime() - 45 * 86_400_000).toISOString().slice(0, 10)
+  const lookbackStart = new Date(asOfDate.getTime() - 120 * 86_400_000).toISOString().slice(0, 10)
 
   // 1. Fetch market data & compute technical indicators for each symbol
   const symbolContexts = await Promise.all(symbols.map(async (sym) => {
@@ -74,20 +80,23 @@ export async function assembleAiResearchContext({
       const currentPrice = round2(latestBar[4])
       const latestVolume = latestBar[5]
 
+      // Technical indicators: only calculate when complete windows are available
       const sma20 = computeSma(closes, 20)
       const sma50 = computeSma(closes, 50)
       
-      const price5dAgo = closes.length >= 6 ? closes[closes.length - 6] : closes[0]
-      const return5dPct = price5dAgo > 0 ? round2(((currentPrice - price5dAgo) / price5dAgo) * 100) : 0
+      const return5dPct = closes.length >= 6 && closes[closes.length - 6] > 0
+        ? round2(((currentPrice - closes[closes.length - 6]) / closes[closes.length - 6]) * 100)
+        : null
 
-      const price20dAgo = closes.length >= 21 ? closes[closes.length - 21] : closes[0]
-      const return20dPct = price20dAgo > 0 ? round2(((currentPrice - price20dAgo) / price20dAgo) * 100) : 0
+      const return20dPct = closes.length >= 21 && closes[closes.length - 21] > 0
+        ? round2(((currentPrice - closes[closes.length - 21]) / closes[closes.length - 21]) * 100)
+        : null
 
       const avgVolume20 = volumes.length >= 20 
         ? Math.round(volumes.slice(-20).reduce((a, b) => a + b, 0) / 20)
-        : Math.round(volumes.reduce((a, b) => a + b, 0) / volumes.length)
+        : null
 
-      const volumeRatio = avgVolume20 > 0 ? round2(latestVolume / avgVolume20) : 1.0
+      const volumeRatio = avgVolume20 && avgVolume20 > 0 ? round2(latestVolume / avgVolume20) : null
 
       // Regime from engine if available
       let regime = 'unknown'
@@ -98,7 +107,9 @@ export async function assembleAiResearchContext({
         // regime fallback
       }
 
-      const catalyst = VERIFIED_CATALYSTS[sym] ?? null
+      const companyProfile = COMPANY_PROFILES[sym] ?? null
+      // Verified dated news catalysts retrieved for this specific session
+      const catalysts = []
 
       return {
         symbol: sym,
@@ -114,7 +125,9 @@ export async function assembleAiResearchContext({
         return5dPct,
         return20dPct,
         regime,
-        catalyst
+        companyProfile,
+        catalysts,
+        catalyst: companyProfile // keep alias for backward compatibility
       }
     } catch (err) {
       return { symbol: sym, available: false, error: err.message }

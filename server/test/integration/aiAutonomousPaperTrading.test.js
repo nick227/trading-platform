@@ -228,14 +228,25 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     expect(filledBuy.session).toBe('2026-10-08')
     expect(filledBuy.fillPrice).toBeCloseTo(230.48, 1) // actual 2026-10-08 close
 
-    // Verify position is now open
+    // Verify position is now open (using includeReplay: true for historical replay tests)
     const midEquity = await computeAiBotForwardEquity(canonicalBot.id, {
       asOfSession: '2026-10-08',
+      includeReplay: true,
       prismaClient: prisma,
       engine: engineClient
     })
     expect(midEquity.trades).toBe(1)
     expect(midEquity.cash).toBeLessThan(10_000)
+
+    // Verify chronological integrity: forward performance strictly excludes historical replay trades
+    const forwardExclusion = await computeAiBotForwardEquity(canonicalBot.id, {
+      asOfSession: '2026-10-08',
+      includeReplay: false,
+      prismaClient: prisma,
+      engine: engineClient
+    })
+    expect(forwardExclusion.trades).toBe(0)
+    expect(forwardExclusion.status).toBe('awaiting_sessions')
 
     // -------------------------------------------------------------------------
     // Phase 3: Research Cycle on 2026-10-14 -> Generates SELL for held NVDA
@@ -277,10 +288,11 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     expect(filledSell.pnl).not.toBe(0) // Realized FIFO loss recorded cleanly
 
     // -------------------------------------------------------------------------
-    // Phase 5: Forward Portfolio Accounting & Public Strategy Evidence Record
+    // Phase 5: Replay Portfolio Accounting & Verification
     // -------------------------------------------------------------------------
     const finalEquity = await computeAiBotForwardEquity(canonicalBot.id, {
       asOfSession: '2026-10-15',
+      includeReplay: true,
       prismaClient: prisma,
       engine: engineClient
     })
@@ -291,21 +303,9 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     expect(finalEquity.realizedPnl).toBeLessThan(0) // Sold at $217.23 vs buy at $230.48
     expect(finalEquity.curve.length).toBeGreaterThanOrEqual(5)
     expect(finalEquity.buyAndHold.curve.length).toBeGreaterThanOrEqual(5)
-
-    // Sync strategy evidence and confirm the Forward window is populated
-    await generateStrategyEvidence({ prismaClient: prisma, engine: engineClient })
-    const strats = await listPublicStrategies({ prismaClient: prisma })
-    const aiStrat = strats.find(s => s.templateId === 'tmpl_ai_catalyst_momentum')
-
-    expect(aiStrat).toBeDefined()
-    // The forward window is populated with verified paper trading
-    expect(aiStrat.windows.forward).toBeDefined()
-    expect(aiStrat.windows.forward.status).toBe('ok')
-    expect(aiStrat.windows.forward.symbolsTested).toBe(10)
-    expect(aiStrat.windows.forward.trades).toBe(20)
   })
 
-  it('enforces recurring autonomous scheduler idempotency', { timeout: 60_000 }, async () => {
+  it('enforces recurring autonomous scheduler idempotency and processes pending fills on repeated runs', { timeout: 60_000 }, async () => {
     // 1st run of the daily job on session 2026-11-20
     const job1 = await runAiStrategyDailyJob({
       templateId: 'tmpl_ai_catalyst_momentum',
@@ -316,9 +316,9 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     })
 
     expect(job1.ok).toBe(true)
-    expect(job1.skipped).toBeUndefined()
+    expect(job1.researchSkipped).toBe(false)
 
-    // 2nd run on the same session should be idempotently skipped
+    // 2nd run on the same session: research cycle is idempotently skipped, but job completes ok
     const job2 = await runAiStrategyDailyJob({
       templateId: 'tmpl_ai_catalyst_momentum',
       session: '2026-11-20',
@@ -328,7 +328,86 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     })
 
     expect(job2.ok).toBe(true)
-    expect(job2.skipped).toBe(true)
-    expect(job2.reason).toBe('already_executed_for_session')
+    expect(job2.researchSkipped).toBe(true)
+    expect(job2.skipReason).toBe('already_executed_for_session')
   }, 30_000)
+
+  it('attaches canonical bot to dedicated platform user and portfolio, never arbitrary users', async () => {
+    // Create an arbitrary third-party user first
+    await prisma.user.create({
+      data: {
+        id: 'usr_arbitrary_customer',
+        email: 'arbitrary@customer.com',
+        fullName: 'Arbitrary Customer',
+        passwordHash: '$arbitrary_hash$'
+      }
+    })
+
+    const { bot, user, portfolio } = await getOrCreateCanonicalAiBot({ prismaClient: prisma })
+    expect(user.id).toBe('usr_platform_canonical')
+    expect(portfolio.id).toBe('port_platform_canonical')
+    expect(bot.userId).toBe('usr_platform_canonical')
+    expect(bot.portfolioId).toBe('port_platform_canonical')
+
+    // Clean up arbitrary user
+    await prisma.user.delete({ where: { id: 'usr_arbitrary_customer' } })
+  })
+
+  it('skips cycle and reports reason when fresh market data is unavailable', async () => {
+    const mockEngineEmpty = {
+      getDailyBars: async () => ({ bars: [] })
+    }
+
+    const job = await runAiStrategyDailyJob({
+      templateId: 'tmpl_ai_catalyst_momentum',
+      session: null, // forces dynamic discovery
+      prismaClient: prisma,
+      engine: mockEngineEmpty
+    })
+
+    expect(job.ok).toBe(true)
+    expect(job.skipped).toBe(true)
+    expect(job.reason).toBe('fresh_market_data_unavailable')
+  })
+
+  it('processes pending eligible fills even when research cycle has already completed', { timeout: 60_000 }, async () => {
+    // 1. Manually queue an order targeting session 2026-11-20
+    const testExecId = `exec_pending_test_${Date.now()}`
+    await prisma.execution.create({
+      data: {
+        id: testExecId,
+        userId: canonicalBot.userId,
+        portfolioId: canonicalBot.portfolioId,
+        botId: canonicalBot.id,
+        ticker: 'SPY',
+        direction: 'buy',
+        quantity: 5,
+        price: 580,
+        origin: 'bot',
+        sourceType: 'AI_REPLAY',
+        status: 'queued',
+        simSession: '2026-11-20',
+        clientOrderId: `co_test_${Date.now()}`,
+        commission: 0,
+        fees: 0,
+        pnl: 0
+      }
+    })
+
+    // 2. Run daily job for 2026-11-20. Even if research was previously recorded, pending fill executes!
+    const job = await runAiStrategyDailyJob({
+      templateId: 'tmpl_ai_catalyst_momentum',
+      session: '2026-11-20',
+      providerName: TEST_PROVIDER,
+      prismaClient: prisma,
+      engine: engineClient
+    })
+
+    expect(job.ok).toBe(true)
+    expect(job.fills.filledExecutions.some(f => f.id === testExecId)).toBe(true)
+
+    const filledExec = await prisma.execution.findUnique({ where: { id: testExecId } })
+    expect(filledExec.status).toBe('filled')
+    expect(filledExec.filledPrice).toBeGreaterThan(0)
+  })
 })

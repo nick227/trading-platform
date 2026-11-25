@@ -27,8 +27,15 @@ export function buildUserPrompt(context) {
 
   const symbolSummaries = symbols.map(s => {
     if (!s.available) return `- ${s.symbol}: Data unavailable`
-    const smaText = s.sma20 ? `SMA20: $${s.sma20} (${s.priceVsSma20Pct > 0 ? '+' : ''}${s.priceVsSma20Pct}%), SMA50: $${s.sma50 ?? 'N/A'}` : 'SMA: N/A'
-    return `- ${s.symbol}: Price $${s.currentPrice} | 5d: ${s.return5dPct > 0 ? '+' : ''}${s.return5dPct}% | 20d: ${s.return20dPct > 0 ? '+' : ''}${s.return20dPct}% | Volume Ratio: ${s.volumeRatio}x | ${smaText} | Regime: ${s.regime}\n  Catalyst context: ${s.catalyst}`
+    const smaText = `SMA20: ${s.sma20 ? `$${s.sma20} (${s.priceVsSma20Pct > 0 ? '+' : ''}${s.priceVsSma20Pct}%)` : 'N/A'}, SMA50: ${s.sma50 ? `$${s.sma50}` : 'N/A'}`
+    const r5Text = s.return5dPct !== null ? `${s.return5dPct > 0 ? '+' : ''}${s.return5dPct}%` : 'N/A'
+    const r20Text = s.return20dPct !== null ? `${s.return20dPct > 0 ? '+' : ''}${s.return20dPct}%` : 'N/A'
+    const volText = s.volumeRatio !== null ? `${s.volumeRatio}x` : 'N/A'
+    const catalystText = (s.catalysts && s.catalysts.length > 0)
+      ? s.catalysts.map(c => `${c.date}: ${c.headline}`).join('; ')
+      : 'None retrieved for this session. (Rely on technical indicators and regime; do not fabricate news).'
+
+    return `- ${s.symbol}: Price $${s.currentPrice} | 5d: ${r5Text} | 20d: ${r20Text} | Volume Ratio: ${volText} | ${smaText} | Regime: ${s.regime}\n  Company profile: ${s.companyProfile || s.catalyst || 'N/A'}\n  Dated news catalysts: ${catalystText}`
   }).join('\n')
 
   const positionsSummary = portfolio.positions.length > 0
@@ -43,26 +50,26 @@ PORTFOLIO STATE:
 - Open Positions:
 ${positionsSummary}
 
-MARKET & CATALYST CONTEXT ACROSS THE 10 SYMBOLS:
+MARKET & RESEARCH CONTEXT ACROSS THE 10 SYMBOLS:
 ${symbolSummaries}
 
 TASK:
 1. Conduct an end-of-session evaluation for all 10 symbols.
 2. For each symbol, decide: "BUY", "SELL", or "HOLD".
 3. For "BUY":
-   - Require strong catalyst alignment, positive momentum (e.g. above SMA20 or accelerating volume), and available cash.
+   - Require positive momentum (e.g. above SMA20 or accelerating volume ratio) and constructive regime.
    - Confidence must be between 0.0 and 1.0 (>= 0.65 required for action).
-   - Target allocation pct between 0.10 and 0.20 (max 20%).
+   - Target allocation pct between 0.10 and 0.20 (hard max 20%).
    - Define exit rules: takeProfitPct (typically 6-12%) and stopLossPct (typically 3-6%).
 4. For "SELL":
-   - Only propose SELL if the portfolio currently holds shares of that symbol and momentum or catalyst thesis has broken down.
-5. Select 0 to 2 top actionable orders in "selectedDecisions". If market conditions are uncertain, "selectedDecisions" should be empty.
+   - Only propose SELL if the portfolio currently holds shares of that symbol and momentum or thesis has broken down.
+5. Code enforces maximum 2 actionable orders. If market conditions are risk-off or uncertain, HOLD.
 
 Output strictly valid JSON conforming to this schema:
 {
   "asOfSession": "${asOfSession}",
   "marketSummary": "Concise 1-2 sentence overview of market conditions and regime",
-  "symbolEvaluations": [
+  "decisions": [
     {
       "symbol": "SPY",
       "action": "HOLD",
@@ -73,18 +80,6 @@ Output strictly valid JSON conforming to this schema:
       "thesis": "Concise reasoning for decision",
       "evidence": ["Data point 1", "Data point 2"]
     }
-  ],
-  "selectedDecisions": [
-    {
-      "symbol": "NVDA",
-      "action": "BUY",
-      "confidence": 0.82,
-      "targetAllocationPct": 0.15,
-      "entryType": "next_open",
-      "exitRule": { "takeProfitPct": 8, "stopLossPct": 4 },
-      "thesis": "Strong technical breakout above 20-day SMA confirmed by datacenter AI catalyst.",
-      "evidence": ["Trading 3.4% above 20d SMA", "Volume 1.25x 20d average", "Sustained hyperscaler demand"]
-    }
   ]
 }`
 }
@@ -94,16 +89,17 @@ export function validateAiDecisionOutput(output, context) {
     throw new Error('AI output must be a JSON object')
   }
 
-  const { symbolEvaluations, selectedDecisions } = output
-  if (!Array.isArray(symbolEvaluations) || symbolEvaluations.length === 0) {
-    throw new Error('AI output missing symbolEvaluations array')
+  // Accept either decisions array (preferred compact schema) or legacy symbolEvaluations
+  const rawDecisions = Array.isArray(output.decisions) ? output.decisions : output.symbolEvaluations
+  if (!Array.isArray(rawDecisions) || rawDecisions.length === 0) {
+    throw new Error('AI output missing decisions/symbolEvaluations array')
   }
 
   const heldSymbols = new Set((context.portfolio?.positions ?? []).map(p => p.symbol))
   const validSymbols = new Set(context.symbols.map(s => s.symbol))
 
   // Sanitize and validate evaluations
-  const sanitizedEvaluations = symbolEvaluations.map(ev => {
+  const sanitizedEvaluations = rawDecisions.map(ev => {
     const sym = String(ev.symbol ?? '').toUpperCase()
     if (!validSymbols.has(sym)) {
       throw new Error(`AI evaluated symbol ${sym} which is outside the supported 10-symbol universe`)
@@ -114,7 +110,8 @@ export function validateAiDecisionOutput(output, context) {
     }
 
     const confidence = Number(ev.confidence) >= 0 && Number(ev.confidence) <= 1 ? Number(ev.confidence) : 0.5
-    const targetAllocationPct = Math.max(0, Math.min(0.25, Number(ev.targetAllocationPct) || 0))
+    // Code strictly caps allocation at 20% (0.20)
+    const targetAllocationPct = Math.max(0, Math.min(0.20, Number(ev.targetAllocationPct || ev.allocationPct) || 0))
     const exitRule = {
       takeProfitPct: Math.max(1, Math.min(50, Number(ev.exitRule?.takeProfitPct) || 8)),
       stopLossPct: Math.max(1, Math.min(25, Number(ev.exitRule?.stopLossPct) || 4))
@@ -132,24 +129,29 @@ export function validateAiDecisionOutput(output, context) {
     }
   })
 
-  // Validate selected decisions against rules
-  const sanitizedDecisions = (Array.isArray(selectedDecisions) ? selectedDecisions : [])
+  // Deterministically select actionable decisions from evaluations (or honor selectedDecisions if explicitly supplied)
+  const candidateDecisions = Array.isArray(output.selectedDecisions) && output.selectedDecisions.length > 0
+    ? output.selectedDecisions
+    : sanitizedEvaluations.filter(d => d.action === 'BUY' || d.action === 'SELL')
+
+  const sanitizedDecisions = candidateDecisions
     .filter(d => d && (d.action === 'BUY' || d.action === 'SELL'))
     .map(d => {
       const sym = String(d.symbol ?? '').toUpperCase()
       const action = String(d.action).toUpperCase()
       
-      // Gate: Must be in universe
+      // Gate 1: Must be in universe
       if (!validSymbols.has(sym)) return null
 
-      // Gate: Cannot SELL if not held
+      // Gate 2: Cannot SELL if not held
       if (action === 'SELL' && !heldSymbols.has(sym)) return null
 
-      // Gate: BUY requires confidence >= 0.60
+      // Gate 3: BUY requires confidence >= 0.65
       const confidence = Number(d.confidence) || 0.5
-      if (action === 'BUY' && confidence < 0.60) return null
+      if (action === 'BUY' && confidence < 0.65) return null
 
-      const targetAllocationPct = Math.max(0.05, Math.min(0.20, Number(d.targetAllocationPct) || 0.15))
+      // Gate 4: Maximum 20% allocation enforced in code
+      const targetAllocationPct = Math.max(0.05, Math.min(0.20, Number(d.targetAllocationPct || d.allocationPct) || 0.15))
       const exitRule = {
         takeProfitPct: Math.max(1, Math.min(50, Number(d.exitRule?.takeProfitPct) || 8)),
         stopLossPct: Math.max(1, Math.min(25, Number(d.exitRule?.stopLossPct) || 4))
@@ -167,6 +169,10 @@ export function validateAiDecisionOutput(output, context) {
       }
     })
     .filter(Boolean)
+    // Sort actionable decisions by conviction (highest confidence first)
+    .sort((a, b) => b.confidence - a.confidence)
+    // Hard code constraint: at most 2 actionable orders per cycle
+    .slice(0, 2)
 
   return {
     asOfSession: output.asOfSession || context.asOfSession,

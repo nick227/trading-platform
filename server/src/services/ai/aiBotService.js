@@ -1,11 +1,15 @@
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import prisma from '../../loaders/prisma.js'
 import { engineClient } from '../../clients/engine.js'
 import { getProvider } from './providers/providerRegistry.js'
 import { assembleAiResearchContext } from './researchContext.js'
 import { buildSystemPrompt, buildUserPrompt, validateAiDecisionOutput, STRATEGY_ID } from './strategies/catalystMomentumStrategy.js'
 import { DEFAULT_TRADABLE_SYMBOLS, currentSimSession, simulationConfig } from '../simulationService.js'
-import { calculateFillPnl, loadBotFills } from '../botAccountingService.js'
+import { calculateFillPnl, loadBotFills, calculateFifoAccounting } from '../botAccountingService.js'
+
+export const PLATFORM_USER_ID = 'usr_platform_canonical'
+export const PLATFORM_PORTFOLIO_ID = 'port_platform_canonical'
+export const PLATFORM_BOT_ID = 'bot_canonical_ai_catalyst_momentum'
 
 export function nextTradingSession(sessionStr) {
   const d = new Date(`${sessionStr}T00:00:00Z`)
@@ -17,28 +21,36 @@ export function nextTradingSession(sessionStr) {
 
 /**
  * Finds or initializes the canonical platform paper bot for the AI strategy.
+ * Guaranteed to attach strictly to dedicated platform-owned user and portfolio.
  */
 export async function getOrCreateCanonicalAiBot({ prismaClient = prisma } = {}) {
-  // Find or create platform user
-  let user = await prismaClient.user.findFirst()
+  // 1. Dedicated platform user (never attaches to an arbitrary real user's account)
+  let user = await prismaClient.user.findUnique({
+    where: { id: PLATFORM_USER_ID }
+  })
   if (!user) {
-    user = await prismaClient.user.create({
-      data: {
-        id: 'usr_platform_canonical',
+    user = await prismaClient.user.upsert({
+      where: { id: PLATFORM_USER_ID },
+      update: {},
+      create: {
+        id: PLATFORM_USER_ID,
         email: 'tradeloom-ai@tradeloom.internal',
-        name: 'TradeLoom AI System'
+        fullName: 'TradeLoom AI System',
+        passwordHash: '$platform_system_locked_account$'
       }
     })
   }
 
-  // Find or create platform portfolio
-  let portfolio = await prismaClient.portfolio.findFirst({
-    where: { userId: user.id }
+  // 2. Dedicated platform portfolio
+  let portfolio = await prismaClient.portfolio.findUnique({
+    where: { id: PLATFORM_PORTFOLIO_ID }
   })
   if (!portfolio) {
-    portfolio = await prismaClient.portfolio.create({
-      data: {
-        id: 'port_ai_platform',
+    portfolio = await prismaClient.portfolio.upsert({
+      where: { id: PLATFORM_PORTFOLIO_ID },
+      update: {},
+      create: {
+        id: PLATFORM_PORTFOLIO_ID,
         userId: user.id,
         name: 'AI Strategies Paper Portfolio',
         cashBalance: 10_000,
@@ -47,18 +59,17 @@ export async function getOrCreateCanonicalAiBot({ prismaClient = prisma } = {}) 
     })
   }
 
-  // Find or create bot
-  let bot = await prismaClient.bot.findFirst({
-    where: {
-      templateId: STRATEGY_ID,
-      userId: user.id
-    }
+  // 3. Dedicated canonical AI bot
+  let bot = await prismaClient.bot.findUnique({
+    where: { id: PLATFORM_BOT_ID }
   })
 
   if (!bot) {
-    bot = await prismaClient.bot.create({
-      data: {
-        id: 'bot_canonical_ai_catalyst_momentum',
+    bot = await prismaClient.bot.upsert({
+      where: { id: PLATFORM_BOT_ID },
+      update: {},
+      create: {
+        id: PLATFORM_BOT_ID,
         userId: user.id,
         portfolioId: portfolio.id,
         templateId: STRATEGY_ID,
@@ -74,6 +85,14 @@ export async function getOrCreateCanonicalAiBot({ prismaClient = prisma } = {}) 
           allocatedAmount: 10_000,
           maxOrderNotional: 2_000
         }
+      }
+    })
+  } else if (bot.userId !== PLATFORM_USER_ID || bot.portfolioId !== PLATFORM_PORTFOLIO_ID) {
+    bot = await prismaClient.bot.update({
+      where: { id: PLATFORM_BOT_ID },
+      data: {
+        userId: PLATFORM_USER_ID,
+        portfolioId: PLATFORM_PORTFOLIO_ID
       }
     })
   }
@@ -102,6 +121,8 @@ export async function executeAiStrategyCycle({
   session = null,
   providerName = 'openai',
   dryRun = false,
+  isReplay = false,
+  mode = 'forward',
   prismaClient = prisma,
   engine = engineClient
 } = {}) {
@@ -118,24 +139,78 @@ export async function executeAiStrategyCycle({
 
   const asOfSession = context.asOfSession
 
-  // 2. Format Prompts & Request Decision
-  const systemPrompt = buildSystemPrompt()
-  const userPrompt = buildUserPrompt(context)
+  // 2. Build input fingerprint for deterministic caching & duplicate call prevention
+  const promptInput = {
+    strategyId: STRATEGY_ID,
+    version: '1.0.0',
+    model: bot?.config?.model || 'gpt-4o-mini',
+    asOfSession,
+    symbols: context.symbols.map(s => ({
+      sym: s.symbol,
+      p: s.currentPrice,
+      s20: s.sma20,
+      s50: s.sma50,
+      r5: s.return5dPct,
+      r20: s.return20dPct,
+      vr: s.volumeRatio,
+      reg: s.regime
+    })),
+    portfolio: {
+      cash: context.portfolio.cash,
+      positions: context.portfolio.positions.map(p => ({ sym: p.symbol, qty: p.quantity, cost: p.averageCost }))
+    }
+  }
+  const inputFingerprint = createHash('sha256').update(JSON.stringify(promptInput)).digest('hex')
 
-  const provider = getProvider(providerName)
-  const llmResponse = await provider.completeStructured({
-    systemPrompt,
-    userPrompt,
-    temperature: 0.2
+  // Check recent events for identical input fingerprint to prevent duplicate model requests
+  let llmResponse = null
+  const recentCycleEvents = await prismaClient.botEvent.findMany({
+    where: {
+      botId: activeBotId,
+      type: 'decision_made'
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10
   })
+
+  const matchingEvent = recentCycleEvents.find(e => e.metadata?.inputFingerprint === inputFingerprint)
+  if (matchingEvent && matchingEvent.metadata?.symbolEvaluations) {
+    llmResponse = {
+      model: matchingEvent.metadata.model,
+      provider: matchingEvent.metadata.provider || providerName,
+      usage: matchingEvent.metadata.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      structured: {
+        asOfSession,
+        marketSummary: matchingEvent.metadata.marketSummary,
+        symbolEvaluations: matchingEvent.metadata.symbolEvaluations,
+        selectedDecisions: matchingEvent.metadata.selectedDecisions
+      },
+      cached: true
+    }
+  } else {
+    const systemPrompt = buildSystemPrompt()
+    const userPrompt = buildUserPrompt(context)
+    const provider = getProvider(providerName)
+    llmResponse = await provider.completeStructured({
+      systemPrompt,
+      userPrompt,
+      temperature: 0.2
+    })
+  }
 
   // 3. Validate Structured Output
   const sanitized = validateAiDecisionOutput(llmResponse.structured, context)
 
-  // 4. Record Full Decision Audit to BotEvent
-  // Records the complete cycle event
+  // 4. Chronological Integrity Check
   const decisionTimestamp = new Date().toISOString()
+  const currentWallClockDate = decisionTimestamp.slice(0, 10)
   const nextSession = nextTradingSession(asOfSession)
+
+  // Replay mode is detected if explicitly flagged or if the target session precedes current wall-clock date
+  const isReplayMode = Boolean(isReplay || mode === 'replay' || nextSession < currentWallClockDate)
+  const sourceType = isReplayMode ? 'AI_REPLAY' : 'AI_FORWARD'
+
+  // Record Full Decision Audit to BotEvent
   const summaryDetail = `AI Research Cycle (${asOfSession}): ${sanitized.marketSummary}`.slice(0, 180)
   await prismaClient.botEvent.create({
     data: {
@@ -149,9 +224,12 @@ export async function executeAiStrategyCycle({
         asOfSession,
         decisionTimestamp,
         intendedExecutionSession: nextSession,
+        isReplay: isReplayMode,
+        inputFingerprint,
         model: llmResponse.model,
         usage: llmResponse.usage,
         provider: providerName,
+        cached: Boolean(llmResponse.cached),
         marketSummary: sanitized.marketSummary,
         symbolEvaluations: sanitized.symbolEvaluations,
         selectedDecisions: sanitized.selectedDecisions,
@@ -179,7 +257,8 @@ export async function executeAiStrategyCycle({
           evidence: ev.evidence,
           asOfSession,
           decisionTimestamp,
-          intendedExecutionSession: nextSession
+          intendedExecutionSession: nextSession,
+          isReplay: isReplayMode
         }
       }
     })
@@ -235,7 +314,7 @@ export async function executeAiStrategyCycle({
             quantity,
             price: currentPrice, // intent price
             origin: 'bot',
-            sourceType: 'ML_SIGNAL',
+            sourceType,
             sourceId: STRATEGY_ID,
             status: 'queued',
             simSession: nextSession, // fills at next session
@@ -247,6 +326,25 @@ export async function executeAiStrategyCycle({
           }
         })
 
+        await prismaClient.executionAudit.create({
+          data: {
+            id: `aud_${randomUUID()}`,
+            executionId: execution.id,
+            userId: execution.userId,
+            workerId: 'ai_daily_job',
+            eventType: 'execution_created',
+            detail: `Queued AI BUY order for ${decision.symbol} @ $${currentPrice.toFixed(2)}${isReplayMode ? ' [REPLAY]' : ''}`,
+            metadata: {
+              asOfSession,
+              decisionTimestamp,
+              targetSession: nextSession,
+              isReplay: isReplayMode,
+              thesis: decision.thesis,
+              exitRule: decision.exitRule
+            }
+          }
+        })
+
         createdExecutions.push({
           id: execution.id,
           symbol: decision.symbol,
@@ -254,7 +352,8 @@ export async function executeAiStrategyCycle({
           quantity,
           intentPrice: currentPrice,
           targetSession: nextSession,
-          thesis: decision.thesis
+          thesis: decision.thesis,
+          isReplay: isReplayMode
         })
       } else if (decision.action === 'SELL') {
         const held = context.portfolio.positions.find(p => p.symbol === decision.symbol)
@@ -278,7 +377,7 @@ export async function executeAiStrategyCycle({
             quantity,
             price: currentPrice,
             origin: 'bot',
-            sourceType: 'ML_SIGNAL',
+            sourceType,
             sourceId: STRATEGY_ID,
             status: 'queued',
             simSession: nextSession,
@@ -290,6 +389,25 @@ export async function executeAiStrategyCycle({
           }
         })
 
+        await prismaClient.executionAudit.create({
+          data: {
+            id: `aud_${randomUUID()}`,
+            executionId: execution.id,
+            userId: execution.userId,
+            workerId: 'ai_daily_job',
+            eventType: 'execution_created',
+            detail: `Queued AI SELL order for ${decision.symbol} @ $${currentPrice.toFixed(2)}${isReplayMode ? ' [REPLAY]' : ''}`,
+            metadata: {
+              asOfSession,
+              decisionTimestamp,
+              targetSession: nextSession,
+              isReplay: isReplayMode,
+              thesis: decision.thesis,
+              exitRule: decision.exitRule
+            }
+          }
+        })
+
         createdExecutions.push({
           id: execution.id,
           symbol: decision.symbol,
@@ -297,7 +415,8 @@ export async function executeAiStrategyCycle({
           quantity,
           intentPrice: currentPrice,
           targetSession: nextSession,
-          thesis: decision.thesis
+          thesis: decision.thesis,
+          isReplay: isReplayMode
         })
       }
     }
@@ -389,6 +508,7 @@ export async function processPendingAiExecutions(botId, {
 
       const brokerOrderId = `sim_${session.replace(/-/g, '')}_${exec.id}`
       const filledAt = new Date()
+      const isReplay = exec.sourceType === 'AI_REPLAY' || exec.metadata?.isReplay === true
 
       await prismaClient.execution.update({
         where: { id: exec.id },
@@ -410,8 +530,8 @@ export async function processPendingAiExecutions(botId, {
           userId: exec.userId,
           workerId: 'ai_daily_job',
           eventType: 'filled',
-          detail: `Simulated fill at ${session} close: ${exec.direction.toUpperCase()} ${fillQty} ${exec.ticker} @ $${fillPrice.toFixed(2)}`,
-          metadata: { session, fillPrice, fillQty, pnl }
+          detail: `Simulated fill at ${session} close: ${exec.direction.toUpperCase()} ${fillQty} ${exec.ticker} @ $${fillPrice.toFixed(2)}${isReplay ? ' [REPLAY]' : ''}`,
+          metadata: { session, fillPrice, fillQty, pnl, isReplay }
         }
       })
 
@@ -422,7 +542,8 @@ export async function processPendingAiExecutions(botId, {
         quantity: fillQty,
         fillPrice,
         session,
-        pnl
+        pnl,
+        isReplay
       })
     } catch (err) {
       console.error('[processPendingAiExecutions] fill error:', err.message)
@@ -436,16 +557,24 @@ export async function processPendingAiExecutions(botId, {
 /**
  * Computes forward portfolio accounting, daily equity curve, and benchmark comparisons
  * for the canonical AI bot based on actual verified paper executions.
+ * Excludes historical replay executions unless includeReplay is explicitly true.
  */
 export async function computeAiBotForwardEquity(botId, {
   asOfSession = null,
+  includeReplay = false,
   prismaClient = prisma,
   engine = engineClient
 } = {}) {
   const bot = await prismaClient.bot.findUnique({ where: { id: botId } })
   const startingCapital = Number(bot?.config?.allocatedAmount) || 10_000
 
-  const fills = await loadBotFills(botId, { prismaClient })
+  const allFills = await loadBotFills(botId, { prismaClient })
+
+  // Chronological integrity: exclude historical replay executions from forward performance evidence
+  const fills = includeReplay
+    ? allFills
+    : allFills.filter(f => f.sourceType !== 'AI_REPLAY' && f.metadata?.isReplay !== true)
+
   if (!fills.length) {
     return {
       status: 'awaiting_sessions',
