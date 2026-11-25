@@ -8,8 +8,9 @@ export const STRATEGY_COPY = Object.freeze({
   noResults: 'No results yet.',
 })
 
-export function strategyWindowOptions(windows = [], design = {}) {
-  return windows.filter((w) => !['development', 'holdout'].includes(w) || Boolean(design.developmentEnd))
+export function strategyWindowOptions(windows = [], design = {}, { forwardOnly = false } = {}) {
+  if (forwardOnly) return ['forward']
+  return windows.filter((w) => !['development', 'holdout'].includes(w) || Boolean(design?.developmentEnd))
 }
 
 export function decisionCounts(evaluations = []) {
@@ -22,4 +23,10 @@ export function decisionCounts(evaluations = []) {
 
 export function decisionLabel(action) {
   return ['BUY', 'SELL', 'HOLD'].includes(action) ? action : '—'
+}
+
+/** Legacy template ID is retained; display current verified strategy name. */
+export function strategyDisplayName(strategy) {
+  if (strategy?.templateId === 'tmpl_ai_catalyst_momentum') return 'AI Momentum & Technical Breakout'
+  return strategy?.name ?? 'Strategy'
 }
