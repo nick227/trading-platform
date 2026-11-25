@@ -97,7 +97,19 @@ for (const width of [320, 375, 768, 1024, 1440]) {
       } else {
         await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 6000 })
       }
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth), { timeout: 6000 }).toBeLessThanOrEqual(width + 1)
+      const overflow = await page.evaluate(() => ({
+        width: document.documentElement.scrollWidth,
+        offenders: [...document.querySelectorAll('body *')].filter((el) => {
+          const rect = el.getBoundingClientRect()
+          return rect.width > 0 && rect.right > innerWidth + 1
+        }).slice(0, 8).map((el) => ({
+          tag: el.tagName.toLowerCase(),
+          className: typeof el.className === 'string' ? el.className : '',
+          right: Math.round(el.getBoundingClientRect().right),
+          width: Math.round(el.getBoundingClientRect().width),
+        })),
+      }))
+      expect(overflow.width, `${screen.path}: ${JSON.stringify(overflow.offenders)}`).toBeLessThanOrEqual(width + 1)
       await expect(page.locator('body')).not.toContainText('Something went wrong')
       expect(errors, `Unexpected runtime exception on ${screen.path}`).toEqual([])
       await page.screenshot({ path: testInfo.outputPath(`${screen.label}-${width}.png`), fullPage: true })
