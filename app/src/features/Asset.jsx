@@ -366,17 +366,15 @@ export default function Asset() {
               &larr; Back to Assets
             </Link>
           </div>
-          <h1 className="hero mb-1" style={{ fontSize: 44 }}>
-            {symbol}
-            <span className="muted" style={{ fontWeight: 600 }}> · {company?.name ?? company?.companyName ?? '—'}</span>
-          </h1>
+          <h1 className="tl-title">{symbol}</h1>
+          <p className="tl-content-intro">{company?.name ?? company?.companyName ?? 'Company information unavailable'}</p>
           <div className="l-row" style={{ gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
             <div className="text-xl font-700">{currentPrice != null ? fmtMoney(currentPrice) : '—'}</div>
             <div className={(dayChangePct ?? 0) >= 0 ? 'text-positive font-600' : 'text-negative font-600'}>
               {fmtPct(dayChangePct)}
             </div>
             <div className="muted" style={{ fontSize: 12 }}>
-              {recAsOf ? `Model as of ${recAsOf}` : ' '}
+              {recAsOf ? `Research updated ${recAsOf}` : ' '}
             </div>
           </div>
         </div>
