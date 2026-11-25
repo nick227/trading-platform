@@ -41,6 +41,25 @@ for (const width of [320, 375, 768, 1024, 1440]) {
       const radius = await card.evaluate((el) => getComputedStyle(el).borderRadius)
       expect(radius).toBe('12px')
     }
+    // Repeated real-page cards must share both horizontal edges and padding.
+    const axes = await cards.evaluateAll((items) => items.map((el) => {
+      const rect = el.getBoundingClientRect()
+      const style = getComputedStyle(el)
+      return {
+        left: rect.left,
+        right: rect.right,
+        paddingLeft: parseFloat(style.paddingLeft),
+        paddingRight: parseFloat(style.paddingRight),
+        radius: parseFloat(style.borderTopLeftRadius),
+      }
+    }))
+    for (const axis of axes.slice(1)) {
+      expect(Math.abs(axis.left - axes[0].left)).toBeLessThanOrEqual(1)
+      expect(Math.abs(axis.right - axes[0].right)).toBeLessThanOrEqual(1)
+      expect(Math.abs(axis.paddingLeft - axes[0].paddingLeft)).toBeLessThanOrEqual(1)
+      expect(Math.abs(axis.paddingRight - axes[0].paddingRight)).toBeLessThanOrEqual(1)
+    }
+    expect(axes[0].paddingLeft).toBe(width <= 760 ? 16 : 24)
     await page.screenshot({ path: testInfo.outputPath(`strategies-${width}.png`), fullPage: true })
   })
 }
