@@ -74,7 +74,7 @@ describe('BotsPage', () => {
     // Users' paper fills are not a headline (2 fills on one day): no P&L in the row.
     expect(dca.querySelector('.tl-featured-row').textContent).not.toMatch(/\$52/)
     expect(within(research).getByTestId('featured-evidence')).toHaveTextContent('Not backtestable')
-    expect(research).toHaveTextContent('Latest research: no proven edge')
+    expect(research).toHaveTextContent('Did not beat baseline')
   })
 
   it('expands a starting point: its conditions, a sample-size caveat, and one way to use it', async () => {
@@ -95,7 +95,7 @@ describe('BotsPage', () => {
     renderPage('/bots?featured=tmpl_research')
     const research = await screen.findByTestId('featured-research')
     expect(research).toHaveTextContent('Holdout hit rate 48.7% vs 50.3% always-up baseline (−1.6 pts)')
-    expect(research).toHaveTextContent('No verified edge')
+    expect(research).toHaveTextContent('Did not beat baseline')
     expect(research).toHaveTextContent('Historical replay research, separate from the results above.')
     expect(research).toHaveTextContent('Research is an input you can test, not a recommendation.')
   })
