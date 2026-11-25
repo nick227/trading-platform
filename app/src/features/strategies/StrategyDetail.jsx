@@ -7,7 +7,7 @@ import { describeGuards } from '../../ui/describeBot'
 import { money, moneyWhole, plural, sessionDate, tone } from '../../ui/format'
 import pageTitleService from '../../services/pageTitleService'
 import { WINDOW_LABELS, loadPublicStrategy, pctText, summaryLine } from './strategiesApi'
-import { STRATEGY_COPY, strategyWindowOptions } from '../../ui/strategyPresentation'
+import { STRATEGY_COPY, decisionCounts, decisionLabel, strategyWindowOptions } from '../../ui/strategyPresentation'
 
 const SKIP_TEXT = {
   no_position: 'it had nothing to sell', cooldown_active: 'cooldown', price_above_threshold_not_met: 'price below its trigger',
@@ -163,59 +163,48 @@ export default function StrategyDetail() {
       {(s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum') && (
         <section className="tl-section" aria-labelledby="ai-feed-title" data-testid="ai-decision-feed">
           <div className="tl-section-head">
-            <h2 className="tl-section-title" id="ai-feed-title">Autonomous AI Research &amp; Decision Feed</h2>
-            <span className="tl-tag">OpenAI GPT-4o-mini</span>
+            <h2 className="tl-section-title" id="ai-feed-title">{STRATEGY_COPY.decisions}</h2>
           </div>
-          <p className="tl-small tl-muted">Daily post-close research synthesized across 10 liquid US equities. Every decision (including disciplined HOLD decisions), investment thesis, and cited evidence is permanently preserved.</p>
           {aiData?.decisions?.length > 0 ? (
-            <div className="tl-ai-feed" style={{ marginTop: 14 }}>
-              {aiData.decisions.map((d) => (
-                <div key={d.id} className="tl-card" style={{ marginBottom: 12, padding: 14 }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--tl-border, #eee)' }}>
-                    <span className="tl-small" style={{ fontWeight: 600 }}>
-                      {d.metadata?.model ? `Model: ${d.metadata.model}` : 'Autonomous AI Cycle'}
-                    </span>
-                    <span className="tl-tag" style={{ fontSize: '0.78rem' }}>
-                      <strong>Market Session Analyzed:</strong>&nbsp;{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : '—'}
-                    </span>
-                    <span className="tl-tag" style={{ fontSize: '0.78rem' }}>
-                      <strong>Decision Generated:</strong>&nbsp;{d.metadata?.decisionTimestamp ? new Date(d.metadata.decisionTimestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' }) + ' ET' : sessionDate(d.createdAt, { year: true })}
-                    </span>
-                    <span className="tl-tag" style={{ fontSize: '0.78rem' }}>
-                      <strong>Execution Target:</strong>&nbsp;{d.metadata?.intendedExecutionSession ? sessionDate(d.metadata.intendedExecutionSession, { year: true }) : 'Next eligible session'}
-                    </span>
-                  </div>
-                  {d.metadata?.marketSummary && (
-                    <p className="tl-small tl-muted" style={{ margin: '4px 0 8px' }}>
-                      <em>Market synthesis:</em> {d.metadata.marketSummary}
-                    </p>
-                  )}
-                  {Array.isArray(d.metadata?.symbolEvaluations) && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8, marginTop: 8 }}>
-                      {d.metadata.symbolEvaluations.map((ev) => (
-                        <div key={ev.symbol} style={{ background: 'var(--tl-surface-2, #1a1a1a)', padding: '8px 10px', borderRadius: 4, fontSize: '0.82rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                            <strong>{ev.symbol}</strong>
-                            <span style={{ fontWeight: 600, color: ev.action === 'BUY' ? 'var(--tl-green, #10b981)' : ev.action === 'SELL' ? 'var(--tl-red, #ef4444)' : 'var(--tl-muted, #888)' }}>
-                              [{ev.action}] ({Math.round(ev.confidence * 100)}%)
-                            </span>
-                          </div>
-                          <div className="tl-muted" style={{ lineHeight: 1.3 }}>{ev.thesis}</div>
-                          {Array.isArray(ev.evidence) && ev.evidence.length > 0 && (
-                            <div className="tl-small tl-muted" style={{ marginTop: 4, fontSize: '0.75rem', borderTop: '1px solid var(--tl-border, #333)', paddingTop: 4 }}>
-                              {ev.evidence.map((item, idx) => <span key={idx} style={{ display: 'block' }}>• {item}</span>)}
-                            </div>
-                          )}
+            <div className="tl-ai-feed">
+              {aiData.decisions.map((d) => {
+                const evaluations = Array.isArray(d.metadata?.symbolEvaluations) ? d.metadata.symbolEvaluations : []
+                const counts = decisionCounts(evaluations)
+                return (
+                  <div key={d.id} className="tl-card" style={{ marginBottom: 12, padding: 14 }}>
+                    <div className="tl-small tl-muted" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
+                      <span>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : 'Session unavailable'}</span>
+                      <span>{counts.evaluated} evaluated · {counts.actionable} {counts.actionable === 1 ? 'signal' : 'signals'}</span>
+                      {d.metadata?.isReplay && <span>Replay</span>}
+                    </div>
+                    <div className="tl-ai-decisions" role="list" aria-label="Symbol decisions">
+                      {evaluations.map((ev) => (
+                        <div role="listitem" key={ev.symbol}>
+                          <Disclosure label={ev.symbol} meta={<span className={ev.action === 'BUY' ? 'tl-pos' : ev.action === 'SELL' ? 'tl-neg' : 'tl-muted'}>{decisionLabel(ev.action)}</span>}>
+                            {ev.thesis && <p className="tl-small">{ev.thesis}</p>}
+                            {Array.isArray(ev.evidence) && ev.evidence.length > 0 && (
+                              <ul className="tl-backtest-notes">
+                                {ev.evidence.map((item, idx) => <li key={idx}>{item}</li>)}
+                              </ul>
+                            )}
+                          </Disclosure>
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              ))}
+                    <Disclosure label="Research details">
+                      <dl className="tl-facts">
+                        <dt>Model</dt><dd>{d.metadata?.model || 'OpenAI'}</dd>
+                        <dt>Market session</dt><dd>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : '—'}</dd>
+                        <dt>Generated</dt><dd>{d.metadata?.decisionTimestamp ? new Date(d.metadata.decisionTimestamp).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) : '—'}</dd>
+                        <dt>Target session</dt><dd>{d.metadata?.intendedExecutionSession ? sessionDate(d.metadata.intendedExecutionSession, { year: true }) : '—'}</dd>
+                      </dl>
+                      {d.metadata?.marketSummary && <p className="tl-small">{d.metadata.marketSummary}</p>}
+                    </Disclosure>
+                  </div>
+                )
+              })}
             </div>
-          ) : (
-            <p className="tl-small tl-muted" style={{ marginTop: 8 }}>Awaiting next autonomous post-close research run.</p>
-          )}
+          ) : <p className="tl-section-note">{STRATEGY_COPY.noDecisions}</p>}
         </section>
       )}
 
