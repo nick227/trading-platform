@@ -60,13 +60,45 @@ describe('redesigned versions', () => {
       summary: { ...strategy.summary, development: sum, holdout: { ...sum, medianReturnPct: -1 } },
       versions: [{ id: 'sv_new0000000000000', current: true, selected: true, firstSession: '2026-11-24' }, { id: 'sv_old0000000000000', current: false, selected: false, firstSession: '2026-11-23' }] })
     render(<MemoryRouter initialEntries={['/strategies/tmpl_loss_guard']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
-    expect(await screen.findByTestId('strategy-design')).toHaveTextContent('Strategy details')
-    fireEvent.click(screen.getByRole('button', { name: 'Strategy details' }))
+    expect(await screen.findByTestId('strategy-design')).toHaveTextContent('Details')
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }))
     expect(screen.getByTestId('strategy-design')).toHaveTextContent('After Nov 21, 2025')
     fireEvent.click(screen.getByRole('button', { name: 'Holdout (out of sample)' }))
     expect(screen.getByTestId('window-summary')).toHaveTextContent('−1.00%')
     expect(screen.getByTestId('drawdown-benchmark')).toHaveTextContent('12.00%buy & hold 30.00% · lower on 2 of 2')
     fireEvent.click(screen.getByRole('button', { name: 'Methodology' }))
     expect(within(screen.getByTestId('version-list')).getByRole('link', { name: 'old00000' })).toHaveAttribute('href', '/strategies/tmpl_loss_guard?version=sv_old0000000000000')
+  })
+})
+
+describe('AI strategy presentation', () => {
+  const aiStrategy = {
+    ...strategy,
+    templateId: 'tmpl_ai_catalyst_momentum',
+    name: 'AI Momentum & Technical Breakout',
+    tags: ['ai', 'openai'],
+    version: { ...strategy.version, backtestable: false },
+    standard: { windows: ['5Y', '1Y', 'forward'] },
+    definition: { ...strategy.definition, config: { allocatedAmount: 10000, maxOrderNotional: 2000 }, rules: [] },
+  }
+
+  it('shows compact AI identity, paper settings and only the forward window', async () => {
+    get.mockImplementation(async (path) => path.includes('/decisions') ? { decisions: [] } : aiStrategy)
+    render(<MemoryRouter initialEntries={['/strategies/tmpl_ai_catalyst_momentum']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByRole('heading', { name: 'AI Momentum & Technical Breakout' })).toBeInTheDocument()
+    expect(screen.getByTestId('open-in-workshop')).toHaveTextContent('Customize')
+    expect(screen.queryByRole('button', { name: '5 years' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('tested-definition')).toHaveTextContent('$10,000 simulated capital')
+    expect(screen.getByTestId('tested-definition')).not.toHaveTextContent('Buys each symbol')
+  })
+
+  it('distinguishes unavailable decisions from no decisions', async () => {
+    get.mockImplementation(async (path) => {
+      if (path.includes('/decisions')) throw new Error('Unavailable')
+      return aiStrategy
+    })
+    render(<MemoryRouter initialEntries={['/strategies/tmpl_ai_catalyst_momentum']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Decisions unavailable.')
+    expect(screen.queryByText('No decisions yet.')).not.toBeInTheDocument()
   })
 })

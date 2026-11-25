@@ -300,14 +300,13 @@
   },
   {
     "id": "tmpl_ai_catalyst_momentum",
-    "name": "AI Catalyst & Momentum",
-    "description": "Autonomous OpenAI-powered strategy combining technical momentum with fundamental catalysts. Evaluates liquid US equities daily after market close and submits risk-governed paper orders.",
+    "name": "AI Momentum & Technical Breakout",
+    "description": "Evaluates price trends and volume daily. Proposes simulated trades.",
     "botType": "strategy_based",
     "tags": [
       "ai",
       "llm",
       "openai",
-      "catalyst",
       "momentum"
     ],
     "config": {

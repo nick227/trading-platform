@@ -35,7 +35,7 @@ function WhatItDoes({ bot }) {
   return (
     <section className="tl-section" id="behavior" aria-labelledby="behavior-title">
       <div className="tl-section-head">
-        <h2 className="tl-section-title" id="behavior-title">Rules</h2>
+        <h2 className="tl-section-title" id="behavior-title">Strategy</h2>
         {!bot.stopped && <Link to={`/bots/${bot.id}/edit`} className="tl-link-btn">Edit</Link>}
       </div>
       <p className="tl-lead-sentence">{describeAction(bot)}</p>
@@ -79,7 +79,7 @@ function WhatItSees({ bot, timeline }) {
     <section className="tl-section" aria-labelledby="seeing-title">
       <div className="tl-section-head">
         <h2 className="tl-section-title" id="seeing-title">Watching</h2>
-        <span className="tl-section-aside tl-muted tl-small tl-hide-sm">Latest close and data the bot checks</span>
+        
       </div>
       <table className="tl-table" data-testid="watching">
         <thead><tr><th>Symbol</th><th className="r">Last close</th><th className="tl-hide-sm">Trend</th>{research && <th>Research</th>}<th>Latest check</th></tr></thead>
