@@ -59,26 +59,26 @@ const screens = [
   { path: '/research', label: 'research' },
 ]
 
+// One test per viewport: failures stop quickly instead of retrying each route.
+test.describe.configure({ retries: 0 })
 for (const width of [320, 375, 768, 1024, 1440]) {
-  for (const screen of screens) {
-    test(`protected ${screen.label} visual acceptance at ${width}px`, async ({ page }, testInfo) => {
-      await page.setViewportSize({ width, height: 900 })
-      await mockReadOnlySession(page)
-      const errors = []
-      page.on('pageerror', (error) => errors.push(error.message))
+  test(`protected pages render at ${width}px`, async ({ page }, testInfo) => {
+    test.setTimeout(90_000)
+    await page.setViewportSize({ width, height: 900 })
+    await mockReadOnlySession(page)
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+
+    for (const screen of screens) {
       await page.goto(screen.path)
       await expect.poll(() => new URL(page.url()).pathname).toBe(screen.path)
-      // Never accept a screenshot before the React app has hydrated.
-      await expect(page.locator('.tl-nav')).toBeVisible({ timeout: 10000 })
-      await expect(page.locator('main, .page.container').first()).toBeVisible({ timeout: 10000 })
-      await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 10000 })
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1)
+      await expect(page.locator('.tl-nav')).toBeVisible({ timeout: 6000 })
+      await expect(page.locator('main, .page.container').first()).toBeVisible({ timeout: 6000 })
+      await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 6000 })
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth), { timeout: 6000 }).toBeLessThanOrEqual(width + 1)
       await expect(page.locator('body')).not.toContainText('Something went wrong')
-      expect(errors).toEqual([])
-      await page.screenshot({
-        path: testInfo.outputPath(`${screen.label}-${width}.png`),
-        fullPage: true,
-      })
-    })
-  }
+      expect(errors, `Unexpected runtime exception on ${screen.path}`).toEqual([])
+      await page.screenshot({ path: testInfo.outputPath(`${screen.label}-${width}.png`), fullPage: true })
+    }
+  })
 }
