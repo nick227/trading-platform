@@ -216,8 +216,8 @@ export function LatestBacktest({ botId }) {
   const m = run.results?.metrics ?? {}
   const pct = (n) => (n === null || n === undefined ? '—' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}%`)
   return (
-    <div className="tl-section-note" data-testid="latest-backtest" style={{ marginTop: 16, padding: '12px 14px', background: 'var(--tl-surface-2)', borderRadius: '8px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+    <div className="tl-section-note tl-bot-summary" data-testid="latest-backtest">
+      <div className="tl-bot-summary__head">
         <span>
           <span className="tl-tag">Historical backtest</span>{' '}
           {sessionDate(run.startDate, { year: true })} – {sessionDate(run.endDate, { year: true })}{run.executionModel === 'same_close' ? ' (same-close fills)' : ''}:{' '}
@@ -248,7 +248,7 @@ export function PerformanceHistory({ botId, winRate, closedTrades }) {
   const dd = h.maxDrawdown
   return (
     <div className="tl-bot-history" data-testid="performance-history">
-      <dl className="tl-stats tl-stats--3" style={{ borderTop: 0 }}>
+      <dl className="tl-stats tl-stats--3 tl-stat-grid--flush">
         <div className="tl-stat"><dt>Return</dt><dd className={tone(h.returnPct)} data-testid="bot-return">{h.returnPct !== null && h.returnPct !== undefined ? `${h.returnPct > 0 ? '+' : h.returnPct < 0 ? '−' : ''}${Math.abs(h.returnPct).toFixed(2)}%` : '—'}<small>{h.allocation ? `on ${money(h.allocation)} capital` : 'no set capital'}</small></dd></div>
         <div className="tl-stat"><dt>Max drawdown</dt><dd data-testid="bot-drawdown">{dd ? `−${money(dd.amount)}` : '—'}<small>{dd ? `${dd.pct !== null ? `${dd.pct.toFixed(2)}% · ` : ''}${sessionDate(dd.peakDate)} → ${sessionDate(dd.troughDate)}` : 'Insufficient history'}</small></dd></div>
         <div className="tl-stat"><dt>Win rate</dt><dd data-testid="bot-win-rate">{winRate !== null && winRate !== undefined ? `${Math.round(winRate * 100)}%` : '—'}<small>{closedTrades ? `of ${plural(closedTrades, 'closed trade')}` : 'no closed trades yet'}</small></dd></div>
@@ -273,7 +273,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
     <section className="tl-section" id="impact" aria-labelledby="perf-title">
       <div className="tl-section-head"><h2 className="tl-section-title" id="perf-title">Performance</h2></div>
       {p ? (
-        <dl className="tl-stats tl-stats--3" data-testid="performance" style={{ borderTop: 0 }}>
+        <dl className="tl-stats tl-stats--3 tl-stat-grid--flush" data-testid="performance">
           <div className="tl-stat">
             <dt>P&amp;L</dt>
             <dd className={tone(p.total)}>{p.total !== null ? signedMoney(p.total) : '—'}<small>{p.total === null ? 'Waiting for a price' : `${signedMoney(p.realized)} realized`}</small></dd>

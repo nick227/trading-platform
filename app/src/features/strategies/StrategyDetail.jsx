@@ -22,7 +22,7 @@ function whyNot(r) {
 function Summary({ s }) {
   if (!s || s.status !== 'ok') return <p className="tl-section-note" data-testid="window-status">{summaryLine(s)}{s?.reason ? ` — ${s.reason}` : ''}</p>
   return (
-    <dl className="tl-stats tl-stats--4" style={{ borderTop: 0 }} data-testid="window-summary">
+    <dl className="tl-stats tl-stats--4 tl-stat-grid--flush" data-testid="window-summary">
       <div className="tl-stat"><dt>Median return</dt><dd className={tone(s.medianReturnPct)}>{pctText(s.medianReturnPct)}<small>across {plural(s.symbolsTested, 'symbol')}</small></dd></div>
       <div className="tl-stat"><dt>Buy &amp; hold</dt><dd className={tone(s.medianBuyAndHoldPct)}>{pctText(s.medianBuyAndHoldPct)}<small>beat on {s.beatBuyAndHold} of {s.symbolsTested}</small></dd></div>
       <div className="tl-stat"><dt>Worst drawdown</dt><dd>{s.worstDrawdownPct ? `${s.worstDrawdownPct.toFixed(2)}%` : '—'}<small>any symbol</small></dd></div>
@@ -97,7 +97,7 @@ export default function StrategyDetail() {
           
           <p className="tl-small tl-muted m0">
 
-            {s.tags?.includes('ai') && <span className="tl-tag" style={{ marginLeft: 6 }}>AI</span>}
+            {s.tags?.includes('ai') && <span className="tl-tag">AI</span>}
             {s.tags?.includes('openai') && <span className="tl-tag" style={{ marginLeft: 6 }}>OpenAI</span>}
             {' '}v{s.version.id.slice(3, 11)}
 
@@ -151,7 +151,7 @@ export default function StrategyDetail() {
           </div>
         )}
         {rows.length > 0 && (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="tl-internal-scroll">
             <table className="tl-table" data-testid="symbol-results">
               <thead><tr><th>Symbol</th><th className="r">Return</th><th className="r">Buy &amp; hold</th><th className="r tl-hide-sm">Max drawdown</th><th className="r">Trades</th><th className="r tl-hide-sm">Win rate</th></tr></thead>
               <tbody>
@@ -191,8 +191,8 @@ export default function StrategyDetail() {
                 const counts = decisionCounts(evaluations)
                 const proposedOrders = Array.isArray(d.metadata?.selectedDecisions) ? d.metadata.selectedDecisions.length : 0
                 return (
-                  <div key={d.id} className="tl-card" style={{ marginBottom: 12, padding: 14 }}>
-                    <div className="tl-small tl-muted" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
+                  <div key={d.id} className="tl-card tl-card-shell tl-card-shell--compact">
+                    <div className="tl-small tl-muted tl-evidence-meta">
                       <span>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : 'Session unavailable'}</span>
                       <span>{counts.evaluated} checked · {proposedOrders ? `${proposedOrders} ${proposedOrders === 1 ? 'order proposed' : 'orders proposed'}` : 'No orders proposed'}</span>
                       {d.metadata?.isReplay && <span>Replay</span>}

@@ -563,7 +563,7 @@ export default function AlgorithmBuilder() {
               )}
 
               {draft.triggerType === 'alpha_research' && draft.research && (
-                <div style={{ display: 'grid', gap: 12 }}>
+                <div className="tl-builder-cluster">
                   <Field
                     label="Minimum research score"
                     help="(0–100; a score, not a probability)"
@@ -941,8 +941,8 @@ export default function AlgorithmBuilder() {
 
               {/* Advanced Research bounds (when research is active) */}
               {draft.triggerType === 'alpha_research' && draft.research && (
-                <div style={{ borderTop: '1px solid var(--tl-line)', paddingTop: 16, marginTop: 4, display: 'grid', gap: 14 }}>
-                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Research limits</h4>
+                <div className="tl-builder-subsection">
+                  <h4>Research limits</h4>
                   <div className="tl-responsive-fields">
                     <Field
                       label="Maximum prediction age"
@@ -1057,7 +1057,7 @@ export default function AlgorithmBuilder() {
 
         {/* Submit error alert */}
         {submitError && !staleError && (
-          <div className="tl-notice tl-notice--error" role="alert" data-testid="submit-error" style={{ marginTop: 18 }}>
+          <div className="tl-notice tl-notice--error tl-builder-notice" role="alert" data-testid="submit-error">
             <span>{submitError.message}</span>
           </div>
         )}
