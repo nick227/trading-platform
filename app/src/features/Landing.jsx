@@ -9,7 +9,7 @@ import { alphaFetch } from '../api/services/alphaEngineService.js'
 import pageTitleService from '../services/pageTitleService.js'
 import { DEFAULT_MODE, RECOMMENDATION_CAPS } from './assets/constants.js'
 import { fmtPct, fmtPrice, fmtScore, fmtAsOf, normalizeConfidence, deriveRowPrice, normalizeSymbol } from './assets/utils.js'
-import { CARD_STYLE, SENTIMENT_COLORS, API, GRID_2, GRID_2_ASYM } from './landing/constants.js'
+import { CARD_STYLE, SENTIMENT_COLORS, API } from './landing/constants.js'
 import { useSignals } from './landing/hooks/useSignals.js'
 import { usePredictions } from './landing/hooks/usePredictions.js'
 import { useCalendarEvents } from './landing/hooks/useCalendarEvents.js'
@@ -49,10 +49,10 @@ export default function Landing() {
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="page container" style={{ maxWidth: 1200, margin: '0 auto', padding: '1rem 1rem 3rem' }}>
+    <div className="page container tl-research-page">
 
       {/* Row 1: Performance Today + Market Context */}
-      <section style={{ ...GRID_2, marginBottom: '1rem' }}>
+      <section className="tl-research-grid">
         <PerformanceCard stats={portfolioStats} loading={portfolioLoading} />
 
         <Section
@@ -97,14 +97,14 @@ export default function Landing() {
       )}
 
       {/* Row 2: Live Signals + Predictions */}
-      <section style={{ ...GRID_2_ASYM, marginBottom: '1rem' }}>
+      <section className="tl-research-grid tl-research-grid--asym">
         <LiveSignalsCard signals={liveSignals} loading={signalsLoading} error={signalsError} />
         <PredictionsPanel cards={predictionCards} loading={predictionsLoading} error={predictionsError} />
       </section>
 
       {/* Row 3: Ranked Opportunities + Top Movers */}
       <LazySection
-        style={{ ...GRID_2, marginBottom: '1rem' }}
+        className="tl-research-grid"
         placeholder={<div style={{ gridColumn: '1 / -1', minHeight: 200 }} />}
       >
         <Section
