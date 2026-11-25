@@ -45,24 +45,36 @@ export default function StrategyDetail() {
   const [state, setState] = useState({ status: 'loading', s: null })
   const [win, setWin] = useState('5Y')
   const [sym, setSym] = useState(null)
-  const [aiData, setAiData] = useState(null)
+  const [aiState, setAiState] = useState({ status: 'idle', decisions: [] })
 
   useEffect(() => {
+    let active = true
     setState({ status: 'loading', s: null })
-    loadPublicStrategy(templateId, versionParam).then((s) => {
-      setState({ status: 'done', s })
-      if (s?.name) pageTitleService.setTitle(strategyDisplayName(s))
-      if (s?.tags?.includes('ai') || s?.templateId === 'tmpl_ai_catalyst_momentum') {
+    setAiState({ status: 'idle', decisions: [] })
+    loadPublicStrategy(templateId, versionParam).then((loaded) => {
+      if (!active) return
+      setState({ status: 'done', s: loaded })
+      if (loaded?.name) pageTitleService.setTitle(strategyDisplayName(loaded))
+      const isAi = loaded?.tags?.includes('ai') || loaded?.templateId === 'tmpl_ai_catalyst_momentum'
+      if (isAi) {
         setWin('forward')
+        setAiState({ status: 'loading', decisions: [] })
+        get(`/ai/strategies/${encodeURIComponent(templateId)}/decisions`)
+          .then((res) => {
+            if (!active) return
+            const data = res?.decisions ? res : res?.data
+            setAiState(Array.isArray(data?.decisions)
+              ? { status: 'done', decisions: data.decisions }
+              : { status: 'error', decisions: [] })
+          })
+          .catch(() => { if (active) setAiState({ status: 'error', decisions: [] }) })
+      } else {
+        setWin('5Y')
       }
-    }).catch((e) => setState({ status: e?.status === 404 ? 'missing' : 'error', s: null }))
-
-    get(`/ai/strategies/${encodeURIComponent(templateId)}/decisions`)
-      .then((res) => {
-        const data = res?.decisions ? res : res?.data
-        if (data?.decisions) setAiData(data)
-      })
-      .catch(() => {})
+    }).catch((e) => {
+      if (active) setState({ status: e?.status === 404 ? 'missing' : 'error', s: null })
+    })
+    return () => { active = false }
   }, [templateId, versionParam])
   const s = state.s
   const rows = useMemo(() => (s?.results ?? []).filter((r) => r.window === win), [s, win])
@@ -76,21 +88,21 @@ export default function StrategyDetail() {
   const guards = describeGuards({ config: def.config, rules: def.rules })
   return (
     <main className="tl-page" data-testid="strategy-detail">
-      <p className="tl-small"><Link to="/strategies">← Platform strategies</Link></p>
+      <p className="tl-small"><Link to="/strategies">← Strategies</Link></p>
       <header className="tl-header" style={{ alignItems: 'flex-start' }}>
         <div>
           <h1 className="tl-title">{strategyDisplayName(s)}</h1>
           
           <p className="tl-small tl-muted m0">
 
-            {s.tags?.includes('ai') && <span className="tl-tag" style={{ marginLeft: 6 }}>AI / LLM</span>}
+            {s.tags?.includes('ai') && <span className="tl-tag" style={{ marginLeft: 6 }}>AI</span>}
             {s.tags?.includes('openai') && <span className="tl-tag" style={{ marginLeft: 6 }}>OpenAI</span>}
             {' '}v{s.version.id.slice(3, 11)}
 
 
           </p>
         </div>
-        <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Open Workshop</Link>
+        <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link>
       </header>
 
       {!s.version.current && (
@@ -98,7 +110,7 @@ export default function StrategyDetail() {
       )}
       {!s.version.backtestable && <div className="tl-notice" data-testid="not-backtestable">{s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum' ? 'Forward paper only' : s.version.reason || 'Not backtestable'}</div>}
       {s.design && (
-        <Disclosure label="Strategy details" testId="strategy-design">
+        <Disclosure label="Details" testId="strategy-design">
           <dl className="tl-facts">
             <dt>Objective</dt><dd>{s.design.objective}</dd>
             <dt>Benchmark</dt><dd>{s.design.benchmark}</dd>
@@ -129,7 +141,7 @@ export default function StrategyDetail() {
               baseline={chosen.results.capital}
               baselineLabel={`Start ${moneyWhole(chosen.results.capital)}`}
               height={200}
-              label={`${s.name} on ${chosen.symbol}`}
+              label={`${strategyDisplayName(s)} on ${chosen.symbol}`}
               minSpan={chosen.results.capital * 0.01}
             />
             <p className="tl-chart-caption">{chosen.symbol} · Strategy {pctText(chosen.results.metrics?.returnPct)} · Buy &amp; hold {pctText(chosen.results.buyAndHold?.returnPct)}</p>
@@ -165,9 +177,13 @@ export default function StrategyDetail() {
           <div className="tl-section-head">
             <h2 className="tl-section-title" id="ai-feed-title">{STRATEGY_COPY.decisions}</h2>
           </div>
-          {aiData?.decisions?.length > 0 ? (
+          {aiState.status === 'loading' ? (
+            <span className="tl-skel" style={{ height: 48 }} aria-label={STRATEGY_COPY.loadingDecisions} />
+          ) : aiState.status === 'error' ? (
+            <p className="tl-section-note" role="alert">{STRATEGY_COPY.decisionsUnavailable}</p>
+          ) : aiState.decisions.length > 0 ? (
             <div className="tl-ai-feed">
-              {aiData.decisions.map((d) => {
+              {aiState.decisions.map((d) => {
                 const evaluations = Array.isArray(d.metadata?.symbolEvaluations) ? d.metadata.symbolEvaluations : []
                 const counts = decisionCounts(evaluations)
                 const proposedOrders = Array.isArray(d.metadata?.selectedDecisions) ? d.metadata.selectedDecisions.length : 0
@@ -175,7 +191,7 @@ export default function StrategyDetail() {
                   <div key={d.id} className="tl-card" style={{ marginBottom: 12, padding: 14 }}>
                     <div className="tl-small tl-muted" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
                       <span>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : 'Session unavailable'}</span>
-                      <span>{counts.evaluated} evaluated · {proposedOrders} {proposedOrders === 1 ? 'proposal' : 'proposals'}</span>
+                      <span>{counts.evaluated} checked · {proposedOrders ? `${proposedOrders} ${proposedOrders === 1 ? 'order proposed' : 'orders proposed'}` : 'No orders proposed'}</span>
                       {d.metadata?.isReplay && <span>Replay</span>}
                     </div>
                     <div className="tl-ai-decisions" role="list" aria-label="Symbol decisions">
@@ -192,12 +208,12 @@ export default function StrategyDetail() {
                         </div>
                       ))}
                     </div>
-                    <Disclosure label="Research details">
+                    <Disclosure label="Research">
                       <dl className="tl-facts">
                         <dt>Model</dt><dd>{d.metadata?.model || 'OpenAI'}</dd>
                         <dt>Market session</dt><dd>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : '—'}</dd>
                         <dt>Generated</dt><dd>{d.metadata?.decisionTimestamp ? new Date(d.metadata.decisionTimestamp).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) : '—'}</dd>
-                        <dt>Target session</dt><dd>{d.metadata?.intendedExecutionSession ? sessionDate(d.metadata.intendedExecutionSession, { year: true }) : '—'}</dd>
+                        <dt>Planned execution</dt><dd>{d.metadata?.intendedExecutionSession ? sessionDate(d.metadata.intendedExecutionSession, { year: true }) : '—'}</dd>
                       </dl>
                       {d.metadata?.marketSummary && <p className="tl-small">{d.metadata.marketSummary}</p>}
                     </Disclosure>
@@ -212,7 +228,13 @@ export default function StrategyDetail() {
       <section className="tl-section" aria-labelledby="def-title">
         <div className="tl-section-head"><h2 className="tl-section-title" id="def-title">{STRATEGY_COPY.settings}</h2></div>
         <ul className="tl-rule-list" data-testid="tested-definition">
-          <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>
+          {(s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum') ? (
+            <>
+              <li>{moneyWhole(def.config.allocatedAmount ?? 10000)} simulated capital</li>
+              <li>Up to {moneyWhole(def.config.maxOrderNotional ?? 2000)} per order</li>
+              <li>Evaluated daily after market close</li>
+            </>
+          ) : <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>}
           {guards.map((g) => <li key={g}>{g}</li>)}
           {def.parameters?.triggerPrice === 'close_before_window' && <li>Trigger price: the symbol’s close on the last session before the test window (standardized; shown per result)</li>}
         </ul>
