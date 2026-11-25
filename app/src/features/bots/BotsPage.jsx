@@ -83,7 +83,7 @@ function StartingPoint({ f, open, onToggle }) {
           <span className="tl-tags">
             <span className="tl-tag">{behaviorTag(f)}</span>
             {f.research?.edgeOverBaseline === false && <span className="tl-tag tl-tag--warn">Latest research: no proven edge</span>}
-            {!f.available && <span className="tl-tag tl-tag--warn">Not available yet</span>}
+            {!f.available && <span className="tl-tag tl-tag--warn">{isAi ? 'Workshop unavailable' : 'Not available yet'}</span>}
           </span>
         </span>
         <span className="tl-featured-results" data-testid="featured-evidence">
@@ -102,7 +102,7 @@ function StartingPoint({ f, open, onToggle }) {
                         <div className="tl-detail-actions">
               {f.available
                 ? <Link className="tl-btn" to={`/bots/new?template=${encodeURIComponent(f.id)}`}>Customize</Link>
-                : <span className="tl-small tl-muted">Not available in Workshop.</span>}
+                : null}
             </div>
           </div>
           <div>
