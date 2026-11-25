@@ -145,12 +145,16 @@ button {
 .skeleton-button {
   min-width: var(--button-min-width);
   height: var(--button-height);
-  padding: 0 28px;
+  padding: 0 16px;
   border-radius: var(--tl-control-radius);
 }
 
 .primary,
 .ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tl-gap-inline);
   font-weight: 600;
   border: 1px solid transparent;
   border-radius: var(--tl-control-radius);
@@ -167,21 +171,21 @@ button {
 }
 
 .ghost {
-  background: var(--bg-elevated);
+  background: var(--tl-surface);
   color: var(--text);
   border-color: var(--line-strong);
-  backdrop-filter: blur(10px);
 }
+.primary { background: var(--tl-accent); border-color: var(--tl-accent); color: var(--tl-ink-inverse); }
+.primary:hover { background: var(--tl-accent-ink); border-color: var(--tl-accent-ink); }
+.ghost:hover { background: var(--tl-surface-2); }
 
 .pressable:active {
   transform: scale(0.985);
 }
 
 .pressable:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 4px rgba(17, 17, 17, 0.08),
-    0 10px 24px rgba(17, 17, 17, 0.08);
+  outline: 2px solid var(--tl-accent);
+  outline-offset: 3px;
 }
 
 .page-enter {
