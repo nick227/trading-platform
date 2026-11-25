@@ -289,7 +289,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
         </dl>
       ) : (
         <p className="tl-section-note" data-testid="performance-unavailable" style={{ fontSize: 14.5 }}>
-          No trades yet.
+          No trades yet. Capital limit: <span data-testid="capital-allocation">{bot.allocation !== null && bot.allocation !== undefined ? money(bot.allocation) : 'no set capital'}</span>.
           <span data-testid="fill-summary" className="tl-visually-hidden">{fills ? plural(fills.filledOrders, 'fill') : ''}</span>
         </p>
       )}
@@ -373,7 +373,7 @@ function StopSheet({ bot, onClose, onStopped }) {
       }
     >
       <p style={{ margin: 0 }}>The bot will stop placing new orders. Its history remains.</p>
-      <p className="tl-help" style={{ marginTop: 8 }}>Existing orders and holdings remain unchanged.</p>
+      <p className="tl-help" style={{ marginTop: 8 }}>Stopping doesn’t cancel orders already sent. Existing orders and holdings remain unchanged.</p>
       {error && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
     </Sheet>
   )
