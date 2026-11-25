@@ -274,7 +274,7 @@ export default function Orders() {
   if (pageError || pageInitError) return <ErrorState onRetry={retry} message={(pageError || pageInitError)?.message} />
 
   return (
-    <div className="l-page">
+    <div className="l-page tl-order-page">
       <div className="container orders">
 
         {/* Account header */}
