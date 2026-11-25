@@ -1,0 +1,208 @@
+name: TradeLoom Verified Staging Promotion
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer main commit supersedes any older release still being tested.
+concurrency:
+  group: verified-staging-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked workspace dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Production frontend build
+        run: npm run build --workspace=app
+      - name: Frontend unit tests
+        run: npm test --workspace=app
+      - name: Install Chromium
+        working-directory: app
+        run: npx playwright install --with-deps chromium
+      - name: Actual route and geometry browser tests
+        working-directory: app
+        run: >-
+          npx playwright test -c playwright.config.js
+          e2e/visual-geometry.spec.js
+          e2e/visual-page-coverage.spec.js
+          e2e/visual-auth-coverage.spec.js
+          e2e/visual-protected-routes.spec.js
+          e2e/visual-content-review.spec.js
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-browser-evidence
+          path: |
+            app/test-results
+            app/playwright-report
+          if-no-files-found: ignore
+
+  backend:
+    name: Backend and worker verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Isolated disposable CI database; never accesses Railway or production data.
+    env:
+      DATABASE_URL: mysql://ci:ci_password@127.0.0.1:3306/tradeloom_ci
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_DATABASE: tradeloom_ci
+          MYSQL_USER: ci
+          MYSQL_PASSWORD: ci_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u ci -pci_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked workspace dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=server/prisma/schema.prisma
+      - name: Initialize disposable test schema
+        run: npx prisma db push --schema=server/prisma/schema.prisma --skip-generate
+      - name: Seed published test strategy templates
+        run: node server/prisma/seed.js
+      - name: Offline trading risk, accounting, calendar and research tests
+        working-directory: server
+        run: >-
+          npx vitest run --no-file-parallelism
+          test/unit/marketCalendar.test.js
+          test/unit/botAccountingService.test.js
+          test/unit/exitRules.test.js
+          test/unit/riskIntegration.test.js
+          test/integration/strategyEvidence.test.js
+          test/unit/researchDecision.test.js
+          test/unit/executionResearchService.test.js
+          test/clients/engineClient.test.js
+      - name: Worker entrypoint syntax
+        run: node --check worker/src/worker.js
+
+  promote:
+    name: Fast-forward main to staging
+    needs: [frontend, backend]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.advance.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Promote only the exact verified main SHA without rewriting history
+        id: advance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            refs/heads/main:refs/remotes/origin/main \
+            refs/heads/staging:refs/remotes/origin/staging
+          latest="$(git rev-parse refs/remotes/origin/main)"
+          current="$(git rev-parse refs/remotes/origin/staging)"
+          if [[ "$latest" != "$GITHUB_SHA" ]]; then
+            echo "::error::main moved after this run started; refusing stale promotion."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$current" "$latest"; then
+            echo "::error::staging diverged from main; no reset or force push will occur."
+            exit 1
+          fi
+          if [[ "$current" != "$latest" ]]; then
+            # A normal push is rejected by GitHub if this would not fast-forward.
+            git push origin "$latest:refs/heads/staging"
+          else
+            echo "staging already equals verified main."
+          fi
+          git fetch --no-tags origin refs/heads/staging:refs/remotes/origin/staging
+          test "$(git rev-parse refs/remotes/origin/staging)" = "$latest"
+          echo "sha=$latest" >> "$GITHUB_OUTPUT"
+          echo "Promoted staging to $latest" >> "$GITHUB_STEP_SUMMARY"
+
+  railway:
+    name: Verify Railway deployment
+    needs: promote
+    if: needs.promote.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    permissions:
+      contents: read
+      statuses: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ needs.promote.outputs.sha }}
+    steps:
+      - name: Await success of all three Railway services
+        shell: bash
+        run: |
+          set -euo pipefail
+          contexts=(
+            'tradeloom - tradeloom-web'
+            'tradeloom - tradeloom-api'
+            'tradeloom - tradeloom-worker'
+          )
+          completed=false
+          for attempt in $(seq 1 60); do
+            payload="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/status")"
+            ok=0
+            echo "Railway deployment check $attempt/60"
+            for context in "${contexts[@]}"; do
+              state="$(jq -r --arg context "$context" '[.statuses[] | select(.context == $context)][0].state // "missing"' <<< "$payload")"
+              echo "$context: $state"
+              if [[ "$state" == failure || "$state" == error ]]; then
+                echo "::error::$context failed deployment"
+                exit 1
+              fi
+              [[ "$state" == success ]] && ok=$((ok + 1))
+            done
+            if [[ "$ok" == 3 ]]; then
+              completed=true
+              break
+            fi
+            sleep 15
+          done
+          if [[ "$completed" != true ]]; then
+            echo "::error::Timed out waiting for Railway GitHub deployment statuses"
+            exit 1
+          fi
+          echo "All three Railway services report success for $SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Check public web and API availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 4 --retry-delay 4 \
+            --max-time 20 https://tradeloom-web-staging.up.railway.app/ -o /dev/null
+          curl --fail --silent --show-error --location --retry 4 --retry-delay 4 \
+            --max-time 20 https://tradeloom-api-staging.up.railway.app/api/public/strategies -o /dev/null
+          echo 'Public frontend and strategy API responded successfully.' >> "$GITHUB_STEP_SUMMARY"
