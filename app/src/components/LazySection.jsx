@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export default function LazySection({ children, rootMargin = '200px', placeholder = null, style }) {
+export default function LazySection({ children, rootMargin = '200px', placeholder = null, style, className }) {
   const ref = useRef(null)
   const [visible, setVisible] = useState(false)
 
@@ -21,7 +21,7 @@ export default function LazySection({ children, rootMargin = '200px', placeholde
   }, [rootMargin])
 
   return (
-    <div ref={ref} style={style}>
+    <div ref={ref} style={style} className={className}>
       {visible ? children : placeholder}
     </div>
   )
