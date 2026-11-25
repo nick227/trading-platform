@@ -35,7 +35,7 @@ function WhatItDoes({ bot }) {
   return (
     <section className="tl-section" id="behavior" aria-labelledby="behavior-title">
       <div className="tl-section-head">
-        <h2 className="tl-section-title" id="behavior-title">What it does</h2>
+        <h2 className="tl-section-title" id="behavior-title">Rules</h2>
         {!bot.stopped && <Link to={`/bots/${bot.id}/edit`} className="tl-link-btn">Edit</Link>}
       </div>
       <p className="tl-lead-sentence">{describeAction(bot)}</p>
@@ -78,7 +78,7 @@ function WhatItSees({ bot, timeline }) {
   return (
     <section className="tl-section" aria-labelledby="seeing-title">
       <div className="tl-section-head">
-        <h2 className="tl-section-title" id="seeing-title">What it’s seeing</h2>
+        <h2 className="tl-section-title" id="seeing-title">Watching</h2>
         <span className="tl-section-aside tl-muted tl-small tl-hide-sm">Latest close and data the bot checks</span>
       </div>
       <table className="tl-table" data-testid="watching">
@@ -111,7 +111,7 @@ function WhyItActed({ activity, status, onRetry }) {
   return (
     <section className="tl-section" aria-labelledby="activity-title">
       <div className="tl-section-head">
-        <h2 className="tl-section-title" id="activity-title">Why it acted or waited</h2>
+        <h2 className="tl-section-title" id="activity-title">Decisions</h2>
         <button type="button" className="tl-link-btn" onClick={onRetry}>Refresh</button>
       </div>
       {!eventsAvailable && !executionsAvailable ? (
@@ -120,8 +120,8 @@ function WhyItActed({ activity, status, onRetry }) {
         </div>
       ) : (
         <>
-          {!eventsAvailable && <p className="tl-section-note" data-testid="events-unavailable">The bot’s decision log is unavailable right now, so only orders are shown.</p>}
-          {!executionsAvailable && <p className="tl-section-note" data-testid="orders-unavailable">Order history is unavailable right now, so only decisions are shown.</p>}
+          {!eventsAvailable && <p className="tl-section-note" data-testid="events-unavailable">Decision history unavailable.</p>}
+          {!executionsAvailable && <p className="tl-section-note" data-testid="orders-unavailable">Order history unavailable.</p>}
           {timeline.length === 0 ? (
             <p className="tl-feed-empty" data-testid="activity-empty">
               No activity yet. {status === 'paused' ? 'Resume the bot to start it.' : status === 'stopped' ? '' : 'Its checks, decisions and trades appear here as it runs.'}
@@ -210,7 +210,7 @@ export function LatestBacktest({ botId }) {
   }, [botId])
   if (!run) {
     return run === null ? (
-      <p className="tl-section-note" data-testid="latest-backtest-none">No backtest yet. <Link to={`/bots/${botId}/edit`}>Backtest it in the Workshop</Link> to see how these settings would have done historically.</p>
+      <p className="tl-section-note" data-testid="latest-backtest-none">No backtest yet. <Link to={`/bots/${botId}/edit`}>Run backtest</Link>.</p>
     ) : null
   }
   const m = run.results?.metrics ?? {}
@@ -271,7 +271,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
   const positions = Object.values(bot.openPositions ?? {})
   return (
     <section className="tl-section" id="impact" aria-labelledby="perf-title">
-      <div className="tl-section-head"><h2 className="tl-section-title" id="perf-title">What has happened</h2></div>
+      <div className="tl-section-head"><h2 className="tl-section-title" id="perf-title">Performance</h2></div>
       {p ? (
         <dl className="tl-stats tl-stats--3" data-testid="performance" style={{ borderTop: 0 }}>
           <div className="tl-stat">

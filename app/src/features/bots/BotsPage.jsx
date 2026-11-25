@@ -43,7 +43,7 @@ function Research({ research }) {
   const gap = h?.hitRate !== null && h?.hitRate !== undefined && h?.baselineRate !== null && h?.baselineRate !== undefined ? (h.hitRate - h.baselineRate) * 100 : null
   return (
     <div data-testid="featured-research">
-      <h4>Research it uses</h4>
+      <h4>Research</h4>
       <p className="tl-small m0">
         Latest verified publication from <strong>{research.model ?? 'Alpha Engine'}</strong>
         {research.horizon ? `, ${research.horizon} horizon` : ''}{research.observedAt ? `, ${sessionDate(research.observedAt, { year: true })}` : ''}.
@@ -92,7 +92,7 @@ function StartingPoint({ f, open, onToggle }) {
       {open && (
         <div className="tl-featured-body">
           <div>
-            <h4>Conditions it starts with</h4>
+            <h4>Conditions</h4>
             <ul className="tl-rule-list">
               {guards.map((g) => <li key={g}>{g}</li>)}
               {needsTriggerPrice(f.rules) && <li>You set the trigger price</li>}
@@ -176,8 +176,7 @@ export default function BotsPage() {
       <header className="tl-header">
         <div>
           <h1 className="tl-title">Bots</h1>
-          <p className="tl-lede">Build a trading idea. Give it rules. See what it does.</p>
-        </div>
+            </div>
         <Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot</Link>
       </header>
 
@@ -202,7 +201,7 @@ export default function BotsPage() {
           <section className="tl-section" aria-labelledby="featured-title">
             <div className="tl-section-head">
               <h2 className="tl-section-title" id="featured-title">Starting points</h2>
-              <span className="tl-section-aside tl-muted tl-small tl-hide-sm">Preset conditions you can change</span>
+              
             </div>
             {d.featuredError ? (
               <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.featuredError}</div>

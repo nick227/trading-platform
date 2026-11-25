@@ -352,11 +352,6 @@ export default function AlgorithmBuilder() {
       <header className="tl-header" style={{ alignItems: 'flex-start' }}>
         <div>
           <h1 className="tl-title">{isEdit ? `Edit ${originalBot?.name}` : 'New bot'}</h1>
-          <p className="tl-lede">
-            {isEdit
-              ? 'Refine what your algorithm watches, decides, and does.'
-              : 'Build an algorithm that watches, decides, and acts on your rules.'}
-          </p>
         </div>
       </header>
 
@@ -367,7 +362,6 @@ export default function AlgorithmBuilder() {
         <section style={{ marginBottom: 20 }}>
           <Field
             label="Starting point"
-            help="Preloads an established setup you can customize."
           >
             {({ id }) => (
               <Select
@@ -417,7 +411,7 @@ export default function AlgorithmBuilder() {
           {!isEdit && originalBot?.id && templateDraft && (
             <TemplateBaseline templateId={originalBot.id} modified={behaviourKey(draft) !== behaviourKey(templateDraft)} />
           )}
-          {isEdit && <p className="tl-algorithm-save-note">{hasChanges ? 'Your bot keeps its saved configuration until you save these changes.' : 'Changes here apply only when you save.'}</p>}
+          {isEdit && <p className="tl-algorithm-save-note">{hasChanges ? 'Unsaved changes' : 'Saved'}</p>}
           <div className="tl-algorithm-flow">
             <AlgorithmStep label="Watch" summary={parseSymbols(draft.symbolsText).join(', ') || 'Choose symbols'} mark="○" open={activeStep === 'watch'} onToggle={() => openStep('watch')} testId="section-watch">
               <Field
@@ -571,9 +565,6 @@ export default function AlgorithmBuilder() {
 
               {draft.triggerType === 'alpha_research' && draft.research && (
                 <div style={{ display: 'grid', gap: 12 }}>
-                  <p className="tl-help" style={{ margin: 0 }}>
-                    Acts on current, verified BUY and SELL research signals published by Alpha Engine.
-                  </p>
                   <Field
                     label="Minimum research score"
                     help="(0–100; a score, not a probability)"
@@ -600,18 +591,6 @@ export default function AlgorithmBuilder() {
                     )}
                   </Field>
                 </div>
-              )}
-
-              {draft.triggerType === 'trend_filter' && (
-                <p className="tl-help" style={{ margin: 0 }}>
-                  Evaluates when the benchmark trend is confirmed (e.g. SPY above its 200-day moving average).
-                </p>
-              )}
-
-              {draft.triggerType === 'schedule' && (
-                <p className="tl-help" style={{ margin: 0 }}>
-                  Evaluates on every market schedule without price triggers.
-                </p>
               )}
 
               <fieldset className="tl-conditions" data-testid="market-conditions">
@@ -646,7 +625,6 @@ export default function AlgorithmBuilder() {
                   <span>sessions</span>
                 </label>
                 {touched && errors.priceChange && <p className="tl-field-error" role="alert">{errors.priceChange}</p>}
-                <p className="tl-help" style={{ margin: 0 }}>Checked on completed daily closes from Alpha Engine — the same data in paper trading and backtests.</p>
               </fieldset>
             </div>
           </AlgorithmStep>
@@ -746,7 +724,6 @@ export default function AlgorithmBuilder() {
                   <div className="tl-exit-protect-head">
                     <div>
                       <strong className="tl-label" style={{ display: 'block', fontSize: '14.5px' }}>Exit &amp; Protect</strong>
-                      <p className="tl-help" style={{ marginTop: 2 }}>Defensive rules to protect capital (sells only this bot’s own shares, when any condition is met)</p>
                     </div>
                     {exitSummaries.length > 0 && <span className="tl-tag">{exitSummaries.length} active</span>}
                   </div>
@@ -776,7 +753,6 @@ export default function AlgorithmBuilder() {
                       <span>sessions</span>
                     </label>
                     {touched && errors.exit && <p className="tl-field-error" role="alert">{errors.exit}</p>}
-                    <p className="tl-help" style={{ margin: '8px 0 0' }}>Each exit order sells up to the per-order limit; if the condition still holds, it continues at the next close.</p>
                   </fieldset>
                 </div>
               )}
