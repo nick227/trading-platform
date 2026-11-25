@@ -13,7 +13,7 @@
 `.github/workflows/verified-staging-promotion.yml` runs on every PR, every push to `main`, or manual dispatch from `main`.
 
 1. Verify the frontend: locked dependency install, production build, all app Vitest tests and all five existing Playwright visual suites.
-2. Verify backend/worker: Prisma generate without database access, AI autonomous lifecycle, market calendar, accounting, exit rules, risk, evidence, AI strategy test suites, and worker entrypoint syntax.
+2. Verify backend/worker: Prisma schema creation on a disposable MySQL 8 CI service (never Railway credentials or data), AI autonomous lifecycle, market calendar, accounting, exit rules, risk, evidence, AI strategy test suites, and worker entrypoint syntax.
 3. **Only** on a successful `main` push or a manual dispatch from `main`, and only when both verification jobs passed, fetch the branch refs and verify that:
    - `main` has not moved beyond the SHA actually tested;
    - `staging` is an ancestor of the verified `main` commit;
@@ -26,7 +26,7 @@ GitHub Actions explicitly grants `contents:write` **only to the promotion job**.
 
 ## Failure behavior
 
-- Failed build, unit test, server integration test, or Playwright assertion: **do not update staging**.
+- Failed build, unit test, server integration test, MySQL setup, or Playwright assertion: **do not update staging**.
 - New `main` commit during verification: **do not promote the stale SHA**.
 - Divergent or unexpected `staging` history: **do not push; never reset or force-push**.
 - Railway failure, missing status, timeout, or unreachable public endpoint: **report failure; do not rewrite Git history or auto-rollback**.
