@@ -35,6 +35,11 @@ const fixture = `
         <div><dt>Portfolio allocation</dt><dd>$10,000</dd></div>
         <div><dt>Maximum per order</dt><dd>$2,000</dd></div>
       </dl>
+      <input class="tl-input" aria-label="Strategy name" value="Momentum" style="margin-top:16px" />
+      <table class="tl-table" style="margin-top:16px">
+        <thead><tr><th>Symbol</th><th>Return</th><th>Buy and hold</th><th>Max drawdown</th><th>Trades</th><th>Win rate</th></tr></thead>
+        <tbody><tr><td>NVDA</td><td>+8.4%</td><td>+12.4%</td><td>−4.1%</td><td>16</td><td>61%</td></tr></tbody>
+      </table>
     </section>
   </main>
 `
@@ -62,6 +67,7 @@ test.describe('visual geometry contract', () => {
           firstAction: rect('[data-testid="equal-actions"] .tl-btn:first-child'),
           secondAction: rect('[data-testid="equal-actions"] .tl-btn:last-child'),
           botActionWidths: [...document.querySelectorAll('.tl-bot-actions > .tl-btn')].map(el => el.getBoundingClientRect().width),
+          inputHeight: document.querySelector('.tl-input').getBoundingClientRect().height,
           positive: getComputedStyle(document.querySelector('.tl-btn--positive')).backgroundColor,
           warning: getComputedStyle(document.querySelector('.tl-btn--warning')).backgroundColor,
           destructive: getComputedStyle(document.querySelector('.tl-btn--danger-solid')).backgroundColor,
@@ -72,6 +78,7 @@ test.describe('visual geometry contract', () => {
       expect(geometry.card.right).toBeLessThanOrEqual(geometry.page.right + 1)
       expect(geometry.firstAction.height).toBe(42)
       expect(geometry.secondAction.height).toBe(42)
+      expect(geometry.inputHeight).toBe(42)
       expect(Math.abs(geometry.firstAction.width - geometry.secondAction.width)).toBeLessThanOrEqual(1)
       expect(Math.max(...geometry.botActionWidths) - Math.min(...geometry.botActionWidths)).toBeLessThanOrEqual(1)
       expect(new Set([geometry.positive, geometry.warning, geometry.destructive]).size).toBe(3)
