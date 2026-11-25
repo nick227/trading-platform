@@ -187,6 +187,9 @@
 @media (max-width: 760px) {
   .l-page { padding: 24px var(--tl-page-gutter-mobile); }
   .tl-asset-overview { grid-template-columns: minmax(0, 1fr); }
+  .l-row { flex-wrap: wrap; }
+  .l-grid-2, .l-grid-3fixed, .l-grid-3cols { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+  .tl-asset-search-row > .tl-asset-search-field { flex-basis: 100%; }
 }
 
 /* Generic surface alignment for legacy and canonical pages. */
