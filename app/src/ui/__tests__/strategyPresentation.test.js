@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decisionCounts, decisionLabel, strategyWindowOptions } from '../strategyPresentation'
+import { decisionCounts, decisionLabel, strategyDisplayName, strategyWindowOptions } from '../strategyPresentation'
 
 describe('strategy presentation', () => {
   it('shows only forward evaluation for autonomous AI strategies', () => {
@@ -11,6 +11,10 @@ describe('strategy presentation', () => {
   })
   it('counts decisions without treating HOLD as an order signal', () => {
     expect(decisionCounts([{ action: 'HOLD' }, { action: 'BUY' }, { action: 'SELL' }])).toEqual({ evaluated: 3, actionable: 2 })
+  })
+  it('uses the current name for the legacy AI template', () => {
+    expect(strategyDisplayName({ templateId: 'tmpl_ai_catalyst_momentum', name: 'AI Catalyst & Momentum' })).toBe('AI Momentum & Technical Breakout')
+    expect(strategyDisplayName({ templateId: 'other', name: 'Momentum Buy' })).toBe('Momentum Buy')
   })
   it('does not present unknown actions as valid trading decisions', () => {
     expect(decisionLabel('HOLD')).toBe('HOLD')
