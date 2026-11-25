@@ -24,3 +24,9 @@ export function decisionCounts(evaluations = []) {
 export function decisionLabel(action) {
   return ['BUY', 'SELL', 'HOLD'].includes(action) ? action : '—'
 }
+
+/** Legacy template ID is retained; display current verified strategy name. */
+export function strategyDisplayName(strategy) {
+  if (strategy?.templateId === 'tmpl_ai_catalyst_momentum') return 'AI Momentum & Technical Breakout'
+  return strategy?.name ?? 'Strategy'
+}
