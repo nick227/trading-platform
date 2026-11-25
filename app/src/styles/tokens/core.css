@@ -71,8 +71,15 @@
   --radius-pill: var(--tl-radius-pill);
 
   /* Buttons */
-  --button-height: 36px;
-  --button-min-width: 90px;
+
+  /* Compatibility aliases for the canonical control geometry. */
+  --button-height: var(--tl-control-height);
+  --button-height-sm: var(--tl-control-height-sm);
+  --button-min-width: var(--tl-action-min-width);
+  --radius-control: var(--tl-control-radius);
+  --radius-card: var(--tl-card-radius);
+  --control-gap: var(--tl-gap-related);
+  --card-padding: var(--tl-card-padding);
 
   /* Shadows */
   --elevation-1: var(--tl-shadow-sm);
