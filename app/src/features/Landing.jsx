@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import LazySection from '../components/LazySection'
+import { PageIdentity } from '../components/content/ContentBlocks'
 import Section from '../components/Section'
 import { SkeletonRows, TickerRow3 } from './assets/components.jsx'
 import { useAlphaDashboard } from '../hooks/useAlphaEngine.js'
@@ -49,7 +50,8 @@ export default function Landing() {
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="page container tl-research-page">
+    <main className="page container tl-research-page">
+      <PageIdentity title="Market research" description="Explore current signals, recent market changes, and historical context. These observations are not orders or promises of future returns." />
 
       {/* Row 1: Performance Today + Market Context */}
       <section className="tl-research-grid">
@@ -228,6 +230,6 @@ export default function Landing() {
         <TradingCalendarSection predictions={calendarPredictions} />
       </LazySection>
 
-    </div>
+    </main>
   )
 }
