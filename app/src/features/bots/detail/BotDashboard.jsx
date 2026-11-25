@@ -115,7 +115,7 @@ function WhyItActed({ activity, status, onRetry }) {
         <button type="button" className="tl-link-btn" onClick={onRetry}>Refresh</button>
       </div>
       {!eventsAvailable && !executionsAvailable ? (
-        <div className="tl-notice tl-notice--warn" role="status" data-testid="activity-unavailable" style={{ marginTop: 14 }}>
+        <div className="tl-notice tl-notice--warn tl-flow-notice" role="status" data-testid="activity-unavailable">
           Activity is unavailable right now. <button type="button" className="tl-link-btn" onClick={onRetry}>Retry</button>
         </div>
       ) : (
@@ -155,7 +155,7 @@ function PendingOrders({ executions, onCancelled }) {
     }
   }
   return (
-    <div data-testid="pending-orders" style={{ marginTop: 22 }}>
+    <div data-testid="pending-orders" className="tl-flow-card">
       <h4 className="tl-rules-head">Open orders</h4>
       <ul className="tl-list">
         {pending.map((x) => (
@@ -301,7 +301,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
         </p>
       )}
       {positions.length > 0 && (
-        <table className="tl-table" data-testid="bot-holdings-table" style={{ marginTop: 18 }}>
+        <table className="tl-table tl-flow-metrics" data-testid="bot-holdings-table">
           <thead><tr><th>Holding</th><th className="r">Shares</th><th className="r tl-hide-sm">Avg cost</th><th className="r">Last close</th><th className="r">Value</th><th className="r">Return</th></tr></thead>
           <tbody>
             {positions.map((x) => (
@@ -325,7 +325,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
 function AdvancedDetails({ bot }) {
   const [rules, setRules] = useState(undefined) // undefined = not loaded, null = unavailable
   return (
-    <div className="tl-section" style={{ marginTop: 40 }}>
+    <div className="tl-section">
       <Disclosure label="Details" onOpen={() => loadBotRules(bot.id).then(setRules)} testId="technical-details">
         <div className="tl-evidence-body">
           <dl>
