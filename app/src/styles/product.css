@@ -1350,3 +1350,11 @@ select.tl-input--inline { width: auto; }
   .tl-action-group { grid-template-columns: minmax(0, 1fr); }
   .tl-bot-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Visual QA closure: bot actions have equal widths on wide headers as well. */
+@media (min-width: 761px) {
+  .tl-bot-actions > .tl-btn {
+    flex: 0 0 var(--tl-action-min-width);
+    width: var(--tl-action-min-width);
+  }
+}
