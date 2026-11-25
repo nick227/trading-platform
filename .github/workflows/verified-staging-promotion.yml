@@ -57,6 +57,24 @@ jobs:
     name: Backend and worker verification
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Isolated disposable CI database; never accesses Railway or production data.
+    env:
+      DATABASE_URL: mysql://ci:ci_password@127.0.0.1:3306/tradeloom_ci
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_DATABASE: tradeloom_ci
+          MYSQL_USER: ci
+          MYSQL_PASSWORD: ci_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u ci -pci_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -65,12 +83,14 @@ jobs:
           cache: npm
       - name: Install locked workspace dependencies
         run: npm ci --no-audit --no-fund
-      - name: Generate Prisma client without accessing a database
+      - name: Generate Prisma client
         run: npx prisma generate --schema=server/prisma/schema.prisma
+      - name: Initialize disposable test schema
+        run: npx prisma db push --schema=server/prisma/schema.prisma --skip-generate
       - name: Paper trading concurrency, risk and accounting tests
         working-directory: server
         run: >-
-          npx vitest run
+          npx vitest run --no-file-parallelism
           test/integration/aiAutonomousPaperTrading.test.js
           test/unit/marketCalendar.test.js
           test/unit/botAccountingService.test.js
