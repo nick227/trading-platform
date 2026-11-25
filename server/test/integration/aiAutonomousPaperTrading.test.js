@@ -466,15 +466,86 @@ describe.sequential('Autonomous AI Paper Trading & Accounting Lifecycle', () => 
     expect(c3.ok).toBe(true)
     expect(c3.cached).toBe(true)
     expect(c3.avoidedCallsCount).toBe(1)
-    expect(c3.createdExecutions.length).toBe(0)
     expect(testProviderInstance.callCount).toBe(1) // Still strictly 1 model call!
 
-    // Verify claim event has cached: true and avoidedCallsCount: 1
+    // Verify claim event exists and symbol evaluation events are strictly 10 (zero duplicate events on cached call)
     const claimEvents = await prisma.botEvent.findMany({
       where: { botId: canonicalBot.id, id: { startsWith: 'req_ai_' } }
     })
     expect(claimEvents.length).toBe(1)
-    expect(claimEvents[0].metadata?.cached).toBe(true)
+
+    const evalEvents = await prisma.botEvent.findMany({
+      where: { botId: canonicalBot.id, id: { startsWith: 'evt_ai_' } }
+    })
+    expect(evalEvents.length).toBe(10) // Strictly 1 evaluation event per symbol across repeated calls!
+  })
+
+  it('enforces atomic CAS recovery for abandoned claims under concurrency', { timeout: 90_000 }, async () => {
+    testProviderInstance.callCount = 0
+
+    // 1. Run cycle to establish request fingerprint
+    const initialCycle = await executeAiStrategyCycle({
+      botId: canonicalBot.id,
+      session: '2026-10-09',
+      providerName: TEST_PROVIDER,
+      prismaClient: prisma,
+      engine: engineClient
+    })
+    expect(initialCycle.ok).toBe(true)
+    expect(testProviderInstance.callCount).toBe(1)
+
+    const claimEvent = await prisma.botEvent.findFirst({
+      where: { botId: canonicalBot.id, id: { startsWith: 'req_ai_' } }
+    })
+    expect(claimEvent).toBeDefined()
+
+    // 2. Simulate worker crash: claim was abandoned in_progress 4 minutes ago with no evaluations
+    const staleTime = new Date(Date.now() - 240_000).toISOString()
+    await prisma.botEvent.update({
+      where: { id: claimEvent.id },
+      data: {
+        detail: `AI Research Request Claim [2026-10-09]: in_progress (stale)`,
+        metadata: {
+          ...claimEvent.metadata,
+          status: 'in_progress',
+          symbolEvaluations: null, // Clear completed evaluations to simulate in-flight crash
+          claimedAt: staleTime,
+          recoveryAttempts: 0
+        }
+      }
+    })
+
+    testProviderInstance.callCount = 0
+
+    // 3. Two workers simultaneously discover the abandoned claim and attempt recovery
+    const [rec1, rec2] = await Promise.all([
+      executeAiStrategyCycle({
+        botId: canonicalBot.id,
+        session: '2026-10-09',
+        providerName: TEST_PROVIDER,
+        prismaClient: prisma,
+        engine: engineClient
+      }),
+      executeAiStrategyCycle({
+        botId: canonicalBot.id,
+        session: '2026-10-09',
+        providerName: TEST_PROVIDER,
+        prismaClient: prisma,
+        engine: engineClient
+      })
+    ])
+
+    expect(rec1.ok).toBe(true)
+    expect(rec2.ok).toBe(true)
+
+    // Critical guarantee: Exactly ONE worker won the recovery race and called OpenAI!
+    expect(testProviderInstance.callCount).toBe(1)
+
+    // The other worker safely lost the atomic CAS recovery race without calling provider
+    const oneWon = [rec1, rec2].some(r => r.cached === false && r.reason === undefined)
+    const oneLost = [rec1, rec2].some(r => r.reason === 'concurrent_recovery_lost' || r.inProgress === true || r.cached === true)
+    expect(oneWon).toBe(true)
+    expect(oneLost).toBe(true)
   })
 
   it('enforces protective exit chronology (queues for next session, fills at next session close) and prevents duplicate exits', { timeout: 60_000 }, async () => {

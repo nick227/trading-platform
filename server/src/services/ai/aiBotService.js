@@ -306,19 +306,43 @@ export async function executeAiStrategyCycle({
           }
 
           console.log(`[aiBotService] Recovering abandoned claim ${claimEventId} (age: ${Math.round(ageMs / 1000)}s)...`)
-          await prismaClient.botEvent.update({
-            where: { id: claimEventId },
+          const workerToken = `worker_${randomUUID().replace(/-/g, '').slice(0, 12)}`
+
+          // Atomic conditional CAS on claim detail/id: exactly one worker succeeds in taking over the abandoned claim
+          const updateRes = await prismaClient.botEvent.updateMany({
+            where: {
+              id: claimEventId,
+              detail: currentClaim.detail
+            },
             data: {
-              detail: `AI Research Request Claim [${asOfSession}]: in_progress (recovered)`,
+              detail: `AI Research Request Claim [${asOfSession}]: in_progress (recovered by ${workerToken})`,
+              ruleId: workerToken,
               metadata: {
                 ...currentClaim.metadata,
                 status: 'in_progress',
                 claimedAt: new Date().toISOString(),
-                recoveryAttempts: recoveryAttempts + 1
+                recoveryAttempts: recoveryAttempts + 1,
+                recoveryToken: workerToken
               }
             }
           })
-          wonClaim = true
+
+          if (updateRes.count === 1) {
+            wonClaim = true
+          } else {
+            console.log(`[aiBotService] Lost atomic recovery race for claim ${claimEventId}. Skipping duplicate provider call.`)
+            return {
+              ok: true,
+              inProgress: true,
+              skipped: true,
+              reason: 'concurrent_recovery_lost',
+              claimEventId,
+              asOfSession,
+              botId: activeBotId,
+              createdExecutions: [],
+              rejectedOrders: []
+            }
+          }
         }
       }
     }
@@ -347,90 +371,109 @@ export async function executeAiStrategyCycle({
   const usage = llmResponse.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   const estimatedCostUsd = Number(((usage.prompt_tokens * 0.15 + usage.completion_tokens * 0.60) / 1_000_000).toFixed(6))
 
-  // Persist completed cycle event
-  const summaryDetail = `AI Research Cycle (${asOfSession}): ${sanitized.marketSummary}`.slice(0, 180)
-  await prismaClient.botEvent.upsert({
-    where: { id: claimEventId },
-    update: {
-      type: 'decision_made',
-      detail: summaryDetail,
-      metadata: {
-        strategy: STRATEGY_ID,
-        asOfSession,
-        decisionTimestamp,
-        intendedExecutionSession: nextSession,
-        isReplay: isReplayMode,
-        inputFingerprint,
-        model: llmResponse.model,
-        usage,
-        estimatedCostUsd,
-        provider: providerName,
-        cached: wasCached,
-        avoidedCallsCount,
-        marketSummary: sanitized.marketSummary,
-        symbolEvaluations: sanitized.symbolEvaluations,
-        selectedDecisions: sanitized.selectedDecisions,
-        portfolioAtDecision: context.portfolio
-      }
-    },
-    create: {
-      id: claimEventId,
-      botId: activeBotId,
-      portfolioId: portfolio.id,
-      type: 'decision_made',
-      detail: summaryDetail,
-      metadata: {
-        strategy: STRATEGY_ID,
-        asOfSession,
-        decisionTimestamp,
-        intendedExecutionSession: nextSession,
-        isReplay: isReplayMode,
-        inputFingerprint,
-        model: llmResponse.model,
-        usage,
-        estimatedCostUsd,
-        provider: providerName,
-        cached: wasCached,
-        avoidedCallsCount,
-        marketSummary: sanitized.marketSummary,
-        symbolEvaluations: sanitized.symbolEvaluations,
-        selectedDecisions: sanitized.selectedDecisions,
-        portfolioAtDecision: context.portfolio
-      }
-    }
-  })
-
-  // Also log individual symbol evaluations (HOLD, BUY, SELL)
-  for (const ev of sanitized.symbolEvaluations) {
-    const eventType = ev.action === 'HOLD' ? 'signal_hold' : 'decision_made'
-    const evDetail = `[${ev.action}] ${ev.symbol} (${Math.round(ev.confidence * 100)}%): ${ev.thesis}`.slice(0, 180)
-    await prismaClient.botEvent.create({
-      data: {
-        id: `evt_ai_${randomUUID().slice(0, 16)}`,
-        botId: activeBotId,
-        portfolioId: portfolio.id,
-        type: eventType,
-        detail: evDetail,
+  // Persist completed cycle event and symbol evaluations strictly once (never duplicated on cached reuse)
+  if (!wasCached) {
+    const summaryDetail = `AI Research Cycle (${asOfSession}): ${sanitized.marketSummary}`.slice(0, 180)
+    await prismaClient.botEvent.upsert({
+      where: { id: claimEventId },
+      update: {
+        type: 'decision_made',
+        detail: summaryDetail,
         metadata: {
-          symbol: ev.symbol,
-          action: ev.action,
-          confidence: ev.confidence,
-          exitRule: ev.exitRule,
-          evidence: ev.evidence,
+          strategy: STRATEGY_ID,
           asOfSession,
           decisionTimestamp,
           intendedExecutionSession: nextSession,
-          isReplay: isReplayMode
+          isReplay: isReplayMode,
+          inputFingerprint,
+          model: llmResponse.model,
+          usage,
+          estimatedCostUsd,
+          provider: providerName,
+          cached: false,
+          avoidedCallsCount: 0,
+          marketSummary: sanitized.marketSummary,
+          symbolEvaluations: sanitized.symbolEvaluations,
+          selectedDecisions: sanitized.selectedDecisions,
+          portfolioAtDecision: context.portfolio
+        }
+      },
+      create: {
+        id: claimEventId,
+        botId: activeBotId,
+        portfolioId: portfolio.id,
+        type: 'decision_made',
+        detail: summaryDetail,
+        metadata: {
+          strategy: STRATEGY_ID,
+          asOfSession,
+          decisionTimestamp,
+          intendedExecutionSession: nextSession,
+          isReplay: isReplayMode,
+          inputFingerprint,
+          model: llmResponse.model,
+          usage,
+          estimatedCostUsd,
+          provider: providerName,
+          cached: false,
+          avoidedCallsCount: 0,
+          marketSummary: sanitized.marketSummary,
+          symbolEvaluations: sanitized.symbolEvaluations,
+          selectedDecisions: sanitized.selectedDecisions,
+          portfolioAtDecision: context.portfolio
         }
       }
     })
+
+    // Also log individual symbol evaluations (HOLD, BUY, SELL) using deterministic IDs
+    for (const ev of sanitized.symbolEvaluations) {
+      const eventType = ev.action === 'HOLD' ? 'signal_hold' : 'decision_made'
+      const evDetail = `[${ev.action}] ${ev.symbol} (${Math.round(ev.confidence * 100)}%): ${ev.thesis}`.slice(0, 180)
+      const evalEventId = `evt_ai_${inputFingerprint.slice(0, 16)}_${ev.symbol.toLowerCase()}`
+      await prismaClient.botEvent.upsert({
+        where: { id: evalEventId },
+        update: {
+          type: eventType,
+          detail: evDetail,
+          metadata: {
+            symbol: ev.symbol,
+            action: ev.action,
+            confidence: ev.confidence,
+            exitRule: ev.exitRule,
+            evidence: ev.evidence,
+            asOfSession,
+            decisionTimestamp,
+            intendedExecutionSession: nextSession,
+            isReplay: isReplayMode
+          }
+        },
+        create: {
+          id: evalEventId,
+          botId: activeBotId,
+          portfolioId: portfolio.id,
+          type: eventType,
+          detail: evDetail,
+          metadata: {
+            symbol: ev.symbol,
+            action: ev.action,
+            confidence: ev.confidence,
+            exitRule: ev.exitRule,
+            evidence: ev.evidence,
+            asOfSession,
+            decisionTimestamp,
+            intendedExecutionSession: nextSession,
+            isReplay: isReplayMode
+          }
+        }
+      })
+    }
   }
 
   // 5. Submit Eligible Executions (Next-session execution, shared risk policy, order-intent idempotency)
   const createdExecutions = []
   const rejectedOrders = []
 
-  if (!dryRun && sanitized.selectedDecisions.length > 0) {
+  if (!wasCached && !dryRun && sanitized.selectedDecisions.length > 0) {
     const availableCash = context.portfolio.cash
     const maxOrderNotional = Number(bot.config?.maxOrderNotional) || 2_000
 
