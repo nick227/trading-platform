@@ -7,6 +7,7 @@ import { describeGuards } from '../../ui/describeBot'
 import { money, moneyWhole, plural, sessionDate, tone } from '../../ui/format'
 import pageTitleService from '../../services/pageTitleService'
 import { WINDOW_LABELS, loadPublicStrategy, pctText, summaryLine } from './strategiesApi'
+import { STRATEGY_COPY, strategyWindowOptions } from '../../ui/strategyPresentation'
 
 const SKIP_TEXT = {
   no_position: 'it had nothing to sell', cooldown_active: 'cooldown', price_above_threshold_not_met: 'price below its trigger',
@@ -79,52 +80,46 @@ export default function StrategyDetail() {
       <header className="tl-header" style={{ alignItems: 'flex-start' }}>
         <div>
           <h1 className="tl-title">{s.name}</h1>
-          <p className="tl-lede">{s.description}</p>
+          
           <p className="tl-small tl-muted m0">
-            <span className="tl-tag">Platform-tested</span>
+
             {s.tags?.includes('ai') && <span className="tl-tag" style={{ marginLeft: 6 }}>AI / LLM</span>}
             {s.tags?.includes('openai') && <span className="tl-tag" style={{ marginLeft: 6 }}>OpenAI</span>}
-            {' '}Version {s.version.id.slice(3, 11)}
-            {s.asOf ? ` · results through ${sessionDate(s.asOf, { year: true })}` : ' · results pending'}
-            {s.version.firstSession ? ` · published ${sessionDate(s.version.firstSession, { year: true })}` : ''}
+            {' '}v{s.version.id.slice(3, 11)}
+
+
           </p>
         </div>
-        <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Open in Workshop</Link>
+        <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Open Workshop</Link>
       </header>
 
       {!s.version.current && (
         <div className="tl-notice" data-testid="earlier-version">An earlier version of this strategy, kept with its results for the record. <Link to={`/strategies/${encodeURIComponent(s.templateId)}`}>See the current version</Link></div>
       )}
-      {!s.version.backtestable && <div className="tl-notice" data-testid="not-backtestable">{s.version.reason}</div>}
+      {!s.version.backtestable && <div className="tl-notice" data-testid="not-backtestable">Forward paper only</div>}
       {s.design && (
-        <section className="tl-section" aria-labelledby="design-title" data-testid="strategy-design">
-          <div className="tl-section-head"><h2 className="tl-section-title" id="design-title">What it’s for, and how it’s judged</h2></div>
+        <Disclosure label="Strategy details" testId="strategy-design">
           <dl className="tl-facts">
             <dt>Objective</dt><dd>{s.design.objective}</dd>
             <dt>Benchmark</dt><dd>{s.design.benchmark}</dd>
             <dt>Parameters</dt><dd>{s.design.parameterBasis}</dd>
-            {s.design.developmentEnd && (
-              <>
-                <dt>Out of sample</dt><dd>Designed with data through {sessionDate(s.design.developmentEnd, { year: true })}; “Holdout” covers only later sessions.</dd>
-              </>
-            )}
+            {s.design.developmentEnd && <><dt>Out of sample</dt><dd>After {sessionDate(s.design.developmentEnd, { year: true })}</dd></>}
           </dl>
-        </section>
+        </Disclosure>
       )}
 
       <section className="tl-section" aria-labelledby="results-title">
         <div className="tl-section-head">
-          <h2 className="tl-section-title" id="results-title">Standardized results</h2>
+          <h2 className="tl-section-title" id="results-title">{STRATEGY_COPY.results}</h2>
           <div className="tl-seg" role="group" aria-label="Window">
-            {(s.standard?.windows ?? ['5Y', '1Y', 'forward'])
-              .filter((w) => !['development', 'holdout'].includes(w) || Boolean(s.design?.developmentEnd))
+            {strategyWindowOptions(s.standard?.windows ?? ['5Y', '1Y', 'forward'], s.design)
               .map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w] ?? w}</button>)}
           </div>
         </div>
         <Summary s={s.summary?.[win]} />
-        {win === 'forward' && <p className="tl-small tl-muted">Only sessions completed after this version was published — results it could not have been tuned on.</p>}
-        {win === 'holdout' && <p className="tl-small tl-muted">Sessions after {sessionDate(s.design?.developmentEnd, { year: true })}, which weren’t used when this version was designed.</p>}
-        {win === 'development' && <p className="tl-small tl-muted">The period the design could see. In-sample: treat these results with more caution than the holdout.</p>}
+
+
+
         {chosen && chosen.results?.curve && (
           <div style={{ marginTop: 14 }}>
             <ValueChart
@@ -137,7 +132,7 @@ export default function StrategyDetail() {
               label={`${s.name} on ${chosen.symbol}`}
               minSpan={chosen.results.capital * 0.01}
             />
-            <p className="tl-chart-caption">{chosen.symbol}: strategy value at each close ({pctText(chosen.results.metrics?.returnPct)}) vs buy &amp; hold {pctText(chosen.results.buyAndHold?.returnPct)} with the same capital.</p>
+            <p className="tl-chart-caption">{chosen.symbol} · Strategy {pctText(chosen.results.metrics?.returnPct)} · Buy &amp; hold {pctText(chosen.results.buyAndHold?.returnPct)}</p>
           </div>
         )}
         {rows.length > 0 && (
@@ -225,16 +220,16 @@ export default function StrategyDetail() {
       )}
 
       <section className="tl-section" aria-labelledby="def-title">
-        <div className="tl-section-head"><h2 className="tl-section-title" id="def-title">The strategy as tested</h2></div>
+        <div className="tl-section-head"><h2 className="tl-section-title" id="def-title">{STRATEGY_COPY.settings}</h2></div>
         <ul className="tl-rule-list" data-testid="tested-definition">
           <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>
           {guards.map((g) => <li key={g}>{g}</li>)}
           {def.parameters?.triggerPrice === 'close_before_window' && <li>Trigger price: the symbol’s close on the last session before the test window (standardized; shown per result)</li>}
         </ul>
-        <p className="tl-small tl-muted">Opening it in the Workshop gives you these defaults. Once you change anything, it’s your own configuration and these results no longer describe it — backtest your version instead.</p>
+
       </section>
 
-      <Disclosure label="How these results are produced" testId="evidence-method">
+      <Disclosure label="Methodology" testId="evidence-method">
         <ul className="tl-backtest-notes">
           {s.assumptions.map((a) => <li key={a}>{a}</li>)}
           {rows[0]?.riskPolicyVersion && <li>Risk policy {rows[0].riskPolicyVersion}.</li>}
