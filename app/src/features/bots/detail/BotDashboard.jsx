@@ -1,3 +1,4 @@
+import { PageIdentity } from '../../../components/content/ContentBlocks'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { get, post } from '../../../api/client'
@@ -228,7 +229,7 @@ export function LatestBacktest({ botId }) {
         <Link to={`/bots/${botId}/edit`} className="tl-small" style={{ fontWeight: 550 }}>Run backtest →</Link>
       </div>
       <p className="tl-small tl-muted" style={{ margin: '6px 0 0' }}>
-        Historical simulation. Results do not predict future performance.
+        These historical results are simulated. They do not predict future performance.
       </p>
     </div>
   )
@@ -289,7 +290,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
         </dl>
       ) : (
         <p className="tl-section-note" data-testid="performance-unavailable" style={{ fontSize: 14.5 }}>
-          No trades yet. Capital limit: <span data-testid="capital-allocation">{bot.allocation !== null && bot.allocation !== undefined ? money(bot.allocation) : 'no set capital'}</span>.
+          No simulated trades have been recorded yet. Capital limit: <span data-testid="capital-allocation">{bot.allocation !== null && bot.allocation !== undefined ? money(bot.allocation) : 'no set capital'}</span>.
           <span data-testid="fill-summary" className="tl-visually-hidden">{fills ? plural(fills.filledOrders, 'fill') : ''}</span>
         </p>
       )}
@@ -489,15 +490,11 @@ export default function BotDashboard() {
       <EmergencyBanner stop={stop} onClear={clear} />
       <Link to={back.to} className="tl-back">← {back.label}</Link>
 
-      <header className="tl-header tl-aligned-header">
-        <div>
-          <div className="tl-action-row">
-            <h1 className="tl-title">{bot.name}</h1>
-            <span className={`tl-status tl-status--${status}`} data-testid="bot-status">{STATUS_LABELS[status] ?? status}</span>
-          </div>
-          <p className="tl-lede">{bot.tickers.length ? bot.tickers.join(', ') : 'No symbols'} · {research ? 'Research signal' : 'Rule-based'}{bot.allocation !== null ? ` · ${moneyWhole(bot.allocation)} capital` : ''}</p>
-        </div>
-        {!bot.stopped && (
+      <PageIdentity
+        title={bot.name}
+        description={`Watches ${bot.tickers.length ? bot.tickers.join(', ') : 'its configured symbols'}. ${research ? 'Uses published research signals.' : 'Uses its configured trading rules.'} ${bot.allocation !== null ? `Simulated capital limit: ${moneyWhole(bot.allocation)}.` : ''}`}
+        tags={<span className={`tl-status tl-status--${status}`} data-testid="bot-status">{STATUS_LABELS[status] ?? status}</span>}
+        action={!bot.stopped ? (
           <div className="tl-action-row tl-bot-actions">
             <button type="button" className={`tl-btn ${bot.enabled ? 'tl-btn--warning' : 'tl-btn--positive'}`} onClick={toggle} disabled={busy}>
               {busy ? 'Saving…' : bot.enabled ? 'Pause' : 'Resume'}
@@ -506,8 +503,8 @@ export default function BotDashboard() {
             <DuplicateButton botId={bot.id} />
             <button type="button" className="tl-btn tl-btn--danger-solid" onClick={() => setSheet('stop')} disabled={busy}>Stop</button>
           </div>
-        )}
-      </header>
+        ) : null}
+      />
 
       {bot.stopped && <div className="tl-notice">This bot is stopped and won’t place new orders. Its history stays here. <Link to="/bots/new">Create a new bot</Link></div>}
       {controlError && <div className="tl-notice tl-notice--error" role="alert">{controlError}</div>}
