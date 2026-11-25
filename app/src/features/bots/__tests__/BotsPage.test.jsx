@@ -28,10 +28,10 @@ const evidence = [
   { templateId: 'tmpl_research', asOf: '2026-11-20', windows: { '5Y': { status: 'not_backtestable', symbolsTested: 0 }, '1Y': { status: 'not_backtestable', symbolsTested: 0 }, forward: { status: 'not_backtestable', symbolsTested: 0 } } },
 ]
 
-function mockApi({ bots = [], platformRows = platform } = {}) {
+function mockApi({ bots = [], platformRows = platform, catalogData = catalog, evidenceRows = evidence } = {}) {
   get.mockImplementation(async (path, params = {}) => {
-    if (path === '/public/strategies') return evidence
-    if (path === '/bots/catalog') return catalog
+    if (path === '/public/strategies') return evidenceRows
+    if (path === '/bots/catalog') return catalogData
     if (path === '/strategies/platform') { if (platformRows instanceof Error) throw platformRows; return platformRows }
     if (path === '/bots') return bots
     if (path === '/executions') return []
@@ -45,6 +45,26 @@ const renderPage = (path = '/bots') => render(<MemoryRouter initialEntries={[pat
 beforeEach(() => vi.clearAllMocks())
 
 describe('BotsPage', () => {
+  it('shows AI starting points as forward paper and does not offer unsupported customization', async () => {
+    const ai = { id: 'tmpl_ai_catalyst_momentum', name: 'AI Momentum & Technical Breakout',
+      botType: 'strategy_based', config: { signalSource: 'ai_catalyst_momentum' }, rules: [] }
+    mockApi({
+      catalogData: { ruleBased: [], strategyBased: [ai] },
+      platformRows: [],
+      evidenceRows: [{ templateId: ai.id, windows: {
+        '5Y': { status: 'not_backtestable' },
+        forward: { status: 'awaiting_sessions' },
+      } }],
+    })
+    renderPage()
+    const [card] = await screen.findAllByTestId('featured-bot')
+    expect(within(card).getByTestId('featured-evidence')).toHaveTextContent('Awaiting new sessionsForward paper')
+    expect(within(card).getByTestId('featured-evidence')).not.toHaveTextContent('Backtest')
+    fireEvent.click(within(card).getByRole('button', { name: /AI Momentum/ }))
+    expect(within(card).queryByRole('link', { name: 'Customize' })).not.toBeInTheDocument()
+    expect(within(card).getByText('Not available in Workshop.')).toBeInTheDocument()
+  })
+
   it('leads each starting point with its standardized platform backtest, including non-results', async () => {
     mockApi()
     renderPage()
