@@ -1,5 +1,6 @@
 import { runRegimeSnapshot } from './regimeSnapshotJob.js'
 import { runAiStrategyDailyJob } from './aiStrategyDailyJob.js'
+import { runAiStrategyMarketOpenJob } from './aiStrategyMarketOpenJob.js'
 
 const DEFAULT_SYMBOLS = ['SPY']
 
@@ -18,15 +19,24 @@ async function runBackfillReconciler() {
  *
  * Primary behavior (preferred):
  * - If `node-cron` is available, schedule:
+ *   - 9:45 AM ET Mon–Fri → `runAiStrategyMarketOpenJob()` (Market Open execution of pending next_open orders)
  *   - 4:15 PM ET Mon–Fri → `runRegimeSnapshot(['SPY'])`
  *   - 4:30 PM ET Mon–Fri → `runAiStrategyDailyJob()` (Autonomous AI post-close cycle)
  *   - 2:00 AM ET Daily → `runBackfillReconciler()`
  *
+ * Authoritative guard:
+ * - Controlled by `ENABLE_AI_SCHEDULER` (defaults to true; set to false to disable).
+ *
  * Fallback behavior:
  * - If `node-cron` is not installed, uses a simple setTimeout-based scheduler
- *   for the same wall-clock time in America/New_York.
+ *   for the same wall-clock times in America/New_York.
  */
 export async function startSchedulers() {
+  if (process.env.ENABLE_AI_SCHEDULER === 'false') {
+    console.log('[scheduler] AI scheduler disabled by ENABLE_AI_SCHEDULER=false')
+    return false
+  }
+
   const started = await startCronSchedulers().catch((err) => {
     console.warn('[scheduler] cron failed to start:', err?.message ?? err)
     return false
@@ -34,6 +44,7 @@ export async function startSchedulers() {
 
   if (!started) {
     console.warn('[scheduler] using fallback scheduler (node-cron not available)')
+    startFallbackMarketOpenScheduler()
     startFallbackRegimeScheduler()
     startFallbackAiStrategyScheduler()
   }
@@ -46,6 +57,13 @@ async function startCronSchedulers() {
   } catch {
     return false
   }
+
+  // Once daily at 9:45 AM ET, Mon–Fri (Market-Open Order Execution).
+  cron.schedule('45 9 * * 1-5', () => runAiStrategyMarketOpenJob().catch((err) => {
+    console.error('[scheduler] autonomous AI market-open job error:', err?.message ?? err)
+  }), {
+    timezone: 'America/New_York'
+  })
 
   // Once daily at 4:15 PM ET, Mon–Fri.
   cron.schedule('15 16 * * 1-5', () => runRegimeSnapshot(DEFAULT_SYMBOLS), {
@@ -64,10 +82,29 @@ async function startCronSchedulers() {
     timezone: 'America/New_York'
   })
 
+  console.log('[scheduler] autonomous AI market-open cron scheduled (9:45 AM ET, Mon–Fri)')
   console.log('[scheduler] regime snapshot cron scheduled (4:15 PM ET, Mon–Fri)')
   console.log('[scheduler] autonomous AI strategy cron scheduled (4:30 PM ET, Mon–Fri)')
   console.log('[scheduler] backfill reconciler cron scheduled (2:00 AM ET, daily)')
   return true
+}
+
+function startFallbackMarketOpenScheduler() {
+  const scheduleNext = () => {
+    const delayMs = msUntilNextEasternWeekdayTime(9, 45)
+    setTimeout(async () => {
+      try {
+        await runAiStrategyMarketOpenJob()
+      } catch (err) {
+        console.error('[scheduler] fallback market open execution error:', err?.message ?? err)
+      } finally {
+        scheduleNext()
+      }
+    }, delayMs)
+  }
+
+  scheduleNext()
+  console.log('[scheduler] fallback market open scheduler armed (9:45 AM ET, Mon–Fri)')
 }
 
 function startFallbackAiStrategyScheduler() {

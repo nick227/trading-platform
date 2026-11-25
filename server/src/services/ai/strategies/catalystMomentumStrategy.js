@@ -163,7 +163,7 @@ export function validateAiDecisionOutput(output, context) {
         action,
         confidence,
         targetAllocationPct,
-        entryType: 'next_open',
+        entryType: d.entryType || 'next_open',
         exitRule,
         thesis: String(d.thesis || '').trim(),
         evidence: Array.isArray(d.evidence) ? d.evidence.map(String) : []

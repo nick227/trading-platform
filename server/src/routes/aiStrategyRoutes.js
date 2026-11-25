@@ -1,5 +1,7 @@
 import { executeAiStrategyCycle, getAiDecisionsHistory, getOrCreateCanonicalAiBot } from '../services/ai/aiBotService.js'
 import { loadBotFills, calculateFifoAccounting } from '../services/botAccountingService.js'
+import { runAiStrategyMarketOpenJob } from '../jobs/aiStrategyMarketOpenJob.js'
+import { getAiPipelineStatus } from '../services/ai/aiPipelineTracker.js'
 
 /**
  * /api/ai/strategies — Endpoints for autonomous AI strategy execution and inspection.
@@ -91,6 +93,48 @@ export default async function aiStrategyRoutes(app) {
         success: false,
         error: {
           code: 'AI_STATUS_LOOKUP_ERROR',
+          message: err.message
+        }
+      })
+    }
+  })
+
+  // POST /api/ai/strategies/:templateId/market-open — Executes pending next_open orders at market open
+  app.post('/strategies/:templateId/market-open', async (request, reply) => {
+    const { templateId } = request.params
+
+    try {
+      const result = await runAiStrategyMarketOpenJob({ templateId })
+      return reply.send({
+        success: true,
+        data: result
+      })
+    } catch (err) {
+      return reply.code(500).send({
+        success: false,
+        error: {
+          code: 'AI_MARKET_OPEN_ERROR',
+          message: err.message
+        }
+      })
+    }
+  })
+
+  // GET /api/ai/strategies/:templateId/pipeline — Full 5-stage pipeline monitoring status
+  app.get('/strategies/:templateId/pipeline', async (request, reply) => {
+    const { templateId } = request.params
+
+    try {
+      const status = await getAiPipelineStatus({ templateId })
+      return reply.send({
+        success: true,
+        data: status
+      })
+    } catch (err) {
+      return reply.code(500).send({
+        success: false,
+        error: {
+          code: 'AI_PIPELINE_STATUS_ERROR',
           message: err.message
         }
       })

@@ -131,7 +131,7 @@ async function latestSession(engine, now) {
  * Generates any missing evidence for the latest completed session. Idempotent: existing
  * (version, symbol, window, endDate) snapshots are kept as published. Returns a summary.
  */
-export async function generateStrategyEvidence({ prismaClient = prisma, engine = engineClient, config: sim = simulationConfig(), now = Date.now(), yieldEvery = async () => {} } = {}) {
+export async function generateStrategyEvidence({ prismaClient = prisma, engine = engineClient, config: sim = simulationConfig(), now = Date.now(), yieldEvery = async () => {}, force = false } = {}) {
   const end = await latestSession(engine, now)
   if (!end) return { end: null, created: 0, reason: 'no_market_data' }
   const symbols = sim.tradableSymbols ?? DEFAULT_TRADABLE_SYMBOLS
@@ -151,16 +151,32 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
       windows.push({ id: 'development', start: windowStart(devEnd, 4), end: devEnd })
       windows.push({ id: 'holdout', start: nextDay(devEnd) })
     }
-    const todo = symbols.flatMap((s) => windows.filter((w) => !existing.has(`${s}|${w.id}`)).map((w) => ({ symbol: s, window: w })))
+    const todo = symbols.flatMap((s) => windows.filter((w) => force ? true : !existing.has(`${s}|${w.id}`)).map((w) => ({ symbol: s, window: w })))
     if (!todo.length) continue
     const base = { strategyVersionId: v.id, templateId: template.id, endDate: end, executionModel: STANDARD.executionModel, riskPolicyVersion: RISK_POLICY_VERSION }
     const save = async (symbol, window, data) => {
-      await prismaClient.strategyEvidence.create({ data: { id: `se_${sha([v.id, symbol, window.id, end]).slice(0, 24)}`, ...base, symbol, window: window.id, ...data } })
+      const id = `se_${sha([v.id, symbol, window.id, end]).slice(0, 24)}`
+      if (typeof prismaClient?.strategyEvidence?.upsert === 'function') {
+        await prismaClient.strategyEvidence.upsert({
+          where: { id },
+          create: { id, ...base, symbol, window: window.id, ...data },
+          update: { ...data }
+        })
+      } else {
+        const row = await prismaClient.strategyEvidence.findUnique({ where: { id } }).catch(() => null)
+        if (row) {
+          await prismaClient.strategyEvidence.update({ where: { id }, data })
+        } else {
+          await prismaClient.strategyEvidence.create({ data: { id, ...base, symbol, window: window.id, ...data } })
+        }
+      }
       created += 1
     }
     if (!version.backtestable) {
       if (template.id === 'tmpl_ai_catalyst_momentum' || template.botType === 'strategy_based') {
-        const bot = await prismaClient.bot.findFirst({ where: { templateId: template.id } })
+        const bot = await prismaClient.bot.findFirst({
+          where: { templateId: template.id, userId: 'usr_platform_canonical', deletedAt: null }
+        }) || await prismaClient.bot.findFirst({ where: { templateId: template.id, deletedAt: null } })
         let forwardStats = null
         if (bot) {
           try {

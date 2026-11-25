@@ -61,10 +61,13 @@ export class SimulatedBroker {
       throw wrapError({ response: { status: 422, data: { message: `no ${session} close for ${ticker}` } }, message: '422' })
     }
     const at = this.now()
+    const isNextOpen = this.config.executionModel === 'next_open' && px.open && Number(px.open) > 0
+    const fillPrice = isNextOpen ? Number(px.open) : Number(px.close)
+    const priceModel = isNextOpen ? 'market_open' : 'daily_close'
     const order = {
       alpacaOrderId: simOrderId(this.config, session, clientOrderId), clientOrderId, ticker, side, qty: Number(qty),
-      status: 'filled', filledQty: Number(qty), filledAvgPrice: Number(px.close), submittedAt: at, filledAt: at,
-      simulation: { mode: this.config.mode, session, price: 'daily_close', source: px.source ?? 'alpha-engine' },
+      status: 'filled', filledQty: Number(qty), filledAvgPrice: fillPrice, submittedAt: at, filledAt: at,
+      simulation: { mode: this.config.mode, session, price: priceModel, source: px.source ?? 'alpha-engine' },
     }
     this.orders.set(clientOrderId, order)
     return structuredClone(order)

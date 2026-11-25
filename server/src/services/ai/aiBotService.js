@@ -587,7 +587,8 @@ export async function executeAiStrategyCycle({
               targetSession: nextSession,
               isReplay: isReplayMode,
               thesis: decision.thesis,
-              exitRule: decision.exitRule
+              exitRule: decision.exitRule,
+              entryType: decision.entryType
             }
           }
         })
@@ -667,7 +668,8 @@ export async function executeAiStrategyCycle({
               targetSession: nextSession,
               isReplay: isReplayMode,
               thesis: decision.thesis,
-              exitRule: decision.exitRule
+              exitRule: decision.exitRule,
+              entryType: decision.entryType
             }
           }
         })
@@ -713,15 +715,18 @@ export async function getAiDecisionsHistory(botId, { limit = 20, prismaClient = 
       type: 'decision_made'
     },
     orderBy: { createdAt: 'desc' },
-    take: limit
+    take: limit * 3
   })
 
-  return events.map(e => ({
-    id: e.id,
-    createdAt: e.createdAt,
-    detail: e.detail,
-    metadata: e.metadata
-  }))
+  return events
+    .filter(e => e.metadata?.symbolEvaluations || (e.metadata?.strategy && e.metadata?.category !== 'pipeline_stage'))
+    .slice(0, limit)
+    .map(e => ({
+      id: e.id,
+      createdAt: e.createdAt,
+      detail: e.detail,
+      metadata: e.metadata
+    }))
 }
 
 /**
@@ -760,8 +765,13 @@ export async function processPendingAiExecutions(botId, {
         ? 'historical_replay'
         : 'paper_daily'
 
+      const audit = await prismaClient.executionAudit.findFirst({
+        where: { executionId: exec.id, eventType: 'execution_created' }
+      }).catch(() => null)
+      const executionModel = audit?.metadata?.entryType || audit?.metadata?.executionModel || exec.metadata?.entryType || 'next_open'
+
       const broker = new SimulatedBroker(exec.userId, {
-        config: { enabled: true, mode },
+        config: { enabled: true, mode, executionModel },
         prismaClient,
         sessionClose: (t, s) => engine.getSessionClose(t, s),
         resolveSession: () => session
@@ -1158,6 +1168,17 @@ export async function computeAiBotForwardEquity(botId, {
     }
     const finalSpy = spyBars[spyBars.length - 1][4]
     bhReturnPct = Math.round(((finalSpy - baseSpy) / baseSpy) * 10000) / 100
+  }
+
+  if (bot?.portfolioId && curve.length) {
+    const latest = curve[curve.length - 1]
+    await prismaClient.portfolio.update({
+      where: { id: bot.portfolioId },
+      data: {
+        cashBalance: latest.cash,
+        totalValue: latest.equity
+      }
+    }).catch(() => {})
   }
 
   return {

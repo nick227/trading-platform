@@ -155,6 +155,17 @@ function model(store, name) {
       for (const row of hit) applyData(row, data)
       return { count: hit.length }
     },
+    async upsert({ where, create, update }) {
+      const row = rows().find((r) => matches(r, where))
+      if (row) {
+        const next = structuredClone(row)
+        applyData(next, update)
+        assertUnique(name, rows(), next, row)
+        applyData(row, update)
+        return clone(row)
+      }
+      return this.create({ data: create })
+    },
     async delete({ where }) {
       const i = rows().findIndex((r) => matches(r, where))
       return clone(rows().splice(i, 1)[0])
