@@ -91,9 +91,9 @@ for (const width of [320, 375, 768, 1024, 1440]) {
       await page.goto(screen.path)
       await expect.poll(() => new URL(page.url()).pathname).toBe(screen.path)
       await expect(page.locator('.tl-nav')).toBeVisible({ timeout: 6000 })
-      await expect(page.locator('main, .page.container').first()).toBeVisible({ timeout: 6000 })
+      await expect(page.locator('main, .page.container, .l-page').first()).toBeVisible({ timeout: 6000 })
       if (screen.label === 'research') {
-        await expect(page.locator('main, .page.container').first()).toContainText('Performance Today')
+        await expect(page.locator('main, .page.container, .l-page').first()).toContainText('Performance Today')
       } else {
         await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 6000 })
       }
