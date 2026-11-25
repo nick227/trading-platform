@@ -92,7 +92,11 @@ for (const width of [320, 375, 768, 1024, 1440]) {
       await expect.poll(() => new URL(page.url()).pathname).toBe(screen.path)
       await expect(page.locator('.tl-nav')).toBeVisible({ timeout: 6000 })
       await expect(page.locator('main, .page.container').first()).toBeVisible({ timeout: 6000 })
-      await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 6000 })
+      if (screen.label === 'research') {
+        await expect(page.locator('main, .page.container').first()).toContainText('Performance Today')
+      } else {
+        await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 6000 })
+      }
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth), { timeout: 6000 }).toBeLessThanOrEqual(width + 1)
       await expect(page.locator('body')).not.toContainText('Something went wrong')
       expect(errors, `Unexpected runtime exception on ${screen.path}`).toEqual([])
