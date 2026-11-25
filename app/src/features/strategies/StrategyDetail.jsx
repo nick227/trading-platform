@@ -6,8 +6,10 @@ import ValueChart from '../../ui/ValueChart'
 import { describeGuards } from '../../ui/describeBot'
 import { money, moneyWhole, plural, sessionDate, tone } from '../../ui/format'
 import pageTitleService from '../../services/pageTitleService'
-import { WINDOW_LABELS, loadPublicStrategy, pctText, summaryLine } from './strategiesApi'
+import { WINDOW_LABELS, loadPublicStrategy, pctText } from './strategiesApi'
 import { STRATEGY_COPY, decisionCounts, decisionLabel, strategyDisplayName, strategyWindowOptions } from '../../ui/strategyPresentation'
+import { PageIdentity, ContentSection, ContentState, FactGrid, TechnicalDetail } from '../../components/content/ContentBlocks'
+import { strategyOverview, evidenceState, decisionState, uniqueStatements, describeEvaluationTiming } from '../../ui/contentPresentation'
 
 const SKIP_TEXT = {
   no_position: 'it had nothing to sell', cooldown_active: 'cooldown', price_above_threshold_not_met: 'price below its trigger',
@@ -20,7 +22,10 @@ function whyNot(r) {
 }
 
 function Summary({ s }) {
-  if (!s || s.status !== 'ok') return <p className="tl-section-note" data-testid="window-status">{summaryLine(s)}{s?.reason ? ` — ${s.reason}` : ''}</p>
+  if (!s || s.status !== 'ok') {
+    const state = evidenceState(s, s?.window ?? 'forward')
+    return <ContentState title={state.title} description={state.description} testId="window-status" />
+  }
   return (
     <dl className="tl-stats tl-stats--4 tl-stat-grid--flush" data-testid="window-summary">
       <div className="tl-stat"><dt>Median return</dt><dd className={tone(s.medianReturnPct)}>{pctText(s.medianReturnPct)}<small>across {plural(s.symbolsTested, 'symbol')}</small></dd></div>
@@ -85,41 +90,32 @@ export default function StrategyDetail() {
   if (state.status === 'error') return <main className="tl-page"><div className="tl-notice tl-notice--error" role="alert">This strategy’s results couldn’t be loaded.</div></main>
 
   const def = s.definition
-  const guards = describeGuards({ config: def.config, rules: def.rules })
+
   const isAi = s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum'
   const windows = strategyWindowOptions(s.standard?.windows ?? ['5Y', '1Y', 'forward'], s.design, { forwardOnly: isAi })
   return (
     <main className="tl-page" data-testid="strategy-detail">
       <p className="tl-small"><Link to="/strategies">← Strategies</Link></p>
-      <header className="tl-header tl-aligned-header">
-        <div>
-          <h1 className="tl-title">{strategyDisplayName(s)}</h1>
-          
-          <p className="tl-small tl-muted m0">
-
-            {s.tags?.includes('ai') && <span className="tl-tag">AI</span>}
-            {s.tags?.includes('openai') && <span className="tl-tag" style={{ marginLeft: 6 }}>OpenAI</span>}
-            {' '}v{s.version.id.slice(3, 11)}
-
-
-          </p>
-        </div>
-        {s.workshopAvailable === true && <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link>}
-      </header>
-
+      <PageIdentity
+        title={strategyDisplayName(s)}
+        description={strategyOverview(s)}
+        tags={<>{isAi && <span className="tl-tag tl-tag--sim">AI-managed</span>}<span className="tl-tag">Simulated trading</span></>}
+        action={s.workshopAvailable === true ? <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link> : null}
+      />
       {!s.version.current && (
         <div className="tl-notice" data-testid="earlier-version">An earlier version of this strategy, kept with its results for the record. <Link to={`/strategies/${encodeURIComponent(s.templateId)}`}>See the current version</Link></div>
       )}
       {!s.version.backtestable && !isAi && <div className="tl-notice" data-testid="not-backtestable">{s.version.reason || 'Not backtestable'}</div>}
       {s.design && (
-        <Disclosure label="Details" testId="strategy-design">
+        <TechnicalDetail label="Strategy design and comparison" testId="strategy-design">
+          <p className="tl-content-help">These are the published technical definitions used to describe the strategy and compare its results.</p>
           <dl className="tl-facts">
-            <dt>Objective</dt><dd>{s.design.objective}</dd>
-            <dt>Benchmark</dt><dd>{s.design.benchmark}</dd>
-            <dt>Parameters</dt><dd>{s.design.parameterBasis}</dd>
-            {s.design.developmentEnd && <><dt>Out of sample</dt><dd>After {sessionDate(s.design.developmentEnd, { year: true })}</dd></>}
+            <dt>Published objective</dt><dd>{s.design.objective}</dd>
+            <dt>Comparison</dt><dd>{s.design.benchmark}</dd>
+            <dt>Decision method</dt><dd>{s.design.parameterBasis}</dd>
+            {s.design.developmentEnd && <><dt>Later test period</dt><dd>After {sessionDate(s.design.developmentEnd, { year: true })}</dd></>}
           </dl>
-        </Disclosure>
+        </TechnicalDetail>
       )}
 
       <section className="tl-section" aria-labelledby="results-title">
@@ -129,9 +125,9 @@ export default function StrategyDetail() {
             <div className="tl-seg" role="group" aria-label="Window">
               {windows.map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w] ?? w}</button>)}
             </div>
-          ) : <span className="tl-small tl-muted">{isAi ? 'Forward paper' : WINDOW_LABELS[windows[0]] ?? windows[0]}</span>}
+          ) : null}
         </div>
-        <Summary s={s.summary?.[win]} />
+        <Summary s={s.summary?.[win] ? { ...s.summary[win], window: win } : { window: win, status: win === 'forward' ? 'awaiting_sessions' : 'unavailable' }} />
 
 
 
@@ -224,47 +220,55 @@ export default function StrategyDetail() {
                 )
               })}
             </div>
-          ) : <p className="tl-section-note">{STRATEGY_COPY.noDecisions}</p>}
+          ) : <ContentState {...decisionState(aiState.status, 0)} />}
         </section>
       )}
 
-      <section className="tl-section" aria-labelledby="def-title">
-        <div className="tl-section-head"><h2 className="tl-section-title" id="def-title">{STRATEGY_COPY.settings}</h2></div>
-        {isAi && (
-          <dl className="tl-facts" aria-label="AI strategy limits">
-            <dt>Paper capital</dt><dd>{moneyWhole(def.config.allocatedAmount ?? 10000)}</dd>
-            <dt>Order limit</dt><dd>{moneyWhole(def.config.maxOrderNotional ?? 2000)}</dd>
-            <dt>Evaluation</dt><dd>Daily · After close</dd>
-          </dl>
+      <ContentSection title="Trading limits & schedule" description="What the strategy is permitted to do and when it evaluates trades." testId="tested-definition">
+        {isAi && <FactGrid label="AI trading limits" items={[
+          { key: 'capital', label: 'Starting simulated capital', value: moneyWhole(def.config.allocatedAmount ?? 10000) },
+          { key: 'order', label: 'Maximum per order', value: moneyWhole(def.config.maxOrderNotional ?? 2000) },
+          { key: 'frequency', label: 'Evaluation timing', value: describeEvaluationTiming(def.config, { isAi: true }) },
+        ]} />}
+        {uniqueStatements(describeGuards({
+          config: isAi ? { ...def.config, allocatedAmount: null, maxOrderNotional: null } : def.config,
+          rules: def.rules,
+        })).length > 0 && (
+          <div className="tl-content-rule-group">
+            <h3 className="tl-content-subheading">Trading conditions & safeguards</h3>
+            <ul className="tl-rule-list">
+              {!isAi && <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>}
+              {uniqueStatements(describeGuards({
+                config: isAi ? { ...def.config, allocatedAmount: null, maxOrderNotional: null } : def.config,
+                rules: def.rules,
+              })).map((g) => <li key={g}>{g}</li>)}
+              {def.parameters?.triggerPrice === 'close_before_window' && <li>Historical trigger: the last closing price before the selected test period</li>}
+            </ul>
+          </div>
         )}
-        <ul className="tl-rule-list" data-testid="tested-definition">
-          {!isAi && <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>}
-          {guards.map((g) => <li key={g}>{g}</li>)}
-          {def.parameters?.triggerPrice === 'close_before_window' && <li>Trigger price: the symbol’s close on the last session before the test window (standardized; shown per result)</li>}
-        </ul>
+      </ContentSection>
 
-      </section>
-
-      <Disclosure label="Methodology" testId="evidence-method">
+      <TechnicalDetail label="Testing methods & limitations" testId="evidence-method">
+        <p className="tl-content-help">Historical tests and simulated trading are not predictions of future performance. Timing and prices may differ from actual orders.</p>
         <ul className="tl-backtest-notes">
-          {s.assumptions.map((a) => <li key={a}>{a}</li>)}
-          {rows[0]?.riskPolicyVersion && <li>Risk policy {rows[0].riskPolicyVersion}.</li>}
-          {s.versions.length > 1 && <li>{plural(s.versions.length, 'version')} published; results always belong to the version they were produced for.</li>}
+          {uniqueStatements(s.assumptions).map((a) => <li key={a}>{a}</li>)}
+          {rows[0]?.riskPolicyVersion && <li>Risk policy: {rows[0].riskPolicyVersion}.</li>}
         </ul>
-        {s.versions.length > 1 && (
-          <ul className="tl-backtest-notes" data-testid="version-list">
-            {s.versions.map((v) => (
-              <li key={v.id}>
-                {v.selected ? <strong>{v.id.slice(3, 11)}</strong> : <Link to={v.current ? `/strategies/${encodeURIComponent(s.templateId)}` : `/strategies/${encodeURIComponent(s.templateId)}?version=${v.id}`}>{v.id.slice(3, 11)}</Link>}
-                {' '}· published {sessionDate(v.firstSession, { year: true })}{v.current ? ' · current' : ''}
-              </li>
-            ))}
-          </ul>
-        )}
         {rows.some((r) => r.parameters?.triggerPrice) && (
-          <p className="tl-small tl-muted">Standardized triggers: {rows.filter((r) => r.parameters?.triggerPrice).map((r) => `${r.symbol} ${money(r.parameters.triggerPrice)} (${sessionDate(r.parameters.triggerFrom, { year: true })})`).join(' · ')}</p>
+          <p className="tl-small tl-muted">Test-specific trigger prices: {rows.filter((r) => r.parameters?.triggerPrice).map((r) => `${r.symbol} ${money(r.parameters.triggerPrice)} (${sessionDate(r.parameters.triggerFrom, { year: true })})`).join(' · ')}</p>
         )}
-      </Disclosure>
+      </TechnicalDetail>
+      <TechnicalDetail label="Version history" testId="version-history">
+        <p className="tl-content-help">Each set of results belongs to the strategy version used to produce it.</p>
+        <ul className="tl-backtest-notes" data-testid="version-list">
+          {s.versions.map((v) => (
+            <li key={v.id}>
+              {v.selected ? <strong>{v.id.slice(3, 11)}</strong> : <Link to={v.current ? `/strategies/${encodeURIComponent(s.templateId)}` : `/strategies/${encodeURIComponent(s.templateId)}?version=${v.id}`}>{v.id.slice(3, 11)}</Link>}
+              {' '}· published {sessionDate(v.firstSession, { year: true })}{v.current ? ' · current' : ''}
+            </li>
+          ))}
+        </ul>
+      </TechnicalDetail>
     </main>
   )
 }
