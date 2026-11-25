@@ -20,6 +20,7 @@
 
 .btn-primary {
   background: var(--tl-accent);
+  border-color: var(--tl-accent);
   color: var(--color-text-inverse);
   box-shadow: var(--elevation-1);
 }
@@ -56,8 +57,8 @@
   transform: none;
 }
 
-.btn:disabled {
-  opacity: 0.5;
+.btn:disabled, .btn[aria-disabled='true'] {
+  opacity: 0.52;
   cursor: not-allowed;
   transform: none;
 }
