@@ -220,7 +220,7 @@ body {
 .tl-btn--primary:hover { background: var(--tl-accent-ink); border-color: var(--tl-accent-ink); }
 .tl-btn--quiet { border-color: transparent; background: transparent; color: var(--tl-ink-2); }
 .tl-btn--quiet:hover { background: var(--tl-surface-2); }
-.tl-btn--danger { color: var(--tl-neg); }
+.tl-btn--danger { color: var(--tl-neg); border-color: var(--tl-neg); background: var(--tl-surface); }
 .tl-btn--sm { height: var(--tl-control-height-sm); min-height: var(--tl-control-height-sm); min-width: var(--tl-action-min-width-sm); padding: 0 12px; font-size: 13px; }
 .tl-btn--secondary { background: var(--tl-surface); border-color: var(--tl-line-strong); color: var(--tl-ink) !important; }
 .tl-btn--positive { background: var(--tl-pos); border-color: var(--tl-pos); color: var(--tl-ink-inverse) !important; }
@@ -288,6 +288,16 @@ body {
   gap: var(--tl-gap-inline);
 }
 .tl-action-row > :is(.tl-btn, .btn) { flex: 0 0 auto; }
+/* Explicit equal-width treatment; ordinary text/tool rows remain intrinsic. */
+.tl-action-row--equal {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--tl-action-min-width)), 1fr));
+  align-items: stretch;
+}
+.tl-action-row--equal > :is(.tl-btn, .btn) { width: 100%; min-width: 0; max-width: none; }
+.tl-btn--danger-solid:focus-visible, .tl-btn--warning:focus-visible,
+.tl-btn--positive:focus-visible { outline: 2px solid var(--tl-accent); outline-offset: 3px; }
+
 .tl-card-shell {
   min-width: 0;
   width: 100%;
@@ -552,7 +562,7 @@ body {
 .tl-facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; font-size: 14px; }
 .tl-facts dt { color: var(--tl-muted); }
 .tl-facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 520; }
-.tl-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.tl-detail-actions { display: flex; flex-wrap: wrap; gap: var(--tl-gap-inline); margin-top: var(--tl-gap-card); }
 
 /* ── Bot rows ────────────────────────────────────────────────────────────── */
 
@@ -986,8 +996,6 @@ div[style*='grid'] > .tl-field, .tl-grid > .tl-field { margin-top: 0; }
 .tl-safety-text { min-width: 0; }
 .tl-stop-banner { align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .tl-stop-list { margin: 0; padding-left: 18px; color: var(--tl-ink-2); font-size: 14.5px; line-height: 1.7; }
-.tl-btn--danger-solid { background: var(--tl-neg); border-color: var(--tl-neg); color: #fff !important; }
-.tl-btn--danger-solid:hover { background: #a02822; }
 .tl-chevron { transition: transform 160ms var(--tl-ease); vertical-align: -2px; }
 .tl-chevron.is-open { transform: rotate(90deg); }
 .tl-row-click:hover .tl-chevron { color: var(--tl-ink-2); }
