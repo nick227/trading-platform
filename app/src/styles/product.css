@@ -1304,3 +1304,15 @@ select.tl-input--inline { width: auto; }
 .tl-strategy-windows dd { margin: 2px 0 0; font-size: 13.5px; }
 @media (max-width: 760px) { .tl-strategy-windows { grid-template-columns: 1fr; } }
 .tl-evidence-line { display: block; font-size: 12px; color: var(--tl-ink-2); }
+
+/* Visual MR4: align actions and major page geometry without per-control offsets. */
+.tl-bot-actions > .tl-btn {
+  flex: 0 0 auto;
+  min-width: var(--tl-action-min-width);
+}
+.tl-builder-starting-point { margin-bottom: var(--tl-gap-card); }
+.tl-featured-body > * { min-width: 0; }
+.tl-featured-body .tl-detail-actions { margin-top: var(--tl-gap-card); }
+.tl-featured-body .tl-detail-actions .tl-btn { min-width: var(--tl-action-min-width); }
+.tl-header > :first-child { min-width: 0; }
+.tl-header .tl-title { overflow-wrap: anywhere; }
