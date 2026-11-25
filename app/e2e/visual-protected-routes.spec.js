@@ -22,6 +22,14 @@ async function mockReadOnlySession(page) {
         body: JSON.stringify({ error: 'Visual QA is read-only' }),
       })
     }
+    // Alpha Engine uses a distinct {success, data} envelope.
+    if (path.startsWith('/api/engine/')) {
+      const data = path.includes('/api/quotes') || path.includes('/api/tickers') ? [] : {}
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ success: true, data }),
+      })
+    }
     let data = {}
     if (path === '/api/auth/me') data = user
     else if (path === '/api/account/broker-credentials') data = { mode: 'paper_daily', connected: false, paper: true }
