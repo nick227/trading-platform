@@ -301,7 +301,7 @@ export async function listPublicStrategies({ prismaClient = prisma } = {}) {
     const { endDate, rows } = version ? await latestRows(prismaClient, version.id) : { endDate: null, rows: [] }
     const byWindow = (w) => summarize(rows.filter((r) => r.window === w))
     return {
-      templateId: t.id, name: t.name, description: t.description, tags: t.tags ?? [],
+      templateId: t.id, name: t.name, description: t.description, tags: t.tags ?? [], workshopAvailable: t.botType === 'rule_based',
       version: version ? { id: version.id, firstSession: version.firstSession, backtestable: version.backtestable, reason: version.reason } : null,
       asOf: endDate,
       windows: Object.fromEntries(['5Y', '1Y', 'forward', 'development', 'holdout'].map((w) => [w, byWindow(w)]).filter(([w, x]) => x.status !== 'pending' || ['5Y', '1Y', 'forward'].includes(w))),
@@ -325,7 +325,7 @@ export async function getPublicStrategy(templateId, { prismaClient = prisma, ver
     parameters: r.parameters, dataFingerprint: r.dataFingerprint, riskPolicyVersion: r.riskPolicyVersion, results: r.results })
   const windows = ['5Y', '1Y', 'forward', ...(v.definition.design ? ['development', 'holdout'] : [])]
   return {
-    templateId: t.id, name: t.name, description: t.description, tags: t.tags ?? [],
+    templateId: t.id, name: t.name, description: t.description, tags: t.tags ?? [], workshopAvailable: t.botType === 'rule_based',
     version: { id: v.id, current: v.id === current.id, published: Boolean(version), firstSession: version?.firstSession ?? null, backtestable: v.backtestable, reason: v.reason },
     definition: v.definition,
     design: v.definition.design ?? null,
