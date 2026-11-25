@@ -1,8 +1,10 @@
 /* UI Components */
 .btn {
-  height: 60px;
-  padding: 0 var(--space-5);
-  border-radius: var(--radius-pill);
+  min-height: var(--tl-control-height);
+  height: var(--tl-control-height);
+  min-width: var(--tl-action-min-width);
+  padding: 0 16px;
+  border-radius: var(--tl-control-radius);
   border: 1px solid transparent;
   cursor: pointer;
   font-size: var(--text-md);
@@ -28,10 +30,12 @@
 }
 
 .btn-sm {
-  height: 38px;
-  padding: 0 14px;
+  height: var(--tl-control-height-sm);
+  min-height: var(--tl-control-height-sm);
+  min-width: var(--tl-action-min-width-sm);
+  padding: 0 12px;
   font-size: var(--text-sm);
-  border-radius: 12px;
+  border-radius: var(--tl-control-radius);
   box-shadow: none;
 }
 
@@ -40,7 +44,7 @@
   max-width: 140px;
   padding: 0 10px;
   font-size: var(--text-xs);
-  border-radius: 10px;
+  border-radius: var(--tl-control-radius);
   box-shadow: none;
 }
 
