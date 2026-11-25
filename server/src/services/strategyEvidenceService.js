@@ -159,7 +159,49 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
       created += 1
     }
     if (!version.backtestable) {
-      for (const t of todo) await save(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
+      if (template.id === 'tmpl_ai_catalyst_momentum' || template.botType === 'strategy_based') {
+        const bot = await prismaClient.bot.findFirst({ where: { templateId: template.id } })
+        let forwardStats = null
+        if (bot) {
+          try {
+            const { computeAiBotForwardEquity } = await import('./ai/aiBotService.js')
+            forwardStats = await computeAiBotForwardEquity(bot.id, { asOfSession: end, prismaClient, engine })
+          } catch {
+            // fallback if computing equity encounters an error
+          }
+        }
+        for (const t of todo) {
+          if (t.window.id === 'forward' && forwardStats && forwardStats.status === 'ok' && forwardStats.curve.length > 0) {
+            await save(t.symbol, t.window, {
+              startDate: forwardStats.curve[0]?.date || version.firstSession,
+              status: 'ok',
+              reason: null,
+              results: {
+                capital: forwardStats.startingCapital,
+                metrics: {
+                  returnPct: forwardStats.returnPct,
+                  maxDrawdown: { pct: forwardStats.maxDrawdownPct },
+                  winRate: forwardStats.winRate,
+                  trades: forwardStats.trades,
+                  timeInMarketPct: 0
+                },
+                curve: downsample(forwardStats.curve.map(p => ({ date: p.date, equity: p.equity })), 260),
+                buyAndHold: {
+                  returnPct: forwardStats.buyAndHold.returnPct,
+                  maxDrawdown: { pct: 0 },
+                  curve: downsample(forwardStats.buyAndHold.curve.map(p => ({ date: p.date, equity: p.equity })), 260)
+                },
+                skips: {},
+                trades: []
+              }
+            })
+          } else {
+            await save(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
+          }
+        }
+      } else {
+        for (const t of todo) await save(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
+      }
       continue
     }
     const bySymbol = new Map()

@@ -1,4 +1,5 @@
 import { runRegimeSnapshot } from './regimeSnapshotJob.js'
+import { runAiStrategyDailyJob } from './aiStrategyDailyJob.js'
 
 const DEFAULT_SYMBOLS = ['SPY']
 
@@ -18,24 +19,27 @@ async function runBackfillReconciler() {
  * Primary behavior (preferred):
  * - If `node-cron` is available, schedule:
  *   - 4:15 PM ET Mon–Fri → `runRegimeSnapshot(['SPY'])`
+ *   - 4:30 PM ET Mon–Fri → `runAiStrategyDailyJob()` (Autonomous AI post-close cycle)
+ *   - 2:00 AM ET Daily → `runBackfillReconciler()`
  *
  * Fallback behavior:
  * - If `node-cron` is not installed, uses a simple setTimeout-based scheduler
  *   for the same wall-clock time in America/New_York.
  */
 export async function startSchedulers() {
-  const started = await startRegimeCron().catch((err) => {
-    console.warn('[scheduler] regime cron failed to start:', err?.message ?? err)
+  const started = await startCronSchedulers().catch((err) => {
+    console.warn('[scheduler] cron failed to start:', err?.message ?? err)
     return false
   })
 
   if (!started) {
     console.warn('[scheduler] using fallback scheduler (node-cron not available)')
     startFallbackRegimeScheduler()
+    startFallbackAiStrategyScheduler()
   }
 }
 
-async function startRegimeCron() {
+async function startCronSchedulers() {
   let cron
   try {
     cron = (await import('node-cron')).default
@@ -48,14 +52,40 @@ async function startRegimeCron() {
     timezone: 'America/New_York'
   })
 
+  // Once daily at 4:30 PM ET, Mon–Fri (Autonomous AI Post-Close Cycle).
+  cron.schedule('30 16 * * 1-5', () => runAiStrategyDailyJob().catch((err) => {
+    console.error('[scheduler] autonomous AI strategy job error:', err?.message ?? err)
+  }), {
+    timezone: 'America/New_York'
+  })
+
   // Once daily at 2:00 AM ET, every day.
   cron.schedule('0 2 * * *', () => runBackfillReconciler(), {
     timezone: 'America/New_York'
   })
 
   console.log('[scheduler] regime snapshot cron scheduled (4:15 PM ET, Mon–Fri)')
+  console.log('[scheduler] autonomous AI strategy cron scheduled (4:30 PM ET, Mon–Fri)')
   console.log('[scheduler] backfill reconciler cron scheduled (2:00 AM ET, daily)')
   return true
+}
+
+function startFallbackAiStrategyScheduler() {
+  const scheduleNext = () => {
+    const delayMs = msUntilNextEasternWeekdayTime(16, 30)
+    setTimeout(async () => {
+      try {
+        await runAiStrategyDailyJob()
+      } catch (err) {
+        console.error('[scheduler] fallback autonomous AI strategy unexpected error:', err?.message ?? err)
+      } finally {
+        scheduleNext()
+      }
+    }, delayMs)
+  }
+
+  scheduleNext()
+  console.log('[scheduler] fallback autonomous AI scheduler armed (4:30 PM ET, Mon–Fri)')
 }
 
 function startFallbackRegimeScheduler() {

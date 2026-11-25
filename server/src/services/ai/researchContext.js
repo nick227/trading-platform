@@ -39,12 +39,13 @@ export const VERIFIED_CATALYSTS = {
 export async function assembleAiResearchContext({
   botId = null,
   session = null,
+  asOfSession: asOfSessionParam = null,
   engine = engineClient,
   prismaClient = prisma,
   symbols = DEFAULT_TRADABLE_SYMBOLS
 } = {}) {
   const sim = simulationConfig()
-  let asOfSession = session
+  let asOfSession = session || asOfSessionParam
   if (!asOfSession) {
     try {
       asOfSession = await currentSimSession({ config: sim, engine })
@@ -138,12 +139,14 @@ export async function assembleAiResearchContext({
       let investedCost = 0
       let unrealizedTotal = 0
 
-      for (const [sym, pos] of Object.entries(accounting.positions || {})) {
+      const openPositions = accounting.openPositions || accounting.positions || {}
+      for (const [sym, pos] of Object.entries(openPositions)) {
         if (pos.quantity > 0) {
           const symData = symbolContexts.find(s => s.symbol === sym)
-          const markPrice = symData?.currentPrice ?? pos.averageCost
+          const avgCost = pos.avgPrice ?? pos.averageCost ?? 0
+          const markPrice = symData?.currentPrice ?? avgCost
           const marketValue = round2(pos.quantity * markPrice)
-          const cost = round2(pos.quantity * pos.averageCost)
+          const cost = round2(pos.quantity * avgCost)
           const unrealizedPnl = round2(marketValue - cost)
           const unrealizedPnlPct = cost > 0 ? round2((unrealizedPnl / cost) * 100) : 0
           
@@ -153,7 +156,7 @@ export async function assembleAiResearchContext({
           heldPositions.push({
             symbol: sym,
             quantity: pos.quantity,
-            averageCost: round2(pos.averageCost),
+            averageCost: round2(avgCost),
             marketValue,
             unrealizedPnl,
             unrealizedPnlPct

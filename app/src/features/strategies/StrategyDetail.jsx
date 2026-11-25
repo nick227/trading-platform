@@ -51,6 +51,9 @@ export default function StrategyDetail() {
     loadPublicStrategy(templateId, versionParam).then((s) => {
       setState({ status: 'done', s })
       if (s?.name) pageTitleService.setTitle(s.name)
+      if (s?.tags?.includes('ai') || s?.templateId === 'tmpl_ai_catalyst_momentum') {
+        setWin('forward')
+      }
     }).catch((e) => setState({ status: e?.status === 404 ? 'missing' : 'error', s: null }))
 
     get(`/ai/strategies/${encodeURIComponent(templateId)}/decisions`)
@@ -62,7 +65,7 @@ export default function StrategyDetail() {
   }, [templateId, versionParam])
   const s = state.s
   const rows = useMemo(() => (s?.results ?? []).filter((r) => r.window === win), [s, win])
-  const chosen = rows.find((r) => r.symbol === sym && r.status === 'ok') ?? rows.find((r) => r.status === 'ok' && r.results.metrics.trades > 0) ?? null
+  const chosen = rows.find((r) => r.symbol === sym && r.status === 'ok') ?? rows.find((r) => r.status === 'ok' && r.results?.metrics?.trades > 0) ?? rows.find((r) => r.status === 'ok') ?? null
 
   if (state.status === 'loading') return <main className="tl-page"><span className="tl-skel" style={{ height: 320 }} aria-label="Loading strategy" /></main>
   if (state.status === 'missing') return <main className="tl-page"><p>Strategy not found. <Link to="/strategies">All strategies</Link></p></main>
@@ -100,7 +103,11 @@ export default function StrategyDetail() {
             <dt>Objective</dt><dd>{s.design.objective}</dd>
             <dt>Benchmark</dt><dd>{s.design.benchmark}</dd>
             <dt>Parameters</dt><dd>{s.design.parameterBasis}</dd>
-            <dt>Out of sample</dt><dd>Designed with data through {sessionDate(s.design.developmentEnd, { year: true })}; “Holdout” covers only later sessions.</dd>
+            {s.design.developmentEnd && (
+              <>
+                <dt>Out of sample</dt><dd>Designed with data through {sessionDate(s.design.developmentEnd, { year: true })}; “Holdout” covers only later sessions.</dd>
+              </>
+            )}
           </dl>
         </section>
       )}
@@ -109,14 +116,16 @@ export default function StrategyDetail() {
         <div className="tl-section-head">
           <h2 className="tl-section-title" id="results-title">Standardized results</h2>
           <div className="tl-seg" role="group" aria-label="Window">
-            {(s.standard?.windows ?? ['5Y', '1Y', 'forward']).map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w] ?? w}</button>)}
+            {(s.standard?.windows ?? ['5Y', '1Y', 'forward'])
+              .filter((w) => !['development', 'holdout'].includes(w) || Boolean(s.design?.developmentEnd))
+              .map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w] ?? w}</button>)}
           </div>
         </div>
         <Summary s={s.summary?.[win]} />
         {win === 'forward' && <p className="tl-small tl-muted">Only sessions completed after this version was published — results it could not have been tuned on.</p>}
         {win === 'holdout' && <p className="tl-small tl-muted">Sessions after {sessionDate(s.design?.developmentEnd, { year: true })}, which weren’t used when this version was designed.</p>}
         {win === 'development' && <p className="tl-small tl-muted">The period the design could see. In-sample: treat these results with more caution than the holdout.</p>}
-        {chosen && (
+        {chosen && chosen.results?.curve && (
           <div style={{ marginTop: 14 }}>
             <ValueChart
               points={chosen.results.curve.map((p) => ({ t: p.date, v: p.equity }))}
@@ -128,7 +137,7 @@ export default function StrategyDetail() {
               label={`${s.name} on ${chosen.symbol}`}
               minSpan={chosen.results.capital * 0.01}
             />
-            <p className="tl-chart-caption">{chosen.symbol}: strategy value at each close ({pctText(chosen.results.metrics.returnPct)}) vs buy &amp; hold {pctText(chosen.results.buyAndHold.returnPct)} with the same capital.</p>
+            <p className="tl-chart-caption">{chosen.symbol}: strategy value at each close ({pctText(chosen.results.metrics?.returnPct)}) vs buy &amp; hold {pctText(chosen.results.buyAndHold?.returnPct)} with the same capital.</p>
           </div>
         )}
         {rows.length > 0 && (
@@ -139,10 +148,10 @@ export default function StrategyDetail() {
                 {rows.map((r) => (
                   <tr key={r.symbol} data-testid="symbol-row" onClick={() => r.status === 'ok' && setSym(r.symbol)} style={{ cursor: r.status === 'ok' ? 'pointer' : 'default' }} aria-selected={chosen?.symbol === r.symbol}>
                     <td><strong>{r.symbol}</strong></td>
-                    {r.status === 'ok' ? (
+                    {r.status === 'ok' && r.results?.metrics ? (
                       <>
                         <td className={`r ${tone(r.results.metrics.returnPct)}`}>{pctText(r.results.metrics.returnPct)}</td>
-                        <td className={`r ${tone(r.results.buyAndHold.returnPct)}`}>{pctText(r.results.buyAndHold.returnPct)}</td>
+                        <td className={`r ${tone(r.results.buyAndHold?.returnPct)}`}>{pctText(r.results.buyAndHold?.returnPct)}</td>
                         <td className="r tl-hide-sm">{r.results.metrics.maxDrawdown ? `${r.results.metrics.maxDrawdown.pct.toFixed(2)}%` : '—'}</td>
                         <td className="r">{r.results.metrics.trades === 0 ? <span className="tl-muted" title={whyNot(r) ?? ''}>0{whyNot(r) ? ` · ${whyNot(r)}` : ''}</span> : r.results.metrics.trades}</td>
                         <td className="r tl-hide-sm">{r.results.metrics.winRate !== null ? `${Math.round(r.results.metrics.winRate * 100)}%` : '—'}</td>
@@ -167,9 +176,19 @@ export default function StrategyDetail() {
             <div className="tl-ai-feed" style={{ marginTop: 14 }}>
               {aiData.decisions.map((d) => (
                 <div key={d.id} className="tl-card" style={{ marginBottom: 12, padding: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <span className="tl-small" style={{ fontWeight: 600 }}>{d.detail}</span>
-                    <span className="tl-small tl-muted">{sessionDate(d.createdAt, { year: true })}</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--tl-border, #eee)' }}>
+                    <span className="tl-small" style={{ fontWeight: 600 }}>
+                      {d.metadata?.model ? `Model: ${d.metadata.model}` : 'Autonomous AI Cycle'}
+                    </span>
+                    <span className="tl-tag" style={{ fontSize: '0.78rem' }}>
+                      <strong>Market Session Analyzed:</strong>&nbsp;{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : '—'}
+                    </span>
+                    <span className="tl-tag" style={{ fontSize: '0.78rem' }}>
+                      <strong>Decision Generated:</strong>&nbsp;{d.metadata?.decisionTimestamp ? new Date(d.metadata.decisionTimestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' }) + ' ET' : sessionDate(d.createdAt, { year: true })}
+                    </span>
+                    <span className="tl-tag" style={{ fontSize: '0.78rem' }}>
+                      <strong>Execution Target:</strong>&nbsp;{d.metadata?.intendedExecutionSession ? sessionDate(d.metadata.intendedExecutionSession, { year: true }) : 'Next eligible session'}
+                    </span>
                   </div>
                   {d.metadata?.marketSummary && (
                     <p className="tl-small tl-muted" style={{ margin: '4px 0 8px' }}>

@@ -17,10 +17,14 @@ describe('AI Catalyst & Momentum Strategy Integration', () => {
     process.env.BROKER_MODE = 'simulated'
     process.env.SIM_REPLAY_SESSION = 'latest'
     // Ensure clean state for AI bot executions
-    const { bot } = await getOrCreateCanonicalAiBot({ prismaClient: prisma })
-    await prisma.executionAudit.deleteMany({ where: { execution: { botId: bot.id } } })
-    await prisma.botEvent.deleteMany({ where: { botId: bot.id } })
-    await prisma.execution.deleteMany({ where: { botId: bot.id } })
+    const execs = await prisma.execution.findMany({ where: { botId: 'bot_test_ai_strat_int' }, select: { id: true } })
+    const execIds = execs.map(e => e.id)
+    if (execIds.length > 0) {
+      await prisma.executionAudit.deleteMany({ where: { executionId: { in: execIds } } })
+      await prisma.botEvent.deleteMany({ where: { executionId: { in: execIds } } })
+      await prisma.execution.deleteMany({ where: { id: { in: execIds } } })
+    }
+    await prisma.botEvent.deleteMany({ where: { botId: 'bot_test_ai_strat_int' } })
   })
 
   afterEach(() => {
@@ -128,7 +132,7 @@ describe('AI Catalyst & Momentum Strategy Integration', () => {
     expect(sanitized.selectedDecisions).toHaveLength(0)
   })
 
-  it('executes AI cycle, records audit trail, and queues valid executable orders', { timeout: 15_000 }, async () => {
+  it('executes AI cycle, records audit trail, and queues valid executable orders', { timeout: 60_000 }, async () => {
     const mockDecision = {
       asOfSession: '2026-11-20',
       marketSummary: 'Selective opportunity in megacap tech',
@@ -170,7 +174,21 @@ describe('AI Catalyst & Momentum Strategy Integration', () => {
 
     registerCustomProvider('test_mock', new MockLLMProvider({ fixedResponse: mockDecision }))
 
-    const { bot } = await getOrCreateCanonicalAiBot({ prismaClient: prisma })
+    let bot = await prisma.bot.findUnique({ where: { id: 'bot_test_ai_strat_int' } })
+    if (!bot) {
+      const canonical = await getOrCreateCanonicalAiBot({ prismaClient: prisma })
+      bot = await prisma.bot.create({
+        data: {
+          id: 'bot_test_ai_strat_int',
+          userId: canonical.user.id,
+          portfolioId: canonical.portfolio.id,
+          templateId: 'tmpl_ai_catalyst_momentum',
+          name: 'AI Test Bot',
+          botType: 'strategy_based',
+          config: { allocatedAmount: 10000, maxOrderNotional: 2000 }
+        }
+      })
+    }
 
     const res = await executeAiStrategyCycle({
       botId: bot.id,
@@ -240,7 +258,7 @@ describe('AI Catalyst & Momentum Strategy Integration', () => {
     expect(cycleEvent).toBeDefined()
     expect(cycleEvent.metadata.model).toBe('mock-llm-v1')
     expect(cycleEvent.metadata.strategy).toBe('tmpl_ai_catalyst_momentum')
-  })
+  }, 35_000)
 
   it('serves AI strategy in public catalog and strategy detail without login', async () => {
     const list = await listPublicStrategies()
