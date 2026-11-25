@@ -69,3 +69,14 @@
     height: 62px;
   }
 }
+
+/* Account route: shared profile card and simulated account geometry. */
+.tl-account-page { --tl-width: 680px; }
+.tl-account-card { display: grid; gap: var(--tl-card-padding-compact); margin-top: var(--tl-card-padding-compact); padding: var(--tl-card-padding); border: 1px solid var(--tl-line); background: var(--tl-surface); border-radius: var(--tl-card-radius); min-width: 0; }
+.tl-account-card__identity { display: flex; align-items: center; gap: var(--tl-gap-related); min-width: 0; }
+.tl-account-card__avatar { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; background: var(--tl-surface-3); border: 1px solid var(--tl-line-strong); display: grid; place-items: center; font-size: 16px; font-weight: 650; }
+.tl-account-card__name { font-weight: 640; font-size: 16px; overflow-wrap: anywhere; }
+.tl-account-card__email { font-size: 13px; color: var(--tl-muted); overflow-wrap: anywhere; }
+.tl-account-card__footer { border-top: 1px solid var(--tl-line); padding-top: var(--tl-gap-related); }
+.tl-account-card__mode { display: flex; gap: var(--tl-gap-inline); align-items: center; flex-wrap: wrap; margin-bottom: var(--tl-gap-inline); }
+.tl-account-card__facts { margin: 0; padding-top: var(--tl-gap-related); border-top: 1px solid var(--tl-line); }
