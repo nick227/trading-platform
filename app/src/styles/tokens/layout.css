@@ -9,6 +9,6 @@
   --container-lg: var(--tl-width);
 
   /* Layout gaps */
-  --section-gap: var(--tl-space-8);
-  --block-gap: var(--tl-space-7);
+  --section-gap: var(--tl-gap-section);
+  --block-gap: var(--tl-gap-card);
 }
