@@ -50,7 +50,7 @@ describe('BotsPage', () => {
     renderPage()
     const [dca, research] = await screen.findAllByTestId('featured-bot')
     expect(dca).toHaveTextContent('Buys a stock you choose on a fixed schedule — once every day, whatever the price.')
-    expect(within(dca).getByTestId('featured-evidence')).toHaveTextContent('+31.20% median vs +88.50% buy & holdPlatform backtest · 5 years · 10 symbols')
+    expect(within(dca).getByTestId('featured-evidence')).toHaveTextContent('+31.20% median vs +88.50% buy & holdBacktest · 5 years · 10 symbols')
     // Users' paper fills are not a headline (2 fills on one day): no P&L in the row.
     expect(dca.querySelector('.tl-featured-row').textContent).not.toMatch(/\$52/)
     expect(within(research).getByTestId('featured-evidence')).toHaveTextContent('Not backtestable')
@@ -66,7 +66,7 @@ describe('BotsPage', () => {
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Last year: −2.10% median vs +4.00% buy & hold')
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Since published: Awaiting new sessions')
     expect(within(dca).getByRole('link', { name: /Full evidence/ })).toHaveAttribute('href', '/strategies/tmpl_dca')
-    expect(within(dca).getByTestId('featured-results')).toHaveTextContent('Too early to judge. 2 simulated fills from 1 bot on Nov 19, 0 closed trades (−$52.12 at the Nov 20 close). Results are shown once there are 5 closed trades across 5 sessions.')
+    expect(within(dca).getByTestId('featured-results')).toHaveTextContent('Too early to judge. 2 simulated fills from 1 bot on Nov 19, 0 closed trades (−$52.12 at the Nov 20 close). At least 5 closed trades across 5 sessions required.')
     expect(within(dca).getByRole('link', { name: 'Start from this' })).toHaveAttribute('href', '/bots/new?template=tmpl_dca')
   })
 
