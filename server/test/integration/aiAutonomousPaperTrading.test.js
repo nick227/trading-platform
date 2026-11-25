@@ -548,6 +548,137 @@ describe.sequential('Autonomous AI Paper Trading & Accounting Lifecycle', () => 
     expect(oneLost).toBe(true)
   })
 
+  it('prevents stale workers from publishing results or creating orders after ownership changes', { timeout: 60_000 }, async () => {
+    testProviderInstance.callCount = 0
+
+    let simulatedStallTriggered = false
+    const stallingProvider = {
+      name: 'stalling_provider',
+      callCount: 0,
+      async completeStructured() {
+        this.callCount++
+        if (!simulatedStallTriggered) {
+          simulatedStallTriggered = true
+          // While this worker is computing inference, simulate recovery takeover by another worker
+          const claim = await prisma.botEvent.findFirst({
+            where: { botId: canonicalBot.id, id: { startsWith: 'req_ai_' } }
+          })
+          if (claim) {
+            await prisma.botEvent.update({
+              where: { id: claim.id },
+              data: {
+                detail: `AI Research Request Claim [2026-10-09]: in_progress (recovered by worker_superseding_999)`,
+                ruleId: 'worker_superseding_999',
+                metadata: {
+                  ...claim.metadata,
+                  status: 'in_progress',
+                  claimedAt: new Date().toISOString(),
+                  recoveryAttempts: 1,
+                  workerToken: 'worker_superseding_999'
+                }
+              }
+            })
+          }
+        }
+        return {
+          model: 'scenario-llm-v1',
+          provider: 'stalling_provider',
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+          structured: {
+            marketSummary: 'Stale attempt summary',
+            symbolEvaluations: [
+              { symbol: 'NVDA', action: 'BUY', confidence: 0.85, targetAllocationPct: 15, entryType: 'next_close', exitRule: { takeProfitPct: 6, stopLossPct: 4 }, thesis: 'Stale thesis', evidence: [] },
+              ...['SPY','QQQ','AAPL','MSFT','AMZN','GOOGL','JPM','XOM','META'].map(s => ({
+                symbol: s, action: 'HOLD', confidence: 0.5, targetAllocationPct: 0, entryType: 'next_close', exitRule: { takeProfitPct: 6, stopLossPct: 4 }, thesis: 'Hold', evidence: []
+              }))
+            ],
+            selectedDecisions: [
+              { symbol: 'NVDA', action: 'BUY', confidence: 0.85, targetAllocationPct: 15, entryType: 'next_close', exitRule: { takeProfitPct: 6, stopLossPct: 4 }, thesis: 'Stale thesis', evidence: [] }
+            ]
+          }
+        }
+      }
+    }
+    registerCustomProvider('stalling_provider', stallingProvider)
+
+    const staleResult = await executeAiStrategyCycle({
+      botId: canonicalBot.id,
+      session: '2026-10-09',
+      providerName: 'stalling_provider',
+      prismaClient: prisma,
+      engine: engineClient
+    })
+
+    // Stale worker was neutralized: publication aborted and zero orders placed!
+    expect(staleResult.ok).toBe(true)
+    expect(staleResult.skipped).toBe(true)
+    expect(staleResult.staleWorker).toBe(true)
+    expect(staleResult.reason).toBe('stale_worker_ownership_lost')
+    expect(staleResult.createdExecutions.length).toBe(0)
+
+    // Verify database has ZERO orders created by this stale run
+    const orders = await prisma.execution.findMany({ where: { botId: canonicalBot.id } })
+    expect(orders.length).toBe(0)
+  })
+
+  it('guarantees deterministic event identifiers and claim locks are strictly isolated across distinct bots', { timeout: 60_000 }, async () => {
+    testProviderInstance.callCount = 0
+
+    // Create a secondary distinct bot
+    const bot2 = await prisma.bot.create({
+      data: {
+        id: `bot_secondary_test_${Date.now()}`,
+        userId: canonicalBot.userId,
+        portfolioId: canonicalBot.portfolioId,
+        templateId: 'tmpl_ai_catalyst_momentum',
+        botType: 'strategy_based',
+        name: 'Secondary AI Bot',
+        enabled: true,
+        config: {
+          signalSource: 'ai_catalyst_momentum',
+          allocatedAmount: 10_000
+        }
+      }
+    })
+
+    // Run cycle for Canonical Bot on 2026-10-07
+    const cycleBot1 = await executeAiStrategyCycle({
+      botId: canonicalBot.id,
+      session: '2026-10-07',
+      providerName: TEST_PROVIDER,
+      prismaClient: prisma,
+      engine: engineClient
+    })
+
+    // Run cycle for Secondary Bot on same session 2026-10-07
+    const cycleBot2 = await executeAiStrategyCycle({
+      botId: bot2.id,
+      session: '2026-10-07',
+      providerName: TEST_PROVIDER,
+      prismaClient: prisma,
+      engine: engineClient
+    })
+
+    expect(cycleBot1.ok).toBe(true)
+    expect(cycleBot2.ok).toBe(true)
+
+    // Both bots ran independently without colliding on claim lock or event IDs
+    const bot1Events = await prisma.botEvent.findMany({ where: { botId: canonicalBot.id } })
+    const bot2Events = await prisma.botEvent.findMany({ where: { botId: bot2.id } })
+
+    expect(bot1Events.length).toBeGreaterThan(0)
+    expect(bot2Events.length).toBeGreaterThan(0)
+
+    const bot1Claim = bot1Events.find(e => e.id.startsWith('req_ai_'))
+    const bot2Claim = bot2Events.find(e => e.id.startsWith('req_ai_'))
+
+    expect(bot1Claim.id).not.toBe(bot2Claim.id)
+
+    // Clean up secondary bot
+    await prisma.botEvent.deleteMany({ where: { botId: bot2.id } })
+    await prisma.bot.delete({ where: { id: bot2.id } })
+  })
+
   it('enforces protective exit chronology (queues for next session, fills at next session close) and prevents duplicate exits', { timeout: 60_000 }, async () => {
     // 1. Create a held open position for NVDA bought on 2026-10-08 at $230.48
     const testBuyId = `exec_held_nvda_${Date.now()}`

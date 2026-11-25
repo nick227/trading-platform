@@ -151,6 +151,7 @@ export async function executeAiStrategyCycle({
   const portfolioHash = createHash('sha256').update(JSON.stringify(context.portfolio)).digest('hex')
 
   const fingerprintPayload = {
+    botId: activeBotId,
     strategyId: STRATEGY_ID,
     strategyVersion: 'v1.0.0',
     provider: providerName,
@@ -166,6 +167,7 @@ export async function executeAiStrategyCycle({
   let llmResponse = null
   let wasCached = false
   let avoidedCallsCount = 0
+  let activeWorkerToken = `worker_${randomUUID().replace(/-/g, '').slice(0, 12)}`
 
   // 1. Check if an event with this exact fingerprint already completed
   const existingClaim = await prismaClient.botEvent.findUnique({
@@ -198,12 +200,14 @@ export async function executeAiStrategyCycle({
             id: claimEventId,
             botId: activeBotId,
             portfolioId: portfolio.id,
+            ruleId: activeWorkerToken,
             type: 'signal_hold',
-            detail: `AI Research Request Claim [${asOfSession}]: in_progress`,
+            detail: `AI Research Request Claim [${asOfSession}]: in_progress (worker: ${activeWorkerToken})`,
             metadata: {
               inputFingerprint,
               status: 'in_progress',
               claimedAt: new Date().toISOString(),
+              workerToken: activeWorkerToken,
               recoveryAttempts: 0
             }
           }
@@ -329,6 +333,7 @@ export async function executeAiStrategyCycle({
 
           if (updateRes.count === 1) {
             wonClaim = true
+            activeWorkerToken = workerToken
           } else {
             console.log(`[aiBotService] Lost atomic recovery race for claim ${claimEventId}. Skipping duplicate provider call.`)
             return {
@@ -374,34 +379,13 @@ export async function executeAiStrategyCycle({
   // Persist completed cycle event and symbol evaluations strictly once (never duplicated on cached reuse)
   if (!wasCached) {
     const summaryDetail = `AI Research Cycle (${asOfSession}): ${sanitized.marketSummary}`.slice(0, 180)
-    await prismaClient.botEvent.upsert({
-      where: { id: claimEventId },
-      update: {
-        type: 'decision_made',
-        detail: summaryDetail,
-        metadata: {
-          strategy: STRATEGY_ID,
-          asOfSession,
-          decisionTimestamp,
-          intendedExecutionSession: nextSession,
-          isReplay: isReplayMode,
-          inputFingerprint,
-          model: llmResponse.model,
-          usage,
-          estimatedCostUsd,
-          provider: providerName,
-          cached: false,
-          avoidedCallsCount: 0,
-          marketSummary: sanitized.marketSummary,
-          symbolEvaluations: sanitized.symbolEvaluations,
-          selectedDecisions: sanitized.selectedDecisions,
-          portfolioAtDecision: context.portfolio
-        }
-      },
-      create: {
+    // Stale Worker Protection: update conditioned on activeWorkerToken ownership
+    const publishRes = await prismaClient.botEvent.updateMany({
+      where: {
         id: claimEventId,
-        botId: activeBotId,
-        portfolioId: portfolio.id,
+        ruleId: activeWorkerToken
+      },
+      data: {
         type: 'decision_made',
         detail: summaryDetail,
         metadata: {
@@ -420,16 +404,32 @@ export async function executeAiStrategyCycle({
           marketSummary: sanitized.marketSummary,
           symbolEvaluations: sanitized.symbolEvaluations,
           selectedDecisions: sanitized.selectedDecisions,
-          portfolioAtDecision: context.portfolio
+          portfolioAtDecision: context.portfolio,
+          publishedBy: activeWorkerToken
         }
       }
     })
+
+    if (publishRes.count === 0) {
+      console.warn(`[aiBotService] Stale worker ${activeWorkerToken} lost claim ownership on ${claimEventId}. Aborting publication and execution.`)
+      return {
+        ok: true,
+        skipped: true,
+        staleWorker: true,
+        reason: 'stale_worker_ownership_lost',
+        claimEventId,
+        asOfSession,
+        botId: activeBotId,
+        createdExecutions: [],
+        rejectedOrders: []
+      }
+    }
 
     // Also log individual symbol evaluations (HOLD, BUY, SELL) using deterministic IDs
     for (const ev of sanitized.symbolEvaluations) {
       const eventType = ev.action === 'HOLD' ? 'signal_hold' : 'decision_made'
       const evDetail = `[${ev.action}] ${ev.symbol} (${Math.round(ev.confidence * 100)}%): ${ev.thesis}`.slice(0, 180)
-      const evalEventId = `evt_ai_${inputFingerprint.slice(0, 16)}_${ev.symbol.toLowerCase()}`
+      const evalEventId = `evt_ai_${activeBotId}_${inputFingerprint.slice(0, 16)}_${ev.symbol.toLowerCase()}`
       await prismaClient.botEvent.upsert({
         where: { id: evalEventId },
         update: {
