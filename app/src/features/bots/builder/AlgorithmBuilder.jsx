@@ -456,9 +456,9 @@ export default function AlgorithmBuilder() {
           {/* ── Section 1: When ────────────────────────────────────────── */}
           <AlgorithmStep label="When" summary={triggerMetaText} mark="◇"
             open={activeStep === 'when'} onToggle={() => openStep('when')} testId="section-when">
-            <div style={{ display: 'grid', gap: 16 }}>
+            <div className="tl-field-stack">
               <div>
-                <label className="tl-label" style={{ marginBottom: 8, display: 'block' }}>
+                <label className="tl-label tl-field-label">
                   Trigger type
                 </label>
                 <div className="tl-segmented" role="radiogroup" aria-label="Trigger type">
@@ -516,7 +516,7 @@ export default function AlgorithmBuilder() {
               </div>
 
               {draft.triggerType === 'price_threshold' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 14 }}>
+                <div className="tl-responsive-fields">
                   <Field label="Condition">
                     {({ id }) => (
                       <Select
@@ -632,9 +632,9 @@ export default function AlgorithmBuilder() {
           <AlgorithmStep label="Act" summary={tradeMetaText} mark="→"
             detail={`Capital allocated: ${draft.capital ? money(Number(draft.capital)) : 'Not set'}`}
             open={activeStep === 'trade'} onToggle={() => openStep('trade')} testId="section-trade">
-            <div style={{ display: 'grid', gap: 16 }}>
+            <div className="tl-field-stack">
               <div>
-                <label className="tl-label" style={{ marginBottom: 8, display: 'block' }}>
+                <label className="tl-label tl-field-label">
                   Order direction
                 </label>
                 <div className="tl-segmented" role="radiogroup" aria-label="Order direction">
@@ -670,7 +670,7 @@ export default function AlgorithmBuilder() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 14 }}>
+              <div className="tl-responsive-fields">
                 <Field
                   label="Capital allocated"
                   help={`Cash available: ${money(wizardData?.buyingPower)}. Capital caps total spend.`}
@@ -943,7 +943,7 @@ export default function AlgorithmBuilder() {
               {draft.triggerType === 'alpha_research' && draft.research && (
                 <div style={{ borderTop: '1px solid var(--tl-line)', paddingTop: 16, marginTop: 4, display: 'grid', gap: 14 }}>
                   <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Research limits</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 14 }}>
+                  <div className="tl-responsive-fields">
                     <Field
                       label="Maximum prediction age"
                       help="Hours since publication (1–720)"
