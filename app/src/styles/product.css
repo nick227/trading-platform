@@ -144,7 +144,7 @@ body {
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 28px;
+  margin-bottom: var(--tl-gap-card);
 }
 .tl-title {
   margin: 0;
@@ -176,8 +176,8 @@ body {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 12px;
+  gap: var(--tl-gap-related);
+  padding-bottom: var(--tl-gap-related);
   border-bottom: 1px solid var(--tl-line);
 }
 .tl-section-title {
@@ -326,6 +326,16 @@ body {
   min-width: 0;
 }
 .tl-aligned-header > * { min-width: 0; }
+
+/* Semantic vertical rhythm: shared flow utilities, not page-specific offsets. */
+.tl-stack-related > * + * { margin-top: var(--tl-gap-related); }
+.tl-stack-card > * + * { margin-top: var(--tl-gap-card); }
+.tl-flow-chart, .tl-flow-card { margin-top: var(--tl-gap-card); }
+.tl-flow-metrics { margin-top: var(--tl-gap-card); }
+.tl-flow-notice { margin-top: var(--tl-gap-related); }
+.tl-flow-footer { margin-top: var(--tl-gap-section); }
+.tl-card-shell > :first-child { margin-top: 0; }
+.tl-card-shell > :last-child { margin-bottom: 0; }
 
 /* ── Status ──────────────────────────────────────────────────────────────── */
 
