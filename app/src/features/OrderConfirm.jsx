@@ -403,13 +403,13 @@ export default function OrderConfirm() {
 
   if (!order) {
     return (
-      <div className="page container" style={{ maxWidth: 600, margin: '0 auto', padding: '2rem 1rem 3rem' }}>
-        <header style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h1 className="hero" style={{ marginBottom: '0.5rem' }}>Not Found</h1>
+      <div className="page container tl-order-confirm tl-order-confirm--empty">
+        <header className="tl-order-confirm__header">
+          <h1 className="tl-order-confirm__title">Not Found</h1>
           <div className="muted">The order you're looking for doesn't exist</div>
         </header>
-        <div style={{ textAlign: 'center' }}>
-          <button className="primary pressable" onClick={() => navigate('/orders')} style={{ padding: '1rem 2rem' }}>
+        <div className="tl-order-confirm__actions">
+          <button className="primary pressable" onClick={() => navigate('/orders')} >
             Back to Orders
           </button>
         </div>
@@ -418,9 +418,9 @@ export default function OrderConfirm() {
   }
 
   return (
-    <div className="page container" style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem 3rem' }}>
+    <div className="page container tl-order-confirm">
       <header>
-        <h1 className="hero" style={{ marginBottom: '0.5rem' }}>
+        <h1 className="tl-order-confirm__title">
           Order Confirmation
         </h1>
         <div className="muted">
@@ -430,7 +430,7 @@ export default function OrderConfirm() {
 
       {/* Market closed warning */}
       {isMarketClosed() && (
-        <article style={{ background: '#fff3cd', border: '2px solid #f39c12', borderRadius: 12, padding: '1.5rem', marginBottom: '1.5rem', color: '#856404' }}>
+        <article className="tl-order-confirm__card tl-order-confirm__card--warning">
           <div style={{ fontWeight: 700, marginBottom: '0.5rem', fontSize: '16px' }}>Market Currently Closed</div>
           <div style={{ fontSize: '14px', marginBottom: '1rem' }}>
             Orders placed now will be queued and executed when the market opens at 9:30 AM ET.
@@ -446,7 +446,7 @@ export default function OrderConfirm() {
           borderRadius: 8, marginBottom: '1.5rem',
           color: orderDetails.priceChange > 0 ? '#c0392b' : '#0a7a47',
         }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Price Updated Since Order Creation</div>
+          <div className="tl-order-confirm__notice-title">Price Updated Since Order Creation</div>
           <div style={{ fontSize: '14px' }}>
             {order.asset} is now ${orderDetails.price.toFixed(2)}
             ({orderDetails.priceChange > 0 ? '+' : ''}{orderDetails.priceChangePercent.toFixed(2)}%)
@@ -456,7 +456,7 @@ export default function OrderConfirm() {
 
       {/* Order details */}
       {order && (
-        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
+        <article className="tl-order-confirm__card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Order Details</h3>
             <div style={{
@@ -467,33 +467,33 @@ export default function OrderConfirm() {
               {order.type}
             </div>
           </div>
-        <div style={{ display: 'grid', gap: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span className="muted">Asset:</span><span style={{ fontWeight: 600 }}>{order.assetName || order.asset}</span>
+        <div className="tl-order-confirm__rows">
+          <div className="tl-order-confirm__row">
+            <span className="muted">Asset:</span><span className="tl-num">{order.assetName || order.asset}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span className="muted">Order Type:</span><span style={{ fontWeight: 600 }}>{order.fillType}</span>
+          <div className="tl-order-confirm__row">
+            <span className="muted">Order Type:</span><span className="tl-num">{order.fillType}</span>
           </div>
           {order.fillType === 'LIMIT' && (
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span className="muted">Limit Price:</span><span style={{ fontWeight: 600 }}>${order.limitPrice?.toFixed(2)}</span>
+            <div className="tl-order-confirm__row">
+              <span className="muted">Limit Price:</span><span className="tl-num">${order.limitPrice?.toFixed(2)}</span>
             </div>
           )}
           {order.fillType === 'STOP' && (
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span className="muted">Stop Price:</span><span style={{ fontWeight: 600 }}>${order.stopPrice?.toFixed(2)}</span>
+            <div className="tl-order-confirm__row">
+              <span className="muted">Stop Price:</span><span className="tl-num">${order.stopPrice?.toFixed(2)}</span>
             </div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div className="tl-order-confirm__row">
             <span className="muted">Quantity:</span>
-            <span style={{ fontWeight: 600 }}>{orderDetails ? orderDetails.quantity.toLocaleString() : '...'}</span>
+            <span className="tl-num">{orderDetails ? orderDetails.quantity.toLocaleString() : '...'}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div className="tl-order-confirm__row">
             <span className="muted">Price per Share:</span>
-            <span style={{ fontWeight: 600 }}>{priceLoading ? 'Loading...' : orderDetails ? `$${orderDetails.price.toFixed(2)}` : '...'}</span>
+            <span className="tl-num">{priceLoading ? 'Loading...' : orderDetails ? `$${orderDetails.price.toFixed(2)}` : '...'}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '1rem', borderTop: '1px solid #e9ecef' }}>
-            <span className="muted" style={{ fontWeight: 600 }}>Total {order.type === 'BUY' ? 'Cost' : 'Proceeds'}:</span>
+          <div className="tl-order-confirm__row tl-order-confirm__row--total">
+            <span className="muted tl-num">Total {order.type === 'BUY' ? 'Cost' : 'Proceeds'}:</span>
             <span style={{ fontSize: '18px', fontWeight: 700, color: order.type === 'BUY' ? '#c0392b' : '#0a7a47' }}>
               {orderDetails ? `$${orderDetails.totalValue.toFixed(2)}` : '...'}
             </span>
@@ -504,22 +504,22 @@ export default function OrderConfirm() {
 
       {/* Scheduling information */}
       {order && order.scheduledFor && (
-        <article style={{ background: '#fff3cd', border: '1px solid #f39c12', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
+        <article className="tl-order-confirm__card tl-order-confirm__card--warning">
           <h3 style={{ margin: '0 0 1rem', fontSize: '18px', fontWeight: 600, color: '#856404' }}>Scheduled Order</h3>
-          <div style={{ display: 'grid', gap: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="tl-order-confirm__rows">
+            <div className="tl-order-confirm__row">
               <span className="muted" style={{ color: '#856404' }}>Your Local Time:</span>
               <span style={{ fontWeight: 600, color: '#856404' }}>
                 {order.scheduledForLocal ? new Date(order.scheduledForLocal).toLocaleString() : new Date(order.scheduledFor).toLocaleString()}
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="tl-order-confirm__row">
               <span className="muted" style={{ color: '#856404' }}>UTC Time:</span>
               <span style={{ fontWeight: 600, color: '#856404' }}>
                 {new Date(order.scheduledFor).toLocaleString('en-US', { timeZone: 'UTC' })}
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="tl-order-confirm__row">
               <span className="muted" style={{ color: '#856404' }}>ET Time:</span>
               <span style={{ fontWeight: 600, color: '#856404' }}>
                 {new Date(order.scheduledFor).toLocaleString('en-US', { timeZone: 'America/New_York' })}
@@ -535,20 +535,20 @@ export default function OrderConfirm() {
 
       {/* Account impact */}
       {order && (
-        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
-          <h3 style={{ margin: '0 0 1rem', fontSize: '18px', fontWeight: 600 }}>Account Impact</h3>
-          <div style={{ display: 'grid', gap: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span className="muted">Current Balance:</span><span style={{ fontWeight: 600 }}>${bankBalance.toLocaleString()}</span>
+        <article className="tl-order-confirm__card">
+          <h3 >Account Impact</h3>
+          <div className="tl-order-confirm__rows">
+            <div className="tl-order-confirm__row">
+              <span className="muted">Current Balance:</span><span className="tl-num">${bankBalance.toLocaleString()}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div className="tl-order-confirm__row">
               <span className="muted">{order.type === 'BUY' ? 'Order Cost' : 'Sale Proceeds'}:</span>
               <span style={{ fontWeight: 600, color: order.type === 'BUY' ? '#c0392b' : '#0a7a47' }}>
                 {orderDetails ? `${order.type === 'BUY' ? '-' : '+'}$${orderDetails.totalValue.toFixed(2)}` : '...'}
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '1rem', borderTop: '1px solid #e9ecef' }}>
-              <span className="muted" style={{ fontWeight: 600 }}>Balance After {order.type === 'BUY' ? 'Order' : 'Sale'}:</span>
+            <div className="tl-order-confirm__row tl-order-confirm__row--total">
+              <span className="muted tl-num">Balance After {order.type === 'BUY' ? 'Order' : 'Sale'}:</span>
               <span style={{ fontSize: '16px', fontWeight: 700 }}>
                 {orderDetails ? `$${orderDetails.afterBalance.toLocaleString()}` : '...'}
               </span>
@@ -560,7 +560,7 @@ export default function OrderConfirm() {
       {/* Price fetch error */}
       {priceError && (
         <article style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, marginBottom: '1.5rem', color: '#dc2626' }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Price Error</div>
+          <div className="tl-order-confirm__notice-title">Price Error</div>
           <div style={{ fontSize: '14px' }}>{priceError}</div>
         </article>
       )}
@@ -568,7 +568,7 @@ export default function OrderConfirm() {
       {/* Status banners with richer states */}
       {executionStatus === STATUS.QUEUED && (
         <article style={{ background: '#f0f6ff', border: '1px solid #bee3f8', borderRadius: 8, marginBottom: '1.5rem', color: '#2b6cb0' }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Order Queued</div>
+          <div className="tl-order-confirm__notice-title">Order Queued</div>
           <div style={{ fontSize: '14px' }}>Your order is queued and will be submitted to the broker shortly.</div>
           {canCancel && (
             <button className="ghost pressable" onClick={handleCancelOrder} 
@@ -580,7 +580,7 @@ export default function OrderConfirm() {
       )}
       {executionStatus === STATUS.PROCESSING && (
         <article style={{ background: '#fffff0', border: '1px solid #fefcbf', borderRadius: 8, marginBottom: '1.5rem', color: '#975a16' }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Submitted to Broker</div>
+          <div className="tl-order-confirm__notice-title">Submitted to Broker</div>
           <div style={{ fontSize: '14px' }}>Order submitted and awaiting broker confirmation...</div>
           {canCancel && (
             <button className="ghost pressable" onClick={handleCancelOrder} 
@@ -592,18 +592,18 @@ export default function OrderConfirm() {
       )}
       {executionStatus === STATUS.PARTIALLY_FILLED && (
         <article style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, marginBottom: '1.5rem', color: '#166534' }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Partially Filled</div>
+          <div className="tl-order-confirm__notice-title">Partially Filled</div>
           <div style={{ fontSize: '14px' }}>Order is partially filled. Remaining shares are still active.</div>
         </article>
       )}
 
       {/* Audit timeline */}
       {auditTimeline.length > 0 && (
-        <article style={{ background: 'white', borderRadius: 16, padding: '1.5rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', marginBottom: '1.5rem' }}>
-          <h3 style={{ margin: '0 0 1rem', fontSize: '18px', fontWeight: 600 }}>Order Timeline</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <article className="tl-order-confirm__card">
+          <h3 >Order Timeline</h3>
+          <div className="tl-order-confirm__timeline">
             {auditTimeline.map((entry, index) => (
-              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div key={index} className="tl-order-confirm__timeline-row">
                 <div style={{
                   width: '8px', height: '8px', borderRadius: '50%',
                   background: entry.status === 'initiated' ? '#3b82f6' :
@@ -644,16 +644,16 @@ export default function OrderConfirm() {
                 @ ${(executionDetails.price ?? orderDetails?.price ?? latestPrice)?.toFixed(2)}
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '12px' }}>
+            <div className="tl-order-confirm__inline tl-small">
               <div>
                 <div className="muted">Total {order.type === 'BUY' ? 'Cost' : 'Proceeds'}:</div>
-                <div style={{ fontWeight: 600 }}>
+                <div className="tl-num">
                   ${((executionDetails.quantity ?? orderDetails?.quantity) * (executionDetails.price ?? orderDetails?.price ?? latestPrice)).toFixed(2)}
                 </div>
               </div>
               <div>
                 <div className="muted">Time:</div>
-                <div style={{ fontWeight: 600 }}>
+                <div className="tl-num">
                   {new Date(executionDetails.updatedAt || executionDetails.createdAt || new Date()).toLocaleTimeString('en-US', {
                     hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/New_York',
                   })} ET
@@ -665,11 +665,11 @@ export default function OrderConfirm() {
               </div>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
-            <button className="primary pressable" onClick={() => navigate('/orders')}    style={{ padding: '0.75rem', fontWeight: 600 }}>Back to Orders</button>
-            <button className="ghost pressable"   onClick={() => navigate('/portfolio')} style={{ padding: '0.75rem', fontWeight: 600 }}>View Portfolio</button>
-            <button className="ghost pressable"   onClick={() => navigate('/portfolio')} style={{ padding: '0.75rem', fontWeight: 600 }}>View Activity</button>
-            <button className="ghost pressable"   onClick={() => navigate('/orders', { state: { resetForm: true } })} style={{ padding: '0.75rem', fontWeight: 600 }}>Buy/Sell Again</button>
+          <div className="tl-order-confirm__actions">
+            <button className="primary pressable" onClick={() => navigate('/orders')}    >Back to Orders</button>
+            <button className="ghost pressable"   onClick={() => navigate('/portfolio')} >View Portfolio</button>
+            <button className="ghost pressable"   onClick={() => navigate('/portfolio')} >View Activity</button>
+            <button className="ghost pressable"   onClick={() => navigate('/orders', { state: { resetForm: true } })} >Buy/Sell Again</button>
           </div>
         </article>
       )}
@@ -685,23 +685,23 @@ export default function OrderConfirm() {
             <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Reason:</div>
             <div style={{ fontSize: '16px', marginBottom: '1rem' }}>{executionError}</div>
             {(executionError.includes('Insufficient') || executionError.includes('funds')) && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '12px' }}>
+              <div className="tl-order-confirm__inline tl-small">
                 <div><div className="muted">Requested:</div><div style={{ fontWeight: 600, color: '#c0392b' }}>${orderDetails?.totalValue?.toFixed(2) || '...'}</div></div>
                 <div><div className="muted">Available:</div><div style={{ fontWeight: 600, color: '#0a7a47' }}>${bankBalance.toLocaleString()}</div></div>
               </div>
             )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-            <button className="primary pressable" onClick={() => navigate(-1)}           style={{ padding: '0.75rem', fontWeight: 600 }}>Edit Order</button>
-            <button className="ghost pressable"   onClick={() => navigate('/orders')}    style={{ padding: '0.75rem', fontWeight: 600 }}>Back to Orders</button>
-            <button className="ghost pressable"   onClick={() => navigate('/portfolio')} style={{ padding: '0.75rem', fontWeight: 600 }}>View Portfolio</button>
+          <div className="tl-order-confirm__actions">
+            <button className="primary pressable" onClick={() => navigate(-1)}           >Edit Order</button>
+            <button className="ghost pressable"   onClick={() => navigate('/orders')}    >Back to Orders</button>
+            <button className="ghost pressable"   onClick={() => navigate('/portfolio')} >View Portfolio</button>
           </div>
         </article>
       )}
 
       {/* Footer — hidden once terminal */}
       {!isTerminal && (
-        <footer style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+        <footer className="tl-order-confirm__footer">
           <button className="ghost pressable" onClick={() => navigate(-1)}>Cancel</button>
           <button className="primary pressable" onClick={handleExecuteOrder} disabled={submitDisabled}
             style={{ fontWeight: 600, opacity: submitDisabled ? 0.5 : 1 }}>

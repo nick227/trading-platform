@@ -1,0 +1,40 @@
+/* Order Confirmation — canonical TradeLoom surface and layout contract. */
+.tl-order-confirm { width: 100%; max-width: 800px; margin: 0 auto; padding: var(--tl-gap-section) var(--tl-gutter) 72px; min-width: 0; gap: var(--tl-gap-card); }
+.tl-order-confirm--empty { max-width: 600px; text-align: center; }
+.tl-order-confirm__header { margin-bottom: var(--tl-gap-card); }
+.tl-order-confirm__title { margin: 0 0 var(--tl-gap-inline); font-size: clamp(28px, 4vw, 36px); line-height: 1.15; letter-spacing: -.025em; font-weight: 650; }
+.tl-order-confirm__card { padding: var(--tl-card-padding); margin: 0; border: 1px solid var(--tl-line); background: var(--tl-surface); border-radius: var(--tl-card-radius); box-shadow: var(--tl-shadow-sm); min-width: 0; }
+.tl-order-confirm__card--warning { background: var(--tl-warn-soft); border-color: #edcb97; color: #784200; }
+.tl-order-confirm__card--positive { background: var(--tl-pos-soft); border-color: var(--tl-pos); color: var(--tl-pos); }
+.tl-order-confirm__card--danger { background: var(--tl-neg-soft); border-color: var(--tl-neg); color: var(--tl-neg); }
+.tl-order-confirm__card--info { background: var(--tl-accent-soft); border-color: var(--tl-line-strong); color: var(--tl-ink); }
+.tl-order-confirm__card h3 { margin: 0 0 var(--tl-gap-related); font-size: 18px; line-height: 1.3; font-weight: 640; }
+.tl-order-confirm__rows { display: grid; gap: var(--tl-gap-related); min-width: 0; }
+.tl-order-confirm__row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); gap: var(--tl-gap-related); align-items: baseline; min-width: 0; }
+.tl-order-confirm__row > :last-child { text-align: right; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.tl-order-confirm__row--total { padding-top: var(--tl-gap-related); border-top: 1px solid var(--tl-line); font-weight: 650; }
+.tl-order-confirm__row strong { font-weight: 650; }
+.tl-order-confirm__actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: var(--tl-gap-inline); }
+.tl-order-confirm__actions > :is(button, a) { width: 100%; min-width: 0; }
+.tl-order-confirm__footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--tl-gap-inline); }
+.tl-order-confirm__notice-title { font-weight: 650; margin-bottom: var(--tl-gap-inline); }
+.tl-order-confirm__timeline { display: grid; gap: var(--tl-gap-related); }
+.tl-order-confirm__timeline-row { display: flex; align-items: center; gap: var(--tl-gap-related); }
+.tl-order-confirm__timeline-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--tl-muted); }
+.tl-order-confirm__timeline-dot[data-tone='positive'] { background: var(--tl-pos); }
+.tl-order-confirm__timeline-dot[data-tone='danger'] { background: var(--tl-neg); }
+.tl-order-confirm__timeline-dot[data-tone='warning'] { background: var(--tl-warn); }
+.tl-order-confirm__timeline-dot[data-tone='accent'] { background: var(--tl-accent); }
+.tl-order-confirm__inline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tl-gap-related); }
+.tl-order-confirm__inline > * { min-width: 0; }
+.tl-order-confirm .tl-num { font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+ .tl-order-confirm { padding: 24px var(--tl-page-gutter-mobile) 72px; }
+ .tl-order-confirm__card { padding: var(--tl-card-padding-compact); }
+ .tl-order-confirm__inline { grid-template-columns: minmax(0, 1fr); }
+ .tl-order-confirm__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 400px) {
+ .tl-order-confirm__row { grid-template-columns: minmax(0, 1fr); }
+ .tl-order-confirm__row > :last-child { text-align: left; }
+}
