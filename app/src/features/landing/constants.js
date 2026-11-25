@@ -1,8 +1,8 @@
 export const CARD_STYLE = {
   background: 'white',
-  borderRadius: 24,
-  padding: '1rem',
-  boxShadow: '0 8px 26px rgba(0,0,0,0.05)',
+  borderRadius: 'var(--tl-card-radius)',
+  padding: 'var(--tl-card-padding-compact)',
+  boxShadow: 'var(--tl-shadow-sm)',
 }
 
 export const SENTIMENT_COLORS = {

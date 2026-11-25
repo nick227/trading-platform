@@ -571,3 +571,18 @@
   font-size: 13px;
   color: rgba(255,255,255,0.86);
 }
+
+/* Real Research route: canonical grid geometry and single-column mobile rhythm. */
+.tl-research-page { width: 100%; max-width: 1200px; margin-inline: auto; padding: var(--tl-card-padding) var(--tl-gutter) 48px; min-width: 0; }
+.tl-research-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tl-gap-card); margin-bottom: var(--tl-gap-card); }
+.tl-research-grid--asym { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
+.tl-research-grid > * { min-width: 0; }
+@media (max-width: 980px) {
+  .tl-research-grid, .tl-research-grid--asym { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .tl-research-page { padding: var(--tl-card-padding-compact) var(--tl-page-gutter-mobile) 48px; }
+  .tl-research-page .data-row-asset { grid-template-columns: minmax(0, 64px) minmax(0, 1fr) minmax(0, 64px); gap: 8px; padding-inline: 0; }
+  .tl-research-page .data-row-ticker3 { grid-template-columns: minmax(0, 64px) minmax(0, 80px) minmax(0, 1fr); }
+  .tl-research-page .data-row-asset > *, .tl-research-page .skeleton-block { min-width: 0; max-width: 100%; }
+}

@@ -1477,3 +1477,14 @@ select.tl-input--inline { width: auto; }
   .tl-action-row--equal { grid-template-columns: minmax(0, 1fr); }
   .tl-bot-actions > .tl-btn { white-space: normal; text-align: center; }
 }
+
+/* Mobile authenticated header: avoid forcing the page wider than the viewport.
+   Trading mode remains available on the Account screen at narrow widths. */
+@media (max-width: 520px) {
+  .tl-nav-inner { width: 100%; min-width: 0; gap: 8px; }
+  .tl-nav-left { flex: 0 0 auto; min-width: 0; }
+  .tl-nav-left > .mode-badge { display: none; }
+  .tl-nav-right { flex: 0 1 auto; min-width: 0; gap: 0; }
+  .tl-nav-right .tl-nav-link { padding-inline: 6px; font-size: 13px; }
+  .tl-nav-avatar { flex: 0 0 32px; margin-left: 2px; }
+}
