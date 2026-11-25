@@ -327,6 +327,23 @@ body {
 }
 .tl-aligned-header > * { min-width: 0; }
 
+/* Canonical horizontal axes for responsive forms and fact grids. */
+.tl-responsive-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: var(--tl-gap-related);
+  align-items: start;
+}
+.tl-field-stack { display: grid; gap: var(--tl-gap-card); min-width: 0; }
+.tl-field-stack > *, .tl-responsive-fields > * { min-width: 0; }
+.tl-field-label { display: block; margin-bottom: var(--tl-gap-inline); }
+.tl-fact-rows dt, .tl-fact-rows dd { min-width: 0; }
+.tl-section-head > * { min-width: 0; }
+.tl-section-head > :last-child:not(:first-child) { margin-inline-start: auto; }
+@media (max-width: 400px) {
+  .tl-responsive-fields { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* Semantic vertical rhythm: shared flow utilities, not page-specific offsets. */
 .tl-stack-related > * + * { margin-top: var(--tl-gap-related); }
 .tl-stack-card > * + * { margin-top: var(--tl-gap-card); }
