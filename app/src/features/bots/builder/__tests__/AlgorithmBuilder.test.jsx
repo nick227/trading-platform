@@ -123,7 +123,7 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_golden_cross')
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'New bot' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Create a simulated trading bot' })).toBeInTheDocument()
     expect(screen.getByTestId('builder-summary')).toBeInTheDocument()
     expect(screen.getByText(/Buys SPY, QQQ.*at the open when the SPY trend is confirmed up/)).toBeInTheDocument()
 
