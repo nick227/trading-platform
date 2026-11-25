@@ -68,7 +68,10 @@ for (const width of [320, 375, 768, 1024, 1440]) {
       page.on('pageerror', (error) => errors.push(error.message))
       await page.goto(screen.path)
       await expect.poll(() => new URL(page.url()).pathname).toBe(screen.path)
-      await expect(page.locator('.tl-skel').first()).toBeHidden({ timeout: 10000 }).catch(() => {})
+      // Never accept a screenshot before the React app has hydrated.
+      await expect(page.locator('.tl-nav')).toBeVisible({ timeout: 10000 })
+      await expect(page.locator('main, .page.container').first()).toBeVisible({ timeout: 10000 })
+      await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 10000 })
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1)
       await expect(page.locator('body')).not.toContainText('Something went wrong')
       expect(errors).toEqual([])
