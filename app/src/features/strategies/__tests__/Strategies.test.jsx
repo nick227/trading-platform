@@ -102,6 +102,20 @@ describe('AI strategy presentation', () => {
     expect(screen.getByTestId('tested-definition')).not.toHaveTextContent('Buys each symbol')
   })
 
+  it('does not imply execution is planned when AI proposed no orders', async () => {
+    get.mockImplementation(async (path) => path.includes('/decisions')
+      ? { decisions: [{ id: 'd1', metadata: {
+        asOfSession: '2026-11-20', intendedExecutionSession: '2026-11-23',
+        symbolEvaluations: [{ symbol: 'SPY', action: 'HOLD', thesis: 'No entry.' }],
+        selectedDecisions: [],
+      } }] }
+      : aiStrategy)
+    render(<MemoryRouter initialEntries={['/strategies/tmpl_ai_catalyst_momentum']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByText(/No orders proposed/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Research' }))
+    expect(screen.queryByText('Proposed for')).not.toBeInTheDocument()
+  })
+
   it('distinguishes unavailable decisions from no decisions', async () => {
     get.mockImplementation(async (path) => {
       if (path.includes('/decisions')) throw new Error('Unavailable')
