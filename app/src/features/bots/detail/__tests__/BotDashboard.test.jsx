@@ -409,7 +409,7 @@ describe('Progressive disclosure', () => {
   it('loads rules only when technical details are opened', async () => {
     mockApi({ rules: [{ id: 'r1', name: 'Market hours', type: 'market_hours', enabled: true }] })
     renderPage()
-    const toggle = await screen.findByRole('button', { name: 'Technical details' })
+    const toggle = await screen.findByRole('button', { name: 'Details' })
     expect(get.mock.calls.some(([p]) => p === '/bots/bot_1/rules')).toBe(false)
     fireEvent.click(toggle)
     expect(await screen.findByTestId('rules-list')).toHaveTextContent('Market hours')
