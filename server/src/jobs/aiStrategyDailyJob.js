@@ -26,12 +26,39 @@ import {
 } from '../services/ai/aiBotService.js'
 import { generateStrategyEvidence } from '../services/strategyEvidenceService.js'
 
+/**
+ * Calculates the expected completed trading session (America/New_York)
+ * based on wall-clock market close (16:30 ET).
+ */
+export function getExpectedCompletedTradingSession(now = new Date()) {
+  const nyDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+  const nyHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10)
+  const nyMinutes = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', minute: '2-digit' }), 10)
+
+  const d = new Date(nyDateStr + 'T12:00:00Z')
+  const dayOfWeek = d.getUTCDay() // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  const isPostClose = nyHour > 16 || (nyHour === 16 && nyMinutes >= 30)
+
+  let daysToSubtract = 0
+  if (dayOfWeek === 0) { // Sunday -> Friday
+    daysToSubtract = 2
+  } else if (dayOfWeek === 6) { // Saturday -> Friday
+    daysToSubtract = 1
+  } else if (!isPostClose) {
+    daysToSubtract = (dayOfWeek === 1) ? 3 : 1
+  }
+
+  const expectedDate = new Date(d.getTime() - daysToSubtract * 86_400_000)
+  return expectedDate.toISOString().slice(0, 10)
+}
+
 export async function runAiStrategyDailyJob({
   templateId = 'tmpl_ai_catalyst_momentum',
   session = null,
   force = false,
   dryRun = false,
   providerName = 'openai',
+  now = new Date(),
   prismaClient = prisma,
   engine = engineClient
 } = {}) {
@@ -44,7 +71,7 @@ export async function runAiStrategyDailyJob({
   if (!activeSession) {
     try {
       const end = new Date().toISOString().slice(0, 10)
-      const start = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10)
+      const start = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
       const barsRes = await engine.getDailyBars('SPY', start, end)
       const bars = Array.isArray(barsRes?.bars) ? barsRes.bars : []
       if (bars.length) {
@@ -61,6 +88,26 @@ export async function runAiStrategyDailyJob({
       ok: true,
       skipped: true,
       reason: 'fresh_market_data_unavailable'
+    }
+  }
+
+  // Market Data Freshness Validation: In autonomous forward mode, verify bar recency
+  if (!session && !force) {
+    const expectedSession = getExpectedCompletedTradingSession(now)
+    const expectedTime = new Date(expectedSession + 'T12:00:00Z').getTime()
+    const activeTime = new Date(activeSession + 'T12:00:00Z').getTime()
+    const ageDiffDays = Math.round((expectedTime - activeTime) / 86_400_000)
+
+    if (ageDiffDays > 4) {
+      console.warn(`[ai_daily_job] Market data is stale (latest bar is ${activeSession}, expected ${expectedSession}, ${ageDiffDays} days old). Skipping daily research cycle.`)
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'stale_market_data',
+        latestBarDate: activeSession,
+        expectedSession,
+        ageDiffDays
+      }
     }
   }
 

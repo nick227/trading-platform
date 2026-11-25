@@ -227,6 +227,7 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     expect(filledBuy.direction).toBe('buy')
     expect(filledBuy.session).toBe('2026-10-08')
     expect(filledBuy.fillPrice).toBeCloseTo(230.48, 1) // actual 2026-10-08 close
+    expect(filledBuy.brokerOrderId).toMatch(/^sim(replay|daily)_/)
 
     // Verify position is now open (using includeReplay: true for historical replay tests)
     const midEquity = await computeAiBotForwardEquity(canonicalBot.id, {
@@ -285,6 +286,7 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     expect(filledSell.direction).toBe('sell')
     expect(filledSell.session).toBe('2026-10-15')
     expect(filledSell.fillPrice).toBeCloseTo(217.23, 1) // actual 2026-10-15 close
+    expect(filledSell.brokerOrderId).toMatch(/^sim(replay|daily)_/)
     expect(filledSell.pnl).not.toBe(0) // Realized FIFO loss recorded cleanly
 
     // -------------------------------------------------------------------------
@@ -409,5 +411,131 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     const filledExec = await prisma.execution.findUnique({ where: { id: testExecId } })
     expect(filledExec.status).toBe('filled')
     expect(filledExec.filledPrice).toBeGreaterThan(0)
+  })
+
+  it('enforces request-level atomic claim mutex and order-intent idempotency', { timeout: 60_000 }, async () => {
+    // 1st run of executeAiStrategyCycle on 2026-10-07
+    const cycle1 = await executeAiStrategyCycle({
+      botId: canonicalBot.id,
+      session: '2026-10-07',
+      providerName: TEST_PROVIDER,
+      prismaClient: prisma,
+      engine: engineClient
+    })
+
+    expect(cycle1.ok).toBe(true)
+    expect(cycle1.createdExecutions.length).toBe(1)
+
+    // 2nd run with identical input: LLM response is reused from cache, and NO duplicate orders are queued
+    const cycle2 = await executeAiStrategyCycle({
+      botId: canonicalBot.id,
+      session: '2026-10-07',
+      providerName: TEST_PROVIDER,
+      prismaClient: prisma,
+      engine: engineClient
+    })
+
+    expect(cycle2.ok).toBe(true)
+    expect(cycle2.cached).toBe(true)
+    expect(cycle2.avoidedCallsCount).toBe(1)
+    // Order-intent idempotency: clientOrderId and activeIntentKey prevent duplicate execution rows
+    expect(cycle2.createdExecutions.length).toBe(0)
+
+    // Verify events recorded in database: claim event has cached: true and avoidedCallsCount: 1
+    const claimEvents = await prisma.botEvent.findMany({
+      where: { botId: canonicalBot.id, id: { startsWith: 'req_ai_' } }
+    })
+    expect(claimEvents.length).toBe(1)
+    expect(claimEvents[0].metadata?.cached).toBe(true)
+    expect(claimEvents[0].metadata?.avoidedCallsCount).toBe(1)
+  })
+
+  it('automatically triggers AI protective exit (stop_loss) on held open position', { timeout: 60_000 }, async () => {
+    // Create a held open position for NVDA bought at $230.48
+    const testBuyId = `exec_held_nvda_${Date.now()}`
+    await prisma.execution.create({
+      data: {
+        id: testBuyId,
+        userId: canonicalBot.userId,
+        portfolioId: canonicalBot.portfolioId,
+        botId: canonicalBot.id,
+        ticker: 'NVDA',
+        direction: 'buy',
+        quantity: 10,
+        price: 230.48,
+        filledPrice: 230.48,
+        filledQuantity: 10,
+        brokerOrderId: `simreplay_2026-10-08_${testBuyId}`,
+        brokerStatus: 'filled',
+        filledAt: new Date('2026-10-08T20:00:00Z'),
+        origin: 'bot',
+        sourceType: 'AI_REPLAY',
+        status: 'filled',
+        simSession: '2026-10-08',
+        clientOrderId: `co_held_nvda_${Date.now()}`,
+        commission: 0,
+        fees: 0,
+        pnl: 0
+      }
+    })
+
+    // On session 2026-10-15, NVDA close price in Alpha Engine is $217.23 (-5.75% drop, <= -4% stop-loss)
+    const res = await processPendingAiExecutions(canonicalBot.id, {
+      currentSession: '2026-10-15',
+      prismaClient: prisma,
+      engine: engineClient
+    })
+
+    expect(res.exitExecutions).toBeDefined()
+    expect(res.exitExecutions.length).toBe(1)
+    const exit = res.exitExecutions[0]
+    expect(exit.ticker).toBe('NVDA')
+    expect(exit.direction).toBe('sell')
+    expect(exit.exitType).toBe('stop_loss')
+    expect(exit.returnPct).toBeLessThan(-4.0)
+    expect(exit.fillPrice).toBeCloseTo(217.23, 1)
+    expect(exit.pnl).toBeCloseTo(-132.50, 1)
+    expect(exit.brokerOrderId).toMatch(/^sim(replay|daily)_/)
+
+    // Verify rule_triggered BotEvent was recorded
+    const exitEvent = await prisma.botEvent.findFirst({
+      where: { botId: canonicalBot.id, type: 'rule_triggered' }
+    })
+    expect(exitEvent).toBeDefined()
+    expect(exitEvent.metadata.ticker).toBe('NVDA')
+    expect(exitEvent.metadata.exitType).toBe('stop_loss')
+
+    // Repeated call on the same session must NOT create duplicate exit executions
+    const res2 = await processPendingAiExecutions(canonicalBot.id, {
+      currentSession: '2026-10-15',
+      prismaClient: prisma,
+      engine: engineClient
+    })
+    expect(res2.exitExecutions.length).toBe(0)
+  })
+
+  it('detects stale market data and skips research cycle in autonomous mode', async () => {
+    const mockEngineStale = {
+      getDailyBars: async () => ({
+        bars: [
+          ['2026-10-01', 570, 575, 568, 572, 1000000] // Stale bar from October 1
+        ]
+      })
+    }
+
+    const job = await runAiStrategyDailyJob({
+      templateId: 'tmpl_ai_catalyst_momentum',
+      session: null, // forces dynamic discovery
+      now: new Date('2026-11-20T22:00:00Z'), // 5:00 PM ET on 2026-11-20 (post close, expected session is 2026-11-20)
+      prismaClient: prisma,
+      engine: mockEngineStale
+    })
+
+    expect(job.ok).toBe(true)
+    expect(job.skipped).toBe(true)
+    expect(job.reason).toBe('stale_market_data')
+    expect(job.latestBarDate).toBe('2026-10-01')
+    expect(job.expectedSession).toBe('2026-11-20')
+    expect(job.ageDiffDays).toBeGreaterThan(4)
   })
 })
