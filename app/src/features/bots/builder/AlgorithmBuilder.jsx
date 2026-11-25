@@ -382,9 +382,9 @@ export default function AlgorithmBuilder() {
       )}
 
       <form ref={formRef} onSubmit={handleSubmit} noValidate>
-        <section className="tl-algorithm" aria-label="Your algorithm">
+        <section className="tl-algorithm" aria-label="Strategy">
           <header className="tl-algorithm-head">
-            <span className="tl-algorithm-heading-identity"><AlgorithmIdentity bot={builtBot} compact /><span><span className="tl-builder-summary-label">Your algorithm</span><span className="tl-algorithm-family">{algorithmIdentity(builtBot).label}</span></span></span>
+            <span className="tl-algorithm-heading-identity"><AlgorithmIdentity bot={builtBot} compact /><span><span className="tl-algorithm-family">{algorithmIdentity(builtBot).label}</span></span></span>
             <span className="tl-algorithm-status" role="status">{isEdit ? hasChanges ? 'Unsaved changes' : 'Saved configuration' : 'Draft'}</span>
           </header>
           <AlgorithmStep label="Name" summary={draft.name || 'Name your bot'} open={activeStep === 'name'} onToggle={() => openStep('name')} testId="section-name" quiet>
@@ -942,7 +942,7 @@ export default function AlgorithmBuilder() {
               {/* Advanced Research bounds (when research is active) */}
               {draft.triggerType === 'alpha_research' && draft.research && (
                 <div style={{ borderTop: '1px solid var(--tl-line)', paddingTop: 16, marginTop: 4, display: 'grid', gap: 14 }}>
-                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Alpha Engine research policy</h4>
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Research limits</h4>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 14 }}>
                     <Field
                       label="Maximum prediction age"

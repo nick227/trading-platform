@@ -28,10 +28,10 @@ const evidence = [
   { templateId: 'tmpl_research', asOf: '2026-11-20', windows: { '5Y': { status: 'not_backtestable', symbolsTested: 0 }, '1Y': { status: 'not_backtestable', symbolsTested: 0 }, forward: { status: 'not_backtestable', symbolsTested: 0 } } },
 ]
 
-function mockApi({ bots = [], platformRows = platform } = {}) {
+function mockApi({ bots = [], platformRows = platform, catalogData = catalog, evidenceRows = evidence } = {}) {
   get.mockImplementation(async (path, params = {}) => {
-    if (path === '/public/strategies') return evidence
-    if (path === '/bots/catalog') return catalog
+    if (path === '/public/strategies') return evidenceRows
+    if (path === '/bots/catalog') return catalogData
     if (path === '/strategies/platform') { if (platformRows instanceof Error) throw platformRows; return platformRows }
     if (path === '/bots') return bots
     if (path === '/executions') return []
@@ -45,12 +45,32 @@ const renderPage = (path = '/bots') => render(<MemoryRouter initialEntries={[pat
 beforeEach(() => vi.clearAllMocks())
 
 describe('BotsPage', () => {
+  it('shows AI starting points as forward paper and does not offer unsupported customization', async () => {
+    const ai = { id: 'tmpl_ai_catalyst_momentum', name: 'AI Momentum & Technical Breakout',
+      botType: 'strategy_based', config: { signalSource: 'ai_catalyst_momentum' }, rules: [] }
+    mockApi({
+      catalogData: { ruleBased: [], strategyBased: [ai] },
+      platformRows: [],
+      evidenceRows: [{ templateId: ai.id, windows: {
+        '5Y': { status: 'not_backtestable' },
+        forward: { status: 'awaiting_sessions' },
+      } }],
+    })
+    renderPage()
+    const [card] = await screen.findAllByTestId('featured-bot')
+    expect(within(card).getByTestId('featured-evidence')).toHaveTextContent('Awaiting new sessionsForward paper')
+    expect(within(card).getByTestId('featured-evidence')).not.toHaveTextContent('Backtest')
+    fireEvent.click(within(card).getByRole('button', { name: /AI Momentum/ }))
+    expect(within(card).queryByRole('link', { name: 'Customize' })).not.toBeInTheDocument()
+    expect(within(card).getByText('Workshop unavailable')).toBeInTheDocument()
+  })
+
   it('leads each starting point with its standardized platform backtest, including non-results', async () => {
     mockApi()
     renderPage()
     const [dca, research] = await screen.findAllByTestId('featured-bot')
     expect(dca).toHaveTextContent('Buys a stock you choose on a fixed schedule — once every day, whatever the price.')
-    expect(within(dca).getByTestId('featured-evidence')).toHaveTextContent('+31.20% median vs +88.50% buy & holdPlatform backtest · 5 years · 10 symbols')
+    expect(within(dca).getByTestId('featured-evidence')).toHaveTextContent('+31.20% median vs +88.50% buy & holdBacktest · 5 years · 10 symbols')
     // Users' paper fills are not a headline (2 fills on one day): no P&L in the row.
     expect(dca.querySelector('.tl-featured-row').textContent).not.toMatch(/\$52/)
     expect(within(research).getByTestId('featured-evidence')).toHaveTextContent('Not backtestable')
@@ -65,9 +85,9 @@ describe('BotsPage', () => {
     expect(within(dca).getByText('At most one trade per symbol per day')).toBeInTheDocument()
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Last year: −2.10% median vs +4.00% buy & hold')
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Since published: Awaiting new sessions')
-    expect(within(dca).getByRole('link', { name: /Full evidence/ })).toHaveAttribute('href', '/strategies/tmpl_dca')
-    expect(within(dca).getByTestId('featured-results')).toHaveTextContent('Too early to judge. 2 simulated fills from 1 bot on Nov 19, 0 closed trades (−$52.12 at the Nov 20 close). Results are shown once there are 5 closed trades across 5 sessions.')
-    expect(within(dca).getByRole('link', { name: 'Start from this' })).toHaveAttribute('href', '/bots/new?template=tmpl_dca')
+    expect(within(dca).getByRole('link', { name: /Results and methodology/ })).toHaveAttribute('href', '/strategies/tmpl_dca')
+    expect(within(dca).getByTestId('featured-results')).toHaveTextContent('Too early to judge. 2 simulated fills from 1 bot on Nov 19, 0 closed trades (−$52.12 at the Nov 20 close). At least 5 closed trades across 5 sessions required.')
+    expect(within(dca).getByRole('link', { name: 'Customize' })).toHaveAttribute('href', '/bots/new?template=tmpl_dca')
   })
 
   it('opens a featured bot from a deep link and shows its research as historical replay', async () => {
@@ -75,7 +95,7 @@ describe('BotsPage', () => {
     renderPage('/bots?featured=tmpl_research')
     const research = await screen.findByTestId('featured-research')
     expect(research).toHaveTextContent('Holdout hit rate 48.7% vs 50.3% always-up baseline (−1.6 pts)')
-    expect(research).toHaveTextContent('No proven edge')
+    expect(research).toHaveTextContent('No verified edge')
     expect(research).toHaveTextContent('Historical replay research, separate from the results above.')
     expect(research).toHaveTextContent('Research is an input you can test, not a recommendation.')
   })

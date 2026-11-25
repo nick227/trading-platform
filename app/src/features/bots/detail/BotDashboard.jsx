@@ -41,7 +41,7 @@ function WhatItDoes({ bot }) {
       <p className="tl-lead-sentence">{describeAction(bot)}</p>
       <ul className="tl-rule-list" data-testid="rule-summary">{describeGuards(bot).map((g) => <li key={g}>{g}</li>)}</ul>
       <div style={{ marginTop: 14 }}>
-        <Disclosure label="Platform risk guardrails" testId="risk-guardrails">
+        <Disclosure label="Risk limits" testId="risk-guardrails">
           <ul className="tl-backtest-notes">
             <li><strong>Volume &amp; liquidity:</strong> Orders are held when symbol trading volume is thin or below average.</li>
             <li><strong>Allocation limit:</strong> Total open holdings are strictly capped by this bot’s capital allocation ({bot.allocation ? money(bot.allocation) : 'unlimited'}).</li>
@@ -78,7 +78,7 @@ function WhatItSees({ bot, timeline }) {
   return (
     <section className="tl-section" aria-labelledby="seeing-title">
       <div className="tl-section-head">
-        <h2 className="tl-section-title" id="seeing-title">Watching</h2>
+        <h2 className="tl-section-title" id="seeing-title">Market data</h2>
         
       </div>
       <table className="tl-table" data-testid="watching">
@@ -219,16 +219,16 @@ export function LatestBacktest({ botId }) {
     <div className="tl-section-note" data-testid="latest-backtest" style={{ marginTop: 16, padding: '12px 14px', background: 'var(--tl-surface-2)', borderRadius: '8px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <span>
-          <span className="tl-tag">Historical expectation</span>{' '}
-          Backtest {sessionDate(run.startDate, { year: true })} – {sessionDate(run.endDate, { year: true })}{run.executionModel === 'same_close' ? ' (same-close fills)' : ''}:{' '}
+          <span className="tl-tag">Historical backtest</span>{' '}
+          {sessionDate(run.startDate, { year: true })} – {sessionDate(run.endDate, { year: true })}{run.executionModel === 'same_close' ? ' (same-close fills)' : ''}:{' '}
           <strong className={tone(m.returnPct)}>{pct(m.returnPct)}</strong> vs buy &amp; hold {pct(run.results?.buyAndHold?.returnPct)}
           {m.maxDrawdown ? ` · max drawdown ${m.maxDrawdown.pct?.toFixed(2)}%` : ''}
           {m.winRate !== null && m.winRate !== undefined ? ` · ${Math.round(m.winRate * 100)}% of closed trades won` : ''}.
         </span>
-        <Link to={`/bots/${botId}/edit`} className="tl-small" style={{ fontWeight: 550 }}>Workshop backtest →</Link>
+        <Link to={`/bots/${botId}/edit`} className="tl-small" style={{ fontWeight: 550 }}>Run backtest →</Link>
       </div>
       <p className="tl-small tl-muted" style={{ margin: '6px 0 0' }}>
-        Historical backtest simulations model idealized past market conditions and do not establish guaranteed risk bounds. Live paper trading reflects actual daily session fills, slippage and prevailing market liquidity.
+        Historical simulation. Results do not predict future performance.
       </p>
     </div>
   )
@@ -289,8 +289,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
         </dl>
       ) : (
         <p className="tl-section-note" data-testid="performance-unavailable" style={{ fontSize: 14.5 }}>
-          No trades yet. It may spend up to <span data-testid="capital-allocation">{bot.allocation !== null ? money(bot.allocation) : 'its capital'}</span>
-          {bot.maxPerOrder !== null ? `, at most ${money(bot.maxPerOrder)} per order` : ''}.
+          No trades yet.
           <span data-testid="fill-summary" className="tl-visually-hidden">{fills ? plural(fills.filledOrders, 'fill') : ''}</span>
         </p>
       )}
@@ -327,7 +326,7 @@ function AdvancedDetails({ bot }) {
   const [rules, setRules] = useState(undefined) // undefined = not loaded, null = unavailable
   return (
     <div className="tl-section" style={{ marginTop: 40 }}>
-      <Disclosure label="Technical details" onOpen={() => loadBotRules(bot.id).then(setRules)} testId="technical-details">
+      <Disclosure label="Details" onOpen={() => loadBotRules(bot.id).then(setRules)} testId="technical-details">
         <div className="tl-evidence-body">
           <dl>
             <dt>Starting point</dt><dd>{bot.strategyName ?? bot.templateId ?? 'Custom'}</dd>
@@ -373,8 +372,8 @@ function StopSheet({ bot, onClose, onStopped }) {
         </>
       }
     >
-      <p style={{ margin: 0 }}>The bot stops for good and won’t place new orders. Its history stays here.</p>
-      <p className="tl-help" style={{ marginTop: 8 }}>It doesn’t cancel orders already sent or sell what it bought. If you only want a break, pause it instead.</p>
+      <p style={{ margin: 0 }}>The bot will stop placing new orders. Its history remains.</p>
+      <p className="tl-help" style={{ marginTop: 8 }}>Existing orders and holdings remain unchanged.</p>
       {error && <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 12 }}>{error}</div>}
     </Sheet>
   )

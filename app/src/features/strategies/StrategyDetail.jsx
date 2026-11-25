@@ -86,6 +86,8 @@ export default function StrategyDetail() {
 
   const def = s.definition
   const guards = describeGuards({ config: def.config, rules: def.rules })
+  const isAi = s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum'
+  const windows = strategyWindowOptions(s.standard?.windows ?? ['5Y', '1Y', 'forward'], s.design, { forwardOnly: isAi })
   return (
     <main className="tl-page" data-testid="strategy-detail">
       <p className="tl-small"><Link to="/strategies">← Strategies</Link></p>
@@ -102,13 +104,13 @@ export default function StrategyDetail() {
 
           </p>
         </div>
-        <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link>
+        {!isAi && <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link>}
       </header>
 
       {!s.version.current && (
         <div className="tl-notice" data-testid="earlier-version">An earlier version of this strategy, kept with its results for the record. <Link to={`/strategies/${encodeURIComponent(s.templateId)}`}>See the current version</Link></div>
       )}
-      {!s.version.backtestable && <div className="tl-notice" data-testid="not-backtestable">{s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum' ? 'Forward paper only' : s.version.reason || 'Not backtestable'}</div>}
+      {!s.version.backtestable && !isAi && <div className="tl-notice" data-testid="not-backtestable">{s.version.reason || 'Not backtestable'}</div>}
       {s.design && (
         <Disclosure label="Details" testId="strategy-design">
           <dl className="tl-facts">
@@ -123,10 +125,11 @@ export default function StrategyDetail() {
       <section className="tl-section" aria-labelledby="results-title">
         <div className="tl-section-head">
           <h2 className="tl-section-title" id="results-title">{STRATEGY_COPY.results}</h2>
-          <div className="tl-seg" role="group" aria-label="Window">
-            {strategyWindowOptions(s.standard?.windows ?? ['5Y', '1Y', 'forward'], s.design, { forwardOnly: s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum' })
-              .map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w] ?? w}</button>)}
-          </div>
+          {windows.length > 1 ? (
+            <div className="tl-seg" role="group" aria-label="Window">
+              {windows.map((w) => <button key={w} type="button" aria-pressed={win === w} onClick={() => setWin(w)}>{WINDOW_LABELS[w] ?? w}</button>)}
+            </div>
+          ) : <span className="tl-small tl-muted">{isAi ? 'Forward paper' : WINDOW_LABELS[windows[0]] ?? windows[0]}</span>}
         </div>
         <Summary s={s.summary?.[win]} />
 
@@ -227,14 +230,15 @@ export default function StrategyDetail() {
 
       <section className="tl-section" aria-labelledby="def-title">
         <div className="tl-section-head"><h2 className="tl-section-title" id="def-title">{STRATEGY_COPY.settings}</h2></div>
+        {isAi && (
+          <dl className="tl-facts" aria-label="AI strategy limits">
+            <dt>Paper capital</dt><dd>{moneyWhole(def.config.allocatedAmount ?? 10000)}</dd>
+            <dt>Max per order</dt><dd>{moneyWhole(def.config.maxOrderNotional ?? 2000)}</dd>
+            <dt>Schedule</dt><dd>Daily after close</dd>
+          </dl>
+        )}
         <ul className="tl-rule-list" data-testid="tested-definition">
-          {(s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum') ? (
-            <>
-              <li>{moneyWhole(def.config.allocatedAmount ?? 10000)} simulated capital</li>
-              <li>Up to {moneyWhole(def.config.maxOrderNotional ?? 2000)} per order</li>
-              <li>Evaluated daily after market close</li>
-            </>
-          ) : <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>}
+          {!isAi && <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>}
           {guards.map((g) => <li key={g}>{g}</li>)}
           {def.parameters?.triggerPrice === 'close_before_window' && <li>Trigger price: the symbol’s close on the last session before the test window (standardized; shown per result)</li>}
         </ul>
