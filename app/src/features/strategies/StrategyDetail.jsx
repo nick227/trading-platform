@@ -6,7 +6,7 @@ import ValueChart from '../../ui/ValueChart'
 import { describeGuards } from '../../ui/describeBot'
 import { money, moneyWhole, plural, sessionDate, tone } from '../../ui/format'
 import pageTitleService from '../../services/pageTitleService'
-import { WINDOW_LABELS, loadPublicStrategy, pctText, summaryLine } from './strategiesApi'
+import { WINDOW_LABELS, loadPublicStrategy, pctText } from './strategiesApi'
 import { STRATEGY_COPY, decisionCounts, decisionLabel, strategyDisplayName, strategyWindowOptions } from '../../ui/strategyPresentation'
 import { PageIdentity, ContentSection, ContentState, FactGrid, TechnicalDetail } from '../../components/content/ContentBlocks'
 import { strategyOverview, evidenceState, decisionState, uniqueStatements, describeEvaluationTiming } from '../../ui/contentPresentation'
@@ -127,7 +127,7 @@ export default function StrategyDetail() {
             </div>
           ) : null}
         </div>
-        <Summary s={s.summary?.[win] ? { ...s.summary[win], window: win } : { window: win, status: 'awaiting_sessions' }} />
+        <Summary s={s.summary?.[win] ? { ...s.summary[win], window: win } : { window: win, status: win === 'forward' ? 'awaiting_sessions' : 'unavailable' }} />
 
 
 
@@ -224,7 +224,7 @@ export default function StrategyDetail() {
         </section>
       )}
 
-      <ContentSection title="Trading limits & schedule" description="What the strategy is permitted to do and when it evaluates trades.">
+      <ContentSection title="Trading limits & schedule" description="What the strategy is permitted to do and when it evaluates trades." testId="tested-definition">
         {isAi && <FactGrid label="AI trading limits" items={[
           { key: 'capital', label: 'Starting simulated capital', value: moneyWhole(def.config.allocatedAmount ?? 10000) },
           { key: 'order', label: 'Maximum per order', value: moneyWhole(def.config.maxOrderNotional ?? 2000) },
@@ -236,7 +236,7 @@ export default function StrategyDetail() {
         })).length > 0 && (
           <div className="tl-content-rule-group">
             <h3 className="tl-content-subheading">Trading conditions & safeguards</h3>
-            <ul className="tl-rule-list" data-testid="tested-definition">
+            <ul className="tl-rule-list">
               {!isAi && <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>}
               {uniqueStatements(describeGuards({
                 config: isAi ? { ...def.config, allocatedAmount: null, maxOrderNotional: null } : def.config,
