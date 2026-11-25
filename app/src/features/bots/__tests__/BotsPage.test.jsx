@@ -62,7 +62,7 @@ describe('BotsPage', () => {
     expect(within(card).getByTestId('featured-evidence')).not.toHaveTextContent('Backtest')
     fireEvent.click(within(card).getByRole('button', { name: /AI Momentum/ }))
     expect(within(card).queryByRole('link', { name: 'Customize' })).not.toBeInTheDocument()
-    expect(within(card).getByText('Not available in Workshop.')).toBeInTheDocument()
+    expect(within(card).getByText('Workshop unavailable')).toBeInTheDocument()
   })
 
   it('leads each starting point with its standardized platform backtest, including non-results', async () => {
