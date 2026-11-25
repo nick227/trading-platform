@@ -167,54 +167,170 @@ export async function executeAiStrategyCycle({
   let wasCached = false
   let avoidedCallsCount = 0
 
-  // Check if an event with this exact fingerprint already completed
-  const existingCompleted = await prismaClient.botEvent.findUnique({
+  // 1. Check if an event with this exact fingerprint already completed
+  const existingClaim = await prismaClient.botEvent.findUnique({
     where: { id: claimEventId }
   })
 
-  if (existingCompleted && existingCompleted.metadata?.symbolEvaluations) {
+  if (existingClaim && existingClaim.metadata?.symbolEvaluations) {
     llmResponse = {
-      model: existingCompleted.metadata.model,
-      provider: existingCompleted.metadata.provider || providerName,
-      usage: existingCompleted.metadata.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      model: existingClaim.metadata.model,
+      provider: existingClaim.metadata.provider || providerName,
+      usage: existingClaim.metadata.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       structured: {
         asOfSession,
-        marketSummary: existingCompleted.metadata.marketSummary,
-        symbolEvaluations: existingCompleted.metadata.symbolEvaluations,
-        selectedDecisions: existingCompleted.metadata.selectedDecisions
+        marketSummary: existingClaim.metadata.marketSummary,
+        symbolEvaluations: existingClaim.metadata.symbolEvaluations,
+        selectedDecisions: existingClaim.metadata.selectedDecisions
       },
       cached: true
     }
     wasCached = true
     avoidedCallsCount = 1
   } else {
-    // Atomically reserve claim before invoking external API to prevent concurrent duplicate calls
-    try {
-      await prismaClient.botEvent.create({
-        data: {
-          id: claimEventId,
-          botId: activeBotId,
-          portfolioId: portfolio.id,
-          type: 'signal_hold',
-          detail: `AI Research Request Claim [${asOfSession}]: in_progress`,
-          metadata: {
-            inputFingerprint,
-            status: 'in_progress',
-            claimedAt: new Date().toISOString()
+    // Atomic claim: try to insert the claim lock
+    let wonClaim = false
+
+    if (!existingClaim) {
+      try {
+        await prismaClient.botEvent.create({
+          data: {
+            id: claimEventId,
+            botId: activeBotId,
+            portfolioId: portfolio.id,
+            type: 'signal_hold',
+            detail: `AI Research Request Claim [${asOfSession}]: in_progress`,
+            metadata: {
+              inputFingerprint,
+              status: 'in_progress',
+              claimedAt: new Date().toISOString(),
+              recoveryAttempts: 0
+            }
           }
-        }
-      })
-    } catch (claimErr) {
-      // Concurrently claimed or existing
-      console.warn(`[aiBotService] Request claim notice for ${claimEventId}: ${claimErr.message}`)
+        })
+        wonClaim = true
+      } catch (createErr) {
+        // Lost concurrent insert race; another worker created the claim lock
+        wonClaim = false
+      }
     }
 
-    const provider = getProvider(providerName)
-    llmResponse = await provider.completeStructured({
-      systemPrompt,
-      userPrompt,
-      temperature: 0.2
-    })
+    if (!wonClaim) {
+      // Another worker owns or claimed this request. A worker that loses the claim MUST NEVER call OpenAI!
+      const currentClaim = await prismaClient.botEvent.findUnique({
+        where: { id: claimEventId }
+      })
+
+      if (currentClaim?.metadata?.symbolEvaluations) {
+        // The other worker finished while we checked; reuse completed response
+        llmResponse = {
+          model: currentClaim.metadata.model,
+          provider: currentClaim.metadata.provider || providerName,
+          usage: currentClaim.metadata.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          structured: {
+            asOfSession,
+            marketSummary: currentClaim.metadata.marketSummary,
+            symbolEvaluations: currentClaim.metadata.symbolEvaluations,
+            selectedDecisions: currentClaim.metadata.selectedDecisions
+          },
+          cached: true
+        }
+        wasCached = true
+        avoidedCallsCount = 1
+      } else {
+        // Inspect claim age for abandoned claim detection
+        const claimedAtMs = new Date(currentClaim?.metadata?.claimedAt || currentClaim?.createdAt || 0).getTime()
+        const ageMs = Date.now() - claimedAtMs
+        const isAbandoned = ageMs > 180_000 // 3 minutes timeout for a crashed worker
+
+        if (!isAbandoned) {
+          // Request is actively in progress by another worker. Wait briefly up to 3 seconds
+          let resolvedWhileWaiting = false
+          for (let attempt = 0; attempt < 6; attempt++) {
+            await new Promise(r => setTimeout(r, 500))
+            const check = await prismaClient.botEvent.findUnique({ where: { id: claimEventId } })
+            if (check?.metadata?.symbolEvaluations) {
+              llmResponse = {
+                model: check.metadata.model,
+                provider: check.metadata.provider || providerName,
+                usage: check.metadata.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                structured: {
+                  asOfSession,
+                  marketSummary: check.metadata.marketSummary,
+                  symbolEvaluations: check.metadata.symbolEvaluations,
+                  selectedDecisions: check.metadata.selectedDecisions
+                },
+                cached: true
+              }
+              wasCached = true
+              avoidedCallsCount = 1
+              resolvedWhileWaiting = true
+              break
+            }
+          }
+
+          if (!resolvedWhileWaiting) {
+            // Still in progress: exit cleanly without calling OpenAI
+            console.log(`[aiBotService] Request ${claimEventId} is currently in progress by another worker. Skipping duplicate call.`)
+            return {
+              ok: true,
+              inProgress: true,
+              skipped: true,
+              reason: 'concurrent_request_in_progress',
+              claimEventId,
+              asOfSession,
+              botId: activeBotId,
+              createdExecutions: [],
+              rejectedOrders: []
+            }
+          }
+        } else {
+          // Controlled recovery of abandoned claim
+          const recoveryAttempts = Number(currentClaim?.metadata?.recoveryAttempts) || 0
+          if (recoveryAttempts >= 1) {
+            console.warn(`[aiBotService] Abandoned claim ${claimEventId} exceeded recovery limit. Failing closed.`)
+            await prismaClient.botEvent.update({
+              where: { id: claimEventId },
+              data: {
+                type: 'strategy_error',
+                detail: `AI Research Request Claim [${asOfSession}]: abandoned claim timed out`,
+                metadata: { ...currentClaim.metadata, status: 'abandoned_failed' }
+              }
+            })
+            return {
+              ok: false,
+              error: 'abandoned_claim_timeout',
+              claimEventId,
+              asOfSession
+            }
+          }
+
+          console.log(`[aiBotService] Recovering abandoned claim ${claimEventId} (age: ${Math.round(ageMs / 1000)}s)...`)
+          await prismaClient.botEvent.update({
+            where: { id: claimEventId },
+            data: {
+              detail: `AI Research Request Claim [${asOfSession}]: in_progress (recovered)`,
+              metadata: {
+                ...currentClaim.metadata,
+                status: 'in_progress',
+                claimedAt: new Date().toISOString(),
+                recoveryAttempts: recoveryAttempts + 1
+              }
+            }
+          })
+          wonClaim = true
+        }
+      }
+    }
+
+    if (wonClaim) {
+      const provider = getProvider(providerName)
+      llmResponse = await provider.completeStructured({
+        systemPrompt,
+        userPrompt,
+        temperature: 0.2
+      })
+    }
   }
 
   // 3. Validate Structured Output
@@ -681,169 +797,161 @@ export async function processPendingAiExecutions(botId, {
       const accounting = calculateFifoAccounting(allFills)
       const openPositions = accounting.openPositions || {}
 
-      for (const [ticker, pos] of Object.entries(openPositions)) {
-        if (!pos || pos.quantity <= 0 || !(pos.avgPrice > 0)) continue
+      const bot = await prismaClient.bot.findUnique({ where: { id: botId } })
 
-        let closeData = null
-        try {
-          closeData = await engine.getSessionClose(ticker, currentSession)
-        } catch {
-          continue
+      if (bot) {
+        let configuredStopLossPct = Number(bot.config?.stopLossPct)
+        let configuredTakeProfitPct = Number(bot.config?.takeProfitPct)
+
+        if (Array.isArray(bot.config?.exit?.rules)) {
+          const sl = bot.config.exit.rules.find(r => r.type === 'stop_loss')
+          if (sl?.config?.pct) configuredStopLossPct = Number(sl.config.pct)
+          const tp = bot.config.exit.rules.find(r => r.type === 'take_profit')
+          if (tp?.config?.pct) configuredTakeProfitPct = Number(tp.config.pct)
         }
 
-        if (!closeData || !(Number(closeData.close) > 0)) continue
+        for (const [ticker, pos] of Object.entries(openPositions)) {
+          if (!pos || pos.quantity <= 0 || !(pos.avgPrice > 0)) continue
 
-        const currentPrice = Number(closeData.close)
-        const returnPct = ((currentPrice - pos.avgPrice) / pos.avgPrice) * 100
-
-        // Protective rules: Stop-loss at <= -4%, Take-profit at >= +8%
-        let exitType = null
-        if (returnPct <= -4.0) {
-          exitType = 'stop_loss'
-        } else if (returnPct >= 8.0) {
-          exitType = 'take_profit'
-        }
-
-        if (exitType) {
-          const clientOrderId = `co_ai_exit_${exitType}_${botId}_${currentSession.replace(/-/g, '')}_${ticker.toLowerCase()}`
-          const activeIntentKey = `intent_ai_exit_${exitType}_${botId}_${currentSession.replace(/-/g, '')}_${ticker.toLowerCase()}`
-
-          // Check if an exit execution has already been created for this position on this session
-          const existingExit = await prismaClient.execution.findFirst({
-            where: {
-              OR: [
-                { clientOrderId },
-                { activeIntentKey }
-              ]
-            }
-          })
-
-          if (existingExit) continue
-
-          const bot = await prismaClient.bot.findUnique({ where: { id: botId } })
-          if (!bot) continue
-
-          const isReplayMode = bot.config?.isReplay === true
-          const mode = isReplayMode ? 'historical_replay' : 'paper_daily'
-          const execId = `exec_ai_exit_${randomUUID().replace(/-/g, '').slice(0, 16)}`
-          const qty = pos.quantity
-
-          const execution = await prismaClient.execution.create({
-            data: {
-              id: execId,
-              botId,
-              portfolioId: bot.portfolioId,
-              userId: bot.userId,
-              ticker,
-              direction: 'sell',
-              quantity: qty,
-              price: currentPrice,
-              origin: 'bot',
-              sourceType: isReplayMode ? 'AI_REPLAY' : 'AI_STRATEGY',
-              sourceId: STRATEGY_ID,
-              status: 'queued',
-              simSession: currentSession,
-              clientOrderId,
-              activeIntentKey,
-              commission: 0,
-              fees: 0,
-              pnl: 0,
-              signalScore: 1.0
-            }
-          })
-
-          const broker = new SimulatedBroker(bot.userId, {
-            config: { enabled: true, mode },
-            prismaClient,
-            sessionClose: (t, s) => engine.getSessionClose(t, s),
-            resolveSession: () => currentSession
-          })
-
-          let filledOrder = null
+          let closeData = null
           try {
-            filledOrder = await broker.submitOrder({
-              ticker,
-              side: 'sell',
-              qty,
-              clientOrderId
-            })
-          } catch (submitErr) {
-            console.error(`[evaluateAiProtectiveExits] Failed broker submit for ${ticker}:`, submitErr.message)
+            closeData = await engine.getSessionClose(ticker, currentSession)
+          } catch {
             continue
           }
 
-          const fillPrice = Number(filledOrder.filledAvgPrice)
-          const fillQty = Number(filledOrder.filledQty)
-          const pnl = await calculateFillPnl({
-            execution,
-            fillPrice,
-            fillQty,
-            prismaClient
-          })
+          if (!closeData || !(Number(closeData.close) > 0)) continue
 
-          await prismaClient.execution.update({
-            where: { id: execution.id },
-            data: {
-              status: 'filled',
-              filledPrice: fillPrice,
-              filledQuantity: fillQty,
-              brokerOrderId: filledOrder.alpacaOrderId,
-              brokerStatus: filledOrder.status || 'filled',
-              filledAt: filledOrder.filledAt || new Date(),
-              pnl
-            }
-          })
+          const currentPrice = Number(closeData.close)
+          const returnPct = ((currentPrice - pos.avgPrice) / pos.avgPrice) * 100
 
-          await prismaClient.executionAudit.create({
-            data: {
-              id: `aud_${randomUUID()}`,
-              executionId: execution.id,
-              userId: execution.userId,
-              workerId: 'ai_daily_job',
-              eventType: 'filled',
-              detail: `AI protective ${exitType} triggered (${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%): SELL ${fillQty} ${ticker} @ $${fillPrice.toFixed(2)}`,
-              metadata: {
-                exitType,
-                returnPct,
-                avgCost: pos.avgPrice,
-                session: currentSession,
-                pnl,
-                brokerOrderId: filledOrder.alpacaOrderId
-              }
-            }
+          // Check if entry execution audit has custom exitRule thresholds from model decision
+          const entryAudit = await prismaClient.executionAudit.findFirst({
+            where: {
+              execution: { botId, ticker, direction: 'buy', status: 'filled' },
+              eventType: 'execution_created'
+            },
+            orderBy: { createdAt: 'desc' }
           })
+          const decisionExitRule = entryAudit?.metadata?.exitRule
+          const stopLossPct = Number(decisionExitRule?.stopLossPct) || (Number.isFinite(configuredStopLossPct) && configuredStopLossPct > 0 ? configuredStopLossPct : 4.0)
+          const takeProfitPct = Number(decisionExitRule?.takeProfitPct) || (Number.isFinite(configuredTakeProfitPct) && configuredTakeProfitPct > 0 ? configuredTakeProfitPct : 6.0)
 
-          await prismaClient.botEvent.create({
-            data: {
-              id: `ev_exit_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
-              botId,
-              portfolioId: bot.portfolioId,
-              type: 'rule_triggered',
-              detail: `AI protective ${exitType} exit triggered for ${ticker} (${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%)`,
-              metadata: {
+          let exitType = null
+          if (returnPct <= -stopLossPct) {
+            exitType = 'stop_loss'
+          } else if (returnPct >= takeProfitPct) {
+            exitType = 'take_profit'
+          }
+
+          if (exitType) {
+            // Prevent duplicate or overlapping exit orders for the same ticker
+            const existingQueuedExit = await prismaClient.execution.findFirst({
+              where: {
+                botId,
                 ticker,
-                exitType,
-                returnPct,
-                avgCost: pos.avgPrice,
-                fillPrice,
-                pnl,
-                session: currentSession
+                direction: 'sell',
+                status: 'queued'
               }
-            }
-          })
+            })
+            if (existingQueuedExit) continue
 
-          exitExecutions.push({
-            id: execution.id,
-            ticker,
-            direction: 'sell',
-            quantity: fillQty,
-            fillPrice,
-            session: currentSession,
-            pnl,
-            brokerOrderId: filledOrder.alpacaOrderId,
-            exitType,
-            returnPct
-          })
+            const clientOrderId = `co_ai_exit_${exitType}_${botId}_${currentSession.replace(/-/g, '')}_${ticker.toLowerCase()}`
+            const activeIntentKey = `intent_ai_exit_${botId}_${ticker.toLowerCase()}`
+
+            const existingExit = await prismaClient.execution.findFirst({
+              where: {
+                OR: [
+                  { clientOrderId },
+                  { activeIntentKey }
+                ]
+              }
+            })
+
+            if (existingExit) continue
+
+            // Chronological integrity: signals evaluated after session close execute no earlier than next session
+            const targetSession = nextTradingSession(currentSession)
+            const isReplayMode = bot.config?.isReplay === true
+            const execId = `exec_ai_exit_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+            const qty = pos.quantity
+
+            const execution = await prismaClient.execution.create({
+              data: {
+                id: execId,
+                botId,
+                portfolioId: bot.portfolioId,
+                userId: bot.userId,
+                ticker,
+                direction: 'sell',
+                quantity: qty,
+                price: currentPrice,
+                origin: 'bot',
+                sourceType: isReplayMode ? 'AI_REPLAY' : 'AI_STRATEGY',
+                sourceId: STRATEGY_ID,
+                status: 'queued',
+                simSession: targetSession, // Look-ahead protected: queues for next session
+                clientOrderId,
+                activeIntentKey,
+                commission: 0,
+                fees: 0,
+                pnl: 0,
+                signalScore: 1.0
+              }
+            })
+
+            await prismaClient.executionAudit.create({
+              data: {
+                id: `aud_${randomUUID()}`,
+                executionId: execution.id,
+                userId: execution.userId,
+                workerId: 'ai_daily_job',
+                eventType: 'execution_created',
+                detail: `Queued AI protective ${exitType} order for ${ticker} (${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}% vs threshold ${exitType === 'stop_loss' ? -stopLossPct : takeProfitPct}%) @ ref $${currentPrice.toFixed(2)}. Target session: ${targetSession}`,
+                metadata: {
+                  exitType,
+                  returnPct,
+                  thresholdPct: exitType === 'stop_loss' ? -stopLossPct : takeProfitPct,
+                  avgCost: pos.avgPrice,
+                  signalSession: currentSession,
+                  targetSession,
+                  isReplay: isReplayMode
+                }
+              }
+            })
+
+            await prismaClient.botEvent.create({
+              data: {
+                id: `ev_exit_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+                botId,
+                portfolioId: bot.portfolioId,
+                type: 'rule_triggered',
+                detail: `AI protective ${exitType} triggered for ${ticker} (${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%). Order queued for ${targetSession}`,
+                metadata: {
+                  ticker,
+                  exitType,
+                  returnPct,
+                  thresholdPct: exitType === 'stop_loss' ? -stopLossPct : takeProfitPct,
+                  avgCost: pos.avgPrice,
+                  signalSession: currentSession,
+                  targetSession
+                }
+              }
+            })
+
+            exitExecutions.push({
+              id: execution.id,
+              ticker,
+              direction: 'sell',
+              quantity: qty,
+              referencePrice: currentPrice,
+              signalSession: currentSession,
+              targetSession,
+              exitType,
+              returnPct,
+              status: 'queued'
+            })
+          }
         }
       }
     } catch (exitErr) {

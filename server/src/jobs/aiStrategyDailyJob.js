@@ -25,32 +25,9 @@ import {
   computeAiBotForwardEquity
 } from '../services/ai/aiBotService.js'
 import { generateStrategyEvidence } from '../services/strategyEvidenceService.js'
+import { getExpectedCompletedExchangeSession } from '../utils/marketCalendar.js'
 
-/**
- * Calculates the expected completed trading session (America/New_York)
- * based on wall-clock market close (16:30 ET).
- */
-export function getExpectedCompletedTradingSession(now = new Date()) {
-  const nyDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-  const nyHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit' }), 10)
-  const nyMinutes = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', minute: '2-digit' }), 10)
-
-  const d = new Date(nyDateStr + 'T12:00:00Z')
-  const dayOfWeek = d.getUTCDay() // 0 = Sun, 1 = Mon, ..., 6 = Sat
-  const isPostClose = nyHour > 16 || (nyHour === 16 && nyMinutes >= 30)
-
-  let daysToSubtract = 0
-  if (dayOfWeek === 0) { // Sunday -> Friday
-    daysToSubtract = 2
-  } else if (dayOfWeek === 6) { // Saturday -> Friday
-    daysToSubtract = 1
-  } else if (!isPostClose) {
-    daysToSubtract = (dayOfWeek === 1) ? 3 : 1
-  }
-
-  const expectedDate = new Date(d.getTime() - daysToSubtract * 86_400_000)
-  return expectedDate.toISOString().slice(0, 10)
-}
+export { getExpectedCompletedExchangeSession }
 
 export async function runAiStrategyDailyJob({
   templateId = 'tmpl_ai_catalyst_momentum',
@@ -59,6 +36,7 @@ export async function runAiStrategyDailyJob({
   dryRun = false,
   providerName = 'openai',
   now = new Date(),
+  syncEvidence = true,
   prismaClient = prisma,
   engine = engineClient
 } = {}) {
@@ -91,40 +69,39 @@ export async function runAiStrategyDailyJob({
     }
   }
 
-  // Market Data Freshness Validation: In autonomous forward mode, verify bar recency
-  if (!session && !force) {
-    const expectedSession = getExpectedCompletedTradingSession(now)
-    const expectedTime = new Date(expectedSession + 'T12:00:00Z').getTime()
-    const activeTime = new Date(activeSession + 'T12:00:00Z').getTime()
-    const ageDiffDays = Math.round((expectedTime - activeTime) / 86_400_000)
+  console.log(`[ai_daily_job] Active session for execution: ${activeSession}`)
 
-    if (ageDiffDays > 4) {
-      console.warn(`[ai_daily_job] Market data is stale (latest bar is ${activeSession}, expected ${expectedSession}, ${ageDiffDays} days old). Skipping daily research cycle.`)
+  // 2. Process pending eligible executions targeting this completed session FIRST
+  // Runs independently so pending orders fill even if fresh research is skipped or completed
+  const fillResults = await processPendingAiExecutions(bot.id, {
+    currentSession: activeSession,
+    prismaClient,
+    engine
+  })
+  if (fillResults.filledExecutions?.length > 0) {
+    console.log(`[ai_daily_job] Filled ${fillResults.filledExecutions.length} pending executions for session ${activeSession}`)
+  }
+  if (fillResults.exitExecutions?.length > 0) {
+    console.log(`[ai_daily_job] Queued ${fillResults.exitExecutions.length} protective exit orders based on ${activeSession} close`)
+  }
+
+  // 3. Market Data Freshness Validation: Require the exact expected completed exchange session
+  if (!session && !force) {
+    const expectedSession = getExpectedCompletedExchangeSession(now)
+    if (activeSession < expectedSession) {
+      console.warn(`[ai_daily_job] Market data gap: latest bar is ${activeSession}, expected completed exchange session is ${expectedSession}. Skipping new research cycle.`)
       return {
         ok: true,
         skipped: true,
         reason: 'stale_market_data',
         latestBarDate: activeSession,
         expectedSession,
-        ageDiffDays
+        fills: fillResults
       }
     }
   }
 
-  console.log(`[ai_daily_job] Active session for research & execution: ${activeSession}`)
-
-  // 2. ALWAYS process pending eligible executions targeting this completed session FIRST
-  // Runs even if the research cycle was skipped or already completed for this session
-  const fillResults = await processPendingAiExecutions(bot.id, {
-    currentSession: activeSession,
-    prismaClient,
-    engine
-  })
-  if (fillResults.filledExecutions.length > 0) {
-    console.log(`[ai_daily_job] Filled ${fillResults.filledExecutions.length} pending executions for session ${activeSession}`)
-  }
-
-  // 3. Idempotency check: did we already run this session for this bot?
+  // 4. Idempotency check: did we already run research for this session on this bot?
   let cycleResult = null
   let researchSkipped = false
   let skipReason = null
@@ -147,7 +124,7 @@ export async function runAiStrategyDailyJob({
     }
   }
 
-  // 4. Run autonomous AI research and decision cycle if not skipped
+  // 5. Run autonomous AI research and decision cycle if not skipped
   if (!researchSkipped) {
     cycleResult = await executeAiStrategyCycle({
       botId: bot.id,
@@ -159,7 +136,7 @@ export async function runAiStrategyDailyJob({
     })
   }
 
-  // 5. Compute forward portfolio equity & sync public strategy evidence
+  // 6. Compute forward portfolio equity & sync public strategy evidence
   const forwardEquity = await computeAiBotForwardEquity(bot.id, {
     asOfSession: activeSession,
     prismaClient,
@@ -167,10 +144,12 @@ export async function runAiStrategyDailyJob({
   })
 
   // Sync public strategy evidence so the Forward window displays the latest equity curve
-  try {
-    await generateStrategyEvidence({ prismaClient, engine })
-  } catch (err) {
-    console.warn(`[ai_daily_job] Strategy evidence generation warning: ${err.message}`)
+  if (syncEvidence) {
+    try {
+      await generateStrategyEvidence({ prismaClient, engine })
+    } catch (err) {
+      console.warn(`[ai_daily_job] Strategy evidence generation warning: ${err.message}`)
+    }
   }
 
   console.log(`[ai_daily_job] Completed autonomous AI daily job for session ${activeSession}. Equity: $${forwardEquity.currentEquity} (${forwardEquity.returnPct}%)`)

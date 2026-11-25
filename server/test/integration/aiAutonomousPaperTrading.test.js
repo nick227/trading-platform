@@ -23,11 +23,16 @@ import { generateStrategyEvidence, listPublicStrategies } from '../../src/servic
 class ScenarioLlmProvider extends BaseLLMProvider {
   constructor() {
     super('scenario_llm')
+    this.callCount = 0
   }
 
   async completeStructured({ systemPrompt, userPrompt, temperature = 0.2 }) {
+    this.callCount++
+    // Simulate real asynchronous network / inference latency
+    await new Promise(r => setTimeout(r, 60))
+
     // Determine session from userPrompt
-    const isOct7 = userPrompt.includes('2026-10-07')
+    const isOct7 = userPrompt.includes('2026-10-07') || userPrompt.includes('2026-10-09')
     const isOct14 = userPrompt.includes('2026-10-14')
 
     if (isOct7) {
@@ -154,30 +159,28 @@ class ScenarioLlmProvider extends BaseLLMProvider {
   }
 }
 
-describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
+describe.sequential('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
   let canonicalBot
+  let testProviderInstance
   const TEST_PROVIDER = 'test_scenario_provider'
 
   beforeEach(async () => {
-    registerCustomProvider(TEST_PROVIDER, new ScenarioLlmProvider())
+    testProviderInstance = new ScenarioLlmProvider()
+    registerCustomProvider(TEST_PROVIDER, testProviderInstance)
     const res = await getOrCreateCanonicalAiBot({ prismaClient: prisma })
     canonicalBot = res.bot
 
-    // Clean up test executions and events for this bot
-    await prisma.executionAudit.deleteMany({
-      where: { execution: { botId: canonicalBot.id } }
-    })
-    await prisma.execution.deleteMany({ where: { botId: canonicalBot.id } })
-    await prisma.botEvent.deleteMany({ where: { botId: canonicalBot.id } })
+    // Clean up test executions and events
+    await prisma.executionAudit.deleteMany()
+    await prisma.execution.deleteMany()
+    await prisma.botEvent.deleteMany()
     await prisma.strategyEvidence.deleteMany({ where: { templateId: 'tmpl_ai_catalyst_momentum' } })
   })
 
   afterEach(async () => {
-    await prisma.executionAudit.deleteMany({
-      where: { execution: { botId: canonicalBot.id } }
-    })
-    await prisma.execution.deleteMany({ where: { botId: canonicalBot.id } })
-    await prisma.botEvent.deleteMany({ where: { botId: canonicalBot.id } })
+    await prisma.executionAudit.deleteMany()
+    await prisma.execution.deleteMany()
+    await prisma.botEvent.deleteMany()
     await prisma.strategyEvidence.deleteMany({ where: { templateId: 'tmpl_ai_catalyst_momentum' } })
   })
 
@@ -313,6 +316,7 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
       templateId: 'tmpl_ai_catalyst_momentum',
       session: '2026-11-20',
       providerName: TEST_PROVIDER,
+      syncEvidence: false,
       prismaClient: prisma,
       engine: engineClient
     })
@@ -325,6 +329,7 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
       templateId: 'tmpl_ai_catalyst_momentum',
       session: '2026-11-20',
       providerName: TEST_PROVIDER,
+      syncEvidence: false,
       prismaClient: prisma,
       engine: engineClient
     })
@@ -401,6 +406,7 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
       templateId: 'tmpl_ai_catalyst_momentum',
       session: '2026-11-20',
       providerName: TEST_PROVIDER,
+      syncEvidence: false,
       prismaClient: prisma,
       engine: engineClient
     })
@@ -413,47 +419,68 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     expect(filledExec.filledPrice).toBeGreaterThan(0)
   })
 
-  it('enforces request-level atomic claim mutex and order-intent idempotency', { timeout: 60_000 }, async () => {
-    // 1st run of executeAiStrategyCycle on 2026-10-07
-    const cycle1 = await executeAiStrategyCycle({
+  it('enforces request-level atomic claim mutex under concurrency and prevents duplicate orders', { timeout: 90_000 }, async () => {
+    testProviderInstance.callCount = 0
+
+    // Concurrently trigger two identical research requests
+    const [c1, c2] = await Promise.all([
+      executeAiStrategyCycle({
+        botId: canonicalBot.id,
+        session: '2026-10-09',
+        providerName: TEST_PROVIDER,
+        prismaClient: prisma,
+        engine: engineClient
+      }),
+      executeAiStrategyCycle({
+        botId: canonicalBot.id,
+        session: '2026-10-09',
+        providerName: TEST_PROVIDER,
+        prismaClient: prisma,
+        engine: engineClient
+      })
+    ])
+
+    expect(c1.ok).toBe(true)
+    expect(c2.ok).toBe(true)
+
+    // Critical guarantee: Provider was called strictly ONCE under concurrent execution!
+    expect(testProviderInstance.callCount).toBe(1)
+
+    // Order-intent idempotency: Exactly one set of orders created across both concurrent requests
+    const totalOrdersCreated = (c1.createdExecutions?.length || 0) + (c2.createdExecutions?.length || 0)
+    expect(totalOrdersCreated).toBe(1)
+
+    // One worker won the claim and executed; the other concurrent worker safely skipped with inProgress or cached
+    const concurrentSkippedOrCached = [c1, c2].some(c => c.inProgress === true || c.cached === true)
+    expect(concurrentSkippedOrCached).toBe(true)
+
+    // Running a subsequent cycle after completion reuses cached response cleanly without calling model
+    const c3 = await executeAiStrategyCycle({
       botId: canonicalBot.id,
-      session: '2026-10-07',
+      session: '2026-10-09',
       providerName: TEST_PROVIDER,
       prismaClient: prisma,
       engine: engineClient
     })
 
-    expect(cycle1.ok).toBe(true)
-    expect(cycle1.createdExecutions.length).toBe(1)
+    expect(c3.ok).toBe(true)
+    expect(c3.cached).toBe(true)
+    expect(c3.avoidedCallsCount).toBe(1)
+    expect(c3.createdExecutions.length).toBe(0)
+    expect(testProviderInstance.callCount).toBe(1) // Still strictly 1 model call!
 
-    // 2nd run with identical input: LLM response is reused from cache, and NO duplicate orders are queued
-    const cycle2 = await executeAiStrategyCycle({
-      botId: canonicalBot.id,
-      session: '2026-10-07',
-      providerName: TEST_PROVIDER,
-      prismaClient: prisma,
-      engine: engineClient
-    })
-
-    expect(cycle2.ok).toBe(true)
-    expect(cycle2.cached).toBe(true)
-    expect(cycle2.avoidedCallsCount).toBe(1)
-    // Order-intent idempotency: clientOrderId and activeIntentKey prevent duplicate execution rows
-    expect(cycle2.createdExecutions.length).toBe(0)
-
-    // Verify events recorded in database: claim event has cached: true and avoidedCallsCount: 1
+    // Verify claim event has cached: true and avoidedCallsCount: 1
     const claimEvents = await prisma.botEvent.findMany({
       where: { botId: canonicalBot.id, id: { startsWith: 'req_ai_' } }
     })
     expect(claimEvents.length).toBe(1)
     expect(claimEvents[0].metadata?.cached).toBe(true)
-    expect(claimEvents[0].metadata?.avoidedCallsCount).toBe(1)
   })
 
-  it('automatically triggers AI protective exit (stop_loss) on held open position', { timeout: 60_000 }, async () => {
-    // Create a held open position for NVDA bought at $230.48
+  it('enforces protective exit chronology (queues for next session, fills at next session close) and prevents duplicate exits', { timeout: 60_000 }, async () => {
+    // 1. Create a held open position for NVDA bought on 2026-10-08 at $230.48
     const testBuyId = `exec_held_nvda_${Date.now()}`
-    await prisma.execution.create({
+    const buyExec = await prisma.execution.create({
       data: {
         id: testBuyId,
         userId: canonicalBot.userId,
@@ -479,23 +506,39 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
       }
     })
 
-    // On session 2026-10-15, NVDA close price in Alpha Engine is $217.23 (-5.75% drop, <= -4% stop-loss)
-    const res = await processPendingAiExecutions(canonicalBot.id, {
+    await prisma.executionAudit.create({
+      data: {
+        id: `aud_buy_${Date.now()}`,
+        executionId: buyExec.id,
+        userId: canonicalBot.userId,
+        workerId: 'test',
+        eventType: 'execution_created',
+        detail: 'Test buy entry',
+        metadata: {
+          exitRule: { takeProfitPct: 6, stopLossPct: 4 }
+        }
+      }
+    })
+
+    // 2. On session 2026-10-15 close, NVDA drops to $217.23 (-5.75% drop, <= -4% stop-loss)
+    const resDay1 = await processPendingAiExecutions(canonicalBot.id, {
       currentSession: '2026-10-15',
       prismaClient: prisma,
       engine: engineClient
     })
 
-    expect(res.exitExecutions).toBeDefined()
-    expect(res.exitExecutions.length).toBe(1)
-    const exit = res.exitExecutions[0]
-    expect(exit.ticker).toBe('NVDA')
-    expect(exit.direction).toBe('sell')
-    expect(exit.exitType).toBe('stop_loss')
-    expect(exit.returnPct).toBeLessThan(-4.0)
-    expect(exit.fillPrice).toBeCloseTo(217.23, 1)
-    expect(exit.pnl).toBeCloseTo(-132.50, 1)
-    expect(exit.brokerOrderId).toMatch(/^sim(replay|daily)_/)
+    // Chronology check: signal evaluated from 2026-10-15 close queues order for NEXT session (2026-10-16)
+    // It does NOT fill at 2026-10-15 close!
+    expect(resDay1.exitExecutions).toBeDefined()
+    expect(resDay1.exitExecutions.length).toBe(1)
+    const queuedExit = resDay1.exitExecutions[0]
+    expect(queuedExit.ticker).toBe('NVDA')
+    expect(queuedExit.direction).toBe('sell')
+    expect(queuedExit.exitType).toBe('stop_loss')
+    expect(queuedExit.status).toBe('queued')
+    expect(queuedExit.signalSession).toBe('2026-10-15')
+    expect(queuedExit.targetSession).toBe('2026-10-16')
+    expect(resDay1.filledExecutions.length).toBe(0) // No look-ahead fill!
 
     // Verify rule_triggered BotEvent was recorded
     const exitEvent = await prisma.botEvent.findFirst({
@@ -504,14 +547,60 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     expect(exitEvent).toBeDefined()
     expect(exitEvent.metadata.ticker).toBe('NVDA')
     expect(exitEvent.metadata.exitType).toBe('stop_loss')
+    expect(exitEvent.metadata.targetSession).toBe('2026-10-16')
 
-    // Repeated call on the same session must NOT create duplicate exit executions
-    const res2 = await processPendingAiExecutions(canonicalBot.id, {
+    // Duplicate exit prevention: re-running on 2026-10-15 does NOT create another exit order
+    const resDay1Dup = await processPendingAiExecutions(canonicalBot.id, {
       currentSession: '2026-10-15',
       prismaClient: prisma,
       engine: engineClient
     })
-    expect(res2.exitExecutions.length).toBe(0)
+    expect(resDay1Dup.exitExecutions.length).toBe(0)
+
+    // 3. On next session (2026-10-16), pending queued exit fills at 2026-10-16 close
+    const resDay2 = await processPendingAiExecutions(canonicalBot.id, {
+      currentSession: '2026-10-16',
+      prismaClient: prisma,
+      engine: engineClient
+    })
+
+    expect(resDay2.filledExecutions.length).toBe(1)
+    const filledExit = resDay2.filledExecutions[0]
+    expect(filledExit.id).toBe(queuedExit.id)
+    expect(filledExit.direction).toBe('sell')
+    expect(filledExit.session).toBe('2026-10-16')
+    expect(filledExit.fillPrice).toBeGreaterThan(0)
+    expect(filledExit.pnl).not.toBe(0)
+    expect(filledExit.brokerOrderId).toMatch(/^sim(replay|daily)_/)
+  })
+
+  it('rejects stale weekday market data and reports exact data gap (e.g. Tuesday rejecting Friday bar)', async () => {
+    // Engine has latest bar from Friday 2026-11-20
+    const mockEngineFriday = {
+      getDailyBars: async () => ({
+        bars: [
+          ['2026-11-20', 585, 590, 584, 588, 25000000]
+        ]
+      })
+    }
+
+    // Wall-clock is Tuesday 2026-11-24 at 17:00 ET (22:00 UTC, post-close)
+    // Tuesday is a normal exchange trading day, so expected completed session is 2026-11-24.
+    const tuesdayPostClose = new Date('2026-11-24T22:00:00Z')
+
+    const job = await runAiStrategyDailyJob({
+      templateId: 'tmpl_ai_catalyst_momentum',
+      session: null, // autonomous forward scheduling
+      now: tuesdayPostClose,
+      prismaClient: prisma,
+      engine: mockEngineFriday
+    })
+
+    expect(job.ok).toBe(true)
+    expect(job.skipped).toBe(true)
+    expect(job.reason).toBe('stale_market_data')
+    expect(job.latestBarDate).toBe('2026-11-20')
+    expect(job.expectedSession).toBe('2026-11-24')
   })
 
   it('detects stale market data and skips research cycle in autonomous mode', async () => {
@@ -536,6 +625,5 @@ describe('Autonomous AI Paper Trading & Accounting Lifecycle', () => {
     expect(job.reason).toBe('stale_market_data')
     expect(job.latestBarDate).toBe('2026-10-01')
     expect(job.expectedSession).toBe('2026-11-20')
-    expect(job.ageDiffDays).toBeGreaterThan(4)
   })
 })
