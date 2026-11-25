@@ -54,8 +54,8 @@ function Research({ research }) {
         </p>
       )}
       <p className="tl-small" style={{ margin: '6px 0 0' }}>
-        {research.edgeOverBaseline === true ? <span className="tl-verdict tl-verdict--edge">Beat its baseline</span>
-          : research.edgeOverBaseline === false ? <span className="tl-verdict tl-verdict--noedge">No verified edge</span> : null}
+        {research.edgeOverBaseline === true ? <span className="tl-verdict tl-verdict--edge">Above baseline</span>
+          : research.edgeOverBaseline === false ? <span className="tl-verdict tl-verdict--noedge">Did not beat baseline</span> : null}
       </p>
       <p className="tl-small tl-muted" style={{ margin: '6px 0 0' }}>
         {h?.samples ? `${h.samples.toLocaleString()} holdout samples` : 'Holdout size unknown'}
@@ -82,7 +82,7 @@ function StartingPoint({ f, open, onToggle }) {
           <span className="tl-featured-sentence" style={{ display: 'block' }}>{describeAction(f, { template: true })}</span>
           <span className="tl-tags">
             <span className="tl-tag">{behaviorTag(f)}</span>
-            {f.research?.edgeOverBaseline === false && <span className="tl-tag tl-tag--warn">Latest research: no proven edge</span>}
+            {f.research?.edgeOverBaseline === false && <span className="tl-tag tl-tag--warn">Did not beat baseline</span>}
             {!f.available && <span className="tl-tag tl-tag--warn">{isAi ? 'Workshop unavailable' : 'Not available yet'}</span>}
           </span>
         </span>
@@ -106,16 +106,16 @@ function StartingPoint({ f, open, onToggle }) {
             </div>
           </div>
           <div>
-            <h4>{isAi ? 'Forward paper' : 'Backtest'}</h4>
+            <h4>Results</h4>
             <p className="tl-small m0" data-testid="featured-evidence-detail">
               {(isAi ? ['forward'] : ['5Y', '1Y', 'holdout', 'forward']).filter((w) => w !== 'holdout' || f.evidence?.windows?.holdout).map((w) => (
-                <span key={w} className="tl-evidence-line">{{ '5Y': '5 years', '1Y': 'Last year', holdout: 'Holdout (out of sample)', forward: 'Since published' }[w]}: {summaryLine(f.evidence?.windows?.[w])}</span>
+                <span key={w} className="tl-evidence-line">{{ '5Y': '5 years', '1Y': 'Last year', holdout: 'Holdout', forward: isAi ? 'Since published' : 'Forward paper' }[w]}: {summaryLine(f.evidence?.windows?.[w])}</span>
               ))}
             </p>
             <p className="tl-small" style={{ margin: '6px 0 18px' }}>
               <Link to={`/strategies/${encodeURIComponent(f.id)}`}>Results and methodology →</Link>
             </p>
-            <h4>Bot paper results</h4>
+            <h4>Bot results · Paper</h4>
             
             {!r ? (
               <p className="tl-small tl-muted m0">Results are unavailable right now.</p>

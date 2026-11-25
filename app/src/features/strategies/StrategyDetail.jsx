@@ -104,7 +104,7 @@ export default function StrategyDetail() {
 
           </p>
         </div>
-        {!isAi && <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link>}
+        {s.workshopAvailable === true && <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link>}
       </header>
 
       {!s.version.current && (
@@ -214,9 +214,9 @@ export default function StrategyDetail() {
                     <Disclosure label="Research">
                       <dl className="tl-facts">
                         <dt>Model</dt><dd>{d.metadata?.model || 'OpenAI'}</dd>
-                        <dt>Market session</dt><dd>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : '—'}</dd>
+                        <dt>Market data as of</dt><dd>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : '—'}</dd>
                         <dt>Generated</dt><dd>{d.metadata?.decisionTimestamp ? new Date(d.metadata.decisionTimestamp).toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' }) : '—'}</dd>
-                        <dt>Planned execution</dt><dd>{d.metadata?.intendedExecutionSession ? sessionDate(d.metadata.intendedExecutionSession, { year: true }) : '—'}</dd>
+                        {proposedOrders > 0 && d.metadata?.intendedExecutionSession && <><dt>Proposed for</dt><dd>{sessionDate(d.metadata.intendedExecutionSession, { year: true })}</dd></>}
                       </dl>
                       {d.metadata?.marketSummary && <p className="tl-small">{d.metadata.marketSummary}</p>}
                     </Disclosure>
@@ -233,8 +233,8 @@ export default function StrategyDetail() {
         {isAi && (
           <dl className="tl-facts" aria-label="AI strategy limits">
             <dt>Paper capital</dt><dd>{moneyWhole(def.config.allocatedAmount ?? 10000)}</dd>
-            <dt>Max per order</dt><dd>{moneyWhole(def.config.maxOrderNotional ?? 2000)}</dd>
-            <dt>Schedule</dt><dd>Daily after close</dd>
+            <dt>Order limit</dt><dd>{moneyWhole(def.config.maxOrderNotional ?? 2000)}</dd>
+            <dt>Evaluation</dt><dd>Daily · After close</dd>
           </dl>
         )}
         <ul className="tl-rule-list" data-testid="tested-definition">

@@ -26,12 +26,11 @@ export default function TemplateBaseline({ templateId, modified }) {
     <div className={`tl-notice${modified ? ' tl-notice--warn' : ''}`} data-testid="template-baseline" style={{ marginBottom: 18 }}>
       <div style={{ display: 'grid', gap: 4 }}>
         <span>
-          <strong>{modified ? 'Modified from the platform-tested defaults.' : 'Platform-tested defaults.'}</strong>{' '}
-          {modified
-            ? 'The published results describe the defaults, not your version — run a backtest below to test yours.'
-            : `5-year standardized backtest: ${summaryLine(s.summary?.['5Y'])}.`}
+          <strong>{modified ? 'Modified strategy' : 'Strategy defaults'}</strong>
+          {' · '}
+          {modified ? 'Backtest your changes' : `5-year backtest: ${summaryLine(s.summary?.['5Y'])}`}
         </span>
-        <Link className="tl-small" to={`/strategies/${encodeURIComponent(templateId)}`}>{s.name}: full evidence and assumptions →</Link>
+        <Link className="tl-small" to={`/strategies/${encodeURIComponent(templateId)}`}>Results and methodology →</Link>
       </div>
     </div>
   )
