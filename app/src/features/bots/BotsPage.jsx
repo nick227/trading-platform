@@ -55,7 +55,7 @@ function Research({ research }) {
       )}
       <p className="tl-small" style={{ margin: '6px 0 0' }}>
         {research.edgeOverBaseline === true ? <span className="tl-verdict tl-verdict--edge">Beat its baseline</span>
-          : research.edgeOverBaseline === false ? <span className="tl-verdict tl-verdict--noedge">No verified edge · Trading blocked</span> : null}
+          : research.edgeOverBaseline === false ? <span className="tl-verdict tl-verdict--noedge">No verified edge</span> : null}
       </p>
       <p className="tl-small tl-muted" style={{ margin: '6px 0 0' }}>
         {h?.samples ? `${h.samples.toLocaleString()} holdout samples` : 'Holdout size unknown'}
@@ -115,7 +115,7 @@ function StartingPoint({ f, open, onToggle }) {
             <p className="tl-small" style={{ margin: '6px 0 18px' }}>
               <Link to={`/strategies/${encodeURIComponent(f.id)}`}>Results and methodology →</Link>
             </p>
-            <h4>Paper results</h4>
+            <h4>Bot paper results</h4>
             
             {!r ? (
               <p className="tl-small tl-muted m0">Results are unavailable right now.</p>
