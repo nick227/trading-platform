@@ -36,3 +36,6 @@
 .tl-content-rule-group { margin-top: var(--tl-gap-card); }
 .tl-content-subheading { font-size: 15px; font-weight: 620; margin: 0 0 var(--tl-gap-related); }
 .tl-content-rule-group .tl-rule-list { margin: 0; }
+
+.tl-content-tags--inline { margin: 0; }
+.tl-strategy-link .tl-content-tags--inline { display: inline-flex; }
