@@ -182,7 +182,7 @@ function MyBots({ bots, error, controls }) {
       <div className="tl-section-head">
         <h2 className="tl-section-title" id="home-bots-title">My bots{bots.length > 0 && <span className="tl-count">{running} of {bots.length} running</span>}</h2>
         <div className="tl-section-aside">
-          {running > 1 && <button type="button" className="tl-btn tl-btn--sm" onClick={() => controls.pauseAll(bots)} disabled={controls.pausingAll}>{controls.pausingAll ? 'Pausing…' : 'Pause all'}</button>}
+          {running > 1 && <button type="button" className="tl-btn tl-btn--sm tl-btn--warning" onClick={() => controls.pauseAll(bots)} disabled={controls.pausingAll}>{controls.pausingAll ? 'Pausing…' : 'Pause all'}</button>}
           {bots.length > 0 && <Link to="/bots">Bots →</Link>}
         </div>
       </div>
@@ -237,7 +237,7 @@ function WorkshopOverview({ bots, error, activity, brokerStatus }) {
   const stopped = bots.filter((bot) => bot.stopped).length
   return (
     <header className="tl-workshop-overview">
-      <div className="tl-workshop-heading">
+      <div className="tl-workshop-heading tl-aligned-header">
         <div><p className="tl-workshop-eyebrow">TradeLoom / Algorithm workshop</p>
           <h1>Your ideas, in motion.</h1>
           <p className="tl-muted">{error ? 'Your algorithms and portfolio, at a glance.' : bots.length ? 'Observe your algorithms. Understand their decisions.' : 'Turn a trading idea into your first algorithm.'}</p>
