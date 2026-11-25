@@ -175,13 +175,13 @@ export default function AssetsIndex() {
   return (
     <div className="l-page">
       <div className="l-container" style={{ maxWidth: 1320 }}>
-        <div className="l-stack-md" style={{ gap: 18 }}>
+        <div className="l-stack-md tl-asset-page">
           <header className="l-row" style={{ alignItems: 'baseline' }}>
             <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Assets</h1>
           </header>
 
           {/* Popular Tickers + Site Picks */}
-          <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <section className="tl-asset-overview">
             <article className="card card-pad-sm">
               <SectionHeader title="Popular Tickers" right="" />
               <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
@@ -233,7 +233,7 @@ export default function AssetsIndex() {
               return <SectionHeader title="Searchable Stock Table" right={searchStatus} />
             })()}
 
-            <div className="mt-2 l-row" style={{ alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+            <div className="mt-2 tl-asset-search-row">
               <div style={{ flex: 1, minWidth: 280 }}>
                 <input
                   value={query}
