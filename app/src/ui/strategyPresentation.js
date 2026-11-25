@@ -8,8 +8,9 @@ export const STRATEGY_COPY = Object.freeze({
   noResults: 'No results yet.',
 })
 
-export function strategyWindowOptions(windows = [], design = {}) {
-  return windows.filter((w) => !['development', 'holdout'].includes(w) || Boolean(design.developmentEnd))
+export function strategyWindowOptions(windows = [], design = {}, { forwardOnly = false } = {}) {
+  if (forwardOnly) return ['forward']
+  return windows.filter((w) => !['development', 'holdout'].includes(w) || Boolean(design?.developmentEnd))
 }
 
 export function decisionCounts(evaluations = []) {
