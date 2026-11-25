@@ -250,7 +250,7 @@ export function PerformanceHistory({ botId, winRate, closedTrades }) {
     <div className="tl-bot-history" data-testid="performance-history">
       <dl className="tl-stats tl-stats--3" style={{ borderTop: 0 }}>
         <div className="tl-stat"><dt>Return</dt><dd className={tone(h.returnPct)} data-testid="bot-return">{h.returnPct !== null && h.returnPct !== undefined ? `${h.returnPct > 0 ? '+' : h.returnPct < 0 ? '−' : ''}${Math.abs(h.returnPct).toFixed(2)}%` : '—'}<small>{h.allocation ? `on ${money(h.allocation)} capital` : 'no set capital'}</small></dd></div>
-        <div className="tl-stat"><dt>Max drawdown</dt><dd data-testid="bot-drawdown">{dd ? `−${money(dd.amount)}` : h.allocation ? 'None yet' : '—'}<small>{dd ? `${dd.pct !== null ? `${dd.pct.toFixed(2)}% · ` : ''}${sessionDate(dd.peakDate)} → ${sessionDate(dd.troughDate)}` : 'peak to trough'}</small></dd></div>
+        <div className="tl-stat"><dt>Max drawdown</dt><dd data-testid="bot-drawdown">{dd ? `−${money(dd.amount)}` : '—'}<small>{dd ? `${dd.pct !== null ? `${dd.pct.toFixed(2)}% · ` : ''}${sessionDate(dd.peakDate)} → ${sessionDate(dd.troughDate)}` : 'Insufficient history'}</small></dd></div>
         <div className="tl-stat"><dt>Win rate</dt><dd data-testid="bot-win-rate">{winRate !== null && winRate !== undefined ? `${Math.round(winRate * 100)}%` : '—'}<small>{closedTrades ? `of ${plural(closedTrades, 'closed trade')}` : 'no closed trades yet'}</small></dd></div>
       </dl>
       {pts.length >= MIN_HISTORY_POINTS ? (
@@ -283,7 +283,7 @@ function WhatHappened({ bot, fills, activity, onCancelled }) {
             <dd data-testid="capital-in-use">{bot.capitalInUse !== null ? money(bot.capitalInUse) : '—'}<small>of <span data-testid="capital-allocation">{bot.allocation !== null ? money(bot.allocation) : 'no set capital'}</span></small></dd>
           </div>
           <div className="tl-stat">
-            <dt>Trades</dt>
+            <dt>Filled orders</dt>
             <dd data-testid="fill-summary">{fills ? plural(fills.filledOrders, 'fill') : '—'}<small>{fills?.costs > 0 ? `${money(fills.costs)} in fees` : 'no fees'}</small></dd>
           </div>
         </dl>
