@@ -17,6 +17,7 @@
 .tl-order-confirm__actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: var(--tl-gap-inline); }
 .tl-order-confirm__actions > :is(button, a) { width: 100%; min-width: 0; }
 .tl-order-confirm__footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--tl-gap-inline); }
+.tl-order-confirm__footer > :is(button, a) { min-width: var(--tl-action-min-width); }
 .tl-order-confirm__notice-title { font-weight: 650; margin-bottom: var(--tl-gap-inline); }
 .tl-order-confirm__timeline { display: grid; gap: var(--tl-gap-related); }
 .tl-order-confirm__timeline-row { display: flex; align-items: center; gap: var(--tl-gap-related); }
@@ -32,9 +33,12 @@
  .tl-order-confirm { padding: 24px var(--tl-page-gutter-mobile) 72px; }
  .tl-order-confirm__card { padding: var(--tl-card-padding-compact); }
  .tl-order-confirm__inline { grid-template-columns: minmax(0, 1fr); }
+ .tl-order-confirm__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ .tl-order-confirm__footer > :is(button, a) { flex: 1 1 140px; }
  .tl-order-confirm__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 @media (max-width: 400px) {
  .tl-order-confirm__row { grid-template-columns: minmax(0, 1fr); }
+ .tl-order-confirm__actions { grid-template-columns: minmax(0, 1fr); }
  .tl-order-confirm__row > :last-child { text-align: left; }
 }
