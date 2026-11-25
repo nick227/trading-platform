@@ -11,12 +11,7 @@ export default function StrategiesIndex() {
   }, [])
   return (
     <main className="tl-page" data-testid="strategies-index">
-      <header className="tl-header">
-        <div>
-          <h1 className="tl-title">Platform strategies</h1>
-
-        </div>
-      </header>
+      <header className="tl-header"><h1 className="tl-title">Strategies</h1></header>
       {state.status === 'loading' && <span className="tl-skel" style={{ height: 240 }} aria-label="Loading strategies" />}
       {state.status === 'error' && <div className="tl-notice tl-notice--error" role="alert">Strategy results couldn’t be loaded.</div>}
       {state.status === 'done' && (
@@ -26,7 +21,7 @@ export default function StrategiesIndex() {
               <Link to={`/strategies/${encodeURIComponent(s.templateId)}`} className="tl-strategy-link">
                 <span className="tl-strategy-name">
                   {strategyDisplayName(s)}
-                  {s.tags?.includes('ai') && <span className="tl-tag" style={{ marginLeft: 8, fontSize: '0.75rem', verticalAlign: 'middle' }}>AI / LLM</span>}
+                  {s.tags?.includes('ai') && <span className="tl-tag" style={{ marginLeft: 8, fontSize: '0.75rem', verticalAlign: 'middle' }}>AI</span>}
                 </span>
                 {!s.tags?.includes('ai') && s.description && <span className="tl-small tl-muted">{s.description}</span>}
                 <span className="tl-strategy-cta">View results →</span>
@@ -34,7 +29,7 @@ export default function StrategiesIndex() {
               <dl className="tl-strategy-windows">
                 {s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum' ? (
                   <div>
-                    <dt>Since published · Paper</dt>
+                    <dt>Forward paper</dt>
                     <dd>{summaryLine(s.windows?.forward)}</dd>
                   </div>
                 ) : (
@@ -63,7 +58,6 @@ export default function StrategiesIndex() {
           ))}
         </ul>
       )}
-      <p className="tl-small tl-muted" style={{ marginTop: 28 }}>Historical backtests and forward paper results are shown separately.</p>
     </main>
   )
 }
