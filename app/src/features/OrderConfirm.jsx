@@ -405,8 +405,8 @@ export default function OrderConfirm() {
     return (
       <div className="page container tl-order-confirm tl-order-confirm--empty">
         <header className="tl-order-confirm__header">
-          <h1 className="tl-order-confirm__title">Not Found</h1>
-          <div className="muted">The order you're looking for doesn't exist</div>
+          <h1 className="tl-order-confirm__title">No order selected</h1>
+          <div className="muted">Open an order from the trading screen to review its details.</div>
         </header>
         <div className="tl-order-confirm__actions">
           <button className="primary pressable" onClick={() => navigate('/orders')} >
@@ -421,19 +421,19 @@ export default function OrderConfirm() {
     <div className="page container tl-order-confirm">
       <header>
         <h1 className="tl-order-confirm__title">
-          Order Confirmation
+          Review your order
         </h1>
         <div className="muted">
-          Review your order details before execution
+          Check the stock, quantity and estimated cost before submitting. The final execution price may differ.
         </div>
       </header>
 
       {/* Market closed warning */}
       {isMarketClosed() && (
         <article className="tl-order-confirm__card tl-order-confirm__card--warning">
-          <div style={{ fontWeight: 700, marginBottom: '0.5rem', fontSize: '16px' }}>Market Currently Closed</div>
+          <div style={{ fontWeight: 700, marginBottom: '0.5rem', fontSize: '16px' }}>Market is closed</div>
           <div style={{ fontSize: '14px', marginBottom: '1rem' }}>
-            Orders placed now will be queued and executed when the market opens at 9:30 AM ET.
+            Orders submitted outside regular trading hours may wait until the market reopens. Review their status before assuming they were filled.
           </div>
                   </article>
       )}
@@ -446,7 +446,7 @@ export default function OrderConfirm() {
           borderRadius: 8, marginBottom: '1.5rem',
           color: orderDetails.priceChange > 0 ? '#c0392b' : '#0a7a47',
         }}>
-          <div className="tl-order-confirm__notice-title">Price Updated Since Order Creation</div>
+          <div className="tl-order-confirm__notice-title">Price changed since you prepared this order</div>
           <div style={{ fontSize: '14px' }}>
             {order.asset} is now ${orderDetails.price.toFixed(2)}
             ({orderDetails.priceChange > 0 ? '+' : ''}{orderDetails.priceChangePercent.toFixed(2)}%)
@@ -458,7 +458,7 @@ export default function OrderConfirm() {
       {order && (
         <article className="tl-order-confirm__card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Order Details</h3>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Order summary</h3>
             <div style={{
               padding: '0.25rem 0.75rem', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
               background: order.type === 'BUY' ? '#e8f5e8' : '#ffeaea',

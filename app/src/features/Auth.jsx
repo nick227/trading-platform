@@ -110,9 +110,9 @@ export default function Auth() {
                                      'Connect Alpaca account'}
             </h1>
             <p className="tl-auth-panel__help">
-              {mode === 'login'    ? 'Enter your credentials to access your portfolio.' :
-               mode === 'register' ? 'Get started with autonomous trading bots and portfolio tracking.' :
-                                     'Link your Alpaca paper trading account to place orders.'}
+              {mode === 'login'    ? 'Sign in to view your simulated trading activity and account.' :
+               mode === 'register' ? 'Create an account to test trading ideas and review recorded results.' :
+                                     'Connect a paper trading account to simulate orders; live trading remains disabled.'}
             </p>
           </div>
 

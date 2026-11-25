@@ -1,3 +1,4 @@
+import { PageIdentity } from '../components/content/ContentBlocks'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { alphaFetch } from '../api/services/alphaEngineService.js'
@@ -176,14 +177,12 @@ export default function AssetsIndex() {
     <div className="l-page">
       <div className="l-container" style={{ maxWidth: 1320 }}>
         <div className="l-stack-md tl-asset-page">
-          <header className="l-row" style={{ alignItems: 'baseline' }}>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Assets</h1>
-          </header>
+          <PageIdentity title="Stocks" description="Find stock prices and review market information before choosing a trade. Quotes can change before an order executes." />
 
           {/* Popular Tickers + Site Picks */}
           <section className="tl-asset-overview">
             <article className="card card-pad-sm">
-              <SectionHeader title="Popular Tickers" right="" />
+              <SectionHeader title="Frequently viewed stocks" right="" />
               <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
                 {POPULAR_TICKERS.map(({ ticker, name }) => {
                   const sym = normalizeSymbol(ticker)
@@ -203,7 +202,7 @@ export default function AssetsIndex() {
             </article>
 
             <article className="card card-pad-sm">
-              <SectionHeader title="Site Picks" right="" />
+              <SectionHeader title="Stock ideas to explore" right="" />
               <div className="data-rows mt-2" style={{ maxHeight: 280, overflowY: 'auto' }}>
                 {SITE_PICKS.map(({ ticker, name, reason }) => {
                   const sym = normalizeSymbol(ticker)

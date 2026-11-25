@@ -1,3 +1,4 @@
+import { PageIdentity } from '../components/content/ContentBlocks'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useApp } from '../app/AppProvider'
@@ -276,6 +277,7 @@ export default function Orders() {
   return (
     <div className="l-page tl-order-page">
       <div className="container orders">
+        <PageIdentity title="Trade stocks" description="Choose a stock, review the available balance and inspect the order details before submitting. Prices and execution times may change." />
 
         {/* Account header */}
         <header className="orders-header">
@@ -287,11 +289,11 @@ export default function Orders() {
                   <div className="skeleton-block" style={{ height: 20, width: 120 }} />
                 </div>
                 <div className="meta-kpi">
-                  <div className="meta-label">Available Funds</div>
+                  <div className="meta-label">Cash available</div>
                   <div className="skeleton-block" style={{ height: 28, width: 150 }} />
                 </div>
                 <div className="meta-kpi">
-                  <div className="meta-label">Buying Power</div>
+                  <div className="meta-label">Available to trade</div>
                   <div className="skeleton-block" style={{ height: 20, width: 100 }} />
                 </div>
               </>
