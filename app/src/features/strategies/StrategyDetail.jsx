@@ -91,7 +91,7 @@ export default function StrategyDetail() {
   return (
     <main className="tl-page" data-testid="strategy-detail">
       <p className="tl-small"><Link to="/strategies">← Strategies</Link></p>
-      <header className="tl-header" style={{ alignItems: 'flex-start' }}>
+      <header className="tl-header tl-aligned-header">
         <div>
           <h1 className="tl-title">{strategyDisplayName(s)}</h1>
           
