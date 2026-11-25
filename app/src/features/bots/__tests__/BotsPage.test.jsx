@@ -65,9 +65,9 @@ describe('BotsPage', () => {
     expect(within(dca).getByText('At most one trade per symbol per day')).toBeInTheDocument()
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Last year: −2.10% median vs +4.00% buy & hold')
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Since published: Awaiting new sessions')
-    expect(within(dca).getByRole('link', { name: /Full evidence/ })).toHaveAttribute('href', '/strategies/tmpl_dca')
+    expect(within(dca).getByRole('link', { name: /Results and methodology/ })).toHaveAttribute('href', '/strategies/tmpl_dca')
     expect(within(dca).getByTestId('featured-results')).toHaveTextContent('Too early to judge. 2 simulated fills from 1 bot on Nov 19, 0 closed trades (−$52.12 at the Nov 20 close). At least 5 closed trades across 5 sessions required.')
-    expect(within(dca).getByRole('link', { name: 'Start from this' })).toHaveAttribute('href', '/bots/new?template=tmpl_dca')
+    expect(within(dca).getByRole('link', { name: 'Customize' })).toHaveAttribute('href', '/bots/new?template=tmpl_dca')
   })
 
   it('opens a featured bot from a deep link and shows its research as historical replay', async () => {
@@ -75,7 +75,7 @@ describe('BotsPage', () => {
     renderPage('/bots?featured=tmpl_research')
     const research = await screen.findByTestId('featured-research')
     expect(research).toHaveTextContent('Holdout hit rate 48.7% vs 50.3% always-up baseline (−1.6 pts)')
-    expect(research).toHaveTextContent('No proven edge')
+    expect(research).toHaveTextContent('No verified edge')
     expect(research).toHaveTextContent('Historical replay research, separate from the results above.')
     expect(research).toHaveTextContent('Research is an input you can test, not a recommendation.')
   })
