@@ -99,9 +99,9 @@ function StartingPoint({ f, open, onToggle }) {
               {guards.map((g) => <li key={g}>{g}</li>)}
               {needsTriggerPrice(f.rules) && <li>You set the trigger price</li>}
             </ul>
-                        <div className="tl-detail-actions">
+                        <div className="tl-detail-actions tl-action-row">
               {f.available
-                ? <Link className="tl-btn" to={`/bots/new?template=${encodeURIComponent(f.id)}`}>Customize</Link>
+                ? <Link className="tl-btn tl-btn--secondary" to={`/bots/new?template=${encodeURIComponent(f.id)}`}>Customize</Link>
                 : null}
             </div>
           </div>

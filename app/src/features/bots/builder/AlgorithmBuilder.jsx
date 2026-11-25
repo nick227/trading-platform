@@ -349,7 +349,7 @@ export default function AlgorithmBuilder() {
         ← {isEdit ? originalBot?.name || 'Bot' : 'Bots'}
       </Link>
 
-      <header className="tl-header" style={{ alignItems: 'flex-start' }}>
+      <header className="tl-header tl-aligned-header">
         <div>
           <h1 className="tl-title">{isEdit ? `Edit ${originalBot?.name}` : 'New bot'}</h1>
         </div>
@@ -359,7 +359,7 @@ export default function AlgorithmBuilder() {
 
       {/* Starting point selector (Create mode only) */}
       {!isEdit && wizardData?.templates && wizardData.templates.length > 0 && (
-        <section style={{ marginBottom: 20 }}>
+        <section className="tl-builder-starting-point">
           <Field
             label="Starting point"
           >
