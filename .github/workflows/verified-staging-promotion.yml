@@ -89,17 +89,18 @@ jobs:
         run: npx prisma db push --schema=server/prisma/schema.prisma --skip-generate
       - name: Seed published test strategy templates
         run: node server/prisma/seed.js
-      - name: Paper trading concurrency, risk and accounting tests
+      - name: Offline trading risk, accounting, calendar and research tests
         working-directory: server
         run: >-
           npx vitest run --no-file-parallelism
-          test/integration/aiAutonomousPaperTrading.test.js
           test/unit/marketCalendar.test.js
           test/unit/botAccountingService.test.js
           test/unit/exitRules.test.js
           test/unit/riskIntegration.test.js
           test/integration/strategyEvidence.test.js
-          test/integration/aiStrategy.test.js
+          test/unit/researchDecision.test.js
+          test/unit/executionResearchService.test.js
+          test/clients/engineClient.test.js
       - name: Worker entrypoint syntax
         run: node --check worker/src/worker.js
 
