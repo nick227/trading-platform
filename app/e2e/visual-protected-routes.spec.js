@@ -28,7 +28,15 @@ async function mockReadOnlySession(page) {
     else if (path === '/api/account/valuation') data = valuation
     else if (path === '/api/account/value-history') data = { source: 'simulated', startingCash: 10000, points: [] }
     else if (path === '/api/alpaca/account') data = { buyingPower: 10000 }
-    else if (path === '/api/bots/catalog') data = { ruleBased: [], strategyBased: [] }
+    else if (path === '/api/bots/catalog') data = {
+      ruleBased: [{
+        id: 'visual-dca', name: 'Visual DCA', botType: 'rule_based',
+        description: 'Paper-trading sample template for visual QA',
+        config: { tickers: ['SPY'], direction: 'buy', allocatedAmount: 1000, maxOrderNotional: 100 },
+        rules: [],
+      }],
+      strategyBased: [],
+    }
     else if (path === '/api/bots') data = []
     else if (path === '/api/orders' || path === '/api/executions' || path === '/api/assets' || path === '/api/strategies/platform' || path === '/api/public/strategies') data = []
     else if (path === '/api/bots/visual-bot') data = {
