@@ -1358,3 +1358,27 @@ select.tl-input--inline { width: auto; }
     width: var(--tl-action-min-width);
   }
 }
+
+/* Visual QA closure: shared surfaces and inputs use the same geometry. */
+.tl-input:not(.tl-input--inline):not(.tl-input--sm) {
+  height: var(--tl-control-height);
+  border-radius: var(--tl-control-radius);
+}
+:is(.tl-machine-list > .tl-machine-card, .tl-strategy-card, .tl-backtest) {
+  border-radius: var(--tl-card-radius);
+}
+@media (min-width: 761px) {
+  .tl-section { margin-top: var(--tl-gap-section); }
+  .tl-machine-list > .tl-machine-card,
+  .tl-strategy-card,
+  .tl-backtest { padding: var(--tl-card-padding); }
+}
+@media (max-width: 760px) {
+  .tl-page .tl-table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
