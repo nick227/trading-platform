@@ -7,7 +7,7 @@ import { describeGuards } from '../../ui/describeBot'
 import { money, moneyWhole, plural, sessionDate, tone } from '../../ui/format'
 import pageTitleService from '../../services/pageTitleService'
 import { WINDOW_LABELS, loadPublicStrategy, pctText, summaryLine } from './strategiesApi'
-import { STRATEGY_COPY, decisionCounts, decisionLabel, strategyWindowOptions } from '../../ui/strategyPresentation'
+import { STRATEGY_COPY, decisionCounts, decisionLabel, strategyDisplayName, strategyWindowOptions } from '../../ui/strategyPresentation'
 
 const SKIP_TEXT = {
   no_position: 'it had nothing to sell', cooldown_active: 'cooldown', price_above_threshold_not_met: 'price below its trigger',
@@ -51,7 +51,7 @@ export default function StrategyDetail() {
     setState({ status: 'loading', s: null })
     loadPublicStrategy(templateId, versionParam).then((s) => {
       setState({ status: 'done', s })
-      if (s?.name) pageTitleService.setTitle(s.name)
+      if (s?.name) pageTitleService.setTitle(strategyDisplayName(s))
       if (s?.tags?.includes('ai') || s?.templateId === 'tmpl_ai_catalyst_momentum') {
         setWin('forward')
       }
@@ -79,7 +79,7 @@ export default function StrategyDetail() {
       <p className="tl-small"><Link to="/strategies">← Platform strategies</Link></p>
       <header className="tl-header" style={{ alignItems: 'flex-start' }}>
         <div>
-          <h1 className="tl-title">{s.name}</h1>
+          <h1 className="tl-title">{strategyDisplayName(s)}</h1>
           
           <p className="tl-small tl-muted m0">
 
@@ -170,11 +170,12 @@ export default function StrategyDetail() {
               {aiData.decisions.map((d) => {
                 const evaluations = Array.isArray(d.metadata?.symbolEvaluations) ? d.metadata.symbolEvaluations : []
                 const counts = decisionCounts(evaluations)
+                const proposedOrders = Array.isArray(d.metadata?.selectedDecisions) ? d.metadata.selectedDecisions.length : 0
                 return (
                   <div key={d.id} className="tl-card" style={{ marginBottom: 12, padding: 14 }}>
                     <div className="tl-small tl-muted" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
                       <span>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : 'Session unavailable'}</span>
-                      <span>{counts.evaluated} evaluated · {counts.actionable} {counts.actionable === 1 ? 'signal' : 'signals'}</span>
+                      <span>{counts.evaluated} evaluated · {proposedOrders} {proposedOrders === 1 ? 'proposal' : 'proposals'}</span>
                       {d.metadata?.isReplay && <span>Replay</span>}
                     </div>
                     <div className="tl-ai-decisions" role="list" aria-label="Symbol decisions">
