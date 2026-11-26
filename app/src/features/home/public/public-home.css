@@ -131,3 +131,13 @@
 .tl-public-plan__future{font-size:11px;color:var(--tl-public-subtle)}
 .tl-public-plan--premium{border-width:1px;border-color:#cfc7f9;background:#faf9ff}
 .tl-public-plan .tl-public-button{margin-top:24px}
+
+/* MR3: evidence-first cards; metrics remain visibly historical or forward paper. */
+.tl-public-result__topline{display:flex;align-items:start;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.tl-public-result__window{font-size:11px;font-weight:700;color:#566277;white-space:nowrap}
+.tl-public-result__metrics{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 15px}
+.tl-public-result__metric{background:#f7f8fb;padding:12px;border-radius:8px;min-width:0}
+.tl-public-result__metric dt{font-size:11px;color:var(--tl-public-subtle);margin-bottom:5px}
+.tl-public-result__metric dd{margin:0;font-variant-numeric:tabular-nums;font-weight:800;font-size:19px;letter-spacing:-.03em;overflow-wrap:anywhere}
+.tl-public-result__unavailable{padding:18px 14px;background:#f7f8fb;border-radius:8px;font-size:13px;color:#566277}
+.tl-public-result .tl-public-result-meta{margin-top:auto}
