@@ -338,4 +338,86 @@ describe('AdminDashboard', () => {
       expect(mockRevalidate).toHaveBeenCalledWith({ session: '2026-11-25' })
     })
   })
+
+  it('switches to AI Research & Decisions and displays Signed Research Publication Pipeline diagnostics', async () => {
+    const mockResearchDiagnostics = {
+      status: 'healthy',
+      publication: {
+        id: 'pub_d4ab57ddb25f42e21521c1fbeca0c3851a08680f08cc64f4e1321f7ef3baa9b7',
+        marketDate: '2026-11-25',
+        publishedAt: '2026-11-25T22:03:38Z',
+        model: 'trend_momentum_v1',
+        runStatus: 'HEALTHY',
+        publisherKeyId: 'key_ae_pub_01',
+        workerId: 'scheduled_worker',
+        schemaVersion: 'research-publication/v1'
+      },
+      gates: [
+        { gate: 'schema', status: 'pass' },
+        { gate: 'universe', status: 'pass' },
+        { gate: 'provenance', status: 'pass' },
+        { gate: 'freshness', status: 'pass' },
+        { gate: 'reproduction', status: 'pass' },
+        { gate: 'market_data', status: 'pass' },
+        { gate: 'holdout_sufficient', status: 'pass' },
+        { gate: 'edge_over_baseline', status: 'fail' }
+      ],
+      failedGates: ['edge_over_baseline'],
+      quality: {
+        edgeOverBaseline: false,
+        genuineOutOfSample: true
+      },
+      summary: {
+        pipelineActive: true,
+        operationalStatus: 'HEALTHY',
+        symbolsEvaluated: 10,
+        signalsCount: 10,
+        tradingEligibleCount: 0,
+        tradingEligibilityVerdict: 'PROTECTED_NO_EDGE',
+        explanation: 'Research publication is healthy and verified, but trading is prevented because the published model has not demonstrated a statistically significant edge over buy-and-hold on genuine out-of-sample data.'
+      },
+      symbols: [
+        {
+          symbol: 'AAPL',
+          status: 'signal',
+          direction: 'BUY',
+          score: 0.4788,
+          predictionId: 'pred_aapl_123',
+          eligibleForTrading: false,
+          edgeOverBaseline: false,
+          genuineOutOfSample: true,
+          qualityVerdict: 'no_demonstrated_edge'
+        }
+      ]
+    }
+
+    const mockFetch = vi.spyOn(adminClient, 'fetchAdminResearchDiagnostics').mockResolvedValue(mockResearchDiagnostics)
+
+    render(<AdminDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Bird's Eye Overview")).toBeInTheDocument()
+    })
+
+    const aiResearchTab = screen.getByRole('button', { name: /AI Research & Decisions/i })
+    aiResearchTab.click()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Signed Research Publication Pipeline/i)).toBeInTheDocument()
+      expect(screen.getByText(/● Pipeline Healthy/i)).toBeInTheDocument()
+      expect(screen.getByText(/PROTECTED · NO EDGE/i)).toBeInTheDocument()
+      expect(screen.getByText(/Trading Safeguard Active: Protected — No Demonstrated Edge/i)).toBeInTheDocument()
+      expect(screen.getByText('trend_momentum_v1')).toBeInTheDocument()
+      expect(screen.getByText('schema')).toBeInTheDocument()
+      expect(screen.getByText('edge_over_baseline')).toBeInTheDocument()
+      expect(screen.getAllByText('AAPL').length).toBeGreaterThan(0)
+    })
+
+    const refreshBtn = screen.getByRole('button', { name: /↻ Refresh Publication Pipeline/i })
+    refreshBtn.click()
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalled()
+    })
+  })
 })

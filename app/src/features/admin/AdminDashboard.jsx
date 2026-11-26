@@ -22,7 +22,8 @@ import {
   fetchAdminAiCycleDetail,
   fetchAdminAiDecisions,
   fetchAdminMarketDataDiagnostics,
-  revalidateAdminMarketFeed
+  revalidateAdminMarketFeed,
+  fetchAdminResearchDiagnostics
 } from '../../api/adminClient'
 import '../../styles/admin.css'
 
@@ -85,6 +86,10 @@ export default function AdminDashboard() {
   // Market Data Diagnostics states
   const [marketDataDiagnostics, setMarketDataDiagnostics] = useState(null)
   const [revalidatingFeed, setRevalidatingFeed] = useState(false)
+
+  // Research Publication Pipeline states
+  const [researchDiagnostics, setResearchDiagnostics] = useState(null)
+  const [researchLoading, setResearchLoading] = useState(false)
 
   // In-app Action Confirmation Dialog states (replacing window.prompt and window.confirm)
   const [actionDialog, setActionDialog] = useState(null)
@@ -236,6 +241,21 @@ export default function AdminDashboard() {
     }
   }
 
+  const loadResearchDiagnostics = useCallback(async () => {
+    setResearchLoading(true)
+    try {
+      const res = await fetchAdminResearchDiagnostics()
+      const data = res?.data ?? res
+      if (data) {
+        setResearchDiagnostics(data)
+      }
+    } catch (err) {
+      showFeedback('error', `Failed to load research publication diagnostics: ${err.serverMessage || err.message}`)
+    } finally {
+      setResearchLoading(false)
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
@@ -247,10 +267,11 @@ export default function AdminDashboard() {
       loadExecutions(executionStatusFilter, executionTickerFilter, blotterPage),
       loadAiCycles(aiCyclePage),
       loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage),
-      loadMarketDataDiagnostics()
+      loadMarketDataDiagnostics(),
+      loadResearchDiagnostics()
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, loadMarketDataDiagnostics, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, loadMarketDataDiagnostics, loadResearchDiagnostics, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
 
   useEffect(() => {
     refreshAll()
@@ -269,6 +290,7 @@ export default function AdminDashboard() {
       } else if (activeTab === 'ai_research') {
         loadAiCycles(aiCyclePage)
         loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage)
+        loadResearchDiagnostics()
       } else if (activeTab === 'pipeline') {
         loadMarketDataDiagnostics()
       }
@@ -1349,6 +1371,203 @@ export default function AdminDashboard() {
       {/* TAB: AI RESEARCH & DECISIONS EXPLAINABILITY INSPECTOR */}
       {activeTab === 'ai_research' && (
         <div>
+          {/* SIGNED RESEARCH PUBLICATION PIPELINE (ALPHA ENGINE) */}
+          <div className="tl-admin-table-wrapper" style={{ marginBottom: '2rem' }}>
+            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600 }}>
+                    Signed Research Publication Pipeline
+                  </h3>
+                  <span
+                    className={`tl-admin-badge ${
+                      researchDiagnostics?.status === 'healthy'
+                        ? 'tl-badge-green'
+                        : researchDiagnostics?.status === 'degraded'
+                        ? 'tl-badge-amber'
+                        : 'tl-badge-gray'
+                    }`}
+                    style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                  >
+                    {researchDiagnostics?.status === 'healthy'
+                      ? '● Pipeline Healthy'
+                      : researchDiagnostics?.status === 'degraded'
+                      ? '▲ Pipeline Degraded'
+                      : '○ Pipeline Dormant'}
+                  </span>
+                </div>
+                <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                  Alpha Engine signed research publication verification, statistical holdout gates, and trading safeguards
+                </span>
+              </div>
+              <button
+                className="tl-btn-secondary"
+                style={{ fontSize: '0.8rem' }}
+                onClick={loadResearchDiagnostics}
+                disabled={researchLoading}
+              >
+                {researchLoading ? 'Checking...' : '↻ Refresh Publication Pipeline'}
+              </button>
+            </div>
+
+            {/* Publication Metadata & Safeguard Status Cards */}
+            <div style={{ padding: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.875rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Publication ID</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#38bdf8', marginTop: '0.25rem', wordBreak: 'break-all' }} title={researchDiagnostics?.publication?.id || 'None'}>
+                  {researchDiagnostics?.publication?.id ? `${researchDiagnostics.publication.id.slice(0, 16)}...` : 'None'}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                  Schema: {researchDiagnostics?.publication?.schemaVersion || 'research-publication/v1'}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.875rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Published Model & Worker</div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#c084fc', marginTop: '0.25rem' }}>
+                  {researchDiagnostics?.publication?.model || 'trend_momentum_v1'}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                  Worker: {researchDiagnostics?.publication?.workerId || 'scheduled_worker'}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.875rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Market Session</div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#e2e8f0', marginTop: '0.25rem' }}>
+                  {researchDiagnostics?.publication?.marketDate || '—'}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                  Engine: {researchDiagnostics?.publication?.runStatus || 'UNKNOWN'}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.875rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Trading Safeguard Verdict</div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 600, color: researchDiagnostics?.summary?.tradingEligibilityVerdict === 'ELIGIBLE' ? '#4ade80' : '#f59e0b', marginTop: '0.25rem' }}>
+                  {researchDiagnostics?.summary?.tradingEligibilityVerdict === 'ELIGIBLE' ? 'ELIGIBLE' : 'PROTECTED · NO EDGE'}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                  {researchDiagnostics?.summary?.tradingEligibleCount ?? 0} of {researchDiagnostics?.summary?.symbolsEvaluated ?? 10} symbols eligible
+                </div>
+              </div>
+            </div>
+
+            {/* Trading Safeguard & Out-of-Sample Callout Banner */}
+            <div style={{ margin: '0 1.25rem 1.25rem 1.25rem', padding: '1rem', borderRadius: '8px', background: researchDiagnostics?.summary?.tradingEligibilityVerdict === 'ELIGIBLE' ? 'rgba(34, 197, 94, 0.08)' : 'rgba(245, 158, 11, 0.08)', border: `1px solid ${researchDiagnostics?.summary?.tradingEligibilityVerdict === 'ELIGIBLE' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(245, 158, 11, 0.2)'}` }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.25rem' }}>{researchDiagnostics?.summary?.tradingEligibilityVerdict === 'ELIGIBLE' ? '🛡️' : '⚠️'}</span>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem', color: researchDiagnostics?.summary?.tradingEligibilityVerdict === 'ELIGIBLE' ? '#4ade80' : '#fbbf24' }}>
+                    {researchDiagnostics?.summary?.tradingEligibilityVerdict === 'ELIGIBLE' ? 'Trading Safeguard Satisfied' : 'Trading Safeguard Active: Protected — No Demonstrated Edge'}
+                  </div>
+                  <div style={{ fontSize: '0.825rem', color: '#cbd5e1', marginTop: '0.25rem', lineHeight: 1.4 }}>
+                    {researchDiagnostics?.summary?.explanation || 'Research publications are subject to cryptographic integrity and out-of-sample edge verification before capital deployment.'}
+                  </div>
+                  {researchDiagnostics?.publication && (
+                    <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem', fontSize: '0.75rem', color: '#94a3b8', flexWrap: 'wrap' }}>
+                      <span>Holdout Edge: <strong style={{ color: researchDiagnostics.quality?.edgeOverBaseline ? '#4ade80' : '#f87171' }}>{researchDiagnostics.quality?.edgeOverBaseline ? 'PASS' : 'FAIL (No Alpha Over Baseline)'}</strong></span>
+                      <span>Genuine Out-of-Sample: <strong style={{ color: researchDiagnostics.quality?.genuineOutOfSample ? '#4ade80' : '#f87171' }}>{researchDiagnostics.quality?.genuineOutOfSample ? 'VERIFIED' : 'UNVERIFIED'}</strong></span>
+                      <span>Publisher Key: <code style={{ color: '#93c5fd' }}>{researchDiagnostics.publication.publisherKeyId}</code></span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Verification Gates */}
+            {researchDiagnostics?.gates && researchDiagnostics.gates.length > 0 && (
+              <div style={{ margin: '0 1.25rem 1.25rem 1.25rem' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Alpha Engine Integrity Gates (8-Point Contract)
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {researchDiagnostics.gates.map((g) => (
+                    <div
+                      key={g.gate}
+                      style={{
+                        padding: '0.35rem 0.65rem',
+                        borderRadius: '6px',
+                        background: g.status === 'pass' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                        border: `1px solid ${g.status === 'pass' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                        fontSize: '0.75rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem'
+                      }}
+                    >
+                      <span style={{ color: g.status === 'pass' ? '#4ade80' : '#f87171', fontWeight: 'bold' }}>
+                        {g.status === 'pass' ? '✓' : '✗'}
+                      </span>
+                      <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{g.gate}</span>
+                      <span style={{ color: g.status === 'pass' ? '#86efac' : '#fca5a5', fontSize: '0.7rem', textTransform: 'uppercase' }}>
+                        ({g.status})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Universe Signals & Decision Grid */}
+            <table className="tl-admin-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Publication Status</th>
+                  <th>Signal Direction</th>
+                  <th>Score / Confidence</th>
+                  <th>Holdout Alpha</th>
+                  <th>Downstream Trading</th>
+                  <th>Quality Verdict</th>
+                </tr>
+              </thead>
+              <tbody>
+                {researchDiagnostics?.symbols && researchDiagnostics.symbols.length > 0 ? (
+                  researchDiagnostics.symbols.map((s) => (
+                    <tr key={s.symbol}>
+                      <td style={{ fontWeight: 600, color: '#f8fafc' }}>{s.symbol}</td>
+                      <td>
+                        <span className={`tl-admin-badge ${s.status === 'signal' ? 'tl-badge-blue' : 'tl-badge-gray'}`} style={{ fontSize: '0.75rem' }}>
+                          {s.status === 'signal' ? 'Signal Published' : 'No Signal'}
+                        </span>
+                      </td>
+                      <td>
+                        {s.direction ? (
+                          <span className={`tl-admin-badge ${s.direction === 'BUY' ? 'tl-badge-green' : s.direction === 'SELL' ? 'tl-badge-red' : 'tl-badge-gray'}`} style={{ fontSize: '0.75rem' }}>
+                            {s.direction}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td style={{ fontFamily: 'monospace', color: '#93c5fd' }}>
+                        {s.score != null ? Number(s.score).toFixed(4) : '—'}
+                      </td>
+                      <td>
+                        <span style={{ color: s.edgeOverBaseline ? '#4ade80' : '#f87171', fontSize: '0.8rem', fontWeight: 500 }}>
+                          {s.edgeOverBaseline ? 'Edge Confirmed' : 'No Edge Over Baseline'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`tl-admin-badge ${s.eligibleForTrading ? 'tl-badge-green' : 'tl-badge-amber'}`} style={{ fontSize: '0.75rem' }}>
+                          {s.eligibleForTrading ? 'Eligible' : 'Protected (Blocked)'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                        {s.qualityVerdict}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                      {researchLoading ? 'Loading research publication diagnostics...' : 'No published research data available.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
           {/* AI Metrics Grid */}
           <div className="tl-ai-metrics-grid">
             <div className="tl-ai-metric-card">

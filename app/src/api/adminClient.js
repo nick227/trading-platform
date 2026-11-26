@@ -112,3 +112,7 @@ export async function fetchAdminMarketDataDiagnostics({ session = null } = {}) {
 export async function revalidateAdminMarketFeed({ session = null } = {}) {
   return post('/admin/market-data/revalidate', { session })
 }
+
+export async function fetchAdminResearchDiagnostics() {
+  return get('/admin/research/pipeline-diagnostics')
+}
