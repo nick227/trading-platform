@@ -35,7 +35,7 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     const root = page.getByTestId('strategy-detail')
     await expect(root).toBeVisible()
     await expect(root.getByRole('heading', { name: 'AI Momentum & Technical Breakout', level: 1 })).toBeVisible()
-    await expect(root.getByText(/Results shown here use simulated trades/)).toBeVisible()
+    await expect(root.getByText('Uses AI to evaluate trading opportunities.')).toBeVisible()
     await expect(page.getByTestId('window-status')).toContainText('No completed simulated sessions yet')
     await expect(root.getByText('Starting simulated capital')).toBeVisible()
     await expect(root.getByText('Maximum per order')).toBeVisible()
@@ -45,11 +45,11 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     // Capture from the top so sticky navigation remains at its actual document position.
     await page.evaluate(() => { document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, 0) })
     await page.screenshot({ path: testInfo.outputPath(`strategy-summary-${width}.png`), fullPage: true })
-    await page.getByRole('button', { name: 'Strategy design and comparison' }).click()
+    await page.getByRole('button', { name: 'How this strategy is defined and compared' }).click()
     await expect(root.getByText('Autonomous AI allocation across liquid equities')).toBeVisible()
-    await page.getByRole('button', { name: 'Version history' }).click()
+    await page.getByRole('button', { name: 'Previous published versions' }).click()
     await expect(page.getByTestId('version-list')).toBeVisible()
-    await page.getByRole('button', { name: 'Testing methods & limitations' }).click()
+    await page.getByRole('button', { name: 'How the performance results were tested' }).click()
     await expect(root.getByText('Simulated trades are not a prediction of future results.')).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1)
     // Capture from the top so sticky navigation remains at its actual document position.
