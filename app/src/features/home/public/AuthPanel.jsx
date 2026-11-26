@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../app/AuthProvider'
 
-/** Registration and sign-in reuse the existing session-backed authentication contract. */
+/** Existing session-backed registration and login. Preserve the required fullName contract. */
 export default function AuthPanel() {
   const { login, register } = useAuth()
   const navigate = useNavigate()
@@ -10,6 +10,7 @@ export default function AuthPanel() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -35,20 +36,26 @@ export default function AuthPanel() {
 
   return (
     <div className="tl-public-panel tl-public-panel--entry" id="get-started" aria-label="Get started">
-      <div className="tl-public-auth-tabs" aria-label="Account action">
+      <div className="tl-public-auth-tabs" role="group" aria-label="Account action">
         <button type="button" aria-pressed={mode === 'register'} className={mode === 'register' ? 'is-active' : ''} onClick={() => { setMode('register'); setError('') }}>Create account</button>
         <button type="button" aria-pressed={mode === 'login'} className={mode === 'login' ? 'is-active' : ''} onClick={() => { setMode('login'); setError('') }}>Sign in</button>
       </div>
       <h2>{mode === 'register' ? 'Start with a free account' : 'Welcome back'}</h2>
-      <p>{mode === 'register' ? 'Explore automated paper trading. A first-month Premium trial is planned for launch.' : 'Access your bots and simulated portfolios.'}</p>
+      <p>{mode === 'register' ? 'Create an account to explore automated paper trading. No deposit or subscription required.' : 'Access your bots and simulated portfolios.'}</p>
       <form onSubmit={submit} className="tl-public-auth-form">
         {mode === 'register' && <label>Full name<input autoComplete="name" name="fullName" type="text" required maxLength="120" disabled={busy} value={fullName} onChange={e => setFullName(e.target.value)} /></label>}
         <label>Email address<input autoComplete="email" name="email" type="email" required disabled={busy} value={email} onChange={e => setEmail(e.target.value)} /></label>
-        <label>Password<input autoComplete={mode === 'register' ? 'new-password' : 'current-password'} name="password" type="password" required minLength={mode === 'register' ? 8 : undefined} disabled={busy} value={password} onChange={e => setPassword(e.target.value)} /></label>
+        <div className="tl-public-password">
+          <label htmlFor="tl-public-password">Password</label>
+          <div className="tl-public-password__field">
+            <input id="tl-public-password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} name="password" type={showPassword ? 'text' : 'password'} required minLength={mode === 'register' ? 8 : undefined} disabled={busy} value={password} onChange={e => setPassword(e.target.value)} />
+            <button type="button" className="tl-public-password__toggle" aria-pressed={showPassword} aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(visible => !visible)}>{showPassword ? 'Hide' : 'Show'}</button>
+          </div>
+        </div>
         {error && <p className="tl-public-form-error" role="alert">{error}</p>}
         <button className="tl-public-button tl-public-button--primary" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'register' ? 'Create free account' : 'Sign in'}</button>
       </form>
-      <p className="tl-public-form-footnote">Paper trading only. No deposits or live brokerage orders.</p>
+      <p className="tl-public-form-footnote">Simulated trading only. No deposits, brokerage orders, or paid subscription at registration.</p>
     </div>
   )
 }
