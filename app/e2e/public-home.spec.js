@@ -27,8 +27,8 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     await expect(home.getByRole('heading',{name:'Start with a free account'})).toBeVisible()
     await expect(home.getByText('Pricing to be announced')).toBeVisible()
     await expect(home.getByText(/Account registration does not start a subscription/)).toBeVisible()
-    await home.getByText('Is TradeLoom trading real money?').click()
-    await expect(home.getByText(/Live brokerage orders are disabled/)).toBeVisible()
+    await home.getByText('Does TradeLoom place real-money trades?').click()
+    await expect(home.getByText(/Deposits and live brokerage orders are disabled/)).toBeVisible()
   })
 }
 
