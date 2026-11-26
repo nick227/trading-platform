@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  runAiBotEvaluation, makePassiveBenchmark, validateAiEvaluationDataset
+  runAiBotEvaluation, makePassiveBenchmark, validateAiEvaluationDataset,
+  buildRecordedAiEvaluationArm
 } from '../../src/services/ai/aiBotEvaluationLab.js'
 
 const sessions = [
@@ -104,6 +105,43 @@ describe('MR 17 point-in-time AI evaluation laboratory', () => {
     expect(result.evaluatedArms[0].result.completedFills).toBe(0)
     expect(result.evaluatedArms[0].result.pendingSignals).toBe(1)
     expect(result.evaluatedArms[0].result.totalReturnPct).toBe(0)
+  })
+
+  it('extracts only verified recorded AI decisions created before next market open', () => {
+    const event = {
+      id: 'req_stock_recorded_1', botId: 'bot-1', type: 'decision_made',
+      createdAt: '2026-11-20T22:00:00.000Z',
+      metadata: {
+        status: 'completed', fingerprint: 'b'.repeat(64),
+        snapshot: {
+          asOfSession: '2026-11-20', fingerprint: 'a'.repeat(64),
+          context: {
+            market: { asOf: '2026-11-20' },
+            portfolio: { asOf: '2026-11-20' }
+          }
+        },
+        decision: {
+          asOfSession: '2026-11-20',
+          actionable: [{ symbol: 'AAPL', action: 'BUY', targetAllocationPct: 0.2 }]
+        }
+      }
+    }
+    const arm = buildRecordedAiEvaluationArm({
+      id: 'verified_agent', botId: 'bot-1', events: [event], sessions
+    })
+    expect(arm.signals[0]).toMatchObject({
+      session: '2026-11-20', symbol: 'AAPL', researchEventId: event.id,
+      snapshotFingerprint: 'a'.repeat(64)
+    })
+    const replay = runAiBotEvaluation({ sessions, arms: [arm] })
+    expect(replay.evaluatedArms[0].fills[0].fillSession).toBe('2026-11-23')
+    expect(() => buildRecordedAiEvaluationArm({
+      id: 'bad', botId: 'other', events: [event], sessions
+    })).toThrow(/foreign/)
+    expect(() => buildRecordedAiEvaluationArm({
+      id: 'late', botId: 'bot-1',
+      events: [{ ...event, createdAt: '2026-11-23T16:00:00.000Z' }], sessions
+    })).toThrow(/after its intended next opening/)
   })
 
   it('produces stable replay fingerprints with explicit caveats', () => {
