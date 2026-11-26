@@ -205,3 +205,17 @@ describe('GET /api/admin/ai/decisions', () => {
     expect(resHold.body.data.decisions[0].symbol).toBe('MSFT')
   })
 })
+
+describe('Legacy AI endpoints require administrator authorization', () => {
+  for (const path of ['/api/ai/strategies/tmpl_ai_catalyst_momentum/run', '/api/ai/strategies/tmpl_ai_catalyst_momentum/market-open']) {
+    it(`rejects anonymous POST ${path} before invoking any work`, async () => {
+      const response = await request(app.server).post(path).send({})
+      expect(response.status).toBe(401)
+    })
+    it(`rejects non-admin POST ${path}`, async () => {
+      const response = await request(app.server).post(path)
+        .set('Authorization', `Bearer ${regularToken}`).send({})
+      expect(response.status).toBe(403)
+    })
+  }
+})

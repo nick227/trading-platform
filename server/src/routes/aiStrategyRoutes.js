@@ -2,13 +2,15 @@ import { executeAiStrategyCycle, getAiDecisionsHistory, getOrCreateCanonicalAiBo
 import { loadBotFills, calculateFifoAccounting } from '../services/botAccountingService.js'
 import { runAiStrategyMarketOpenJob } from '../jobs/aiStrategyMarketOpenJob.js'
 import { getAiPipelineStatus } from '../services/ai/aiPipelineTracker.js'
+import { requireRole } from '../middleware/requireAdmin.js'
 
 /**
  * /api/ai/strategies — Endpoints for autonomous AI strategy execution and inspection.
  */
 export default async function aiStrategyRoutes(app) {
+  const adminOnly = requireRole(['admin'])
   // POST /api/ai/strategies/:templateId/run — Triggers autonomous daily research & decision cycle
-  app.post('/strategies/:templateId/run', async (request, reply) => {
+  app.post('/strategies/:templateId/run', { preHandler: [adminOnly] }, async (request, reply) => {
     const { templateId } = request.params
     const { session, provider = 'openai', dryRun = false } = request.body || {}
 
@@ -100,7 +102,7 @@ export default async function aiStrategyRoutes(app) {
   })
 
   // POST /api/ai/strategies/:templateId/market-open — Executes pending next_open orders at market open
-  app.post('/strategies/:templateId/market-open', async (request, reply) => {
+  app.post('/strategies/:templateId/market-open', { preHandler: [adminOnly] }, async (request, reply) => {
     const { templateId } = request.params
 
     try {

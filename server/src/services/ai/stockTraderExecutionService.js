@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import prisma from '../../loaders/prisma.js'
 import { evaluateRiskCaps } from '../../../../worker/src/risk/riskCaps.js'
 import { readEmergencyStop } from '../emergencyStopService.js'
-import { nextTradingSession } from './aiBotService.js'
+import { nextStockTraderSession } from './stockTraderTradingSession.js'
 import { AI_STOCK_TRADER_STRATEGY_ID } from './strategies/aiStockTraderStrategy.js'
 
 export async function queueStockTraderPaperOrders({
@@ -133,7 +133,7 @@ export async function queueStockTraderPaperOrders({
       sourceType: 'AI_FORWARD',
       sourceId: AI_STOCK_TRADER_STRATEGY_ID,
       status: 'queued',
-      simSession: nextTradingSession(screening.asOfSession),
+      simSession: nextStockTraderSession(screening.asOfSession),
       clientOrderId,
       activeIntentKey,
       commission: 0,
