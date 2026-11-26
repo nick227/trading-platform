@@ -9,6 +9,8 @@ on:
       - 'server/package.json'
       - 'server/prisma/**'
       - 'server/src/jobs/aiStockTrader*.js'
+      - 'server/src/routes/publicAiStockTrader.js'
+      - 'server/src/loaders/routes.js'
       - '.github/workflows/ai-backend-contracts.yml'
   workflow_dispatch:
 
@@ -25,5 +27,5 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Generate Prisma client
         run: npm run db:generate --workspace=server
-      - name: AI foundation through governed orchestration tests
-        run: npm exec --workspace=server -- vitest run test/unit/aiStockTraderFoundation.test.js test/unit/aiStockScreener.test.js test/unit/aiStockTraderContext.test.js test/unit/aiStockTraderDecision.test.js test/unit/aiStockTraderExecution.test.js test/unit/aiStockTraderPortfolio.test.js test/unit/aiUsageGovernor.test.js test/unit/aiStockTraderDailyJob.test.js
+      - name: AI contracts and public dashboard tests
+        run: npm exec --workspace=server -- vitest run test/unit/aiStockTraderFoundation.test.js test/unit/aiStockScreener.test.js test/unit/aiStockTraderContext.test.js test/unit/aiStockTraderDecision.test.js test/unit/aiStockTraderExecution.test.js test/unit/aiStockTraderPortfolio.test.js test/unit/aiUsageGovernor.test.js test/unit/aiStockTraderDailyJob.test.js test/unit/aiStockTraderDashboard.test.js
