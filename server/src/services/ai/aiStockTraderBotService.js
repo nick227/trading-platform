@@ -9,7 +9,7 @@ import {
   AI_STOCK_TRADER_PLATFORM_PORTFOLIO_ID,
   AI_STOCK_TRADER_PLATFORM_USER_ID,
   AI_STOCK_TRADER_STRATEGY_ID,
-  createAiStockTraderConfig
+  createAiStockTraderAgentConfig
 } from './strategies/aiStockTraderStrategy.js'
 
 export async function getOrCreatePlatformAiStockTrader({
@@ -50,7 +50,7 @@ export async function getOrCreatePlatformAiStockTrader({
       name: 'AI Stock Trader',
       description: 'AI-powered stock discovery and autonomous simulated portfolio decisions.',
       botType: 'strategy_based',
-      config: createAiStockTraderConfig(),
+      config: createAiStockTraderAgentConfig(),
       rules: [],
       tags: ['ai', 'stock-trader', 'paper']
     }
@@ -67,7 +67,7 @@ export async function getOrCreatePlatformAiStockTrader({
       botType: 'strategy_based',
       name: 'AI Stock Trader (Platform Paper)',
       enabled: false, // No live AI calls or scheduled trading until subsequent MRs.
-      config: createAiStockTraderConfig()
+      config: createAiStockTraderAgentConfig()
     }
   })
 
