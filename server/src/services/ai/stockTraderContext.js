@@ -39,7 +39,8 @@ export function createStockTraderContextRegistry() {
       return [...collectors.keys()]
     },
 
-    async assemble({ session, input, modules = STOCK_TRADER_REQUIRED_MODULES, maxBytes = 48_000 }) {
+    async assemble({ session, input, modules = STOCK_TRADER_REQUIRED_MODULES, maxBytes = 48_000,
+      evidenceRegistry = null, evidenceSourceIds = [], retrievedCutoff = null }) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(session ?? '') || Number.isNaN(Date.parse(session + 'T00:00:00Z'))) {
         throw new Error('Valid session required for AI context')
       }
@@ -86,11 +87,21 @@ export function createStockTraderContextRegistry() {
 
       // Sort keys so module registration order cannot change the fingerprint.
       const ordered = Object.fromEntries(Object.keys(sections).sort().map(id => [id, sections[id]]))
+      if (evidenceSourceIds.length && !evidenceRegistry) {
+        throw new Error('Research evidence adapters must be explicitly registered')
+      }
+      const evidence = evidenceRegistry && evidenceSourceIds.length
+        ? await evidenceRegistry.assemble({
+          sourceIds: evidenceSourceIds, asOfSession: session, input,
+          retrievedCutoff, maxBytes: Math.floor(maxBytes / 2)
+        })
+        : null
       const snapshot = {
         strategyVersion: AI_STOCK_TRADER_VERSION,
         asOfSession: session,
         context: ordered,
-        unavailable: unavailable.sort((a, b) => a.id.localeCompare(b.id))
+        unavailable: unavailable.sort((a, b) => a.id.localeCompare(b.id)),
+        ...(evidence ? { evidence } : {})
       }
       const json = JSON.stringify(snapshot)
       if (Buffer.byteLength(json, 'utf8') > maxBytes) throw new Error('AI research context exceeds byte budget')
