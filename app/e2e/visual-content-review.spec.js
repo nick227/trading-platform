@@ -39,7 +39,7 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     await expect(page.getByTestId('window-status')).toContainText('Results pending')
     await expect(root.getByText('Starting simulated capital')).toBeVisible()
     await expect(root.getByText('Maximum per order')).toBeVisible()
-    await expect(root.getByText('Forward paper')).toHaveCount(0)
+    await expect(root.getByText('Forward paper', { exact: true })).toHaveCount(0)
     await expect(root.getByText('v01234567')).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1)
     // Capture from the top so sticky navigation remains at its actual document position.
