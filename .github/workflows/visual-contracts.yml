@@ -29,8 +29,8 @@ jobs:
         run: npm test
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Geometry and public route checks
-        run: npx playwright test -c playwright.config.js e2e/visual-geometry.spec.js e2e/visual-page-coverage.spec.js e2e/visual-auth-coverage.spec.js e2e/visual-protected-routes.spec.js e2e/visual-content-review.spec.js
+      - name: Geometry and public-home regression checks
+        run: npx playwright test -c playwright.config.js e2e/visual-geometry.spec.js e2e/visual-page-coverage.spec.js e2e/visual-auth-coverage.spec.js e2e/visual-protected-routes.spec.js e2e/visual-content-review.spec.js e2e/public-home.spec.js e2e/public-home-hardening.spec.js
       - name: Attach visual reports
         if: always()
         uses: actions/upload-artifact@v4
