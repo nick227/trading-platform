@@ -36,7 +36,7 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     await expect(root).toBeVisible()
     await expect(root.getByRole('heading', { name: 'AI Momentum & Technical Breakout', level: 1 })).toBeVisible()
     await expect(root.getByText('Uses AI to evaluate trading opportunities.')).toBeVisible()
-    await expect(page.getByTestId('window-status')).toContainText('No completed simulated sessions yet')
+    await expect(page.getByTestId('window-status')).toContainText('Results pending')
     await expect(root.getByText('Starting simulated capital')).toBeVisible()
     await expect(root.getByText('Maximum per order')).toBeVisible()
     await expect(root.getByText('Forward paper')).toHaveCount(0)
