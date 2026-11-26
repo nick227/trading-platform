@@ -8,6 +8,7 @@ import { DEFAULT_TRADABLE_SYMBOLS } from '../../simulationService.js'
 
 export const AI_STOCK_TRADER_STRATEGY_ID = 'tmpl_ai_stock_trader'
 export const AI_STOCK_TRADER_VERSION = '1.0.0'
+export const AI_STOCK_TRADER_AGENT_VERSION = '2.0.0'
 export const AI_STOCK_TRADER_PLATFORM_BOT_ID = 'bot_platform_ai_stock_trader_v1'
 export const AI_STOCK_TRADER_PLATFORM_PORTFOLIO_ID = 'port_platform_ai_stock_trader_v1'
 export const AI_STOCK_TRADER_PLATFORM_USER_ID = 'usr_platform_canonical'
@@ -83,5 +84,15 @@ export function createAiStockTraderConfig(overrides = {}) {
       cadence
     },
     execution: { ...AI_STOCK_TRADER_DEFAULTS.execution }
+  }
+}
+
+/** Opt-in autonomous two-pass research configuration; legacy v1 stays replayable. */
+export function createAiStockTraderAgentConfig(overrides = {}) {
+  const original = createAiStockTraderConfig(overrides)
+  return {
+    ...original,
+    strategyVersion: AI_STOCK_TRADER_AGENT_VERSION,
+    research: { ...original.research, maxCallsPerCycle: 2 }
   }
 }
