@@ -158,7 +158,10 @@ describe('AdminDashboard', () => {
     blotterTab.click()
 
     await waitFor(() => {
+      expect(screen.getByText('Intent Price vs Fill Price')).toBeInTheDocument()
       expect(screen.getByText(/Showing 1–20 of 45 orders/i)).toBeInTheDocument()
+      expect(screen.getByText('Intent: $230.50')).toBeInTheDocument()
+      expect(screen.getByText('Fill: $231.10')).toBeInTheDocument()
     })
   })
 

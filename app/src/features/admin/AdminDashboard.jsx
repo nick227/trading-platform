@@ -168,9 +168,40 @@ export default function AdminDashboard() {
     refreshAll()
     const timer = setInterval(() => {
       loadOverview()
-    }, 15000) // Poll overview every 15s
+      if (activeTab === 'blotter') {
+        loadExecutions(executionStatusFilter, executionTickerFilter, blotterPage)
+      } else if (activeTab === 'bots') {
+        loadBots(botSearch, botStatusFilter, botTypeFilter, botPage)
+      } else if (activeTab === 'users') {
+        loadUsers(userSearch, userPage)
+      } else if (activeTab === 'activity') {
+        loadActivity(activityPage)
+      } else if (activeTab === 'audit') {
+        loadAuditLogs(auditPage)
+      }
+    }, 15000) // Poll active tab dataset & overview every 15s
     return () => clearInterval(timer)
-  }, [refreshAll, loadOverview])
+  }, [
+    refreshAll,
+    loadOverview,
+    activeTab,
+    loadExecutions,
+    executionStatusFilter,
+    executionTickerFilter,
+    blotterPage,
+    loadBots,
+    botSearch,
+    botStatusFilter,
+    botTypeFilter,
+    botPage,
+    loadUsers,
+    userSearch,
+    userPage,
+    loadActivity,
+    activityPage,
+    loadAuditLogs,
+    auditPage
+  ])
 
   // Global ESC key listener to dismiss open inspection modals & action dialogs
   useEffect(() => {
@@ -1625,6 +1656,9 @@ export default function AdminDashboard() {
             >
               Filter Blotter
             </button>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8', width: '100%', marginTop: '0.25rem' }}>
+              💡 <strong>Intent Price</strong> represents the model target at decision time (prior close reference); <strong>Fill Price</strong> is the actual executed exchange price at session open.
+            </div>
           </div>
 
           {/* Blotter Table */}
@@ -1636,7 +1670,7 @@ export default function AdminDashboard() {
                   <th>Execution ID</th>
                   <th>Ticker / Side</th>
                   <th>Quantity</th>
-                  <th>Target vs Fill</th>
+                  <th>Intent Price vs Fill Price</th>
                   <th>Status</th>
                   <th>Bot / User</th>
                   <th>Diagnostics / Reason</th>
@@ -1664,10 +1698,14 @@ export default function AdminDashboard() {
                         </td>
                         <td style={{ fontWeight: 600 }}>{ex.quantity}</td>
                         <td>
-                          <div>Target: ${Number(ex.price || 0).toFixed(2)}</div>
-                          {ex.filledPrice && (
-                            <div style={{ fontSize: '0.75rem', color: '#4ade80' }}>
+                          <div style={{ fontWeight: 600 }}>Intent: {ex.price ? `$${Number(ex.price).toFixed(2)}` : 'Market'}</div>
+                          {ex.filledPrice ? (
+                            <div style={{ fontSize: '0.75rem', color: '#4ade80', marginTop: '2px' }}>
                               Fill: ${Number(ex.filledPrice).toFixed(2)}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>
+                              Fill: Pending Open
                             </div>
                           )}
                         </td>
