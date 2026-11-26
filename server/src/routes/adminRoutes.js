@@ -31,7 +31,9 @@ import {
   revalidateAdminMarketFeed,
   getResearchPublicationDiagnostics,
   triggerEvidenceCompaction,
-  getEvidenceStorageMetrics
+  getEvidenceStorageMetrics,
+  getAdminBrokerFleetStatus,
+  triggerAdminBrokerReconcileAll
 } from '../services/adminService.js'
 
 export default async function adminRoutes(app) {
@@ -499,6 +501,37 @@ export default async function adminRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'RESEARCH_DIAGNOSTICS_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/broker/fleet-status — Broker connection fleet stats and position drift
+  app.get('/broker/fleet-status', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const data = await getAdminBrokerFleetStatus()
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to fetch broker fleet status')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_BROKER_FLEET_STATUS_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // POST /api/admin/broker/reconcile-all — Trigger fleet-wide reconciliation sweep
+  app.post('/broker/reconcile-all', { preHandler: [adminOnly] }, async (request, reply) => {
+    try {
+      const data = await triggerAdminBrokerReconcileAll({
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to trigger fleet broker reconciliation')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_BROKER_RECONCILE_ALL_ERROR', message: err.message }
       })
     }
   })

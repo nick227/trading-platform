@@ -1,6 +1,7 @@
 import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { getUserAlpacaCredentialsOrThrow } from './alpacaClockService.js'
+import { simulationConfig } from './simulationService.js'
 
 const OVERLAP_MS = 5 * 60 * 1000
 const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
@@ -174,6 +175,10 @@ function buildBrokerPositionMap(positions) {
 }
 
 async function detectPositionDrift(userId) {
+  if (simulationConfig().enabled) {
+    return { inSync: true, mismatchCount: 0, mismatchDetails: [], positionSource: 'simulated' }
+  }
+
   const [executions, broker] = await Promise.all([
     prisma.execution.findMany({
       where: { userId },
@@ -227,8 +232,27 @@ async function detectPositionDrift(userId) {
 }
 
 export async function getReconcileStatus(userId) {
+  const sim = simulationConfig()
   const checkpoint = await prisma.brokerSyncCheckpoint.findUnique({ where: { userId } })
   if (!checkpoint) {
+    if (sim.enabled) {
+      return {
+        synced: true,
+        lastSyncStatus: 'ok',
+        lastSyncedAt: new Date(),
+        lastSyncError: null,
+        inSync: true,
+        mismatchCount: 0,
+        mismatchDetails: [],
+        mismatchSymbols: [],
+        positionSource: 'simulated',
+        sourceOfTruth: {
+          executionHistory: 'db',
+          positionsEquity: 'simulated',
+          stats: 'simulated'
+        }
+      }
+    }
     return {
       synced: false,
       lastSyncStatus: 'never',
@@ -237,6 +261,7 @@ export async function getReconcileStatus(userId) {
       inSync: true,
       mismatchCount: 0,
       mismatchDetails: [],
+      mismatchSymbols: [],
       positionSource: 'db',
       sourceOfTruth: {
         executionHistory: 'db',
@@ -260,13 +285,49 @@ export async function getReconcileStatus(userId) {
     positionSource: checkpoint.positionSource,
     sourceOfTruth: {
       executionHistory: 'db',
-      positionsEquity: 'alpaca',
-      stats: 'hybrid'
+      positionsEquity: sim.enabled ? 'simulated' : 'alpaca',
+      stats: sim.enabled ? 'simulated' : 'hybrid'
     }
   }
 }
 
 export async function reconcileBrokerActivity(userId) {
+  if (simulationConfig().enabled) {
+    const now = new Date()
+    const saved = await prisma.brokerSyncCheckpoint.upsert({
+      where: { userId },
+      update: {
+        lastSyncedAt: now,
+        lastSyncStatus: 'ok',
+        lastSyncError: null,
+        inSync: true,
+        mismatchCount: 0,
+        mismatchDetails: [],
+        positionSource: 'simulated'
+      },
+      create: {
+        userId,
+        lastSyncedAt: now,
+        lastSyncStatus: 'ok',
+        lastSyncError: null,
+        inSync: true,
+        mismatchCount: 0,
+        mismatchDetails: [],
+        positionSource: 'simulated'
+      }
+    })
+    return {
+      imported: 0,
+      scannedOrders: 0,
+      hasMoreOrders: false,
+      lastSyncedAt: saved.lastSyncedAt,
+      lastSyncStatus: saved.lastSyncStatus,
+      inSync: true,
+      mismatchCount: 0,
+      positionSource: 'simulated'
+    }
+  }
+
   const creds = await getUserAlpacaCredentialsOrThrow(userId)
   const portfolioId = await getOrCreateDefaultPortfolioId(userId)
 
@@ -350,4 +411,94 @@ export async function reconcileBrokerActivity(userId) {
     })
     throw error
   }
+}
+
+/**
+ * Platform-wide broker fleet status and drift radar for administrator inspection.
+ */
+export async function getBrokerFleetStatus({ prismaClient = prisma } = {}) {
+  const sim = simulationConfig()
+  const [accounts, checkpoints, users] = await Promise.all([
+    prismaClient.brokerAccount.findMany({
+      select: { id: true, userId: true, paper: true, status: true, lastVerifiedAt: true, createdAt: true, updatedAt: true }
+    }).catch(() => []),
+    prismaClient.brokerSyncCheckpoint.findMany().catch(() => []),
+    prismaClient.user.findMany({ select: { id: true, email: true, name: true } }).catch(() => [])
+  ])
+
+  const userMap = new Map(users.map((u) => [u.id, u]))
+  const checkpointMap = new Map(checkpoints.map((c) => [c.userId, c]))
+
+  const totalConnected = accounts.length
+  const paperCount = accounts.filter((a) => a.paper !== false).length
+  const liveCount = accounts.filter((a) => a.paper === false).length
+
+  let inSyncCount = 0
+  let driftedCount = 0
+  const driftedAccounts = []
+
+  for (const acc of accounts) {
+    const cp = checkpointMap.get(acc.userId)
+    const user = userMap.get(acc.userId)
+    const inSync = cp ? cp.inSync : true
+    const mismatchCount = cp ? cp.mismatchCount : 0
+
+    if (!inSync || mismatchCount > 0) {
+      driftedCount += 1
+      driftedAccounts.push({
+        userId: acc.userId,
+        userEmail: user?.email ?? 'unknown',
+        paper: acc.paper !== false,
+        lastSyncedAt: cp?.lastSyncedAt ?? null,
+        lastSyncStatus: cp?.lastSyncStatus ?? 'pending',
+        mismatchCount,
+        mismatchDetails: Array.isArray(cp?.mismatchDetails) ? cp.mismatchDetails : [],
+        positionSource: cp?.positionSource ?? 'unknown'
+      })
+    } else {
+      inSyncCount += 1
+    }
+  }
+
+  return {
+    timestamp: new Date().toISOString(),
+    simulatedMode: sim.enabled,
+    fleet: {
+      totalAccounts: totalConnected,
+      paperAccounts: paperCount,
+      liveAccounts: liveCount,
+      inSyncAccounts: inSyncCount,
+      driftedAccountsCount: driftedCount
+    },
+    driftedAccounts
+  }
+}
+
+/**
+ * Triggers an on-demand reconciliation sweep across all connected broker accounts.
+ */
+export async function reconcileBrokerFleet({ prismaClient = prisma } = {}) {
+  const accounts = await prismaClient.brokerAccount.findMany({
+    where: { status: 'active' },
+    select: { userId: true }
+  }).catch(() => [])
+
+  const results = {
+    total: accounts.length,
+    succeeded: 0,
+    failed: 0,
+    errors: []
+  }
+
+  for (const acc of accounts) {
+    try {
+      await reconcileBrokerActivity(acc.userId)
+      results.succeeded += 1
+    } catch (err) {
+      results.failed += 1
+      results.errors.push({ userId: acc.userId, error: err.message })
+    }
+  }
+
+  return results
 }

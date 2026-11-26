@@ -14,6 +14,7 @@ import { PLATFORM_USER_ID } from './ai/aiBotService.js'
 import { validateAndIngestDailyMarketData, DEFAULT_TRADABLE_SYMBOLS } from './ai/aiMarketDataService.js'
 import { getExpectedCompletedExchangeSession, isExchangeTradingDay } from '../utils/marketCalendar.js'
 import { engineClient } from '../clients/engine.js'
+import { getBrokerFleetStatus, reconcileBrokerFleet } from './brokerReconciliationService.js'
 
 export const VALID_ROLES = ['user', 'operator', 'admin']
 
@@ -1056,6 +1057,38 @@ export async function getEvidenceStorageMetrics({ prismaClient = prisma } = {}) 
     estimatedJsonBytes: totalBytes,
     estimatedStorageKb: Math.round(totalBytes / 1024)
   }
+}
+
+/**
+ * Administrator query for broker fleet connection status and ledger drift.
+ */
+export async function getAdminBrokerFleetStatus({ prismaClient = prisma } = {}) {
+  return getBrokerFleetStatus({ prismaClient })
+}
+
+/**
+ * Administrator trigger to reconcile all active broker accounts fleet-wide.
+ */
+export async function triggerAdminBrokerReconcileAll({
+  actorUserId = null,
+  ipAddress = null,
+  prismaClient = prisma
+} = {}) {
+  const result = await reconcileBrokerFleet({ prismaClient })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'broker_reconcile_all',
+      targetType: 'broker_fleet',
+      targetId: 'all',
+      payload: result,
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return result
 }
 
 /**
