@@ -55,7 +55,8 @@ function normalize(def) {
   if (!AI_BOT_RISK_POLICIES.includes(def.riskPolicyId)) {
     throw new AiBotDefinitionError('AI bot must reference a registered, code-owned risk policy')
   }
-  if (!validList(def.contextModules) || !def.contextModules.length || !validList(def.researchTools)) {
+  if (!validList(def.contextModules) || !def.contextModules.length ||
+      !validList(def.researchTools) || !validList(def.evidenceSources ?? [])) {
     throw new AiBotDefinitionError('AI bot context modules and tools must be distinct valid identifiers')
   }
   if (!Number.isInteger(def.maxModelCalls) || def.maxModelCalls < 1 || def.maxModelCalls > MAX_MODEL_CALLS ||
@@ -85,6 +86,7 @@ function normalize(def) {
     reasoningInstructions: def.reasoningInstructions.trim(),
     contextModules: [...def.contextModules],
     researchTools: [...def.researchTools],
+    evidenceSources: [...(def.evidenceSources ?? [])],
     provider: def.provider,
     model: def.model,
     schedule: def.schedule,
