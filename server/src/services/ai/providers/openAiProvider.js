@@ -27,7 +27,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     this.baseUrl = baseUrl
   }
 
-  async completeStructured({ systemPrompt, userPrompt, schema = null, model = this.defaultModel, temperature = 0.2 }) {
+  async completeStructured({ systemPrompt, userPrompt, schema = null, model = this.defaultModel, temperature = 0.2, maxTokens = null }) {
     if (!this.apiKey) {
       throw new Error('OPENAI_API_KEY is not configured')
     }
@@ -39,7 +39,8 @@ export class OpenAIProvider extends BaseLLMProvider {
         { role: 'user', content: userPrompt }
       ],
       response_format: { type: 'json_object' },
-      temperature
+      temperature,
+      ...(Number.isInteger(maxTokens) && maxTokens > 0 ? { max_tokens: maxTokens } : {})
     }
 
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
