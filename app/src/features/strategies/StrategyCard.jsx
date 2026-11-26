@@ -25,14 +25,14 @@ export default function StrategyCard({ strategy }) {
       <Link className="tl-strategy-catalog-card__link" to={`/strategies/${encodeURIComponent(strategy.templateId)}`}>
         <div className="tl-strategy-catalog-card__top">
           <h2>{strategyDisplayName(strategy)}</h2>
-          {isAi && <span className="tl-strategy-catalog-card__type">AI-assisted strategy</span>}
+          {isAi && <span className="tl-strategy-catalog-card__type">Uses AI research</span>}
         </div>
         <p className="tl-strategy-catalog-card__description">{catalogOverview(strategy)}</p>
         <div className="tl-strategy-catalog-card__evidence">
           <p className="tl-strategy-catalog-card__period">{catalogPeriod(window)}</p>
           <StrategyEvidencePreview summary={summary} window={window} />
         </div>
-        <span className="tl-strategy-catalog-card__action">Read the full strategy report <span aria-hidden="true">→</span></span>
+        <span className="tl-strategy-catalog-card__action">Read strategy details <span aria-hidden="true">→</span></span>
       </Link>
     </article>
   )

@@ -19,7 +19,7 @@ for(const width of [320,375,768,1024,1440]) {
     await mockCatalog(page)
     await page.goto('/strategies')
     const root=page.getByTestId('strategies-index')
-    await expect(root.getByRole('heading',{name:"Explore TradeLoom's automated trading strategies."})).toBeVisible()
+    await expect(root.getByRole('heading',{name:"Automated trading strategies"})).toBeVisible()
     const cards=root.getByTestId('strategy-card')
     await expect(cards).toHaveCount(3)
     for(const card of await cards.all()) {
@@ -28,9 +28,9 @@ for(const width of [320,375,768,1024,1440]) {
     }
     await expect(cards.first()).toContainText('−7.25%')
     await expect(cards.first()).toContainText('+3.50%')
-    await expect(cards.first()).toContainText('The typical strategy return was')
-    await expect(cards.nth(1)).toContainText('There are not yet enough completed trading sessions')
-    await expect(cards.nth(2)).toContainText('cannot be evaluated with the available historical test')
+    await expect(cards.first()).toContainText('Typical strategy return')
+    await expect(cards.nth(1)).toContainText('has not completed enough simulated trading sessions')
+    await expect(cards.nth(2)).toContainText('cannot be tested using the available historical method')
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1)
   })
 }
@@ -49,4 +49,34 @@ test('catalog API failure preserves an understandable error state',async ({page}
   await page.goto('/strategies')
   await expect(page.getByRole('alert')).toContainText('The list could not be loaded.')
   await expect(page.getByTestId('strategy-card')).toHaveCount(0)
+})
+
+test('tiled cards have no hover shadow, movement, or border-color transition', async ({page}) => {
+  await page.setViewportSize({width:1440,height:900})
+  await mockCatalog(page)
+  await page.goto('/strategies')
+  const cards=page.getByTestId('strategy-card')
+  await expect(cards).toHaveCount(3)
+  const initial=await cards.first().evaluate(el=>{const s=getComputedStyle(el);return {shadow:s.boxShadow,transform:s.transform,border:s.borderColor,transition:s.transitionDuration}})
+  await cards.first().hover()
+  const hovered=await cards.first().evaluate(el=>{const s=getComputedStyle(el);return {shadow:s.boxShadow,transform:s.transform,border:s.borderColor,transition:s.transitionDuration}})
+  expect(hovered).toEqual(initial)
+  expect(initial.shadow).toBe('none')
+  expect(initial.transform).toBe('none')
+  expect(initial.transition).toBe('0s')
+})
+
+test('the catalog tiles into one, two, and three columns without changing evidence', async ({page}) => {
+  await mockCatalog(page)
+  for(const [width,columns] of [[375,1],[900,2],[1440,3]]) {
+    await page.setViewportSize({width,height:900})
+    await page.goto('/strategies')
+    const cards=page.getByTestId('strategy-card')
+    await expect(cards).toHaveCount(3)
+    const positions=await cards.evaluateAll(list=>list.map(el=>({x:el.getBoundingClientRect().x,y:el.getBoundingClientRect().y})))
+    expect(new Set(positions.filter(x=>x.y===positions[0].y).map(x=>x.x)).size).toBe(columns)
+    await expect(cards.first()).toContainText('−7.25%')
+    await expect(cards.first()).toContainText('+3.50%')
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1)
+  }
 })
