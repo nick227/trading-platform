@@ -1,6 +1,7 @@
 import { runRegimeSnapshot } from './regimeSnapshotJob.js'
 import { runAiStrategyDailyJob } from './aiStrategyDailyJob.js'
 import { runAiStrategyMarketOpenJob } from './aiStrategyMarketOpenJob.js'
+import { runStockTraderDailyJob } from './aiStockTraderDailyJob.js'
 
 const DEFAULT_SYMBOLS = ['SPY']
 
@@ -47,6 +48,7 @@ export async function startSchedulers() {
     startFallbackMarketOpenScheduler()
     startFallbackRegimeScheduler()
     startFallbackAiStrategyScheduler()
+    if (process.env.ENABLE_FLAGSHIP_STOCK_TRADER === 'true') startFallbackStockTraderScheduler()
   }
 }
 
@@ -76,6 +78,13 @@ async function startCronSchedulers() {
   }), {
     timezone: 'America/New_York'
   })
+
+  // Flagship is explicitly opt-in, independent of the legacy momentum schedule.
+  if (process.env.ENABLE_FLAGSHIP_STOCK_TRADER === 'true') {
+    cron.schedule('45 16 * * 1-5', () => runStockTraderDailyJob().catch(err => {
+      console.error('[scheduler] flagship AI Stock Trader job error:', err?.message ?? err)
+    }), { timezone: 'America/New_York' })
+  }
 
   // Once daily at 2:00 AM ET, every day.
   cron.schedule('0 2 * * *', () => runBackfillReconciler(), {
@@ -123,6 +132,22 @@ function startFallbackAiStrategyScheduler() {
 
   scheduleNext()
   console.log('[scheduler] fallback autonomous AI scheduler armed (4:30 PM ET, Mon–Fri)')
+}
+
+function startFallbackStockTraderScheduler() {
+  const scheduleNext = () => {
+    const delayMs = msUntilNextEasternWeekdayTime(16, 45)
+    setTimeout(async () => {
+      try {
+        await runStockTraderDailyJob()
+      } catch (error) {
+        console.error('[scheduler] fallback flagship Stock Trader job failed:', error)
+      } finally {
+        scheduleNext()
+      }
+    }, delayMs)
+  }
+  scheduleNext()
 }
 
 function startFallbackRegimeScheduler() {
