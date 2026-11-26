@@ -12,9 +12,9 @@ import { PageIdentity, ContentSection, ContentState, FactGrid, TechnicalDetail }
 import { strategyOverview, evidenceState, decisionState, uniqueStatements, describeEvaluationTiming } from '../../ui/contentPresentation'
 
 const SKIP_TEXT = {
-  no_position: 'it had nothing to sell', cooldown_active: 'cooldown', price_above_threshold_not_met: 'price below its trigger',
-  price_below_threshold_not_met: 'price above its trigger', time_window_outside: 'its trading window excludes the daily close',
-  position_limit_reached: 'position limit', relative_volume_below: 'volume condition', invalid_quantity: 'order too small',
+  no_position: 'the strategy had no shares to sell', cooldown_active: 'the strategy was waiting between trades', price_above_threshold_not_met: 'the stock price did not reach the purchase threshold',
+  price_below_threshold_not_met: 'the stock price did not reach the sale threshold', time_window_outside: 'the evaluation fell outside the configured trading window',
+  position_limit_reached: 'the configured position limit was reached', relative_volume_below: 'trading volume was below the required level', invalid_quantity: 'the proposed order did not meet the minimum size',
 }
 function whyNot(r) {
   const top = Object.entries(r.results?.skips ?? {}).sort((a, b) => b[1] - a[1])[0]
@@ -28,15 +28,15 @@ function Summary({ s }) {
   }
   return (
     <dl className="tl-stats tl-stats--4 tl-stat-grid--flush" data-testid="window-summary">
-      <div className="tl-stat"><dt>Median return</dt><dd className={tone(s.medianReturnPct)}>{pctText(s.medianReturnPct)}<small>across {plural(s.symbolsTested, 'symbol')}</small></dd></div>
-      <div className="tl-stat"><dt>Buy &amp; hold</dt><dd className={tone(s.medianBuyAndHoldPct)}>{pctText(s.medianBuyAndHoldPct)}<small>beat on {s.beatBuyAndHold} of {s.symbolsTested}</small></dd></div>
-      <div className="tl-stat"><dt>Worst drawdown</dt><dd>{s.worstDrawdownPct ? `${s.worstDrawdownPct.toFixed(2)}%` : '—'}<small>any symbol</small></dd></div>
-      <div className="tl-stat"><dt>Trades</dt><dd>{s.trades}<small>traded on {s.symbolsTraded} of {s.symbolsTested}{s.exits ? ` · ${s.exits} exit sells` : ''}</small></dd></div>
+      <div className="tl-stat"><dt>Typical strategy return</dt><dd className={tone(s.medianReturnPct)}>{pctText(s.medianReturnPct)}<small>across {plural(s.symbolsTested, 'stock')} tested</small></dd></div>
+      <div className="tl-stat"><dt>Typical buy-and-hold return</dt><dd className={tone(s.medianBuyAndHoldPct)}>{pctText(s.medianBuyAndHoldPct)}<small>The strategy returned more on {s.beatBuyAndHold} of {s.symbolsTested} tested stocks.</small></dd></div>
+      <div className="tl-stat"><dt>Largest recorded decline</dt><dd>{s.worstDrawdownPct ? `${s.worstDrawdownPct.toFixed(2)}%` : '—'}<small>The largest decline recorded for an individual stock in this test.</small></dd></div>
+      <div className="tl-stat"><dt>Recorded trades</dt><dd>{s.trades}<small>The strategy traded {s.symbolsTraded} of {s.symbolsTested} tested stocks.{s.exits ? ` It recorded ${s.exits} sales that closed positions.` : ''}</small></dd></div>
       {s.medianDrawdownPct !== undefined && s.medianDrawdownPct !== null && (
-        <div className="tl-stat" data-testid="drawdown-benchmark"><dt>Median drawdown</dt><dd>{s.medianDrawdownPct.toFixed(2)}%<small>buy &amp; hold {s.medianBuyAndHoldDrawdownPct?.toFixed(2)}% · lower on {s.lowerDrawdownThanBuyAndHold} of {s.symbolsTested}</small></dd></div>
+        <div className="tl-stat" data-testid="drawdown-benchmark"><dt>Typical decline during the test</dt><dd>{s.medianDrawdownPct.toFixed(2)}%<small>Buying and holding declined {s.medianBuyAndHoldDrawdownPct?.toFixed(2)}%. The strategy had smaller declines for {s.lowerDrawdownThanBuyAndHold} of {s.symbolsTested} stocks.</small></dd></div>
       )}
       {s.medianTimeInMarketPct !== undefined && s.medianTimeInMarketPct !== null && (
-        <div className="tl-stat"><dt>Time in market</dt><dd>{s.medianTimeInMarketPct.toFixed(0)}%<small>median share of sessions holding</small></dd></div>
+        <div className="tl-stat"><dt>Time invested</dt><dd>{s.medianTimeInMarketPct.toFixed(0)}%<small>The typical percentage of test sessions with an open position.</small></dd></div>
       )}
     </dl>
   )
@@ -99,24 +99,14 @@ export default function StrategyDetail() {
       <PageIdentity
         title={strategyDisplayName(s)}
         description={strategyOverview(s)}
-        tags={<>{isAi && <span className="tl-tag tl-tag--sim">AI-managed</span>}<span className="tl-tag">Simulated trading</span></>}
+        tags={<>{isAi && <span className="tl-tag tl-tag--sim">AI-assisted strategy</span>}<span className="tl-tag">Historical or simulated evidence</span></>}
         action={s.workshopAvailable === true ? <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link> : null}
       />
       {!s.version.current && (
         <div className="tl-notice" data-testid="earlier-version">An earlier version of this strategy, kept with its results for the record. <Link to={`/strategies/${encodeURIComponent(s.templateId)}`}>See the current version</Link></div>
       )}
       {!s.version.backtestable && !isAi && <div className="tl-notice" data-testid="not-backtestable">{s.version.reason || 'Not backtestable'}</div>}
-      {s.design && (
-        <TechnicalDetail label="Strategy design and comparison" testId="strategy-design">
-          <p className="tl-content-help">These are the published technical definitions used to describe the strategy and compare its results.</p>
-          <dl className="tl-facts">
-            <dt>Published objective</dt><dd>{s.design.objective}</dd>
-            <dt>Comparison</dt><dd>{s.design.benchmark}</dd>
-            <dt>Decision method</dt><dd>{s.design.parameterBasis}</dd>
-            {s.design.developmentEnd && <><dt>Later test period</dt><dd>After {sessionDate(s.design.developmentEnd, { year: true })}</dd></>}
-          </dl>
-        </TechnicalDetail>
-      )}
+
 
       <section className="tl-section" aria-labelledby="results-title">
         <div className="tl-section-head">
@@ -127,6 +117,7 @@ export default function StrategyDetail() {
             </div>
           ) : null}
         </div>
+        <p className="tl-content-help">Published strategy returns are compared with the result of buying and holding the same investments during the selected test period. These figures are historical or simulated, not returns earned by investors.</p>
         <Summary s={s.summary?.[win] ? { ...s.summary[win], window: win } : { window: win, status: win === 'forward' ? 'awaiting_sessions' : 'unavailable' }} />
 
 
@@ -136,20 +127,20 @@ export default function StrategyDetail() {
             <ValueChart
               points={chosen.results.curve.map((p) => ({ t: p.date, v: p.equity }))}
               secondaryPoints={chosen.results.buyAndHold?.curve?.map((p) => ({ t: p.date, v: p.equity }))}
-              secondaryLabel="Buy & hold"
+              secondaryLabel="Buy and hold"
               baseline={chosen.results.capital}
               baselineLabel={`Start ${moneyWhole(chosen.results.capital)}`}
               height={200}
               label={`${strategyDisplayName(s)} on ${chosen.symbol}`}
               minSpan={chosen.results.capital * 0.01}
             />
-            <p className="tl-chart-caption">{chosen.symbol} · Strategy {pctText(chosen.results.metrics?.returnPct)} · Buy &amp; hold {pctText(chosen.results.buyAndHold?.returnPct)}</p>
+            <p className="tl-chart-caption">For {chosen.symbol}, the strategy returned {pctText(chosen.results.metrics?.returnPct)} compared with {pctText(chosen.results.buyAndHold?.returnPct)} from buying and holding.</p>
           </div>
         )}
         {rows.length > 0 && (
           <div className="tl-internal-scroll">
             <table className="tl-table" data-testid="symbol-results">
-              <thead><tr><th>Symbol</th><th className="r">Return</th><th className="r">Buy &amp; hold</th><th className="r tl-hide-sm">Max drawdown</th><th className="r">Trades</th><th className="r tl-hide-sm">Win rate</th></tr></thead>
+              <thead><tr><th>Stock</th><th className="r">Strategy return</th><th className="r">Buy-and-hold return</th><th className="r tl-hide-sm">Largest decline</th><th className="r">Trades</th><th className="r tl-hide-sm">Winning trades</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.symbol} data-testid="symbol-row" onClick={() => r.status === 'ok' && setSym(r.symbol)} style={{ cursor: r.status === 'ok' ? 'pointer' : 'default' }} aria-selected={chosen?.symbol === r.symbol}>
@@ -162,7 +153,7 @@ export default function StrategyDetail() {
                         <td className="r">{r.results.metrics.trades === 0 ? <span className="tl-muted" title={whyNot(r) ?? ''}>0{whyNot(r) ? ` · ${whyNot(r)}` : ''}</span> : r.results.metrics.trades}</td>
                         <td className="r tl-hide-sm">{r.results.metrics.winRate !== null ? `${Math.round(r.results.metrics.winRate * 100)}%` : '—'}</td>
                       </>
-                    ) : <td colSpan={5} className="tl-muted">{r.status === 'awaiting_sessions' ? 'Awaiting sessions after publication' : r.status === 'not_backtestable' ? 'Not backtestable' : r.reason ?? 'No result'}</td>}
+                    ) : <td colSpan={5} className="tl-muted">{r.status === 'awaiting_sessions' ? 'The strategy has not completed enough trading sessions yet.' : r.status === 'not_backtestable' ? 'This strategy cannot be evaluated with the available historical test.' : r.reason ?? 'No completed result has been published.'}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -176,6 +167,7 @@ export default function StrategyDetail() {
           <div className="tl-section-head">
             <h2 className="tl-section-title" id="ai-feed-title">{STRATEGY_COPY.decisions}</h2>
           </div>
+          <p className="tl-content-help">These entries show recorded stock evaluations and any proposed orders. They are not a complete transcript of the AI system's reasoning or evidence that a trade was executed.</p>
           {aiState.status === 'loading' ? (
             <span className="tl-skel" style={{ height: 48 }} aria-label={STRATEGY_COPY.loadingDecisions} />
           ) : aiState.status === 'error' ? (
@@ -190,7 +182,7 @@ export default function StrategyDetail() {
                   <div key={d.id} className="tl-card tl-card-shell tl-card-shell--compact">
                     <div className="tl-small tl-muted tl-evidence-meta">
                       <span>{d.metadata?.asOfSession ? sessionDate(d.metadata.asOfSession, { year: true }) : 'Session unavailable'}</span>
-                      <span>{counts.evaluated} checked · {proposedOrders ? `${proposedOrders} ${proposedOrders === 1 ? 'order proposed' : 'orders proposed'}` : 'No orders proposed'}</span>
+                      <span>{counts.evaluated} {counts.evaluated === 1 ? 'stock was' : 'stocks were'} evaluated. {proposedOrders ? `${proposedOrders} ${proposedOrders === 1 ? 'order was' : 'orders were'} proposed.` : 'No orders proposed.'}</span>
                       {d.metadata?.isReplay && <span>Replay</span>}
                     </div>
                     <div className="tl-ai-decisions" role="list" aria-label="Symbol decisions">
@@ -224,7 +216,7 @@ export default function StrategyDetail() {
         </section>
       )}
 
-      <ContentSection title="Trading limits & schedule" description="What the strategy is permitted to do and when it evaluates trades." testId="tested-definition">
+      <ContentSection title="How this strategy is configured" description="These are the trading limits and evaluation settings published for this strategy." testId="tested-definition">
         {isAi && <FactGrid label="AI trading limits" items={[
           { key: 'capital', label: 'Starting simulated capital', value: moneyWhole(def.config.allocatedAmount ?? 10000) },
           { key: 'order', label: 'Maximum per order', value: moneyWhole(def.config.maxOrderNotional ?? 2000) },
@@ -235,7 +227,7 @@ export default function StrategyDetail() {
           rules: def.rules,
         })).length > 0 && (
           <div className="tl-content-rule-group">
-            <h3 className="tl-content-subheading">Trading conditions & safeguards</h3>
+            <h3 className="tl-content-subheading">Conditions that determine when the strategy can place an order</h3>
             <ul className="tl-rule-list">
               {!isAi && <li>{def.config.direction === 'sell' ? 'Sells shares it already holds of' : 'Buys'} each symbol it’s tested on</li>}
               {uniqueStatements(describeGuards({
@@ -248,8 +240,20 @@ export default function StrategyDetail() {
         )}
       </ContentSection>
 
-      <TechnicalDetail label="Testing methods & limitations" testId="evidence-method">
-        <p className="tl-content-help">Historical tests and simulated trading are not predictions of future performance. Timing and prices may differ from actual orders.</p>
+      {s.design && (
+        <TechnicalDetail label="How this strategy is defined and compared" testId="strategy-design">
+          <p className="tl-content-help">The following information describes the published strategy objective, the comparison used to evaluate it, and the available decision method.</p>
+          <dl className="tl-facts">
+            <dt>What the strategy is designed to do</dt><dd>{s.design.objective}</dd>
+            <dt>How performance is compared</dt><dd>{s.design.benchmark}</dd>
+            <dt>How trading decisions are evaluated</dt><dd>{s.design.parameterBasis}</dd>
+            {s.design.developmentEnd && <><dt>Additional historical testing begins</dt><dd>After {sessionDate(s.design.developmentEnd, { year: true })}</dd></>}
+          </dl>
+        </TechnicalDetail>
+      )}
+
+      <TechnicalDetail label="How the performance results were tested" testId="evidence-method">
+        <p className="tl-content-help">Historical tests and simulated trades do not predict future investment returns. Actual brokerage orders may execute at different prices or times.</p>
         <ul className="tl-backtest-notes">
           {uniqueStatements(s.assumptions).map((a) => <li key={a}>{a}</li>)}
           {rows[0]?.riskPolicyVersion && <li>Risk policy: {rows[0].riskPolicyVersion}.</li>}
@@ -258,8 +262,8 @@ export default function StrategyDetail() {
           <p className="tl-small tl-muted">Test-specific trigger prices: {rows.filter((r) => r.parameters?.triggerPrice).map((r) => `${r.symbol} ${money(r.parameters.triggerPrice)} (${sessionDate(r.parameters.triggerFrom, { year: true })})`).join(' · ')}</p>
         )}
       </TechnicalDetail>
-      <TechnicalDetail label="Version history" testId="version-history">
-        <p className="tl-content-help">Each set of results belongs to the strategy version used to produce it.</p>
+      <TechnicalDetail label="Previous published versions" testId="version-history">
+        <p className="tl-content-help">Each published version keeps its own strategy definition and results, so earlier tests remain distinguishable from current ones.</p>
         <ul className="tl-backtest-notes" data-testid="version-list">
           {s.versions.map((v) => (
             <li key={v.id}>

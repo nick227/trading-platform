@@ -39,12 +39,9 @@ export function decisionState(status, count) {
 
 /** Explain real structured facts; never infer a strategy's trading conditions. */
 export function strategyOverview(strategy) {
-  const isAi = strategy?.tags?.includes('ai') || strategy?.templateId === 'tmpl_ai_catalyst_momentum'
-  if (isAi) {
-    return 'Reviews market information after each trading day and evaluates possible stock trades using AI. Results shown here use simulated trades, not real money.'
-  }
-  const raw = String(strategy?.description ?? strategy?.design?.objective ?? '').trim()
-  return raw || 'Review how this strategy is configured and what its recorded results show.'
+  const published = String(strategy?.description ?? strategy?.design?.objective ?? '').trim()
+  if (published) return published
+  return 'A complete explanation of this strategy’s trading approach has not yet been published. Its available settings and recorded results appear below.'
 }
 
 export function uniqueStatements(items) {

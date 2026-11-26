@@ -1,12 +1,12 @@
 /** Shared, factual display helpers for strategy details. No trading logic. */
 export const STRATEGY_COPY = Object.freeze({
-  results: 'Results',
-  decisions: 'Decisions',
+  results: 'Published strategy performance',
+  decisions: 'Recorded AI strategy evaluations',
   settings: 'Settings',
   details: 'Details',
   noDecisions: 'No decisions yet.',
   noResults: 'No results yet.',
-  decisionsUnavailable: 'Decisions unavailable.',
+  decisionsUnavailable: 'Recorded strategy evaluations could not be loaded. This does not mean that no evaluations occurred.',
   loadingDecisions: 'Loading decisions',
 })
 
