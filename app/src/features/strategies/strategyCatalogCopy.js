@@ -1,15 +1,15 @@
 /**
- * Plain-language descriptions are reviewed against the published seed strategy
- * rules. The backend remains authoritative for all results and configurations.
+ * User-facing strategy explanations. Each purpose-first description is based on
+ * the published template rules, not inferred from performance or market data.
  */
 export const STRATEGY_EXPLANATIONS = {
-  tmpl_ai_catalyst_momentum: 'An AI model reviews stock price trends, trading volume, and other market information to identify possible trades.',
-  tmpl_alpha_research: 'This strategy follows recent Alpha Engine research signals. It skips a trade when the research is outdated or does not meet its conditions.',
-  tmpl_dca_accumulator: 'This strategy invests $1,000 at regular 30-day intervals rather than investing the full amount at once.',
-  tmpl_loss_guard: 'This strategy buys at regular intervals and sells its holdings if their price falls 10% below the average purchase price.',
-  tmpl_momentum_buy: 'This strategy buys when a stock price rises above a set level, subject to trading limits and a waiting period between orders.',
-  tmpl_momentum_sell: 'This strategy buys after a sustained price increase and sells if the trend reverses or the position reaches its loss limit.',
-  tmpl_spy_trend_filter: 'This strategy holds SPY while its longer-term price trend is positive and sells when that trend turns downward.',
+  tmpl_ai_catalyst_momentum: 'This strategy looks for potential stock trades using AI analysis. It reviews available market information, including price trends and trading volume, before proposing trades.',
+  tmpl_alpha_research: 'This strategy follows research published by TradeLoom’s Alpha Engine. It considers trades only when the research is recent and meets its confidence and price requirements.',
+  tmpl_dca_accumulator: 'This strategy builds a position gradually instead of buying all at once. It invests a fixed $1,000 every 30 days, regardless of short-term price movements.',
+  tmpl_loss_guard: 'This strategy buys shares regularly and limits losses on the position. It sells when the price falls 10% below the average purchase cost and waits before buying again.',
+  tmpl_momentum_buy: 'This strategy attempts to buy stocks after their prices rise above a defined level. It also applies trading-hour restrictions, position limits, and a waiting period between orders.',
+  tmpl_momentum_sell: 'This strategy aims to participate in rising stock prices while limiting losses. It buys after sustained price gains and sells when the trend reverses or a loss limit is reached.',
+  tmpl_spy_trend_filter: 'This strategy follows the longer-term direction of SPY, a fund tracking the S&P 500. It holds shares during an upward trend and sells when the trend turns downward.',
 }
 
 export function catalogOverview(strategy) {
@@ -23,27 +23,33 @@ export function catalogOverview(strategy) {
 
 export function catalogPeriod(window) {
   return ({
-    '5Y': 'Five-year historical test',
-    '1Y': 'One-year historical test',
-    holdout: 'Later historical test',
-    forward: 'Results since publication',
-  })[window] || 'Available test results'
+    '5Y': 'Historical test · Five years',
+    '1Y': 'Historical test · One year',
+    holdout: 'Historical test · Later period',
+    forward: 'Simulated trading · Since publication',
+  })[window] || 'Published strategy results'
 }
 
-/** When the API does not publish a return, distinguish that from a zero return. */
+/** Distinguish an unavailable measurement from a real return of zero. */
 export function catalogResult(summary, window) {
-  if (!summary) return 'No results have been published for this period.'
+  if (!summary) return 'No performance results have been published for this period.'
   if (summary.status === 'not_backtestable') {
     return window === 'forward'
-      ? 'Performance results since publication are not available.'
-      : 'This strategy does not have results from the available historical tests.'
+      ? 'No performance results have been published since this strategy was introduced.'
+      : 'This strategy cannot be evaluated using the available historical testing method.'
   }
-  if (summary.status === 'awaiting_sessions') return 'There are not yet enough completed trading sessions to report performance.'
-  if (summary.status === 'insufficient_data') return 'There is not enough market data to calculate the result.'
-  if (summary.status !== 'ok') return 'Performance results are currently unavailable.'
-  if (summary.symbolsTraded === 0) return 'This strategy did not place any trades during this test.'
+  if (summary.status === 'awaiting_sessions') return 'There are not enough completed trading sessions to measure performance.'
+  if (summary.status === 'insufficient_data') return 'The available market data is insufficient to calculate performance.'
+  if (summary.status !== 'ok') return 'Performance results have not been published for this period.'
+  if (summary.symbolsTraded === 0) return 'This strategy did not place any trades during the selected test.'
   if (!Number.isFinite(summary.medianReturnPct) || !Number.isFinite(summary.medianBuyAndHoldPct)) {
-    return 'Trades were recorded, but comparable returns have not been published.'
+    return 'Trading activity is recorded, but comparable return figures are not available.'
   }
   return null
+}
+
+export function catalogResultHeading(summary) {
+  if (summary?.status === 'ok' && summary?.symbolsTraded === 0) return 'No trades recorded'
+  if (summary?.status === 'awaiting_sessions') return 'Results pending'
+  return 'Results unavailable'
 }
