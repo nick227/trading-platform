@@ -3,6 +3,8 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { get } from '../../../api/client'
 import StrategyDetail from '../StrategyDetail'
+import { catalogOverview, catalogPeriod, catalogResult } from '../strategyCatalogCopy'
+import { mainEvidenceWindow } from '../StrategyCard'
 import StrategiesIndex from '../StrategiesIndex'
 import TemplateBaseline, { behaviourKey } from '../../bots/builder/TemplateBaseline'
 
@@ -128,5 +130,25 @@ describe('AI strategy presentation', () => {
     render(<MemoryRouter initialEntries={['/strategies/tmpl_ai_catalyst_momentum']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
     expect(await screen.findByRole('alert')).toHaveTextContent('Decisions unavailable')
     expect(screen.queryByText('No decisions yet.')).not.toBeInTheDocument()
+  })
+})
+
+describe('public strategy catalog contract', () => {
+  it('uses published descriptions rather than constructing a trading rationale', () => {
+    expect(catalogOverview({name:'Undocumented'})).toMatch(/has not yet been published/)
+    expect(catalogOverview({description:'The published strategy buys shares after a defined price signal.'}))
+      .toBe('The published strategy buys shares after a defined price signal.')
+  })
+  it('preserves losses, incomplete tests, and simulated evidence labels', () => {
+    const negative = {status:'ok',symbolsTested:3,symbolsTraded:2,medianReturnPct:-7.25,medianBuyAndHoldPct:3.5}
+    expect(catalogResult(negative,'5Y')).toContain('−7.25%')
+    expect(catalogResult(negative,'5Y')).toContain('+3.50%')
+    expect(catalogPeriod('forward')).toBe('Simulated trading after publication')
+    expect(catalogResult({status:'awaiting_sessions'},'forward')).toMatch(/not yet enough completed/)
+    expect(catalogResult({status:'not_backtestable'},'5Y')).toMatch(/cannot be evaluated/)
+  })
+  it('prefers a completed available period but does not mislabel AI evidence', () => {
+    expect(mainEvidenceWindow({windows:{'5Y':{status:'insufficient_data'},'1Y':{status:'ok'}}})).toBe('1Y')
+    expect(mainEvidenceWindow({tags:['ai'],windows:{'5Y':{status:'ok'},forward:{status:'awaiting_sessions'}}})).toBe('forward')
   })
 })
