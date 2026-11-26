@@ -5,7 +5,7 @@ import {
   quarantineClaimedAiPaperExecution
 } from '../../src/services/ai/paperExecutionClaims.js'
 import { processPendingAiExecutions } from '../../src/services/ai/aiBotService.js'
-import { SimulatedBroker } from '../../../../worker/src/broker/simulatedBroker.js'
+import { SimulatedBroker } from '../../../worker/src/broker/simulatedBroker.js'
 
 const session = '2026-11-27'
 const execution = () => ({
