@@ -18,3 +18,15 @@
 .tl-public-button:focus-visible{outline:3px solid #9b8cf4;outline-offset:3px}
 @media(max-width:760px){.tl-public-section{padding:40px 20px}.tl-public-hero{grid-template-columns:minmax(0,1fr);gap:28px}.tl-public-panel{padding:24px}.tl-public-home h1{font-size:clamp(34px,9vw,48px)}}
 @media(prefers-reduced-motion:reduce){.tl-public-home *{transition:none!important}}
+
+.tl-public-auth-tabs{display:grid;grid-template-columns:1fr 1fr;background:#f5f6f8;padding:4px;border-radius:9px;margin-bottom:22px}
+.tl-public-auth-tabs button{border:0;border-radius:7px;min-height:38px;font-size:13px;font-weight:700;background:transparent;color:var(--tl-public-subtle);cursor:pointer}
+.tl-public-auth-tabs button.is-active{background:#fff;color:var(--tl-public-ink);box-shadow:0 1px 4px #16203917}
+.tl-public-auth-form{display:grid;gap:14px;margin-top:20px}
+.tl-public-auth-form label{font-size:12px;font-weight:700;display:grid;gap:6px}
+.tl-public-auth-form input{width:100%;min-height:44px;border:1px solid #cbd0dc;border-radius:8px;background:#fff;color:var(--tl-public-ink);font-size:15px;padding:10px 12px}
+.tl-public-auth-form input:focus-visible{outline:3px solid #cbc3ff;outline-offset:1px;border-color:var(--tl-public-accent)}
+.tl-public-auth-form .tl-public-button{border:0;cursor:pointer;margin-top:4px}
+.tl-public-auth-form .tl-public-button:disabled{opacity:.65;cursor:wait}
+.tl-public-form-error{color:#b42318!important;background:#fff4f3;padding:10px;border-radius:6px;margin:0!important}
+.tl-public-form-footnote{font-size:12px!important;margin:14px 0 0}
