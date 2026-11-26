@@ -18,6 +18,7 @@ import riskRoutes from '../routes/risk.js'
 import metricsRoutes from '../routes/metrics.js'
 import backtestRoutes from '../routes/backtests.js'
 import publicStrategyRoutes from '../routes/publicStrategies.js'
+import publicAiStockTraderRoutes from '../routes/publicAiStockTrader.js'
 import aiStrategyRoutes from '../routes/aiStrategyRoutes.js'
 import adminRoutes from '../routes/adminRoutes.js'
 import { authenticate } from '../middleware/authenticate.js'
@@ -28,6 +29,7 @@ export default async function registerRoutes(app) {
   await app.register(adminRoutes,       { prefix: '/api/admin' })
   // Public, no login: TradeLoom's standardized strategy evidence.
   await app.register(publicStrategyRoutes, { prefix: '/api/public/strategies' })
+  await app.register(publicAiStockTraderRoutes, { prefix: '/api/public/ai-stock-trader' })
   await app.register(aiStrategyRoutes, { prefix: '/api/ai' })
   await app.register(strategiesRoutes,  { prefix: '/api/strategies' })
   await app.register(predictionsRoutes, { prefix: '/api/predictions' })
