@@ -40,7 +40,7 @@ test('public evidence cards preserve source results and missing evidence states'
     ]})
   }))
   await page.goto('/')
-  await page.getByTestId('public-live-evidence').scrollIntoViewIfNeeded()
+  await page.locator('#public-live-evidence').scrollIntoViewIfNeeded()
   await expect(page.getByText('−3.50%')).toBeVisible()
   await expect(page.getByText('+2.25%')).toBeVisible()
   await expect(page.getByText('Awaiting forward paper sessions')).toBeVisible()
