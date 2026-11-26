@@ -5,6 +5,9 @@ import {
   fetchAdminActivity,
   fetchAdminUsers,
   fetchAdminAuditLogs,
+  fetchAdminBots,
+  fetchAdminBotDetail,
+  toggleAdminBot,
   updateAdminUserRole,
   setAdminEmergencyStop,
   runAdminMarketOpen,
@@ -32,6 +35,15 @@ export default function AdminDashboard() {
   const [userSearch, setUserSearch] = useState('')
   const [auditLogs, setAuditLogs] = useState([])
   const [auditTotal, setAuditTotal] = useState(0)
+
+  // Bot Fleet states
+  const [bots, setBots] = useState([])
+  const [botsTotal, setBotsTotal] = useState(0)
+  const [botSearch, setBotSearch] = useState('')
+  const [botStatusFilter, setBotStatusFilter] = useState('')
+  const [botTypeFilter, setBotTypeFilter] = useState('')
+  const [selectedBotDetail, setSelectedBotDetail] = useState(null)
+  const [botDetailLoading, setBotDetailLoading] = useState(false)
 
   const showFeedback = (type, message) => {
     setFeedback({ type, message })
@@ -77,16 +89,33 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  const loadBots = useCallback(async (searchQuery = '', status = '', bType = '') => {
+    try {
+      const data = await fetchAdminBots({
+        limit: 50,
+        offset: 0,
+        search: searchQuery,
+        status: status || null,
+        botType: bType || null
+      })
+      setBots(data?.bots || [])
+      setBotsTotal(data?.total || 0)
+    } catch (err) {
+      showFeedback('error', `Failed to load bot fleet: ${err.serverMessage || err.message}`)
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
       loadOverview(),
       loadActivity(),
       loadUsers(userSearch),
-      loadAuditLogs()
+      loadAuditLogs(),
+      loadBots(botSearch, botStatusFilter, botTypeFilter)
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, userSearch])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, userSearch, botSearch, botStatusFilter, botTypeFilter])
 
   useEffect(() => {
     refreshAll()
@@ -178,8 +207,36 @@ export default function AdminDashboard() {
       showFeedback('success', `Updated user role to '${newRole}'.`)
       await loadUsers(userSearch)
       await loadOverview()
+      await loadAuditLogs()
     } catch (err) {
       showFeedback('error', `Failed to update role: ${err.serverMessage || err.message}`)
+    }
+  }
+
+  const handleToggleBot = async (botId, currentEnabled) => {
+    setActionLoading(true)
+    try {
+      await toggleAdminBot(botId)
+      showFeedback('success', `Bot successfully ${currentEnabled ? 'paused' : 'resumed'}.`)
+      await loadBots(botSearch, botStatusFilter, botTypeFilter)
+      await loadOverview()
+      await loadAuditLogs()
+    } catch (err) {
+      showFeedback('error', `Failed to toggle bot: ${err.serverMessage || err.message}`)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleInspectBot = async (botId) => {
+    setBotDetailLoading(true)
+    try {
+      const res = await fetchAdminBotDetail(botId)
+      setSelectedBotDetail(res?.data || res)
+    } catch (err) {
+      showFeedback('error', `Failed to fetch bot details: ${err.serverMessage || err.message}`)
+    } finally {
+      setBotDetailLoading(false)
     }
   }
 
@@ -245,6 +302,12 @@ export default function AdminDashboard() {
           onClick={() => setActiveTab('overview')}
         >
           Bird's Eye Overview
+        </button>
+        <button
+          className={`tl-admin-tab ${activeTab === 'bots' ? 'active' : ''}`}
+          onClick={() => setActiveTab('bots')}
+        >
+          Bot Fleet ({botsTotal})
         </button>
         <button
           className={`tl-admin-tab ${activeTab === 'pipeline' ? 'active' : ''}`}
@@ -431,6 +494,314 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* TAB: BOT FLEET */}
+      {activeTab === 'bots' && (
+        <div>
+          {/* Filter Bar */}
+          <div className="tl-admin-toolbar" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Search by bot name or ID..."
+              className="tl-admin-input"
+              style={{ flex: '1 1 200px' }}
+              value={botSearch}
+              onChange={(e) => setBotSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') loadBots(botSearch, botStatusFilter, botTypeFilter)
+              }}
+            />
+            <select
+              className="tl-admin-select"
+              value={botStatusFilter}
+              onChange={(e) => {
+                setBotStatusFilter(e.target.value)
+                loadBots(botSearch, e.target.value, botTypeFilter)
+              }}
+            >
+              <option value="">All Statuses</option>
+              <option value="active">Active / Running</option>
+              <option value="paused">Paused</option>
+            </select>
+            <select
+              className="tl-admin-select"
+              value={botTypeFilter}
+              onChange={(e) => {
+                setBotTypeFilter(e.target.value)
+                loadBots(botSearch, botStatusFilter, e.target.value)
+              }}
+            >
+              <option value="">All Types</option>
+              <option value="ai">AI Strategies</option>
+              <option value="rule">Rule Engine</option>
+            </select>
+            <button
+              className="tl-btn-secondary"
+              onClick={() => loadBots(botSearch, botStatusFilter, botTypeFilter)}
+            >
+              Search
+            </button>
+          </div>
+
+          {/* Bot Fleet Table */}
+          <div className="tl-admin-table-wrapper">
+            <table className="tl-admin-table">
+              <thead>
+                <tr>
+                  <th>Bot / Template</th>
+                  <th>Type</th>
+                  <th>Owner</th>
+                  <th>Status</th>
+                  <th>Portfolio Equity</th>
+                  <th>Filled Trades</th>
+                  <th>Last Event</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bots.length > 0 ? (
+                  bots.map(b => {
+                    const isAi = b.botType?.includes('ai') || b.templateId?.startsWith('tmpl_ai_')
+                    return (
+                      <tr key={b.id}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{b.name}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            <code>{b.id}</code> {b.templateId ? `· ${b.templateId}` : ''}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`tl-admin-badge ${isAi ? 'tl-badge-purple' : 'tl-badge-blue'}`}>
+                            {isAi ? 'AI Strategy' : 'Rule Engine'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 500 }}>{b.user?.fullName || '—'}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{b.user?.email || b.userId}</div>
+                        </td>
+                        <td>
+                          <span className={`tl-admin-badge ${b.enabled ? 'tl-badge-green' : 'tl-badge-red'}`}>
+                            {b.enabled ? 'Running' : 'Paused'}
+                          </span>
+                        </td>
+                        <td>
+                          {b.portfolio ? (
+                            <div>
+                              <div style={{ fontWeight: 600 }}>
+                                ${Number(b.portfolio.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                Cash: ${Number(b.portfolio.cashBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                            </div>
+                          ) : '—'}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{b.filledExecutionsCount ?? 0}</td>
+                        <td>
+                          {b.lastEvent ? (
+                            <div>
+                              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1' }}>
+                                {b.lastEvent.type}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                {new Date(b.lastEvent.createdAt).toLocaleString()}
+                              </div>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>No recent events</span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                              className="tl-btn-secondary"
+                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                              onClick={() => handleInspectBot(b.id)}
+                              disabled={botDetailLoading}
+                            >
+                              Inspect
+                            </button>
+                            {isAdmin && (
+                              <button
+                                className={b.enabled ? 'tl-btn-danger' : 'tl-btn-primary'}
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                onClick={() => handleToggleBot(b.id, b.enabled)}
+                                disabled={actionLoading}
+                              >
+                                {b.enabled ? 'Pause' : 'Resume'}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="8" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
+                      No bots found matching criteria.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bot Inspection Modal / Drawer */}
+          {selectedBotDetail && (
+            <div className="tl-modal-overlay" style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.75)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              padding: '1.5rem'
+            }}>
+              <div style={{
+                background: '#1e293b',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                width: '100%',
+                maxWidth: '850px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                padding: '1.5rem',
+                color: '#f8fafc'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #334155', paddingBottom: '0.75rem' }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+                      Bot Inspector: {selectedBotDetail.bot?.name}
+                    </h2>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                      ID: <code>{selectedBotDetail.bot?.id}</code> | Owner: {selectedBotDetail.user?.email}
+                    </span>
+                  </div>
+                  <button
+                    className="tl-btn-secondary"
+                    onClick={() => setSelectedBotDetail(null)}
+                    style={{ fontSize: '1rem', padding: '0.25rem 0.6rem' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Bot Quick Summary */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Status</div>
+                    <div style={{ fontWeight: 600, color: selectedBotDetail.bot?.enabled ? '#4ade80' : '#f87171' }}>
+                      {selectedBotDetail.bot?.enabled ? 'Running' : 'Paused'}
+                    </div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Portfolio Total Value</div>
+                    <div style={{ fontWeight: 600 }}>
+                      ${Number(selectedBotDetail.portfolio?.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Available Cash</div>
+                    <div style={{ fontWeight: 600 }}>
+                      ${Number(selectedBotDetail.portfolio?.cashBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Template</div>
+                    <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>
+                      {selectedBotDetail.bot?.templateId || 'Custom'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Configuration JSON */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#cbd5e1' }}>Configuration Snapshot</h4>
+                  <pre style={{
+                    background: '#0f172a',
+                    padding: '0.75rem',
+                    borderRadius: '6px',
+                    fontSize: '0.75rem',
+                    maxHeight: '160px',
+                    overflowY: 'auto'
+                  }}>
+                    {JSON.stringify(selectedBotDetail.bot?.config, null, 2)}
+                  </pre>
+                </div>
+
+                {/* Recent Executions */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#cbd5e1' }}>Recent Executions</h4>
+                  {selectedBotDetail.recentExecutions?.length > 0 ? (
+                    <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                      <table className="tl-admin-table" style={{ fontSize: '0.75rem' }}>
+                        <thead>
+                          <tr>
+                            <th>Ticker</th>
+                            <th>Direction</th>
+                            <th>Qty</th>
+                            <th>Status</th>
+                            <th>Filled Price</th>
+                            <th>Created</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedBotDetail.recentExecutions.map(e => (
+                            <tr key={e.id}>
+                              <td style={{ fontWeight: 600 }}>{e.ticker}</td>
+                              <td><span className={`tl-admin-badge ${e.direction === 'buy' ? 'tl-badge-green' : 'tl-badge-red'}`}>{e.direction}</span></td>
+                              <td>{e.quantity}</td>
+                              <td><span className="tl-admin-badge tl-badge-blue">{e.status}</span></td>
+                              <td>{e.filledPrice ? `$${Number(e.filledPrice).toFixed(2)}` : '—'}</td>
+                              <td>{new Date(e.createdAt).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>No executions recorded for this bot.</p>
+                  )}
+                </div>
+
+                {/* Recent Bot Events */}
+                <div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#cbd5e1' }}>Recent Event Stream</h4>
+                  {selectedBotDetail.recentEvents?.length > 0 ? (
+                    <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                      <table className="tl-admin-table" style={{ fontSize: '0.75rem' }}>
+                        <thead>
+                          <tr>
+                            <th>Timestamp</th>
+                            <th>Event Type</th>
+                            <th>Detail</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedBotDetail.recentEvents.map(ev => (
+                            <tr key={ev.id}>
+                              <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>{new Date(ev.createdAt).toLocaleString()}</td>
+                              <td><code>{ev.type}</code></td>
+                              <td>{ev.detail}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>No recent events recorded.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

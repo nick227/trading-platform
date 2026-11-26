@@ -24,6 +24,22 @@ export async function fetchAdminAuditLogs({ limit = 50, offset = 0, action = nul
   return get('/admin/audit-log', params)
 }
 
+export async function fetchAdminBots({ limit = 20, offset = 0, search = '', status = null, botType = null } = {}) {
+  const params = { limit, offset }
+  if (search) params.search = search
+  if (status) params.status = status
+  if (botType) params.botType = botType
+  return get('/admin/bots', params)
+}
+
+export async function fetchAdminBotDetail(botId) {
+  return get(`/admin/bots/${encodeURIComponent(botId)}`)
+}
+
+export async function toggleAdminBot(botId) {
+  return post(`/admin/bots/${encodeURIComponent(botId)}/toggle`)
+}
+
 export async function updateAdminUserRole(userId, role) {
   return put(`/admin/users/${encodeURIComponent(userId)}/role`, { role })
 }

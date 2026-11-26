@@ -186,7 +186,7 @@ function model(store, name) {
 export function createMemoryPrisma() {
   const store = {}
   const client = { _store: store }
-  for (const name of ['execution', 'executionAudit', 'bot', 'botRule', 'botEvent', 'user', 'portfolio', 'brokerAccount', 'botTemplate', 'backtestRun', 'strategyVersion', 'strategyEvidence', 'workerStatus', 'subscription', 'fill']) {
+  for (const name of ['execution', 'executionAudit', 'bot', 'botRule', 'botEvent', 'user', 'portfolio', 'brokerAccount', 'botTemplate', 'backtestRun', 'strategyVersion', 'strategyEvidence', 'workerStatus', 'subscription', 'fill', 'adminAuditLog']) {
     client[name] = model(store, name)
   }
   client.$transaction = async (arg) => {
@@ -206,5 +206,14 @@ export function createMemoryPrisma() {
   }
   client.$disconnect = async () => {}
   client.reset = () => { for (const k of Object.keys(store)) delete store[k] }
-  return client
+
+  return new Proxy(client, {
+    get(target, prop) {
+      if (prop in target) return target[prop]
+      if (typeof prop === 'string' && !prop.startsWith('$') && !prop.startsWith('_')) {
+        return (target[prop] = model(store, prop))
+      }
+      return target[prop]
+    }
+  })
 }

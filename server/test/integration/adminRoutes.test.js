@@ -264,3 +264,82 @@ describe('GET /api/admin/audit-log', () => {
     expect(log.adminId).toBe('usr_adm')
   })
 })
+
+describe('Bot Fleet Management (GET /api/admin/bots, /:id, /:id/toggle)', () => {
+  it('denies unauthenticated requests to /api/admin/bots', async () => {
+    const res = await request(app.server).get('/api/admin/bots')
+    expect(res.status).toBe(401)
+  })
+
+  it('denies regular users with 403', async () => {
+    const res = await request(app.server)
+      .get('/api/admin/bots')
+      .set('Authorization', `Bearer ${regularToken}`)
+    expect(res.status).toBe(403)
+  })
+
+  it('allows operators to query bot fleet with pagination and enrichment', async () => {
+    const res = await request(app.server)
+      .get('/api/admin/bots')
+      .set('Authorization', `Bearer ${operatorToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.total).toBe(1)
+    const bot = res.body.data.bots[0]
+    expect(bot.id).toBe('bot_test_1')
+    expect(bot.user.email).toBe('reg@example.com')
+  })
+
+  it('allows inspection of a single bot via /api/admin/bots/:id', async () => {
+    const res = await request(app.server)
+      .get('/api/admin/bots/bot_test_1')
+      .set('Authorization', `Bearer ${operatorToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.bot.id).toBe('bot_test_1')
+    expect(res.body.data.user.email).toBe('reg@example.com')
+    expect(Array.isArray(res.body.data.recentEvents)).toBe(true)
+  })
+
+  it('returns 404 for non-existent bot ID', async () => {
+    const res = await request(app.server)
+      .get('/api/admin/bots/bot_nonexistent')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(404)
+    expect(res.body.error.code).toBe('BOT_NOT_FOUND')
+  })
+
+  it('denies operators from toggling bot state (admin only)', async () => {
+    const res = await request(app.server)
+      .post('/api/admin/bots/bot_test_1/toggle')
+      .set('Authorization', `Bearer ${operatorToken}`)
+
+    expect(res.status).toBe(403)
+  })
+
+  it('allows admin to toggle bot state and logs to audit trail', async () => {
+    // Current bot is enabled: true -> toggle to false
+    const res = await request(app.server)
+      .post('/api/admin/bots/bot_test_1/toggle')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.bot.enabled).toBe(false)
+
+    // Verify audit log captured pause_bot
+    const auditRes = await request(app.server)
+      .get('/api/admin/audit-log?action=pause_bot')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(auditRes.status).toBe(200)
+    expect(auditRes.body.data.logs.length).toBeGreaterThan(0)
+    const log = auditRes.body.data.logs[0]
+    expect(log.action).toBe('pause_bot')
+    expect(log.targetType).toBe('bot')
+    expect(log.targetId).toBe('bot_test_1')
+  })
+})

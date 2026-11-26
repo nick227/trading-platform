@@ -403,6 +403,218 @@ export async function listAdminAuditLogs({
 }
 
 /**
+ * Lists bots with owner, portfolio, execution count, and status for fleet management.
+ */
+export async function listAdminBots({
+  limit = 20,
+  offset = 0,
+  search = '',
+  status = null,
+  botType = null,
+  prismaClient = prisma
+} = {}) {
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20))
+  const safeOffset = Math.max(0, Number(offset) || 0)
+
+  const where = { deletedAt: null }
+  if (status === 'active') where.enabled = true
+  if (status === 'paused') where.enabled = false
+
+  if (botType === 'ai') {
+    where.OR = [
+      { botType: { contains: 'ai' } },
+      { templateId: { startsWith: 'tmpl_ai_' } }
+    ]
+  } else if (botType === 'rule') {
+    where.botType = { not: 'ai' }
+  }
+
+  if (search && search.trim()) {
+    const s = search.trim()
+    where.OR = [
+      ...(where.OR || []),
+      { name: { contains: s } },
+      { id: { contains: s } }
+    ]
+  }
+
+  const [bots, total] = await Promise.all([
+    prismaClient.bot.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      skip: safeOffset,
+      take: safeLimit
+    }),
+    prismaClient.bot.count({ where })
+  ])
+
+  const botIds = bots.map(b => b.id)
+  const userIds = [...new Set(bots.map(b => b.userId).filter(Boolean))]
+  const portfolioIds = [...new Set(bots.map(b => b.portfolioId).filter(Boolean))]
+
+  const [users, portfolios, filledExecutions, latestEvents] = await Promise.all([
+    userIds.length > 0
+      ? prismaClient.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, email: true, fullName: true, role: true }
+        }).catch(() => [])
+      : [],
+    portfolioIds.length > 0
+      ? prismaClient.portfolio.findMany({
+          where: { id: { in: portfolioIds } },
+          select: { id: true, name: true, cashBalance: true, totalValue: true }
+        }).catch(() => [])
+      : [],
+    botIds.length > 0
+      ? prismaClient.execution.findMany({
+          where: { botId: { in: botIds }, status: 'filled' },
+          select: { botId: true }
+        }).catch(() => [])
+      : [],
+    botIds.length > 0
+      ? prismaClient.botEvent.findMany({
+          where: { botId: { in: botIds } },
+          orderBy: { createdAt: 'desc' },
+          take: 50
+        }).catch(() => [])
+      : []
+  ])
+
+  const userMap = new Map(users.map(u => [u.id, u]))
+  const portfolioMap = new Map(portfolios.map(p => [p.id, p]))
+
+  const fillsMap = new Map()
+  for (const e of filledExecutions) {
+    fillsMap.set(e.botId, (fillsMap.get(e.botId) || 0) + 1)
+  }
+
+  const eventMap = new Map()
+  for (const ev of latestEvents) {
+    if (!eventMap.has(ev.botId)) eventMap.set(ev.botId, ev)
+  }
+
+  const enriched = bots.map(b => ({
+    ...b,
+    user: userMap.get(b.userId) || { id: b.userId, email: 'unknown' },
+    portfolio: portfolioMap.get(b.portfolioId) || null,
+    filledExecutionsCount: fillsMap.get(b.id) || 0,
+    lastEvent: eventMap.get(b.id) || null
+  }))
+
+  return {
+    total,
+    offset: safeOffset,
+    limit: safeLimit,
+    bots: enriched
+  }
+}
+
+/**
+ * Returns detailed inspection data for a single bot: configuration, portfolio,
+ * recent events, and recent executions.
+ */
+export async function getAdminBotDetail({
+  botId,
+  prismaClient = prisma
+}) {
+  const bot = await prismaClient.bot.findUnique({
+    where: { id: botId }
+  })
+
+  if (!bot) {
+    throw new Error(`Bot '${botId}' not found`)
+  }
+
+  const [user, portfolio, rules, events, executions] = await Promise.all([
+    prismaClient.user.findUnique({
+      where: { id: bot.userId },
+      select: { id: true, email: true, fullName: true, role: true }
+    }).catch(() => null),
+    bot.portfolioId
+      ? prismaClient.portfolio.findUnique({ where: { id: bot.portfolioId } }).catch(() => null)
+      : null,
+    prismaClient.botRule.findMany({
+      where: { botId }
+    }).catch(() => []),
+    prismaClient.botEvent.findMany({
+      where: { botId },
+      orderBy: { createdAt: 'desc' },
+      take: 25
+    }).catch(() => []),
+    prismaClient.execution.findMany({
+      where: { botId },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    }).catch(() => [])
+  ])
+
+  return {
+    bot,
+    user: user || { id: bot.userId, email: 'unknown' },
+    portfolio,
+    rules,
+    events,
+    recentEvents: events,
+    executions,
+    recentExecutions: executions
+  }
+}
+
+/**
+ * Toggles an individual bot between enabled and paused with audit logging.
+ */
+export async function toggleAdminBot({
+  botId,
+  actorUserId,
+  ipAddress = null,
+  prismaClient = prisma
+}) {
+  const bot = await prismaClient.bot.findUnique({
+    where: { id: botId }
+  })
+
+  if (!bot) {
+    throw new Error(`Bot '${botId}' not found`)
+  }
+
+  const newEnabled = !bot.enabled
+
+  const updated = await prismaClient.bot.update({
+    where: { id: botId },
+    data: { enabled: newEnabled }
+  })
+
+  await prismaClient.botEvent.create({
+    data: {
+      id: `evt_toggle_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      botId,
+      portfolioId: bot.portfolioId || 'system',
+      type: newEnabled ? 'bot_resumed' : 'bot_paused',
+      detail: `Admin toggled bot to ${newEnabled ? 'enabled' : 'paused'}`,
+      metadata: { actorUserId, previous: bot.enabled, current: newEnabled }
+    }
+  }).catch(() => null)
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: newEnabled ? 'resume_bot' : 'pause_bot',
+      targetType: 'bot',
+      targetId: botId,
+      payload: {
+        botName: bot.name,
+        previousEnabled: bot.enabled,
+        newEnabled
+      },
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return updated
+}
+
+/**
  * Removes dead/stale worker records older than the retention threshold.
  */
 export async function cleanupDeadWorkers({

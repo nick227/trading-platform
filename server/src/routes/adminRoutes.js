@@ -11,6 +11,9 @@ import {
   getAdminActivity,
   listAdminUsers,
   listAdminAuditLogs,
+  listAdminBots,
+  getAdminBotDetail,
+  toggleAdminBot,
   updateUserRole,
   cleanupDeadWorkers,
   triggerAdminEmergencyStop,
@@ -79,11 +82,60 @@ export default async function adminRoutes(app) {
     }
   })
 
+  // GET /api/admin/bots — Paginated query of bots across users and platform (Admin & Operator)
+  app.get('/bots', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const { limit, offset, search, status, botType } = request.query || {}
+      const data = await listAdminBots({ limit, offset, search, status, botType })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to list bots')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_BOTS_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/bots/:id — Deep inspection of bot config, portfolio, and event logs
+  app.get('/bots/:id', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const { id } = request.params
+      const data = await getAdminBotDetail({ botId: id })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.warn({ err: err.message, botId: request.params.id }, 'Bot detail lookup failed')
+      return reply.code(404).send({
+        success: false,
+        error: { code: 'BOT_NOT_FOUND', message: err.message }
+      })
+    }
+  })
+
   // Strict admin guard for state-changing operational mutations
   const adminOnly = requireRole(['admin'])
 
   // Helper to extract client IP safely
   const getIp = (req) => req.headers['x-forwarded-for'] || req.ip || null
+
+  // POST /api/admin/bots/:id/toggle — Individual bot pause/resume switch
+  app.post('/bots/:id/toggle', { preHandler: [adminOnly] }, async (request, reply) => {
+    try {
+      const { id } = request.params
+      const updated = await toggleAdminBot({
+        botId: id,
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
+      return reply.send({ success: true, data: updated, bot: updated })
+    } catch (err) {
+      app.log.error(err, 'Failed to toggle bot')
+      return reply.code(400).send({
+        success: false,
+        error: { code: 'BOT_TOGGLE_ERROR', message: err.message }
+      })
+    }
+  })
 
   // PUT /api/admin/users/:id/role — Change a user's role
   app.put('/users/:id/role', { preHandler: [adminOnly] }, async (request, reply) => {
