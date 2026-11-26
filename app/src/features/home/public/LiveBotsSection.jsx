@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { loadPublicStrategies, summaryLine } from '../../strategies/strategiesApi'
+import PipelinePulse from './PipelinePulse'
 
 const STRATEGY = 'tmpl_ai_catalyst_momentum'
 
@@ -46,7 +47,7 @@ export default function LiveBotsSection() {
       <h2 id="live-evidence-title">See what the bots actually do.</h2>
       <p>Real published strategy records, not fabricated marketing results. Forward paper trading and historical tests are labeled separately, including losses and inactive strategies.</p>
     </header>
-    <div className="tl-public-evidence-area">{visible?<StrategyEvidence/>:<div className="tl-public-panel tl-public-result-state" aria-hidden="true">Strategy evidence</div>}</div>
+    <div className="tl-public-evidence-area">{visible?<><PipelinePulse/><StrategyEvidence/></>:<div className="tl-public-panel tl-public-result-state" aria-hidden="true">Strategy evidence</div>}</div>
     <p className="tl-public-disclosure">Returns are simulated or historical, not returns earned by customers. Data updates after publication; results can be negative. Past performance is not predictive.</p>
     <Link className="tl-public-text-link" to="/strategies">See every public strategy →</Link>
   </section>
