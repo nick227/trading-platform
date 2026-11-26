@@ -182,3 +182,22 @@
 .tl-public-pipeline__footnote{font-size:12px;padding:0 28px 20px}
 @media(max-width:760px){.tl-public-pipeline__summary{padding:20px;align-items:start}.tl-public-pipeline__list li{padding:12px 18px;gap:10px}.tl-public-pipeline__footnote{padding:0 18px 18px}}
 @media(max-width:400px){.tl-public-pipeline__summary{flex-direction:column;align-items:start}.tl-public-pipeline__order-count{align-items:start}.tl-public-pipeline__status{max-width:91px;overflow-wrap:break-word}}
+
+/* MR6: methodology with comparative technical content and no invented curves. */
+.tl-public-method-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:22px;align-items:stretch}
+.tl-public-method__types{display:grid;gap:12px}
+.tl-public-method__type{display:flex;gap:18px;align-items:start;padding:22px;border:1px solid var(--tl-public-border);border-radius:12px}
+.tl-public-method__number{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--tl-public-accent)}
+.tl-public-method__type h3,.tl-public-method__report h3{font-size:20px;line-height:1.25;letter-spacing:-.03em;margin:0 0 9px}
+.tl-public-method__type p{font-size:13px;color:var(--tl-public-subtle);line-height:1.5;margin:0 0 6px}
+.tl-public-method__type .tl-public-method__limit{font-size:12px;color:#566277}
+.tl-public-method__report{display:flex;flex-direction:column;background:#f8fafc}
+.tl-public-method__eyebrow{font-size:11px!important;color:var(--tl-public-accent)!important;font-weight:800;letter-spacing:.09em}
+.tl-public-method__report dl{display:grid;gap:0;margin:14px 0 auto}
+.tl-public-method__report dl div{display:grid;grid-template-columns:98px minmax(0,1fr);gap:12px;padding:11px 0;border-top:1px solid #e4e7ed}
+.tl-public-method__report dt{font-size:13px;font-weight:800}
+.tl-public-method__report dd{margin:0;font-size:13px;color:#586477;line-height:1.5}
+.tl-public-method__report .tl-public-button{margin-top:24px}
+.tl-public-method__report .tl-public-method__disclaimer{font-size:11px;margin:12px 0 0}
+@media(max-width:880px){.tl-public-method-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:400px){.tl-public-method__type{padding:16px}.tl-public-method__report dl div{grid-template-columns:minmax(0,1fr);gap:4px}}
