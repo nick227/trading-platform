@@ -459,4 +459,62 @@ describe('AdminDashboard', () => {
       expect(mockCompact).toHaveBeenCalled()
     })
   })
+
+  it('switches to Operational Controls, renders broker fleet radar and triggers reconciliation sweep', async () => {
+    const mockFleet = {
+      fleet: {
+        totalAccounts: 8,
+        paperAccounts: 6,
+        liveAccounts: 2,
+        inSyncAccounts: 7,
+        driftedAccountsCount: 1
+      },
+      driftedAccounts: [
+        {
+          userId: 'usr_drifted',
+          userEmail: 'trader@example.com',
+          paper: false,
+          mismatchCount: 1,
+          mismatchDetails: [
+            { symbol: 'TSLA', localQty: 25, brokerQty: 20 }
+          ]
+        }
+      ]
+    }
+    vi.spyOn(adminClient, 'fetchAdminBrokerFleetStatus').mockResolvedValue(mockFleet)
+    const mockReconcileFleet = vi.spyOn(adminClient, 'triggerAdminBrokerReconcileAll').mockResolvedValue({
+      total: 8,
+      succeeded: 8,
+      failed: 0
+    })
+
+    render(<AdminDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Bird's Eye Overview")).toBeInTheDocument()
+    })
+
+    const controlsTab = screen.getByRole('button', { name: /Operational Controls/i })
+    controlsTab.click()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Broker Connections & Ledger Reconciliation Fleet Radar/i)).toBeInTheDocument()
+      expect(screen.getByText(/⚠ Position Drift Detected in 1 Account/i)).toBeInTheDocument()
+      expect(screen.getByText('trader@example.com')).toBeInTheDocument()
+    })
+
+    const reconcileFleetBtn = screen.getByRole('button', { name: /↻ Trigger Fleet Reconciliation Sweep/i })
+    reconcileFleetBtn.click()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Trigger Fleet Broker Reconciliation/i)).toBeInTheDocument()
+    })
+
+    const confirmBtn = screen.getByRole('button', { name: /Run Fleet Reconciliation/i })
+    confirmBtn.click()
+
+    await waitFor(() => {
+      expect(mockReconcileFleet).toHaveBeenCalled()
+    })
+  })
 })

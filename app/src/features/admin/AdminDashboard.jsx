@@ -25,7 +25,9 @@ import {
   revalidateAdminMarketFeed,
   fetchAdminResearchDiagnostics,
   fetchAdminEvidenceStorage,
-  compactAdminEvidence
+  compactAdminEvidence,
+  fetchAdminBrokerFleetStatus,
+  triggerAdminBrokerReconcileAll
 } from '../../api/adminClient'
 import '../../styles/admin.css'
 
@@ -95,6 +97,10 @@ export default function AdminDashboard() {
 
   // Strategy Evidence Storage & Compaction states
   const [evidenceStorage, setEvidenceStorage] = useState(null)
+
+  // Broker Fleet & Ledger Reconciliation states
+  const [brokerFleet, setBrokerFleet] = useState(null)
+  const [reconcilingFleet, setReconcilingFleet] = useState(false)
 
   // In-app Action Confirmation Dialog states (replacing window.prompt and window.confirm)
   const [actionDialog, setActionDialog] = useState(null)
@@ -273,6 +279,18 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  const loadBrokerFleetStatus = useCallback(async () => {
+    try {
+      const res = await fetchAdminBrokerFleetStatus()
+      const data = res?.data ?? res
+      if (data) {
+        setBrokerFleet(data)
+      }
+    } catch (err) {
+      // optional
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
@@ -286,10 +304,11 @@ export default function AdminDashboard() {
       loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage),
       loadMarketDataDiagnostics(),
       loadResearchDiagnostics(),
-      loadEvidenceStorage()
+      loadEvidenceStorage(),
+      loadBrokerFleetStatus()
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, loadMarketDataDiagnostics, loadResearchDiagnostics, loadEvidenceStorage, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, loadMarketDataDiagnostics, loadResearchDiagnostics, loadEvidenceStorage, loadBrokerFleetStatus, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
 
   useEffect(() => {
     refreshAll()
@@ -414,6 +433,29 @@ export default function AdminDashboard() {
     } finally {
       setActionLoading(false)
     }
+  }
+
+  const handleBrokerFleetReconcile = async () => {
+    setActionDialog({
+      title: 'Trigger Fleet Broker Reconciliation',
+      description: 'This will initiate a broker order and fill reconciliation sweep across all connected broker accounts. Are you sure you want to proceed?',
+      confirmLabel: 'Run Fleet Reconciliation',
+      confirmVariant: 'primary',
+      onConfirm: async () => {
+        setReconcilingFleet(true)
+        try {
+          const res = await triggerAdminBrokerReconcileAll()
+          const data = res?.data ?? res
+          showFeedback('success', `Fleet reconciliation complete: ${data?.succeeded ?? 0} accounts synchronized, ${data?.failed ?? 0} failed.`)
+          await loadBrokerFleetStatus()
+          await loadAuditLogs(auditPage)
+        } catch (err) {
+          showFeedback('error', `Fleet reconciliation failed: ${err.serverMessage || err.message}`)
+        } finally {
+          setReconcilingFleet(false)
+        }
+      }
+    })
   }
 
   const handleCleanupWorkers = async () => {
@@ -2045,6 +2087,60 @@ export default function AdminDashboard() {
                 disabled={actionLoading || !isAdmin}
               >
                 {actionLoading ? 'Compacting...' : '📦 Compact Superseded Evidence'}
+              </button>
+            </div>
+          </div>
+
+          <div className="tl-control-panel">
+            <h3>Broker Connections & Ledger Reconciliation Fleet Radar</h3>
+            <p>
+              Monitors broker connectivity (paper vs live) and audits internal FIFO position ledgers against broker actuals to prevent silent position drift.
+            </p>
+            {brokerFleet?.fleet && (
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0.5rem 0', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <span>Connected: <strong style={{ color: '#f8fafc' }}>{brokerFleet.fleet.totalAccounts}</strong></span>
+                <span>Paper: <strong style={{ color: '#38bdf8' }}>{brokerFleet.fleet.paperAccounts}</strong></span>
+                <span>Live: <strong style={{ color: '#eab308' }}>{brokerFleet.fleet.liveAccounts}</strong></span>
+                <span>In Sync: <strong style={{ color: '#4ade80' }}>{brokerFleet.fleet.inSyncAccounts}</strong></span>
+                <span>Drifted: <strong style={{ color: brokerFleet.fleet.driftedAccountsCount > 0 ? '#f87171' : '#4ade80' }}>{brokerFleet.fleet.driftedAccountsCount}</strong></span>
+              </div>
+            )}
+            {brokerFleet?.driftedAccounts && brokerFleet.driftedAccounts.length > 0 && (
+              <div style={{ margin: '0.75rem 0', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '4px' }}>
+                <strong style={{ color: '#f87171', fontSize: '0.85rem' }}>⚠ Position Drift Detected in {brokerFleet.driftedAccounts.length} Account(s):</strong>
+                <div style={{ marginTop: '0.5rem', overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ color: '#94a3b8', borderBottom: '1px solid #334155' }}>
+                        <th style={{ padding: '4px 6px' }}>User</th>
+                        <th style={{ padding: '4px 6px' }}>Mode</th>
+                        <th style={{ padding: '4px 6px' }}>Mismatches</th>
+                        <th style={{ padding: '4px 6px' }}>Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {brokerFleet.driftedAccounts.map((d, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
+                          <td style={{ padding: '4px 6px', color: '#f8fafc' }}>{d.userEmail}</td>
+                          <td style={{ padding: '4px 6px' }}>{d.paper ? 'Paper' : 'Live'}</td>
+                          <td style={{ padding: '4px 6px', color: '#f87171', fontWeight: 600 }}>{d.mismatchCount}</td>
+                          <td style={{ padding: '4px 6px', color: '#94a3b8' }}>
+                            {d.mismatchDetails?.map(m => `${m.symbol} (Local: ${m.localQty}, Broker: ${m.brokerQty})`).join(', ') || 'N/A'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            <div className="tl-control-actions">
+              <button
+                className="tl-btn-secondary"
+                onClick={handleBrokerFleetReconcile}
+                disabled={reconcilingFleet || actionLoading || !isAdmin}
+              >
+                {reconcilingFleet ? 'Reconciling Fleet...' : '↻ Trigger Fleet Reconciliation Sweep'}
               </button>
             </div>
           </div>

@@ -124,3 +124,11 @@ export async function fetchAdminEvidenceStorage() {
 export async function compactAdminEvidence() {
   return post('/admin/controls/compact-evidence')
 }
+
+export async function fetchAdminBrokerFleetStatus() {
+  return get('/admin/broker/fleet-status')
+}
+
+export async function triggerAdminBrokerReconcileAll() {
+  return post('/admin/broker/reconcile-all')
+}
