@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import prisma from '../../loaders/prisma.js'
 import { getProvider } from './providers/providerRegistry.js'
 import { defaultAiBotDefinitionRegistry } from './botDefinitions.js'
+import { runToolGuidedStockResearch } from './stockTraderReasoningAgent.js'
 import { createDefaultStockTraderContextRegistry } from './stockTraderContext.js'
 import { STOCK_TRADER_PROMPT_VERSION, buildStockTraderPrompts, validateStockTraderDecision } from './strategies/stockTraderDecision.js'
 
@@ -18,7 +19,9 @@ export async function runStockTraderResearch({
   provider = null,
   providerName = 'openai',
   registry = createDefaultStockTraderContextRegistry(),
-  usageGovernor = null
+  usageGovernor = null,
+  engine = null,
+  toolRegistry = null
 }) {
   if (!bot?.id || !bot?.portfolioId || !portfolio?.id || portfolio.id !== bot.portfolioId) {
     throw new Error('AI research bot/portfolio identity mismatch')
@@ -80,18 +83,51 @@ export async function runStockTraderResearch({
     return { ok: false, skipped: true, reason: 'concurrent_claim', eventId }
   }
 
-  let reservation = null
-  let settled = false
   try {
     if (!usageGovernor) throw new Error('AI usage governor is required before external research')
-    reservation = await usageGovernor.reserve({ botId: bot.id, jobKey: fingerprint, model })
     const client = provider || getProvider(providerName)
-    const response = await client.completeStructured({
-      systemPrompt, userPrompt, model, temperature: 0.2, maxTokens: definition.tokenBudget
-    })
-    const settlement = await usageGovernor.settle(reservation, { usage: response.usage })
-    if (settlement?.settled !== true) throw new Error('AI usage settlement was not committed')
-    settled = true
+    const usageCalls = []
+    const invokeModel = async ({ phase, systemPrompt: phaseSystemPrompt,
+      userPrompt: phaseUserPrompt, maxTokens }) => {
+      const jobKey = definition.researchMode === 'tool_guided'
+        ? `${fingerprint}:${phase}`
+        : fingerprint
+      const reservation = await usageGovernor.reserve({
+        botId: bot.id, jobKey, model
+      })
+      let settled = false
+      try {
+        const result = await client.completeStructured({
+          systemPrompt: phaseSystemPrompt, userPrompt: phaseUserPrompt,
+          model, temperature: 0.2, maxTokens
+        })
+        const receipt = await usageGovernor.settle(reservation, { usage: result.usage })
+        if (receipt?.settled !== true) throw new Error('AI usage settlement was not committed')
+        settled = true
+        usageCalls.push({ phase, model: result.model || model, usage: result.usage || null })
+        return result
+      } catch (error) {
+        if (!settled) await usageGovernor.settle(reservation, { uncertain: true }).catch(() => {})
+        throw error
+      }
+    }
+
+    let response
+    let investigation = null
+    if (definition.researchMode === 'tool_guided') {
+      const guided = await runToolGuidedStockResearch({
+        snapshot, definition, engine,
+        ...(toolRegistry ? { toolRegistry } : {}),
+        invokeModel
+      })
+      response = guided.response
+      investigation = guided.investigation
+    } else {
+      response = await invokeModel({
+        phase: 'decision', systemPrompt, userPrompt,
+        maxTokens: definition.tokenBudget
+      })
+    }
     const decision = validateStockTraderDecision(response.structured, snapshot)
     const publish = await prismaClient.botEvent.updateMany({
       where: { id: eventId, ruleId: token },
@@ -109,16 +145,16 @@ export async function runStockTraderResearch({
           model: response.model || model,
           usage: response.usage || null,
           snapshot,
-          decision
+          decision,
+          usageCalls,
+          ...(investigation ? { investigation } : {})
         }
       }
     })
     if (publish.count !== 1) throw new Error('Lost AI research claim ownership')
-    return { ok: true, cached: false, eventId, snapshot, decision }
+    return { ok: true, cached: false, eventId, snapshot, decision,
+      ...(investigation ? { investigation } : {}) }
   } catch (error) {
-    if (reservation && !settled) {
-      await usageGovernor.settle(reservation, { uncertain: true }).catch(() => {})
-    }
     await prismaClient.botEvent.updateMany({
       where: { id: eventId, ruleId: token },
       data: {
