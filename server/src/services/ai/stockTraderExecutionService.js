@@ -63,6 +63,14 @@ export async function queueStockTraderPaperOrders({
   const held = new Map(portfolioSnapshot.positions.map(p => [p.symbol, p]))
 
   for (const intent of research.decision.actionable.slice(0, maxOrders)) {
+    if (!['BUY', 'SELL'].includes(intent.action) ||
+        !Number.isFinite(intent.confidence) || intent.confidence < 0 || intent.confidence > 1 ||
+        (intent.action === 'BUY' && (intent.confidence < 0.65 ||
+          !Number.isFinite(intent.targetAllocationPct) || intent.targetAllocationPct <= 0 ||
+          intent.targetAllocationPct > maxAllocation))) {
+      rejected.push({ symbol: intent.symbol, reason: 'invalid_or_low_confidence_proposal' })
+      continue
+    }
     const candidate = shortlist.get(intent.symbol)
     const price = Number(candidate?.indicators?.price)
     if (!Number.isFinite(price) || price <= 0) {
