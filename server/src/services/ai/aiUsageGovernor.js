@@ -41,7 +41,7 @@ export function createAiUsageGovernor({
 
     await prismaClient.$transaction(async tx => {
       await tx.aiUsageCall.create({
-        data: { id, botId, period, jobKey, model, status: 'reserved', reservedCents }
+        data: { id, botId, period, jobKey, model, status: 'reserved', reservedCents: reserveCents }
       })
       for (const scope of scopeIds(botId, period)) {
         await tx.aiUsageBucket.upsert({
@@ -58,7 +58,7 @@ export function createAiUsageGovernor({
         if (Number(changed) !== 1) throw new Error(`AI budget exhausted: ${scope.id}`)
       }
     })
-    return { id, botId, period, reservedCents }
+    return { id, botId, period, reservedCents: reserveCents }
   }
 
   async function settle(reservation, { usage = null, uncertain = false } = {}) {
