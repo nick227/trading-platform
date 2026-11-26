@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import AuthPanel from './AuthPanel'
 import PricingSection from './PricingSection'
 import LiveBotsSection from './LiveBotsSection'
+import StockResearchSection from './StockResearchSection'
 import ProductStorySection from './ProductStorySection'
 import ConversionFooter from './ConversionFooter'
 import './public-home.css'
@@ -59,6 +60,7 @@ export default function PublicHome() {
       </section>
       <PricingSection />
       <LiveBotsSection />
+      <StockResearchSection />
       <ProductStorySection />
       <ConversionFooter />
     </main>
