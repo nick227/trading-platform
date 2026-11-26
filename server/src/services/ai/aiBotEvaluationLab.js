@@ -286,3 +286,61 @@ export function makePassiveBenchmark(sessions, symbol = 'SPY') {
     }]
   }
 }
+
+/**
+ * Construct a replay arm only from persisted, completed BotEvent decisions.
+ * Fails closed if a recorded decision was published after its intended next open.
+ */
+export function buildRecordedAiEvaluationArm({ id, botId, events, sessions }) {
+  if (!Array.isArray(events) || !Array.isArray(sessions) ||
+      typeof botId !== 'string' || !botId) {
+    throw new EvaluationError('Recorded AI replay requires bot ownership and dated sessions')
+  }
+  const signals = []
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  })
+  for (const event of events) {
+    const metadata = event?.metadata
+    const decision = metadata?.decision
+    const snapshot = metadata?.snapshot
+    if (event?.botId !== botId || event?.type !== 'decision_made' ||
+        metadata?.status !== 'completed' || !isDate(decision?.asOfSession) ||
+        snapshot?.asOfSession !== decision.asOfSession ||
+        snapshot?.context?.market?.asOf !== decision.asOfSession ||
+        snapshot?.context?.portfolio?.asOf !== decision.asOfSession ||
+        !/^[a-f0-9]{64}$/.test(snapshot?.fingerprint || '') ||
+        !/^[a-f0-9]{64}$/.test(metadata?.fingerprint || '') ||
+        !Array.isArray(decision?.actionable) || decision.actionable.length > 2 ||
+        !event?.id) {
+      throw new EvaluationError('AI BotEvent is incomplete, foreign or not point-in-time verifiable')
+    }
+    const createdAt = new Date(event.createdAt)
+    if (!Number.isFinite(createdAt.getTime())) {
+      throw new EvaluationError('Recorded AI decision timestamp unavailable')
+    }
+    const parts = Object.fromEntries(formatter.formatToParts(createdAt)
+      .filter(p => p.type !== 'literal').map(p => [p.type, p.value]))
+    const localMoment = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+    if (localMoment < decision.asOfSession + 'T00:00') {
+      throw new EvaluationError('Recorded decision predates its declared evidence session')
+    }
+    const nextSession = sessions.find(row => row.date > decision.asOfSession)
+    if (nextSession && localMoment >= nextSession.date + 'T09:30') {
+      throw new EvaluationError('Recorded decision was created after its intended next opening fill')
+    }
+    for (const item of decision.actionable) {
+      signals.push({
+        session: decision.asOfSession,
+        evidenceAsOf: snapshot.asOfSession,
+        symbol: item.symbol,
+        action: item.action,
+        ...(item.action === 'BUY' ? { targetAllocationPct: item.targetAllocationPct } : {}),
+        researchEventId: event.id,
+        snapshotFingerprint: snapshot.fingerprint
+      })
+    }
+  }
+  return { id, type: 'ai', signals }
+}
