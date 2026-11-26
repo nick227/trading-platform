@@ -50,11 +50,17 @@ describe('AI stock trader decisions', () => {
       create: vi.fn(async ({ data }) => { persisted = data; return data }),
       updateMany: vi.fn(async ({ data }) => { persisted = { ...persisted, ...data }; return { count: 1 } })
     } }
-    const opts = { bot, portfolio, screening, portfolioSnapshot, provider, prismaClient }
+    const usageGovernor = {
+      reserve: vi.fn().mockResolvedValue({ id: 'reservation', botId: bot.id, period: '2026-11', reservedCents: 5 }),
+      settle: vi.fn().mockResolvedValue({ settled: true, actualCents: 1 })
+    }
+    const opts = { bot, portfolio, screening, portfolioSnapshot, provider, prismaClient, usageGovernor }
     const first = await runStockTraderResearch(opts)
     const second = await runStockTraderResearch(opts)
     expect(first.ok).toBe(true)
     expect(second.cached).toBe(true)
     expect(provider.completeStructured).toHaveBeenCalledTimes(1)
+    expect(usageGovernor.reserve).toHaveBeenCalledTimes(1)
+    expect(usageGovernor.settle).toHaveBeenCalledTimes(1)
   })
 })

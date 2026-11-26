@@ -718,3 +718,35 @@ model StrategyEvidence {
   @@unique([strategyVersionId, symbol, window, endDate])
   @@index([templateId, endDate])
 }
+
+// Atomic monthly AI spend reservations; deliberately independent of billing.
+// Two budget scopes are supported: platform and bot.
+model AiUsageBucket {
+  id             String   @id @db.VarChar(191)
+  period         String   @db.VarChar(7)
+  budgetCents    Int
+  reservedCents  Int      @default(0)
+  spentCents     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([period])
+}
+
+model AiUsageCall {
+  id             String   @id @db.VarChar(191)
+  botId          String   @db.VarChar(191)
+  period         String   @db.VarChar(7)
+  jobKey         String   @db.VarChar(191)
+  model          String   @db.VarChar(80)
+  status         String   @db.VarChar(30)
+  reservedCents  Int
+  actualCents    Int?
+  promptTokens   Int?
+  outputTokens   Int?
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@index([botId, period])
+  @@index([status, createdAt])
+}
