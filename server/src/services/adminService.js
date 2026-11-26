@@ -993,3 +993,188 @@ export async function triggerEvidenceSync({
 
   return res
 }
+
+/**
+ * Lists past autonomous AI research cycles with model, token usage, costs, and decision summary.
+ */
+export async function listAdminAiResearchCycles({
+  limit = 20,
+  offset = 0,
+  session = null,
+  isReplay = null,
+  prismaClient = prisma
+} = {}) {
+  const events = await prismaClient.botEvent.findMany({
+    where: {
+      type: 'decision_made'
+    },
+    include: {
+      bot: {
+        select: { id: true, name: true, templateId: true }
+      }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 200
+  })
+
+  // Filter down strictly to full AI research cycles (which contain symbolEvaluations)
+  let cycles = events.filter(e => e.metadata?.symbolEvaluations && Array.isArray(e.metadata.symbolEvaluations))
+
+  if (session) {
+    cycles = cycles.filter(c => c.metadata?.asOfSession === session)
+  }
+
+  if (isReplay !== null) {
+    const replayBool = isReplay === true || isReplay === 'true'
+    cycles = cycles.filter(c => Boolean(c.metadata?.isReplay) === replayBool)
+  }
+
+  const total = cycles.length
+  const paged = cycles.slice(offset, offset + limit)
+
+  const items = paged.map(c => {
+    const m = c.metadata || {}
+    const evals = m.symbolEvaluations || []
+    return {
+      id: c.id,
+      botId: c.botId,
+      botName: c.bot?.name || c.botId,
+      session: m.asOfSession || null,
+      intendedSession: m.intendedExecutionSession || null,
+      createdAt: c.createdAt,
+      decisionTimestamp: m.decisionTimestamp || c.createdAt,
+      model: m.model || 'gpt-4o-mini',
+      provider: m.provider || 'openai',
+      isReplay: Boolean(m.isReplay),
+      cached: Boolean(m.cached),
+      marketSummary: m.marketSummary || null,
+      inputFingerprint: m.inputFingerprint || null,
+      usage: m.usage || null,
+      estimatedCostUsd: m.estimatedCostUsd || 0,
+      actionableCount: m.selectedDecisions?.length || 0,
+      totalEvaluated: evals.length,
+      decisionCounts: {
+        buy: evals.filter(s => s.action === 'BUY').length,
+        hold: evals.filter(s => s.action === 'HOLD').length,
+        sell: evals.filter(s => s.action === 'SELL').length
+      }
+    }
+  })
+
+  const totalCostUsd = cycles.reduce((acc, c) => acc + (Number(c.metadata?.estimatedCostUsd) || 0), 0)
+  const totalTokens = cycles.reduce((acc, c) => acc + (Number(c.metadata?.usage?.total_tokens) || 0), 0)
+
+  return {
+    cycles: items,
+    total,
+    limit,
+    offset,
+    metrics: {
+      totalCycles: total,
+      totalCostUsd: Number(totalCostUsd.toFixed(6)),
+      totalTokens,
+      latestModel: cycles[0]?.metadata?.model || 'gpt-4o-mini'
+    }
+  }
+}
+
+/**
+ * Retrieves full explainability details for a specific AI research cycle,
+ * including all symbol evaluations, analytical theses, evidence snapshots, and exit rules.
+ */
+export async function getAdminAiCycleDetail(cycleId, { prismaClient = prisma } = {}) {
+  const event = await prismaClient.botEvent.findUnique({
+    where: { id: cycleId },
+    include: {
+      bot: {
+        select: { id: true, name: true, templateId: true, portfolioId: true }
+      }
+    }
+  })
+
+  if (!event || !event.metadata?.symbolEvaluations) {
+    const err = new Error('AI research cycle not found')
+    err.statusCode = 404
+    throw err
+  }
+
+  const m = event.metadata || {}
+  return {
+    id: event.id,
+    botId: event.botId,
+    botName: event.bot?.name || event.botId,
+    portfolioId: event.portfolioId,
+    session: m.asOfSession || null,
+    intendedSession: m.intendedExecutionSession || null,
+    createdAt: event.createdAt,
+    decisionTimestamp: m.decisionTimestamp || event.createdAt,
+    model: m.model || 'gpt-4o-mini',
+    provider: m.provider || 'openai',
+    isReplay: Boolean(m.isReplay),
+    cached: Boolean(m.cached),
+    marketSummary: m.marketSummary || null,
+    inputFingerprint: m.inputFingerprint || null,
+    usage: m.usage || null,
+    estimatedCostUsd: m.estimatedCostUsd || 0,
+    symbolEvaluations: m.symbolEvaluations || [],
+    selectedDecisions: m.selectedDecisions || [],
+    portfolioAtDecision: m.portfolioAtDecision || null
+  }
+}
+
+/**
+ * Searches historical symbol-level AI decisions across cycles by symbol, action, or session.
+ */
+export async function listAdminAiSymbolDecisions({
+  symbol = null,
+  action = null,
+  session = null,
+  limit = 50,
+  offset = 0,
+  prismaClient = prisma
+} = {}) {
+  const cyclesRes = await listAdminAiResearchCycles({
+    limit: 100,
+    offset: 0,
+    session: session || null,
+    prismaClient
+  })
+
+  const allSymbolDecisions = []
+  for (const c of cyclesRes.cycles) {
+    const raw = await prismaClient.botEvent.findUnique({
+      where: { id: c.id },
+      select: { metadata: true }
+    })
+    const evals = raw?.metadata?.symbolEvaluations || []
+    for (const ev of evals) {
+      if (symbol && ev.symbol?.toUpperCase() !== symbol.toUpperCase()) continue
+      if (action && ev.action?.toUpperCase() !== action.toUpperCase()) continue
+      allSymbolDecisions.push({
+        cycleId: c.id,
+        session: c.session,
+        intendedSession: c.intendedSession,
+        createdAt: c.createdAt,
+        decisionTimestamp: c.decisionTimestamp,
+        isReplay: c.isReplay,
+        model: c.model,
+        symbol: ev.symbol,
+        action: ev.action,
+        confidence: ev.confidence,
+        thesis: ev.thesis,
+        evidence: ev.evidence || {},
+        exitRule: ev.exitRule || {}
+      })
+    }
+  }
+
+  const total = allSymbolDecisions.length
+  const paged = allSymbolDecisions.slice(offset, offset + limit)
+
+  return {
+    decisions: paged,
+    total,
+    limit,
+    offset
+  }
+}

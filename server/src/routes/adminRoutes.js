@@ -23,7 +23,10 @@ import {
   triggerAdminEmergencyStop,
   triggerMarketOpenJob,
   triggerAiDailyJob,
-  triggerEvidenceSync
+  triggerEvidenceSync,
+  listAdminAiResearchCycles,
+  getAdminAiCycleDetail,
+  listAdminAiSymbolDecisions
 } from '../services/adminService.js'
 
 export default async function adminRoutes(app) {
@@ -349,6 +352,67 @@ export default async function adminRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'CLEANUP_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/ai/cycles — List autonomous AI research cycles with telemetry
+  app.get('/ai/cycles', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const { limit, offset, session, isReplay } = request.query || {}
+      const data = await listAdminAiResearchCycles({
+        limit: limit ? Number(limit) : undefined,
+        offset: offset ? Number(offset) : undefined,
+        session,
+        isReplay
+      })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to list AI research cycles')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_AI_CYCLES_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/ai/cycles/:id — Explainability drilldown for a specific cycle
+  app.get('/ai/cycles/:id', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const data = await getAdminAiCycleDetail(request.params.id)
+      return reply.send({ success: true, data })
+    } catch (err) {
+      if (err.statusCode === 404) {
+        return reply.code(404).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: err.message }
+        })
+      }
+      app.log.error(err, 'Failed to get AI cycle detail')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_AI_CYCLE_DETAIL_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/ai/decisions — Searchable symbol-level decisions across cycles
+  app.get('/ai/decisions', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const { symbol, action, session, limit, offset } = request.query || {}
+      const data = await listAdminAiSymbolDecisions({
+        symbol,
+        action,
+        session,
+        limit: limit ? Number(limit) : undefined,
+        offset: offset ? Number(offset) : undefined
+      })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to list AI symbol decisions')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_AI_DECISIONS_ERROR', message: err.message }
       })
     }
   })
