@@ -2,6 +2,7 @@ import { runRegimeSnapshot } from './regimeSnapshotJob.js'
 import { runAiStrategyDailyJob } from './aiStrategyDailyJob.js'
 import { runAiStrategyMarketOpenJob } from './aiStrategyMarketOpenJob.js'
 import { runStockTraderDailyJob } from './aiStockTraderDailyJob.js'
+import { runStockTraderMarketOpenJob } from './aiStockTraderMarketOpenJob.js'
 
 const DEFAULT_SYMBOLS = ['SPY']
 
@@ -48,7 +49,10 @@ export async function startSchedulers() {
     startFallbackMarketOpenScheduler()
     startFallbackRegimeScheduler()
     startFallbackAiStrategyScheduler()
-    if (process.env.ENABLE_FLAGSHIP_STOCK_TRADER === 'true') startFallbackStockTraderScheduler()
+    if (process.env.ENABLE_FLAGSHIP_STOCK_TRADER === 'true') {
+      startFallbackStockTraderScheduler()
+      startFallbackStockTraderMarketOpenScheduler()
+    }
   }
 }
 
@@ -81,6 +85,9 @@ async function startCronSchedulers() {
 
   // Flagship is explicitly opt-in, independent of the legacy momentum schedule.
   if (process.env.ENABLE_FLAGSHIP_STOCK_TRADER === 'true') {
+    cron.schedule('50 9 * * 1-5', () => runStockTraderMarketOpenJob().catch(err => {
+      console.error('[scheduler] flagship paper market-open job error:', err?.message ?? err)
+    }), { timezone: 'America/New_York' })
     cron.schedule('45 16 * * 1-5', () => runStockTraderDailyJob().catch(err => {
       console.error('[scheduler] flagship AI Stock Trader job error:', err?.message ?? err)
     }), { timezone: 'America/New_York' })
@@ -132,6 +139,17 @@ function startFallbackAiStrategyScheduler() {
 
   scheduleNext()
   console.log('[scheduler] fallback autonomous AI scheduler armed (4:30 PM ET, Mon–Fri)')
+}
+
+function startFallbackStockTraderMarketOpenScheduler() {
+  const scheduleNext = () => {
+    setTimeout(async () => {
+      try { await runStockTraderMarketOpenJob() }
+      catch (error) { console.error('[scheduler] fallback flagship market open failed:', error) }
+      finally { scheduleNext() }
+    }, msUntilNextEasternWeekdayTime(9, 50))
+  }
+  scheduleNext()
 }
 
 function startFallbackStockTraderScheduler() {
