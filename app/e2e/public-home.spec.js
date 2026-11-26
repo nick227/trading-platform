@@ -82,5 +82,5 @@ test('automation pipeline distinguishes recorded, skipped and unrecorded stages'
   await expect(pipeline.getByText('2 of 5 stages')).toBeVisible()
   await expect(pipeline.getByText('Skipped')).toBeVisible()
   await expect(pipeline.getByText('Not recorded')).toHaveCount(2)
-  await expect(pipeline.getByText('Pending paper orders')).toBeVisible()
+  await expect(pipeline.getByText('Pending paper orders').first()).toBeVisible()
 })
