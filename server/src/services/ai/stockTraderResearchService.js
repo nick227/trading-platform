@@ -40,13 +40,19 @@ export async function runStockTraderResearch({
     snapshotFingerprint: snapshot.fingerprint,
     systemPrompt, userPrompt
   })).digest('hex')
-  const eventId = `req_stock_${fingerprint.slice(0, 32)}`
+  // One paid research claim per bot, strategy version and completed market session.
+  // Data changes within a session must not create additional paid calls.
+  const sessionClaim = createHash('sha256').update(`${bot.id}:${config.strategyVersion}:${screening.asOfSession}`).digest('hex')
+  const eventId = `req_stock_${sessionClaim.slice(0, 32)}`
   const cached = await prismaClient.botEvent.findUnique({ where: { id: eventId } })
   if (cached) {
     if (cached.botId !== bot.id || cached.portfolioId !== portfolio.id) {
       throw new Error('AI research cache ownership mismatch')
     }
     if (cached.metadata?.status === 'completed' && cached.metadata?.decision) {
+      if (cached.metadata?.fingerprint !== fingerprint) {
+        return { ok: false, skipped: true, reason: 'session_already_researched', eventId }
+      }
       return { ok: true, cached: true, eventId, snapshot, decision: cached.metadata.decision }
     }
     return { ok: false, skipped: true, reason: 'research_claim_exists', eventId }
