@@ -162,7 +162,7 @@ describe('corrected catalog presentation', () => {
     expect(Object.keys(STRATEGY_EXPLANATIONS)).toHaveLength(7)
     for (const [templateId, explanation] of Object.entries(STRATEGY_EXPLANATIONS)) {
       expect(catalogOverview({templateId, description:'Unreviewed technical jargon.'})).toBe(explanation)
-      expect(explanation.split(/(?<=[.!?])\\s+/)).toHaveLength(2)
+      expect(explanation.split(/(?<=[.!?])\s+/)).toHaveLength(2)
     }
   })
   it('uses the same prominent typography for unavailable and completed test headings', () => {
