@@ -7,6 +7,7 @@
   border: 1px solid var(--tl-line);
   border-radius: 12px;
   background: var(--tl-surface);
+  padding: 24px;
   min-width: 0;
   overflow: hidden;
   transition: border-color 150ms ease, box-shadow 150ms ease;
@@ -18,7 +19,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0;
-  padding: clamp(20px, 3vw, 32px);
+  padding: 0;
   color: inherit;
   text-decoration: none;
   min-width: 0;
@@ -33,6 +34,9 @@
 .tl-strategy-catalog-card__result { margin: 0; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
 .tl-strategy-catalog-card__action { align-self: flex-end; color: var(--tl-accent); font-weight: 700; font-size: 13px; margin-top: 22px; }
 .tl-strategy-catalog-card__link:hover .tl-strategy-catalog-card__action { text-decoration: underline; }
+@media(max-width: 760px) {
+  .tl-strategy-catalog-card { padding: 16px; }
+}
 @media(max-width: 600px) {
   .tl-strategy-catalog { gap: 14px; }
   .tl-strategy-catalog-card__top { align-items: flex-start; }
