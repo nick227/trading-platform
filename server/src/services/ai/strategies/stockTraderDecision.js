@@ -4,7 +4,7 @@
  */
 export const STOCK_TRADER_PROMPT_VERSION = '1.0.0'
 
-export function buildStockTraderPrompts(snapshot) {
+export function buildStockTraderPrompts(snapshot, definition = null) {
   const market = snapshot?.context?.market?.data
   const portfolio = snapshot?.context?.portfolio?.data
   const risk = snapshot?.context?.risk?.data
@@ -14,6 +14,7 @@ export function buildStockTraderPrompts(snapshot) {
   }
   const systemPrompt = `You are TradeLoom's AI Stock Trader research analyst.
 Your task is to independently evaluate the supplied candidate stocks and current paper holdings.
+${definition ? `Research philosophy: ${definition.philosophy}\nReasoning mandate: ${definition.reasoningInstructions}` : ''}
 You do not have live news, external tools, or access to data beyond this research snapshot.
 Never invent catalysts, quotations, indicators, market prices, or fundamentals.
 You cannot trade directly; recommend BUY, SELL or HOLD only.
