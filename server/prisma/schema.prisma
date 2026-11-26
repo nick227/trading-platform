@@ -719,10 +719,8 @@ model StrategyEvidence {
   @@index([templateId, endDate])
 }
 
-/**
- * Atomic monthly AI spend reservations; deliberately independent of billing.
- * Two budget scopes are supported: platform and bot.
- */
+// Atomic monthly AI spend reservations; deliberately independent of billing.
+// Two budget scopes are supported: platform and bot.
 model AiUsageBucket {
   id             String   @id @db.VarChar(191)
   period         String   @db.VarChar(7)
