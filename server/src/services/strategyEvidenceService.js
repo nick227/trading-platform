@@ -197,8 +197,10 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
             // fallback if computing equity encounters an error
           }
         }
+        const primarySymbol = symbols[0] || 'AAPL'
         for (const t of todo) {
           if (t.window.id === 'forward' && forwardStats && forwardStats.status === 'ok' && forwardStats.curve.length > 0) {
+            const isPrimary = t.symbol === primarySymbol
             queueSave(t.symbol, t.window, {
               startDate: forwardStats.curve[0]?.date || version.firstSession,
               status: 'ok',
@@ -212,11 +214,13 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
                   trades: forwardStats.trades,
                   timeInMarketPct: 0
                 },
-                curve: downsample(forwardStats.curve.map(p => ({ date: p.date, equity: p.equity })), 260),
+                curve: isPrimary ? downsample(forwardStats.curve.map(p => ({ date: p.date, equity: p.equity })), 260) : null,
+                curveSharedWith: isPrimary ? null : primarySymbol,
                 buyAndHold: {
                   returnPct: forwardStats.buyAndHold.returnPct,
                   maxDrawdown: { pct: 0 },
-                  curve: downsample(forwardStats.buyAndHold.curve.map(p => ({ date: p.date, equity: p.equity })), 260)
+                  curve: isPrimary ? downsample(forwardStats.buyAndHold.curve.map(p => ({ date: p.date, equity: p.equity })), 260) : null,
+                  curveSharedWith: isPrimary ? null : primarySymbol
                 },
                 skips: {},
                 trades: []
@@ -380,8 +384,37 @@ export async function getPublicStrategy(templateId, { prismaClient = prisma, ver
   const version = stored ?? await prismaClient.strategyVersion.findUnique({ where: { id: v.id } })
   const { endDate, rows } = version ? await latestRows(prismaClient, version.id) : { endDate: null, rows: [] }
   const all = await prismaClient.strategyVersion.findMany({ where: { templateId }, orderBy: { createdAt: 'desc' } })
-  const strip = (r) => ({ symbol: r.symbol, window: r.window, startDate: r.startDate, endDate: r.endDate, status: r.status, reason: r.reason,
-    parameters: r.parameters, dataFingerprint: r.dataFingerprint, riskPolicyVersion: r.riskPolicyVersion, results: r.results })
+  const strip = (r) => {
+    let res = r.results
+    if (res && res.curveSharedWith) {
+      const partner = rows.find((x) => x.symbol === res.curveSharedWith && x.window === r.window)
+      if (partner?.results?.curve) {
+        res = {
+          ...res,
+          curve: partner.results.curve,
+          buyAndHold: partner.results.buyAndHold ? {
+            ...res.buyAndHold,
+            curve: partner.results.buyAndHold.curve
+          } : res.buyAndHold
+        }
+      }
+    } else if (res?.buyAndHold?.curveSharedWith) {
+      const partner = rows.find((x) => x.symbol === res.buyAndHold.curveSharedWith && x.window === r.window)
+      if (partner?.results?.buyAndHold?.curve) {
+        res = {
+          ...res,
+          buyAndHold: {
+            ...res.buyAndHold,
+            curve: partner.results.buyAndHold.curve
+          }
+        }
+      }
+    }
+    return {
+      symbol: r.symbol, window: r.window, startDate: r.startDate, endDate: r.endDate, status: r.status, reason: r.reason,
+      parameters: r.parameters, dataFingerprint: r.dataFingerprint, riskPolicyVersion: r.riskPolicyVersion, results: res
+    }
+  }
   const windows = ['5Y', '1Y', 'forward', ...(v.definition.design ? ['development', 'holdout'] : [])]
   return {
     templateId: t.id, name: t.name, description: t.description, tags: t.tags ?? [], workshopAvailable: t.botType === 'rule_based',
@@ -395,4 +428,62 @@ export async function getPublicStrategy(templateId, { prismaClient = prisma, ver
     results: rows.map(strip),
     versions: all.map((p) => ({ id: p.id, firstSession: p.firstSession, current: p.id === current.id, selected: p.id === v.id })),
   }
+}
+
+/**
+ * Compaction of historical evidence snapshots.
+ * Preserves all immutable scalar audit metrics (returns, drawdowns, trades, win rates, fingerprints)
+ * while pruning redundant time-series visualization curves and verbose trade lists from older superseded sessions.
+ */
+export async function compactHistoricalEvidence({ prismaClient = prisma } = {}) {
+  const versions = await prismaClient.strategyVersion.findMany({ select: { id: true } })
+  let compactedRows = 0
+
+  for (const { id: versionId } of versions) {
+    const allRows = await prismaClient.strategyEvidence.findMany({
+      where: { strategyVersionId: versionId }
+    })
+    if (!allRows.length) continue
+
+    const endDates = [...new Set(allRows.map((r) => r.endDate))].sort().reverse()
+    if (endDates.length <= 1) continue
+
+    const supersededDates = new Set(endDates.slice(1))
+    const toUpdate = []
+
+    for (const r of allRows) {
+      if (!supersededDates.has(r.endDate)) continue
+      if (!r.results || r.results.compacted) continue
+      const res = r.results
+      const compactedResults = {
+        compacted: true,
+        capital: res.capital,
+        range: res.range,
+        metrics: res.metrics,
+        buyAndHold: res.buyAndHold ? {
+          returnPct: res.buyAndHold.returnPct,
+          maxDrawdown: res.buyAndHold.maxDrawdown
+        } : null,
+        exits: res.exits,
+        tradesCount: Array.isArray(res.trades) ? res.trades.length : (res.metrics?.trades ?? 0),
+        skips: res.skips,
+        riskBlocks: res.riskBlocks,
+        refusals: res.refusals
+      }
+      toUpdate.push({ id: r.id, data: { results: compactedResults } })
+    }
+
+    if (toUpdate.length > 0) {
+      if (typeof prismaClient.$transaction === 'function') {
+        const ops = toUpdate.map(({ id, data }) => prismaClient.strategyEvidence.update({ where: { id }, data }))
+        await prismaClient.$transaction(ops)
+      } else {
+        for (const { id, data } of toUpdate) {
+          await prismaClient.strategyEvidence.update({ where: { id }, data })
+        }
+      }
+      compactedRows += toUpdate.length
+    }
+  }
+  return { compactedRows }
 }

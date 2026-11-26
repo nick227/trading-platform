@@ -29,7 +29,9 @@ import {
   listAdminAiSymbolDecisions,
   getAdminMarketDataDiagnostics,
   revalidateAdminMarketFeed,
-  getResearchPublicationDiagnostics
+  getResearchPublicationDiagnostics,
+  triggerEvidenceCompaction,
+  getEvidenceStorageMetrics
 } from '../services/adminService.js'
 
 export default async function adminRoutes(app) {
@@ -338,6 +340,37 @@ export default async function adminRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'JOB_EXECUTION_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // POST /api/admin/controls/compact-evidence — Trigger strategy evidence compaction
+  app.post('/controls/compact-evidence', { preHandler: [adminOnly] }, async (request, reply) => {
+    try {
+      const result = await triggerEvidenceCompaction({
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
+      return reply.send({ success: true, data: result, result })
+    } catch (err) {
+      app.log.error(err, 'Evidence compaction failed')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'EVIDENCE_COMPACTION_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/controls/evidence-storage — Strategy evidence storage footprint metrics
+  app.get('/controls/evidence-storage', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const data = await getEvidenceStorageMetrics()
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to fetch evidence storage metrics')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'EVIDENCE_STORAGE_ERROR', message: err.message }
       })
     }
   })

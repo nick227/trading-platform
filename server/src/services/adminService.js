@@ -999,6 +999,66 @@ export async function triggerEvidenceSync({
 }
 
 /**
+ * Executes historical strategy evidence compaction.
+ * Preserves permanent scalar audit facts while pruning bulky time-series curves and verbose trade lists from superseded sessions.
+ */
+export async function triggerEvidenceCompaction({
+  actorUserId = null,
+  ipAddress = null,
+  prismaClient = prisma
+} = {}) {
+  const { compactHistoricalEvidence } = await import('./strategyEvidenceService.js')
+  const res = await compactHistoricalEvidence({ prismaClient })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'trigger_evidence_compaction',
+      targetType: 'maintenance',
+      metadata: res,
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return res
+}
+
+/**
+ * Returns storage metrics and compaction statistics for StrategyEvidence.
+ */
+export async function getEvidenceStorageMetrics({ prismaClient = prisma } = {}) {
+  const totalRows = await prismaClient.strategyEvidence.count().catch(() => 0)
+  const rows = await prismaClient.strategyEvidence.findMany({
+    select: { id: true, endDate: true, results: true }
+  }).catch(() => [])
+
+  let compactedRows = 0
+  let sharedCurveRows = 0
+  let totalBytes = 0
+
+  const dates = new Set()
+  for (const r of rows) {
+    if (r.endDate) dates.add(r.endDate)
+    if (r.results) {
+      if (r.results.compacted) compactedRows++
+      if (r.results.curveSharedWith || r.results.buyAndHold?.curveSharedWith) sharedCurveRows++
+      totalBytes += JSON.stringify(r.results).length
+    }
+  }
+
+  return {
+    totalRows,
+    distinctSessions: dates.size,
+    compactedRows,
+    activeRows: totalRows - compactedRows,
+    sharedCurveRows,
+    estimatedJsonBytes: totalBytes,
+    estimatedStorageKb: Math.round(totalBytes / 1024)
+  }
+}
+
+/**
  * Lists past autonomous AI research cycles with model, token usage, costs, and decision summary.
  */
 export async function listAdminAiResearchCycles({
