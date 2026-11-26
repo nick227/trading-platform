@@ -141,3 +141,20 @@
 .tl-public-result__metric dd{margin:0;font-variant-numeric:tabular-nums;font-weight:800;font-size:19px;letter-spacing:-.03em;overflow-wrap:anywhere}
 .tl-public-result__unavailable{padding:18px 14px;background:#f7f8fb;border-radius:8px;font-size:13px;color:#566277}
 .tl-public-result .tl-public-result-meta{margin-top:auto}
+
+/* MR4: read-only, real Alpha Engine stock research snapshots. */
+.tl-public-picker{max-width:920px;padding:0;overflow:hidden}
+.tl-public-picker__head{padding:24px 28px;display:flex;align-items:start;justify-content:space-between;gap:16px;background:#f8fafc;border-bottom:1px solid var(--tl-public-border)}
+.tl-public-picker__eyebrow{font-size:11px!important;letter-spacing:.09em;font-weight:800;color:var(--tl-public-accent)!important;margin:0 0 6px}
+.tl-public-picker__head h3{font-size:22px;line-height:1.25;letter-spacing:-.03em;margin:0}
+.tl-public-picker__date{font-size:12px;color:var(--tl-public-subtle)}
+.tl-public-picker__list{list-style:none;padding:0;margin:0}
+.tl-public-picker__list li{display:grid;grid-template-columns:38px minmax(70px,1fr) minmax(130px,1fr);align-items:center;gap:18px;min-height:60px;padding:12px 28px;border-bottom:1px solid #eff1f5}
+.tl-public-picker__rank{display:grid;place-items:center;width:32px;height:32px;border-radius:8px;background:#f0edff;color:var(--tl-public-accent);font-weight:800;font-size:13px}
+.tl-public-picker__list strong{font-size:16px}
+.tl-public-picker__score{font-variant-numeric:tabular-nums;font-size:13px;color:#45516a;text-align:right}
+.tl-public-picker__foot{padding:18px 28px 24px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+.tl-public-picker__foot p{margin:0;max-width:630px;font-size:12px}
+.tl-public-picker__foot a{flex-shrink:0}
+.tl-public-picker-state{min-height:170px;display:flex;align-items:center;justify-content:center;color:var(--tl-public-subtle)}
+@media(max-width:760px){.tl-public-picker__head{padding:20px;flex-direction:column}.tl-public-picker__list li{grid-template-columns:34px minmax(65px,1fr) minmax(120px,1fr);gap:10px;padding:12px 18px}.tl-public-picker__foot{padding:20px;align-items:start;flex-direction:column}}

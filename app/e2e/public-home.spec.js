@@ -46,3 +46,19 @@ test('public evidence cards preserve source results and missing evidence states'
   await expect(page.getByText('Awaiting forward paper sessions')).toBeVisible()
   await expect(page.getByText('Historical sample')).toBeVisible()
 })
+
+test('stock research shows actual published ranking fields and no made-up data date', async ({ page }) => {
+  await page.route('**/api/engine/rankings/top*', route => route.fulfill({
+    status:200, contentType:'application/json', body:JSON.stringify({success:true,data:{rankings:[
+      {symbol:'MSFT',rank:1,score:75.5},{symbol:'NVDA',rank:2,score:68.25}
+    ]}})
+  }))
+  await page.goto('/')
+  await page.locator('#public-stock-research').scrollIntoViewIfNeeded()
+  const picker = page.getByTestId('public-stock-picker')
+  await expect(picker).toBeVisible()
+  await expect(picker.getByText('MSFT')).toBeVisible()
+  await expect(picker.getByText('Research score 75.5')).toBeVisible()
+  await expect(picker.getByText('Publication date unavailable')).toBeVisible()
+  await expect(picker.getByRole('link',{name:/Open stock research/})).toHaveAttribute('href','/research')
+})
