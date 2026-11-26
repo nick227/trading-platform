@@ -10,6 +10,7 @@ import { SimulatedBroker } from '../../../../worker/src/broker/simulatedBroker.j
 import { evaluateRiskCaps } from '../../../../worker/src/risk/riskCaps.js'
 import { readEmergencyStop } from '../emergencyStopService.js'
 import { claimQueuedAiPaperExecution, completeClaimedAiPaperExecution, quarantineClaimedAiPaperExecution } from './paperExecutionClaims.js'
+import { nextStockTraderSession } from './stockTraderTradingSession.js'
 
 export const PLATFORM_USER_ID = 'usr_platform_canonical'
 export const PLATFORM_PORTFOLIO_ID = 'port_platform_canonical'
@@ -908,7 +909,12 @@ export async function processPendingAiExecutions(botId, {
             if (existingQueuedExit) continue
 
             const clientOrderId = `co_ai_exit_${exitType}_${botId}_${currentSession.replace(/-/g, '')}_${ticker.toLowerCase()}`
-            const activeIntentKey = `intent_ai_exit_${botId}_${ticker.toLowerCase()}`
+            // The active intent is scoped to the currently open FIFO lots, rather
+            // than permanently reserved for this bot + ticker.
+            const lotIds = Array.isArray(pos.lots) ? pos.lots.map(lot => String(lot.id)).sort() : []
+            if (!lotIds.length) throw new Error('Cannot identify open lots for protective exit')
+            const positionKey = createHash('sha256').update(lotIds.join('|')).digest('hex').slice(0, 20)
+            const activeIntentKey = `intent_ai_exit_${botId}_${ticker.toLowerCase()}_${positionKey}`
 
             const existingExit = await prismaClient.execution.findFirst({
               where: {
@@ -922,7 +928,9 @@ export async function processPendingAiExecutions(botId, {
             if (existingExit) continue
 
             // Chronological integrity: signals evaluated after session close execute no earlier than next session
-            const targetSession = nextTradingSession(currentSession)
+            const targetSession = bot.templateId === 'tmpl_ai_stock_trader'
+              ? nextStockTraderSession(currentSession)
+              : nextTradingSession(currentSession)
             const isReplayMode = bot.config?.isReplay === true
             const execId = `exec_ai_exit_${randomUUID().replace(/-/g, '').slice(0, 16)}`
             const qty = pos.quantity
