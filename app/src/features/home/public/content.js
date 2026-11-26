@@ -1,11 +1,11 @@
 export const JOURNEY = [
-  { number:'01',title:'Choose a strategy',body:'Compare published approaches and explore their testing methodology before selecting a bot.' },
-  { number:'02',title:'Allocate simulated capital',body:'Start a paper portfolio without depositing money or placing live brokerage orders.' },
-  { number:'03',title:'Watch decisions unfold',body:'Inspect bot activity, recorded orders, holdings, and portfolio changes over time.' }
+  { number:'01',title:'Compare strategies',body:'Review published backtests and forward paper results, including negative outcomes and methodology.' },
+  { number:'02',title:'Allocate paper capital',body:'Configure an eligible strategy with simulated capital and existing execution controls.' },
+  { number:'03',title:'Monitor recorded activity',body:'Inspect simulated orders, holdings, portfolio changes, and research events.' },
 ]
 export const CAPABILITIES = [
-  {title:'Automated bot control',body:'Create, pause, and stop bots from your account. Stay in control of simulated activity.'},
-  {title:'AI research and decisions',body:'Read the market context and evidence behind published AI research decisions.'},
-  {title:'Portfolio analytics',body:'Follow simulated cash, positions, fills, equity changes, and risk.'},
-  {title:'Transparent strategy evidence',body:'Examine results and limitations, including strategies that did not perform well.'}
+  {title:'Stock research rankings',body:'Review Alpha Engine research candidates and their published ranking context in the signed-in Research workspace.'},
+  {title:'Automated bot control',body:'Configure eligible paper-trading bots and use the available pause and stop controls.'},
+  {title:'Portfolio accounting',body:'Inspect simulated cash, holdings, fills, and changes in portfolio value.'},
+  {title:'Strategy evidence',body:'Compare historical and forward paper results, benchmark measures, and documented limitations.'},
 ]
