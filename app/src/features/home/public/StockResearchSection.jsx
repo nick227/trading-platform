@@ -76,8 +76,8 @@ export default function StockResearchSection() {
     <section className="tl-public-section" id="public-stock-research" aria-labelledby="public-stock-research-title">
       <header className="tl-public-section-head">
         <p className="tl-public-eyebrow">STOCK RESEARCH</p>
-        <h2 id="public-stock-research-title">Identify and evaluate stock candidates.</h2>
-        <p>TradeLoom's Alpha Engine ranks research opportunities using its available market data and research outputs. Explore candidate scores and supporting research in the signed-in workspace.</p>
+        <h2 id="public-stock-research-title">AI-assisted research identifies and ranks market opportunities.</h2>
+        <p>TradeLoom's Alpha Engine analyzes available market data and publishes ranked stock candidates for further investigation. Research scores and supporting information are available in the signed-in workspace.</p>
       </header>
       {visible ? <Candidates /> : <div className="tl-public-panel tl-public-picker-state" aria-hidden="true">Stock research</div>}
       <p className="tl-public-disclosure">Rankings are research output, not personalized advice or trading instructions. A rank does not establish model accuracy, investment quality, or an expected return.</p>

@@ -40,8 +40,8 @@ export default function AuthPanel() {
         <button type="button" aria-pressed={mode === 'register'} className={mode === 'register' ? 'is-active' : ''} onClick={() => { setMode('register'); setError('') }}>Create account</button>
         <button type="button" aria-pressed={mode === 'login'} className={mode === 'login' ? 'is-active' : ''} onClick={() => { setMode('login'); setError('') }}>Sign in</button>
       </div>
-      <h2>{mode === 'register' ? 'Start with a free account' : 'Welcome back'}</h2>
-      <p>{mode === 'register' ? 'Create an account to explore automated paper trading. No deposit or subscription required.' : 'Access your bots and simulated portfolios.'}</p>
+      <h2>{mode === 'register' ? 'Register for beta access' : 'Welcome back'}</h2>
+      <p>{mode === 'register' ? 'All accounts are free during beta development. Registration does not start a paid subscription.' : 'Access your TradeLoom account and available trading tools.'}</p>
       <form onSubmit={submit} className="tl-public-auth-form">
         {mode === 'register' && <label>Full name<input autoComplete="name" name="fullName" type="text" required maxLength="120" disabled={busy} value={fullName} onChange={e => setFullName(e.target.value)} /></label>}
         <label>Email address<input autoComplete="email" name="email" type="email" required disabled={busy} value={email} onChange={e => setEmail(e.target.value)} /></label>
@@ -53,9 +53,9 @@ export default function AuthPanel() {
           </div>
         </div>
         {error && <p className="tl-public-form-error" role="alert">{error}</p>}
-        <button className="tl-public-button tl-public-button--primary" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'register' ? 'Create free account' : 'Sign in'}</button>
+        <button className="tl-public-button tl-public-button--primary" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'register' ? 'Create beta account' : 'Sign in'}</button>
       </form>
-      <p className="tl-public-form-footnote">Simulated trading only. No deposits, brokerage orders, or paid subscription at registration.</p>
+      <p className="tl-public-form-footnote">Live brokerage orders and deposits are not available during the current beta. Premium subscriptions are planned for a future release.</p>
     </div>
   )
 }
