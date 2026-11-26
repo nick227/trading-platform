@@ -6,7 +6,7 @@ import StrategyThumbnail from './StrategyThumbnail'
 
 export function mainEvidenceWindow(strategy) {
   const windows = strategy?.windows || {}
-  const isAi = strategy?.tags?.includes('ai') || strategy?.templateId === 'tmpl_ai_catalyst_momentum'
+  const isAi = strategy?.tags?.includes('ai') || strategy?.templateId === 'tmpl_ai_catalyst_momentum' || strategy?.templateId === 'tmpl_alpha_research'
   if (isAi) return 'forward'
   if (windows['5Y']?.status === 'ok') return '5Y'
   if (windows['1Y']?.status === 'ok') return '1Y'

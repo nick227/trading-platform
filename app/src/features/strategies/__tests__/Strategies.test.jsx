@@ -48,7 +48,7 @@ describe('public strategy evidence', () => {
     expect(screen.getByTestId('tested-definition')).toHaveTextContent('Historical trigger: the last closing price before the selected test period')
     expect(screen.getByTestId('open-in-workshop')).toHaveAttribute('href', '/bots/new?template=tmpl_momentum_buy')
     fireEvent.click(screen.getByRole('button', { name: 'Since published' }))
-    expect(screen.getByTestId('window-status')).toHaveTextContent('No completed simulated sessions yet')
+    expect(screen.getByTestId('window-status')).toHaveTextContent('Results pending')
   })
   it('does not offer Workshop for an unavailable rule-based strategy', async () => {
     get.mockResolvedValue({ ...strategy, workshopAvailable: false })
@@ -147,13 +147,16 @@ describe('public strategy catalog contract', () => {
     const negative = {status:'ok',symbolsTested:3,symbolsTraded:2,medianReturnPct:-7.25,medianBuyAndHoldPct:3.5}
     expect(catalogResult(negative,'5Y')).toBeNull()
     expect(catalogPeriod('forward')).toBe('Simulated trading · Since publication')
-    expect(catalogResult({status:'awaiting_sessions'},'forward')).toMatch(/not enough completed trading sessions/)
+    expect(catalogResult({status:'awaiting_sessions'},'forward')).toMatch(/qualifying forward paper trades/)
     expect(catalogResult({status:'not_backtestable'},'5Y')).toMatch(/cannot be evaluated/)
     expect(catalogResult({status:'not_backtestable'},'forward')).toMatch(/since this strategy was introduced/)
+    expect(catalogResult({status:'not_backtestable',reason:'Forward performance evaluation is not configured for this strategy: no active paper trading bot is running.'},'forward'))
+      .toMatch(/Forward performance evaluation is not configured/)
   })
   it('prefers a completed available period but does not mislabel AI evidence', () => {
     expect(mainEvidenceWindow({windows:{'5Y':{status:'insufficient_data'},'1Y':{status:'ok'}}})).toBe('1Y')
     expect(mainEvidenceWindow({tags:['ai'],windows:{'5Y':{status:'ok'},forward:{status:'awaiting_sessions'}}})).toBe('forward')
+    expect(mainEvidenceWindow({templateId:'tmpl_alpha_research',windows:{'5Y':{status:'not_backtestable'},forward:{status:'not_backtestable'}}})).toBe('forward')
   })
 })
 
@@ -168,6 +171,7 @@ describe('corrected catalog presentation', () => {
   it('uses the same prominent typography for unavailable and completed test headings', () => {
     expect(catalogResultHeading({status:'awaiting_sessions'})).toBe('Results pending')
     expect(catalogResultHeading({status:'not_backtestable'})).toBe('Results unavailable')
+    expect(catalogResultHeading({status:'not_backtestable',reason:'Forward performance evaluation is not configured for this strategy'})).toBe('Evaluation not configured')
     expect(catalogResultHeading({status:'ok',symbolsTraded:0})).toBe('No trades recorded')
   })
 })

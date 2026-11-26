@@ -34,11 +34,14 @@ export function catalogPeriod(window) {
 export function catalogResult(summary, window) {
   if (!summary) return 'No performance results have been published for this period.'
   if (summary.status === 'not_backtestable') {
+    if (summary.reason?.includes('not configured')) return summary.reason
     return window === 'forward'
       ? 'No performance results have been published since this strategy was introduced.'
       : 'This strategy cannot be evaluated using the available historical testing method.'
   }
-  if (summary.status === 'awaiting_sessions') return 'There are not enough completed trading sessions to measure performance.'
+  if (summary.status === 'awaiting_sessions') {
+    return summary.reason || 'This strategy has not recorded any qualifying forward paper trades. Performance results will become available when sufficient verified trading activity exists.'
+  }
   if (summary.status === 'insufficient_data') return 'The available market data is insufficient to calculate performance.'
   if (summary.status !== 'ok') return 'Performance results have not been published for this period.'
   if (summary.symbolsTraded === 0) return 'This strategy did not place any trades during the selected test.'
@@ -51,5 +54,6 @@ export function catalogResult(summary, window) {
 export function catalogResultHeading(summary) {
   if (summary?.status === 'ok' && summary?.symbolsTraded === 0) return 'No trades recorded'
   if (summary?.status === 'awaiting_sessions') return 'Results pending'
+  if (summary?.reason?.includes('not configured')) return 'Evaluation not configured'
   return 'Results unavailable'
 }

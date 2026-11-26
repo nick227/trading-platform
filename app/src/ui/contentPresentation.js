@@ -15,13 +15,21 @@ export function evidenceState(summary, window = 'forward') {
   if (summary?.status === 'ok') return null
   if (summary?.status === 'awaiting_sessions' || (!summary && window === 'forward')) {
     return {
-      title: 'No completed simulated sessions yet',
-      description: 'Results will appear after the strategy completes trading sessions. No performance can be assessed yet.',
+      title: 'Results pending',
+      description: summary?.reason || 'This strategy has not recorded any qualifying forward paper trades. Performance results will become available when sufficient verified trading activity exists.',
     }
   }
-  if (summary?.status === 'not_backtestable') return {
-    title: 'Historical results are not available',
-    description: 'This strategy cannot be evaluated using the standard historical test.',
+  if (summary?.status === 'not_backtestable') {
+    if (summary?.reason?.includes('not configured')) {
+      return {
+        title: 'Evaluation not configured',
+        description: summary.reason,
+      }
+    }
+    return {
+      title: 'Historical results are not available',
+      description: summary?.reason || 'This strategy cannot be evaluated using the standard historical test.',
+    }
   }
   if (summary?.status === 'insufficient_data') return {
     title: 'Not enough market data',

@@ -7,9 +7,10 @@ describe('user-facing evidence terminology', () => {
     expect(evidenceLabel('5Y')).toContain('Historical')
   })
   it('does not turn missing data into zero performance', () => {
-    expect(evidenceState(null, 'forward').title).toMatch(/No completed/)
+    expect(evidenceState(null, 'forward').title).toMatch(/Results pending/)
     expect(evidenceState({ status: 'ok' }, 'forward')).toBeNull()
     expect(evidenceState({ status: 'insufficient_data' }).title).toMatch(/Not enough/)
+    expect(evidenceState({ status: 'not_backtestable', reason: 'Forward performance evaluation is not configured for this strategy' }).title).toBe('Evaluation not configured')
     expect(decisionState('error', 0).description).toContain('does not mean')
   })
   it('preserves sourced strategy wording and only specializes confirmed AI type', () => {

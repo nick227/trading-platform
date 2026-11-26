@@ -30,7 +30,7 @@ for(const width of [320,375,768,1024,1440]) {
     await expect(cards.first()).toContainText('−7.25%')
     await expect(cards.first()).toContainText('+3.50%')
     await expect(cards.first()).toContainText('Typical strategy return')
-    await expect(cards.nth(1)).toContainText('not enough completed trading sessions')
+    await expect(cards.nth(1)).toContainText('qualifying forward paper trades')
     await expect(cards.nth(2)).toContainText('cannot be evaluated using the available historical testing method')
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1)
   })
