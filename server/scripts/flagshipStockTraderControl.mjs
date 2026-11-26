@@ -1,7 +1,7 @@
 /**
  * Explicit operator-only flagship beta controls.
  * From server/: node scripts/flagshipStockTraderControl.mjs
- *   --initialize | --status | --preflight | --smoke-provider | --enable | --disable
+ *   --initialize | --migrate-v2 | --status | --preflight | --smoke-provider | --enable | --disable
  *
  * No command enables the bot except --enable after a passing read-only preflight.
  * A real paid provider call occurs ONLY with the explicit --smoke-provider option.
@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto'
 import prisma from '../src/loaders/prisma.js'
 import { getProvider } from '../src/services/ai/providers/providerRegistry.js'
 import { createAiUsageGovernor } from '../src/services/ai/aiUsageGovernor.js'
-import { getOrCreatePlatformAiStockTrader } from '../src/services/ai/aiStockTraderBotService.js'
+import { getOrCreatePlatformAiStockTrader, upgradeDisabledPlatformStockTraderToAgent } from '../src/services/ai/aiStockTraderBotService.js'
 import { readFlagshipAiBetaReadiness } from '../src/services/ai/flagshipBetaReadiness.js'
 import {
   AI_STOCK_TRADER_PLATFORM_BOT_ID,
@@ -19,7 +19,7 @@ import {
 } from '../src/services/ai/strategies/aiStockTraderStrategy.js'
 
 const command = process.argv[2] || '--status'
-const allowed = ['--initialize', '--enable', '--disable', '--status', '--preflight', '--smoke-provider']
+const allowed = ['--initialize', '--migrate-v2', '--enable', '--disable', '--status', '--preflight', '--smoke-provider']
 if (!allowed.includes(command) || process.argv.length > 3) {
   throw new Error(`Expected exactly one control option: ${allowed.join(', ')}`)
 }
@@ -77,6 +77,9 @@ try {
       initialized: true, botId: bot.id,
       enabled: bot.enabled, strategyVersion: bot.config?.strategyVersion
     }, null, 2))
+  } else if (command === '--migrate-v2') {
+    const result = await upgradeDisabledPlatformStockTraderToAgent()
+    console.log(JSON.stringify(result, null, 2))
   } else if (command === '--status') {
     const bot = await getBot()
     console.log(JSON.stringify(bot ? {
