@@ -84,3 +84,13 @@ test('automation pipeline distinguishes recorded, skipped and unrecorded stages'
   await expect(pipeline.getByText('Not recorded')).toHaveCount(2)
   await expect(pipeline.getByText('Pending paper orders').first()).toBeVisible()
 })
+
+test('methodology distinguishes historical, holdout and forward evidence', async ({page}) => {
+  await page.goto('/')
+  const section=page.locator('#public-testing')
+  await expect(section.getByRole('heading',{name:'Test results need context.'})).toBeVisible()
+  await expect(section.getByText('Historical backtests')).toBeVisible()
+  await expect(section.getByText('Holdout evaluations')).toBeVisible()
+  await expect(section.getByText('Forward paper trading')).toBeVisible()
+  await expect(section.getByRole('link',{name:'Review published strategy reports'})).toHaveAttribute('href','/strategies')
+})
