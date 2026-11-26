@@ -14,7 +14,7 @@ describe('user-facing evidence terminology', () => {
   })
   it('preserves sourced strategy wording and only specializes confirmed AI type', () => {
     expect(strategyOverview({ description: 'Buys on a condition.' })).toBe('Buys on a condition.')
-    expect(strategyOverview({ tags: ['ai'] })).toContain('simulated trades')
+    expect(strategyOverview({ tags: ['ai'] })).toContain('has not yet been published')
   })
   it('deduplicates exact display clauses and omits unknown scheduling', () => {
     expect(uniqueStatements(['Daily.', 'Daily', 'After close'])).toEqual(['Daily.', 'After close'])
