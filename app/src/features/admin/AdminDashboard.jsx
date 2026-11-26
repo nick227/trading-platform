@@ -507,6 +507,29 @@ export default function AdminDashboard() {
               </button>
             </div>
 
+            {pipeline?.isTodayTradingDay === false && (
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.12)',
+                border: '1px solid rgba(59, 130, 246, 0.35)',
+                borderRadius: '8px',
+                padding: '0.85rem 1.25rem',
+                marginBottom: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.85rem'
+              }}>
+                <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>🏛️</span>
+                <div>
+                  <div style={{ fontWeight: 600, color: '#93c5fd', fontSize: '0.9rem' }}>
+                    US Exchanges Closed Today (Market Holiday / Weekend)
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                    Scheduled daily ingestion, AI research, and fills are paused. Last completed session evaluated: <strong>{pipeline.expectedCompletedSession || '—'}</strong>. Next-open orders remain staged for the next trading session.
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="tl-pipeline-stages">
               {[
                 { key: 'market_data_ingestion', title: '1. Ingestion' },
@@ -901,6 +924,30 @@ export default function AdminDashboard() {
         <div>
           <div className="tl-pipeline-widget">
             <h3 style={{ margin: '0 0 1rem 0' }}>Autonomous Pipeline Stage Health</h3>
+
+            {pipeline?.isTodayTradingDay === false && (
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.12)',
+                border: '1px solid rgba(59, 130, 246, 0.35)',
+                borderRadius: '8px',
+                padding: '0.85rem 1.25rem',
+                marginBottom: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.85rem'
+              }}>
+                <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>🏛️</span>
+                <div>
+                  <div style={{ fontWeight: 600, color: '#93c5fd', fontSize: '0.95rem' }}>
+                    US Equity Exchanges Closed Today (Exchange Holiday / Weekend)
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
+                    The market calendar has detected that today is an official exchange holiday or weekend. Autonomous lifecycle jobs will not advance until the next regular market open session.
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="tl-pipeline-stages" style={{ marginBottom: '1.5rem' }}>
               {[
                 { key: 'market_data_ingestion', title: '1. Market Data Ingestion' },
