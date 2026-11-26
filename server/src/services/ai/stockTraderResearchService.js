@@ -16,7 +16,8 @@ export async function runStockTraderResearch({
   prismaClient = prisma,
   provider = null,
   providerName = 'openai',
-  registry = createDefaultStockTraderContextRegistry()
+  registry = createDefaultStockTraderContextRegistry(),
+  usageGovernor = null
 }) {
   if (!bot?.id || !bot?.portfolioId || !portfolio?.id || portfolio.id !== bot.portfolioId) {
     throw new Error('AI research bot/portfolio identity mismatch')
@@ -68,11 +69,17 @@ export async function runStockTraderResearch({
     return { ok: false, skipped: true, reason: 'concurrent_claim', eventId }
   }
 
+  let reservation = null
+  let settled = false
   try {
+    if (!usageGovernor) throw new Error('AI usage governor is required before external research')
+    reservation = await usageGovernor.reserve({ botId: bot.id, jobKey: fingerprint, model })
     const client = provider || getProvider(providerName)
     const response = await client.completeStructured({
-      systemPrompt, userPrompt, model, temperature: 0.2
+      systemPrompt, userPrompt, model, temperature: 0.2, maxTokens: 1000
     })
+    await usageGovernor.settle(reservation, { usage: response.usage })
+    settled = true
     const decision = validateStockTraderDecision(response.structured, snapshot)
     const publish = await prismaClient.botEvent.updateMany({
       where: { id: eventId, ruleId: token },
@@ -96,6 +103,9 @@ export async function runStockTraderResearch({
     if (publish.count !== 1) throw new Error('Lost AI research claim ownership')
     return { ok: true, cached: false, eventId, snapshot, decision }
   } catch (error) {
+    if (reservation && !settled) {
+      await usageGovernor.settle(reservation, { uncertain: true }).catch(() => {})
+    }
     await prismaClient.botEvent.updateMany({
       where: { id: eventId, ruleId: token },
       data: {
