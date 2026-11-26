@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { strategyDisplayName } from '../../ui/strategyPresentation'
 import { catalogOverview, catalogPeriod } from './strategyCatalogCopy'
 import StrategyEvidencePreview from './StrategyEvidencePreview'
+import StrategyThumbnail from './StrategyThumbnail'
 
 export function mainEvidenceWindow(strategy) {
   const windows = strategy?.windows || {}
@@ -15,25 +16,28 @@ export function mainEvidenceWindow(strategy) {
   return '5Y'
 }
 
-/** The entire card links to the report; no overlapping controls or nested links. */
+/** Semantic card content is static; only its explicit footer action navigates. */
 export default function StrategyCard({ strategy }) {
-  const isAi = strategy.tags?.includes('ai') || strategy.templateId === 'tmpl_ai_catalyst_momentum'
   const window = mainEvidenceWindow(strategy)
   const summary = strategy.windows?.[window]
   return (
     <article className="tl-strategy-catalog-card" data-testid="strategy-card">
-      <Link className="tl-strategy-catalog-card__link" to={`/strategies/${encodeURIComponent(strategy.templateId)}`}>
-        <div className="tl-strategy-catalog-card__top">
+      <StrategyThumbnail templateId={strategy.templateId} />
+      <div className="tl-strategy-catalog-card__body">
+        <header className="tl-strategy-catalog-card__identity">
           <h2>{strategyDisplayName(strategy)}</h2>
-          {isAi && <span className="tl-strategy-catalog-card__type">Uses AI research</span>}
-        </div>
-        <p className="tl-strategy-catalog-card__description">{catalogOverview(strategy)}</p>
-        <div className="tl-strategy-catalog-card__evidence">
-          <p className="tl-strategy-catalog-card__period">{catalogPeriod(window)}</p>
+          <p className="tl-strategy-catalog-card__description">{catalogOverview(strategy)}</p>
+        </header>
+        <section className="tl-strategy-catalog-card__evidence" aria-label="Published test results">
+          <h3 className="tl-strategy-catalog-card__period">{catalogPeriod(window)}</h3>
           <StrategyEvidencePreview summary={summary} window={window} />
-        </div>
-        <span className="tl-strategy-catalog-card__action">Read strategy details <span aria-hidden="true">→</span></span>
-      </Link>
+        </section>
+        <footer className="tl-strategy-catalog-card__footer">
+          <Link className="tl-strategy-catalog-card__action" to={`/strategies/${encodeURIComponent(strategy.templateId)}`}>
+            View strategy <span aria-hidden="true">→</span>
+          </Link>
+        </footer>
+      </div>
     </article>
   )
 }
