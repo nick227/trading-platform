@@ -767,7 +767,10 @@ export async function processPendingAiExecutions(botId, {
       const audit = await prismaClient.executionAudit.findFirst({
         where: { executionId: exec.id, eventType: 'execution_created' }
       })
-      const executionModel = audit?.metadata?.entryType || audit?.metadata?.executionModel || 'next_open'
+      const declaredModel = audit?.metadata?.entryType || audit?.metadata?.executionModel
+      // Legacy AI strategy explicitly calls its close-price model 'next_close'.
+      // Preserve that contract while enforcing the flagship's strict next_open model.
+      const executionModel = declaredModel === 'next_close' ? 'daily_close' : declaredModel || 'next_open'
       if (!['next_open', 'daily_close'].includes(executionModel)) {
         throw new Error('Unsupported simulated fill model')
       }
