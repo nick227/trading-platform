@@ -24,6 +24,7 @@ function fixtures() {
       updateMany: vi.fn(async ({ data }) => { event = { ...event, ...data }; return { count: 1 } })
     },
     user: { findUnique: vi.fn(async () => ({ riskSettings: null })) },
+    portfolio: { update: vi.fn(async () => portfolio) },
     execution: {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),
