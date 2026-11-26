@@ -19,7 +19,8 @@ export async function loadStockTraderPaperPortfolio({
   if (!Array.isArray(fills)) throw new Error('Paper fills unavailable')
 
   const accounting = accountant(fills)
-  if (!accounting || !Number.isFinite(Number(accounting.realizedPnl ?? 0))) {
+  const realizedPnl = accounting?.performance?.realizedPnl ?? (accounting?.hasFills === false ? 0 : undefined)
+  if (!accounting || !Number.isFinite(Number(realizedPnl)) || realizedPnl === undefined) {
     throw new Error('Paper accounting unavailable')
   }
   const positionsBySymbol = accounting.openPositions || accounting.positions || {}
@@ -44,14 +45,14 @@ export async function loadStockTraderPaperPortfolio({
   }
 
   positions.sort((a, b) => a.symbol.localeCompare(b.symbol))
-  const cash = Number((capital - investedCost + Number(accounting.realizedPnl || 0)).toFixed(2))
+  const cash = Number((capital - investedCost + Number(realizedPnl)).toFixed(2))
   if (!Number.isFinite(cash) || cash < -0.01) throw new Error('Paper cash reconciliation failed')
   return {
     asOfSession: screening.asOfSession,
     allocatedCapital: capital,
     cash: Math.max(0, cash),
     totalEquity: Number((Math.max(0, cash) + positions.reduce((sum, p) => sum + p.marketValue, 0)).toFixed(2)),
-    realizedPnl: Number(accounting.realizedPnl || 0),
+    realizedPnl: Number(realizedPnl),
     positions
   }
 }
