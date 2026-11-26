@@ -2,6 +2,7 @@ import AuthPanel from './AuthPanel'
 import PricingSection from './PricingSection'
 import LiveBotsSection from './LiveBotsSection'
 import ProductStorySection from './ProductStorySection'
+import ConversionFooter from './ConversionFooter'
 import './public-home.css'
 
 /** Logged-out marketing page. Never couple rendering to market-data availability. */
@@ -20,6 +21,7 @@ export default function PublicHome() {
       <PricingSection />
       <LiveBotsSection />
       <ProductStorySection />
+      <ConversionFooter />
     </main>
   )
 }
