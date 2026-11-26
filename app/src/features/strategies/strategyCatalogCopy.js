@@ -1,37 +1,49 @@
 /**
- * Copy for the public strategy catalog. Values are descriptions of published
- * evidence only; this module does not rank, infer, or alter trading strategies.
+ * Plain-language descriptions are reviewed against the published seed strategy
+ * rules. The backend remains authoritative for all results and configurations.
  */
-import { pctText } from './strategiesApi'
+export const STRATEGY_EXPLANATIONS = {
+  tmpl_ai_catalyst_momentum: 'An AI model reviews stock price trends, trading volume, and other market information to identify possible trades.',
+  tmpl_alpha_research: 'This strategy follows recent Alpha Engine research signals. It skips a trade when the research is outdated or does not meet its conditions.',
+  tmpl_dca_accumulator: 'This strategy invests $1,000 at regular 30-day intervals rather than investing the full amount at once.',
+  tmpl_loss_guard: 'This strategy buys at regular intervals and sells its holdings if their price falls 10% below the average purchase price.',
+  tmpl_momentum_buy: 'This strategy buys when a stock price rises above a set level, subject to trading limits and a waiting period between orders.',
+  tmpl_momentum_sell: 'This strategy buys after a sustained price increase and sells if the trend reverses or the position reaches its loss limit.',
+  tmpl_spy_trend_filter: 'This strategy holds SPY while its longer-term price trend is positive and sells when that trend turns downward.',
+}
 
 export function catalogOverview(strategy) {
-  const text = String(strategy?.description || strategy?.design?.objective || '').trim()
-  if (text) return text
-  return 'The trading approach for this strategy has not yet been described.'
+  const templateId = strategy?.templateId
+  if (Object.prototype.hasOwnProperty.call(STRATEGY_EXPLANATIONS, templateId)) {
+    return STRATEGY_EXPLANATIONS[templateId]
+  }
+  const published = String(strategy?.description || strategy?.design?.objective || '').trim()
+  return published || 'A description of how this strategy works is not available.'
 }
 
 export function catalogPeriod(window) {
   return ({
-    '5Y': 'Historical results · Five years',
-    '1Y': 'Historical results · One year',
-    holdout: 'Historical results · Later market data',
-    forward: 'Simulated results · Since publication',
-  })[window] || 'Published strategy test'
+    '5Y': 'Five-year historical test',
+    '1Y': 'One-year historical test',
+    holdout: 'Later historical test',
+    forward: 'Results since publication',
+  })[window] || 'Available test results'
 }
 
+/** When the API does not publish a return, distinguish that from a zero return. */
 export function catalogResult(summary, window) {
-  if (!summary) return 'There are no published results for this period.'
-  if (summary.status === 'not_backtestable') return 'Historical results are unavailable because this strategy cannot be tested using the available historical method.'
-  if (summary.status === 'awaiting_sessions') return 'This strategy has not completed enough simulated trading sessions to show performance results.'
-  if (summary.status === 'insufficient_data') return 'There is not enough historical market data to calculate a result for this period.'
-  if (summary.status !== 'ok') return 'Results for this period are not available.'
-  if (summary.symbolsTraded === 0) {
-    return Number.isFinite(summary.symbolsTested)
-      ? `This strategy did not place a trade on any of the ${summary.symbolsTested} stocks tested.`
-      : 'This strategy did not place a trade during this test.'
+  if (!summary) return 'No results have been published for this period.'
+  if (summary.status === 'not_backtestable') {
+    return window === 'forward'
+      ? 'Performance results since publication are not available.'
+      : 'This strategy does not have results from the available historical tests.'
   }
-  if (summary.medianReturnPct == null || summary.medianBuyAndHoldPct == null) {
-    return 'Trading activity has been recorded, but comparable return figures are unavailable.'
+  if (summary.status === 'awaiting_sessions') return 'There are not yet enough completed trading sessions to report performance.'
+  if (summary.status === 'insufficient_data') return 'There is not enough market data to calculate the result.'
+  if (summary.status !== 'ok') return 'Performance results are currently unavailable.'
+  if (summary.symbolsTraded === 0) return 'This strategy did not place any trades during this test.'
+  if (!Number.isFinite(summary.medianReturnPct) || !Number.isFinite(summary.medianBuyAndHoldPct)) {
+    return 'Trades were recorded, but comparable returns have not been published.'
   }
-  return `The typical strategy return was ${pctText(summary.medianReturnPct)}, compared with ${pctText(summary.medianBuyAndHoldPct)} from buying and holding the same investments.`
+  return null
 }

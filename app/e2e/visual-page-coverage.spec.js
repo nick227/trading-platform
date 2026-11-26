@@ -57,8 +57,10 @@ for (const width of [320, 375, 768, 1024, 1440]) {
       expect(Math.abs(axis.paddingLeft - axes[0].paddingLeft)).toBeLessThanOrEqual(1)
       expect(Math.abs(axis.paddingRight - axes[0].paddingRight)).toBeLessThanOrEqual(1)
     }
-    expect(axes[0].paddingLeft).toBe(width < 700 ? 16 : 24)
+    expect(axes[0].paddingLeft).toBe(0)
     const columns = width >= 1300 ? 3 : width >= 700 ? 2 : 1
+    const thumbnails = await cards.evaluateAll(items => items.map(el => Math.round(el.querySelector('.tl-strategy-thumbnail').getBoundingClientRect().height)))
+    expect(thumbnails).toEqual([132,132])
     const firstRow = axes.slice(0, Math.min(columns, axes.length))
     expect(new Set(firstRow.map(axis => Math.round(axis.left))).size).toBe(firstRow.length)
     await page.screenshot({ path: testInfo.outputPath(`strategies-${width}.png`), fullPage: true })
