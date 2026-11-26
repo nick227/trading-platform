@@ -130,4 +130,65 @@ describe('AdminDashboard', () => {
       expect(mockSetEmergencyStop).toHaveBeenCalledWith(expect.objectContaining({ active: true }))
     })
   })
+
+  it('renders Intent Price vs Fill Price domain header and pagination in Order Blotter', async () => {
+    vi.spyOn(adminClient, 'fetchAdminExecutions').mockResolvedValue({
+      total: 45,
+      executions: [
+        {
+          id: 'exec-1',
+          ticker: 'AAPL',
+          direction: 'buy',
+          quantity: 5,
+          price: 230.50,
+          filledPrice: 231.10,
+          status: 'filled',
+          createdAt: new Date().toISOString()
+        }
+      ]
+    })
+
+    render(<AdminDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Bird's Eye Overview")).toBeInTheDocument()
+    })
+
+    const blotterTab = screen.getByRole('button', { name: /Order Blotter/i })
+    blotterTab.click()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Showing 1–20 of 45 orders/i)).toBeInTheDocument()
+    })
+  })
+
+  it('renders pagination controls in User Accounts table and navigates pages', async () => {
+    const mockFetchUsers = vi.spyOn(adminClient, 'fetchAdminUsers').mockResolvedValue({
+      total: 42,
+      users: [
+        { id: 'usr-1', email: 'alice@example.com', fullName: 'Alice Trader', role: 'user', status: 'active', createdAt: new Date().toISOString() }
+      ]
+    })
+
+    render(<AdminDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Bird's Eye Overview")).toBeInTheDocument()
+    })
+
+    const usersTab = screen.getByRole('button', { name: /User Accounts & Roles/i })
+    usersTab.click()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Showing 1–20 of 42 users/i)).toBeInTheDocument()
+    })
+
+    const nextBtn = screen.getByRole('button', { name: /Next ▶/i })
+    expect(nextBtn).toBeEnabled()
+    nextBtn.click()
+
+    await waitFor(() => {
+      expect(mockFetchUsers).toHaveBeenCalledWith(expect.objectContaining({ offset: 20, limit: 20 }))
+    })
+  })
 })

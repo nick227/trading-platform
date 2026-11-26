@@ -347,3 +347,50 @@
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #f87171;
 }
+
+/* Table Pagination Controls */
+.tl-admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #1e293b;
+  border-top: 1px solid #334155;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.tl-admin-pagination-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tl-admin-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tl-admin-pagination-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  border-radius: 4px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.tl-admin-pagination-btn:hover:not(:disabled) {
+  background: #334155;
+  color: #fff;
+}
+
+.tl-admin-pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

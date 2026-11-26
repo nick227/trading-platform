@@ -34,11 +34,14 @@ export default function AdminDashboard() {
   const [overview, setOverview] = useState(null)
   const [activity, setActivity] = useState([])
   const [activityTotal, setActivityTotal] = useState(0)
+  const [activityPage, setActivityPage] = useState(0)
   const [users, setUsers] = useState([])
   const [usersTotal, setUsersTotal] = useState(0)
   const [userSearch, setUserSearch] = useState('')
+  const [userPage, setUserPage] = useState(0)
   const [auditLogs, setAuditLogs] = useState([])
   const [auditTotal, setAuditTotal] = useState(0)
+  const [auditPage, setAuditPage] = useState(0)
 
   // Bot Fleet states
   const [bots, setBots] = useState([])
@@ -46,6 +49,7 @@ export default function AdminDashboard() {
   const [botSearch, setBotSearch] = useState('')
   const [botStatusFilter, setBotStatusFilter] = useState('')
   const [botTypeFilter, setBotTypeFilter] = useState('')
+  const [botPage, setBotPage] = useState(0)
   const [selectedBotDetail, setSelectedBotDetail] = useState(null)
   const [botDetailLoading, setBotDetailLoading] = useState(false)
 
@@ -54,6 +58,7 @@ export default function AdminDashboard() {
   const [executionsTotal, setExecutionsTotal] = useState(0)
   const [executionStatusFilter, setExecutionStatusFilter] = useState('')
   const [executionTickerFilter, setExecutionTickerFilter] = useState('')
+  const [blotterPage, setBlotterPage] = useState(0)
 
   // User Support Drilldown states
   const [selectedUserDrilldown, setSelectedUserDrilldown] = useState(null)
@@ -80,62 +85,67 @@ export default function AdminDashboard() {
     }
   }, [])
 
-  const loadActivity = useCallback(async () => {
+  const loadActivity = useCallback(async (page = 0) => {
     try {
-      const data = await fetchAdminActivity({ limit: 50, offset: 0 })
+      const data = await fetchAdminActivity({ limit: 20, offset: page * 20 })
       setActivity(data?.events || [])
       setActivityTotal(data?.total || 0)
+      setActivityPage(page)
     } catch (err) {
       showFeedback('error', `Failed to load activity stream: ${err.serverMessage || err.message}`)
     }
   }, [])
 
-  const loadUsers = useCallback(async (searchQuery = '') => {
+  const loadUsers = useCallback(async (searchQuery = '', page = 0) => {
     try {
-      const data = await fetchAdminUsers({ limit: 50, offset: 0, search: searchQuery })
+      const data = await fetchAdminUsers({ limit: 20, offset: page * 20, search: searchQuery })
       setUsers(data?.users || [])
       setUsersTotal(data?.total || 0)
+      setUserPage(page)
     } catch (err) {
       showFeedback('error', `Failed to load users: ${err.serverMessage || err.message}`)
     }
   }, [])
 
-  const loadAuditLogs = useCallback(async () => {
+  const loadAuditLogs = useCallback(async (page = 0) => {
     try {
-      const data = await fetchAdminAuditLogs({ limit: 50, offset: 0 })
+      const data = await fetchAdminAuditLogs({ limit: 20, offset: page * 20 })
       setAuditLogs(data?.logs || [])
       setAuditTotal(data?.total || 0)
+      setAuditPage(page)
     } catch (err) {
       showFeedback('error', `Failed to load audit trail: ${err.serverMessage || err.message}`)
     }
   }, [])
 
-  const loadBots = useCallback(async (searchQuery = '', status = '', bType = '') => {
+  const loadBots = useCallback(async (searchQuery = '', status = '', bType = '', page = 0) => {
     try {
       const data = await fetchAdminBots({
-        limit: 50,
-        offset: 0,
+        limit: 20,
+        offset: page * 20,
         search: searchQuery,
         status: status || null,
         botType: bType || null
       })
       setBots(data?.bots || [])
       setBotsTotal(data?.total || 0)
+      setBotPage(page)
     } catch (err) {
       showFeedback('error', `Failed to load bot fleet: ${err.serverMessage || err.message}`)
     }
   }, [])
 
-  const loadExecutions = useCallback(async (status = '', ticker = '') => {
+  const loadExecutions = useCallback(async (status = '', ticker = '', page = 0) => {
     try {
       const data = await fetchAdminExecutions({
-        limit: 50,
-        offset: 0,
+        limit: 20,
+        offset: page * 20,
         status: status || null,
         ticker: ticker || null
       })
       setExecutions(data?.executions || [])
       setExecutionsTotal(data?.total || 0)
+      setBlotterPage(page)
     } catch (err) {
       showFeedback('error', `Failed to load order blotter: ${err.serverMessage || err.message}`)
     }
@@ -145,14 +155,14 @@ export default function AdminDashboard() {
     setLoading(true)
     await Promise.all([
       loadOverview(),
-      loadActivity(),
-      loadUsers(userSearch),
-      loadAuditLogs(),
-      loadBots(botSearch, botStatusFilter, botTypeFilter),
-      loadExecutions(executionStatusFilter, executionTickerFilter)
+      loadActivity(activityPage),
+      loadUsers(userSearch, userPage),
+      loadAuditLogs(auditPage),
+      loadBots(botSearch, botStatusFilter, botTypeFilter, botPage),
+      loadExecutions(executionStatusFilter, executionTickerFilter, blotterPage)
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, userSearch, botSearch, botStatusFilter, botTypeFilter, executionStatusFilter, executionTickerFilter])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage])
 
   useEffect(() => {
     refreshAll()
@@ -674,7 +684,7 @@ export default function AdminDashboard() {
               value={botSearch}
               onChange={(e) => setBotSearch(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') loadBots(botSearch, botStatusFilter, botTypeFilter)
+                if (e.key === 'Enter') loadBots(botSearch, botStatusFilter, botTypeFilter, 0)
               }}
             />
             <select
@@ -682,7 +692,7 @@ export default function AdminDashboard() {
               value={botStatusFilter}
               onChange={(e) => {
                 setBotStatusFilter(e.target.value)
-                loadBots(botSearch, e.target.value, botTypeFilter)
+                loadBots(botSearch, e.target.value, botTypeFilter, 0)
               }}
             >
               <option value="">All Statuses</option>
@@ -694,7 +704,7 @@ export default function AdminDashboard() {
               value={botTypeFilter}
               onChange={(e) => {
                 setBotTypeFilter(e.target.value)
-                loadBots(botSearch, botStatusFilter, e.target.value)
+                loadBots(botSearch, botStatusFilter, e.target.value, 0)
               }}
             >
               <option value="">All Types</option>
@@ -703,7 +713,7 @@ export default function AdminDashboard() {
             </select>
             <button
               className="tl-btn-secondary"
-              onClick={() => loadBots(botSearch, botStatusFilter, botTypeFilter)}
+              onClick={() => loadBots(botSearch, botStatusFilter, botTypeFilter, 0)}
             >
               Search
             </button>
@@ -811,6 +821,27 @@ export default function AdminDashboard() {
                 )}
               </tbody>
             </table>
+            <div className="tl-admin-pagination">
+              <span className="tl-admin-pagination-info">
+                Showing {botsTotal > 0 ? botPage * 20 + 1 : 0}–{Math.min((botPage + 1) * 20, botsTotal)} of {botsTotal} bots
+              </span>
+              <div className="tl-admin-pagination-actions">
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={botPage === 0}
+                  onClick={() => loadBots(botSearch, botStatusFilter, botTypeFilter, botPage - 1)}
+                >
+                  ◀ Previous
+                </button>
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={(botPage + 1) * 20 >= botsTotal}
+                  onClick={() => loadBots(botSearch, botStatusFilter, botTypeFilter, botPage + 1)}
+                >
+                  Next ▶
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Bot Inspection Modal / Drawer */}
@@ -1179,7 +1210,7 @@ export default function AdminDashboard() {
               value={userSearch}
               onChange={(e) => {
                 setUserSearch(e.target.value)
-                loadUsers(e.target.value)
+                loadUsers(e.target.value, 0)
               }}
               style={{
                 background: '#0f172a',
@@ -1289,6 +1320,27 @@ export default function AdminDashboard() {
                 )}
               </tbody>
             </table>
+            <div className="tl-admin-pagination">
+              <span className="tl-admin-pagination-info">
+                Showing {usersTotal > 0 ? userPage * 20 + 1 : 0}–{Math.min((userPage + 1) * 20, usersTotal)} of {usersTotal} users
+              </span>
+              <div className="tl-admin-pagination-actions">
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={userPage === 0}
+                  onClick={() => loadUsers(userSearch, userPage - 1)}
+                >
+                  ◀ Previous
+                </button>
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={(userPage + 1) * 20 >= usersTotal}
+                  onClick={() => loadUsers(userSearch, userPage + 1)}
+                >
+                  Next ▶
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* User Support Drilldown Modal */}
@@ -1511,6 +1563,27 @@ export default function AdminDashboard() {
               )}
             </tbody>
           </table>
+          <div className="tl-admin-pagination">
+            <span className="tl-admin-pagination-info">
+              Showing {activityTotal > 0 ? activityPage * 20 + 1 : 0}–{Math.min((activityPage + 1) * 20, activityTotal)} of {activityTotal} events
+            </span>
+            <div className="tl-admin-pagination-actions">
+              <button
+                className="tl-admin-pagination-btn"
+                disabled={activityPage === 0}
+                onClick={() => loadActivity(activityPage - 1)}
+              >
+                ◀ Previous
+              </button>
+              <button
+                className="tl-admin-pagination-btn"
+                disabled={(activityPage + 1) * 20 >= activityTotal}
+                onClick={() => loadActivity(activityPage + 1)}
+              >
+                Next ▶
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1527,7 +1600,7 @@ export default function AdminDashboard() {
               value={executionTickerFilter}
               onChange={(e) => setExecutionTickerFilter(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') loadExecutions(executionStatusFilter, executionTickerFilter)
+                if (e.key === 'Enter') loadExecutions(executionStatusFilter, executionTickerFilter, 0)
               }}
             />
             <select
@@ -1535,7 +1608,7 @@ export default function AdminDashboard() {
               value={executionStatusFilter}
               onChange={(e) => {
                 setExecutionStatusFilter(e.target.value)
-                loadExecutions(e.target.value, executionTickerFilter)
+                loadExecutions(e.target.value, executionTickerFilter, 0)
               }}
             >
               <option value="">All Statuses</option>
@@ -1548,7 +1621,7 @@ export default function AdminDashboard() {
             </select>
             <button
               className="tl-btn-secondary"
-              onClick={() => loadExecutions(executionStatusFilter, executionTickerFilter)}
+              onClick={() => loadExecutions(executionStatusFilter, executionTickerFilter, 0)}
             >
               Filter Blotter
             </button>
@@ -1638,6 +1711,27 @@ export default function AdminDashboard() {
                 )}
               </tbody>
             </table>
+            <div className="tl-admin-pagination">
+              <span className="tl-admin-pagination-info">
+                Showing {executionsTotal > 0 ? blotterPage * 20 + 1 : 0}–{Math.min((blotterPage + 1) * 20, executionsTotal)} of {executionsTotal} orders
+              </span>
+              <div className="tl-admin-pagination-actions">
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={blotterPage === 0}
+                  onClick={() => loadExecutions(executionStatusFilter, executionTickerFilter, blotterPage - 1)}
+                >
+                  ◀ Previous
+                </button>
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={(blotterPage + 1) * 20 >= executionsTotal}
+                  onClick={() => loadExecutions(executionStatusFilter, executionTickerFilter, blotterPage + 1)}
+                >
+                  Next ▶
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1710,6 +1804,27 @@ export default function AdminDashboard() {
               )}
             </tbody>
           </table>
+          <div className="tl-admin-pagination">
+            <span className="tl-admin-pagination-info">
+              Showing {auditTotal > 0 ? auditPage * 20 + 1 : 0}–{Math.min((auditPage + 1) * 20, auditTotal)} of {auditTotal} mutations
+            </span>
+            <div className="tl-admin-pagination-actions">
+              <button
+                className="tl-admin-pagination-btn"
+                disabled={auditPage === 0}
+                onClick={() => loadAuditLogs(auditPage - 1)}
+              >
+                ◀ Previous
+              </button>
+              <button
+                className="tl-admin-pagination-btn"
+                disabled={(auditPage + 1) * 20 >= auditTotal}
+                onClick={() => loadAuditLogs(auditPage + 1)}
+              >
+                Next ▶
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
