@@ -125,8 +125,8 @@ export function createAiBotDefinitionRegistry(initialDefinitions = []) {
       if (!Number.isInteger(limit) || limit < 1 || limit > definition.maxModelCalls) {
         throw new AiBotDefinitionError('Bot instance research call limit exceeds definition')
       }
-      if (bot.config.research?.cadence !== definition.schedule) {
-        throw new AiBotDefinitionError('Bot instance schedule does not match registered definition')
+      if (!['daily', 'weekly'].includes(bot.config.research?.cadence)) {
+        throw new AiBotDefinitionError('Bot instance research cadence is unsupported')
       }
       // Return pinned definition independent of mutable instance configuration.
       return definition
