@@ -84,8 +84,12 @@ function searchInterestItem(row) {
   if (!Number.isFinite(score) || score < 0 || score > 100) {
     throw new Error('Invalid relative search-interest measurement')
   }
+  const periodStart = iso(row.periodStart, 'periodStart')
+  const periodEnd = iso(row.periodEnd, 'periodEnd')
+  if (periodStart > periodEnd) throw new Error('Invalid search-interest period')
   return {
     ...base(row, 'search_interest'),
+    effectiveAt: periodEnd,
     kind: 'structured',
     quality: 'reported',
     content: {
@@ -94,8 +98,8 @@ function searchInterestItem(row) {
       term: text(row.term, 120),
       geo: text(row.geo, 40),
       relativeInterest: score,
-      periodStart: iso(row.periodStart, 'periodStart'),
-      periodEnd: iso(row.periodEnd, 'periodEnd')
+      periodStart,
+      periodEnd
     }
   }
 }
