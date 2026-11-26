@@ -321,9 +321,27 @@ model User {
   passwordHash String
   fullName     String
   role         String        @default("user") // user | operator | admin
+  status       String        @default("active") // active | suspended
   riskSettings Json?         // User-specific risk limits and preferences
   createdAt    DateTime      @default(now())
   subscription Subscription?
+}
+
+// Immutable audit log of administrative actions and operational mutations
+model AdminAuditLog {
+  id         String   @id @default(cuid()) @db.VarChar(191)
+  adminId    String   @db.VarChar(191)
+  action     String   @db.VarChar(64)
+  targetType String   @db.VarChar(64)
+  targetId   String?  @db.VarChar(191)
+  payload    Json?
+  ipAddress  String?  @db.VarChar(64)
+  createdAt  DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+  @@index([createdAt])
 }
 
 model Subscription {

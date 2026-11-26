@@ -16,6 +16,14 @@ export async function fetchAdminUsers({ limit = 20, offset = 0, search = '' } = 
   return get('/admin/users', params)
 }
 
+export async function fetchAdminAuditLogs({ limit = 50, offset = 0, action = null, targetType = null, adminId = null } = {}) {
+  const params = { limit, offset }
+  if (action) params.action = action
+  if (targetType) params.targetType = targetType
+  if (adminId) params.adminId = adminId
+  return get('/admin/audit-log', params)
+}
+
 export async function updateAdminUserRole(userId, role) {
   return put(`/admin/users/${encodeURIComponent(userId)}/role`, { role })
 }

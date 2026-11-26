@@ -4,6 +4,7 @@ import {
   fetchAdminOverview,
   fetchAdminActivity,
   fetchAdminUsers,
+  fetchAdminAuditLogs,
   updateAdminUserRole,
   setAdminEmergencyStop,
   runAdminMarketOpen,
@@ -29,6 +30,8 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState([])
   const [usersTotal, setUsersTotal] = useState(0)
   const [userSearch, setUserSearch] = useState('')
+  const [auditLogs, setAuditLogs] = useState([])
+  const [auditTotal, setAuditTotal] = useState(0)
 
   const showFeedback = (type, message) => {
     setFeedback({ type, message })
@@ -64,15 +67,26 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  const loadAuditLogs = useCallback(async () => {
+    try {
+      const data = await fetchAdminAuditLogs({ limit: 50, offset: 0 })
+      setAuditLogs(data?.logs || [])
+      setAuditTotal(data?.total || 0)
+    } catch (err) {
+      showFeedback('error', `Failed to load audit trail: ${err.serverMessage || err.message}`)
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
       loadOverview(),
       loadActivity(),
-      loadUsers(userSearch)
+      loadUsers(userSearch),
+      loadAuditLogs()
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, userSearch])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, userSearch])
 
   useEffect(() => {
     refreshAll()
@@ -249,6 +263,12 @@ export default function AdminDashboard() {
           onClick={() => setActiveTab('users')}
         >
           User Accounts & Roles ({usersTotal})
+        </button>
+        <button
+          className={`tl-admin-tab ${activeTab === 'audit' ? 'active' : ''}`}
+          onClick={() => setActiveTab('audit')}
+        >
+          Audit Trail ({auditTotal})
         </button>
         <button
           className={`tl-admin-tab ${activeTab === 'activity' ? 'active' : ''}`}
@@ -708,6 +728,77 @@ export default function AdminDashboard() {
                 <tr>
                   <td colSpan="5" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
                     No recorded operational events yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* TAB 6: AUDIT TRAIL */}
+      {activeTab === 'audit' && (
+        <div className="tl-admin-table-wrapper">
+          <table className="tl-admin-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Admin Actor</th>
+                <th>Action</th>
+                <th>Target</th>
+                <th>Payload / Parameters</th>
+                <th>IP Address</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditLogs.length > 0 ? (
+                auditLogs.map(log => (
+                  <tr key={log.id}>
+                    <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: '#94a3b8' }}>
+                      {new Date(log.createdAt).toLocaleString()}
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{log.admin?.fullName || log.admin?.email || log.adminId}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{log.admin?.email}</div>
+                    </td>
+                    <td>
+                      <span className="tl-admin-badge tl-badge-purple">
+                        {log.action}
+                      </span>
+                    </td>
+                    <td>
+                      <div><code>{log.targetType}</code></div>
+                      {log.targetId && (
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          <code>{log.targetId}</code>
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {log.payload ? (
+                        <pre style={{
+                          margin: 0,
+                          fontSize: '0.75rem',
+                          maxWidth: '320px',
+                          overflowX: 'auto',
+                          background: '#0f172a',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '4px',
+                          color: '#e2e8f0'
+                        }}>
+                          {JSON.stringify(log.payload, null, 1)}
+                        </pre>
+                      ) : '—'}
+                    </td>
+                    <td>
+                      <code style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{log.ipAddress || 'internal'}</code>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="6" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
+                    No administrative mutations recorded yet.
                   </td>
                 </tr>
               )}

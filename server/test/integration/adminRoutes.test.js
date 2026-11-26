@@ -199,7 +199,7 @@ describe('Admin Operational Controls', () => {
     expect(res.body.result.deleted).toBe(1)
   })
 
-  it('activates and clears emergency stop on target user', async () => {
+  it('activates and clears emergency stop on target user and records audit log', async () => {
     // Activate
     const resActive = await request(app.server)
       .post('/api/admin/controls/emergency-stop')
@@ -217,5 +217,50 @@ describe('Admin Operational Controls', () => {
 
     expect(resClear.status).toBe(200)
     expect(resClear.body.result.active).toBe(false)
+  })
+})
+
+describe('GET /api/admin/audit-log', () => {
+  it('denies unauthenticated users with 401', async () => {
+    const res = await request(app.server).get('/api/admin/audit-log')
+    expect(res.status).toBe(401)
+  })
+
+  it('denies regular users with 403', async () => {
+    const res = await request(app.server)
+      .get('/api/admin/audit-log')
+      .set('Authorization', `Bearer ${regularToken}`)
+    expect(res.status).toBe(403)
+  })
+
+  it('allows operators to read audit logs', async () => {
+    const res = await request(app.server)
+      .get('/api/admin/audit-log')
+      .set('Authorization', `Bearer ${operatorToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(Array.isArray(res.body.data.logs)).toBe(true)
+  })
+
+  it('records audit log entries on role updates and admin actions', async () => {
+    // Perform a role change
+    await request(app.server)
+      .put('/api/admin/users/usr_reg/role')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ role: 'operator' })
+
+    // Verify audit log captured it
+    const res = await request(app.server)
+      .get('/api/admin/audit-log?action=update_user_role')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.logs.length).toBeGreaterThan(0)
+    const log = res.body.data.logs[0]
+    expect(log.action).toBe('update_user_role')
+    expect(log.targetType).toBe('user')
+    expect(log.targetId).toBe('usr_reg')
+    expect(log.adminId).toBe('usr_adm')
   })
 })

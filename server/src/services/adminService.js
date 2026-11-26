@@ -305,7 +305,101 @@ export async function updateUserRole({
     select: { id: true, email: true, fullName: true, role: true }
   })
 
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'update_user_role',
+      targetType: 'user',
+      targetId: targetUserId,
+      payload: { previousRole: user.role, newRole, targetEmail: user.email },
+      prismaClient
+    })
+  }
+
   return updated
+}
+
+/**
+ * Records an immutable administrative audit log entry.
+ */
+export async function logAdminAction({
+  adminId,
+  action,
+  targetType,
+  targetId = null,
+  payload = null,
+  ipAddress = null,
+  prismaClient = prisma
+}) {
+  try {
+    const id = `aud_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+    return await prismaClient.adminAuditLog.create({
+      data: {
+        id,
+        adminId: String(adminId),
+        action: String(action),
+        targetType: String(targetType),
+        targetId: targetId ? String(targetId) : null,
+        payload: payload || undefined,
+        ipAddress: ipAddress || null
+      }
+    })
+  } catch (err) {
+    console.error('Failed to record admin audit log:', err?.message || err)
+    return null
+  }
+}
+
+/**
+ * Lists administrative audit logs with filtering and admin actor metadata.
+ */
+export async function listAdminAuditLogs({
+  limit = 50,
+  offset = 0,
+  action = null,
+  targetType = null,
+  adminId = null,
+  prismaClient = prisma
+} = {}) {
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50))
+  const safeOffset = Math.max(0, Number(offset) || 0)
+
+  const where = {}
+  if (action) where.action = action
+  if (targetType) where.targetType = targetType
+  if (adminId) where.adminId = adminId
+
+  const [logs, total] = await Promise.all([
+    prismaClient.adminAuditLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: safeOffset,
+      take: safeLimit
+    }),
+    prismaClient.adminAuditLog.count({ where })
+  ])
+
+  const adminIds = [...new Set(logs.map(l => l.adminId).filter(Boolean))]
+  const admins = adminIds.length > 0
+    ? await prismaClient.user.findMany({
+        where: { id: { in: adminIds } },
+        select: { id: true, email: true, fullName: true, role: true }
+      }).catch(() => [])
+    : []
+
+  const adminMap = new Map(admins.map(a => [a.id, a]))
+
+  const enriched = logs.map(l => ({
+    ...l,
+    admin: adminMap.get(l.adminId) || { id: l.adminId, email: 'unknown' }
+  }))
+
+  return {
+    total,
+    offset: safeOffset,
+    limit: safeLimit,
+    logs: enriched
+  }
 }
 
 /**
@@ -313,6 +407,8 @@ export async function updateUserRole({
  */
 export async function cleanupDeadWorkers({
   retentionMs = 10 * 60 * 1000,
+  actorUserId = null,
+  ipAddress = null,
   prismaClient = prisma
 } = {}) {
   const staleBefore = new Date(Date.now() - retentionMs)
@@ -321,6 +417,17 @@ export async function cleanupDeadWorkers({
       lastSeen: { lt: staleBefore }
     }
   })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'cleanup_workers',
+      targetType: 'worker',
+      payload: { retentionMs, deleted: result.count },
+      ipAddress,
+      prismaClient
+    })
+  }
 
   return {
     deleted: result.count,
@@ -336,20 +443,51 @@ export async function triggerAdminEmergencyStop({
   active,
   reason = 'Admin requested emergency stop',
   targetUserId = PLATFORM_USER_ID,
+  actorUserId = null,
+  ipAddress = null,
   prismaClient = prisma
 }) {
-  if (active) {
-    return activateEmergencyStop(targetUserId, reason, { prismaClient })
-  } else {
-    return clearEmergencyStop(targetUserId, { prismaClient })
+  const res = active
+    ? await activateEmergencyStop(targetUserId, reason, { prismaClient })
+    : await clearEmergencyStop(targetUserId, { prismaClient })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: active ? 'emergency_stop_activated' : 'emergency_stop_cleared',
+      targetType: 'system',
+      targetId: targetUserId,
+      payload: { active, reason, targetUserId },
+      ipAddress,
+      prismaClient
+    })
   }
+
+  return res
 }
 
 /**
  * Triggers manual execution of the autonomous market-open paper fill job.
  */
-export async function triggerMarketOpenJob({ prismaClient = prisma } = {}) {
-  return runAiStrategyMarketOpenJob({ prismaClient })
+export async function triggerMarketOpenJob({
+  actorUserId = null,
+  ipAddress = null,
+  prismaClient = prisma
+} = {}) {
+  const res = await runAiStrategyMarketOpenJob({ prismaClient })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'trigger_market_open',
+      targetType: 'job',
+      payload: { ok: res?.ok ?? true },
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return res
 }
 
 /**
@@ -360,10 +498,12 @@ export async function triggerAiDailyJob({
   provider = 'openai',
   dryRun = false,
   apiKey = null,
+  actorUserId = null,
+  ipAddress = null,
   prismaClient = prisma
 } = {}) {
   const providerOptions = apiKey ? { apiKey } : {}
-  return runAiStrategyDailyJob({
+  const res = await runAiStrategyDailyJob({
     session,
     providerName: provider,
     providerOptions,
@@ -371,11 +511,40 @@ export async function triggerAiDailyJob({
     force: true,
     prismaClient
   })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'trigger_ai_research',
+      targetType: 'job',
+      payload: { session, provider, dryRun }, // Crucial: apiKey deliberately omitted for security
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return res
 }
 
 /**
  * Triggers manual synchronization of public strategy evidence.
  */
-export async function triggerEvidenceSync({ prismaClient = prisma } = {}) {
-  return generateStrategyEvidence({ prismaClient })
+export async function triggerEvidenceSync({
+  actorUserId = null,
+  ipAddress = null,
+  prismaClient = prisma
+} = {}) {
+  const res = await generateStrategyEvidence({ prismaClient })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'trigger_evidence_sync',
+      targetType: 'job',
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return res
 }

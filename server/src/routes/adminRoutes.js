@@ -10,6 +10,7 @@ import {
   getAdminOverview,
   getAdminActivity,
   listAdminUsers,
+  listAdminAuditLogs,
   updateUserRole,
   cleanupDeadWorkers,
   triggerAdminEmergencyStop,
@@ -63,8 +64,26 @@ export default async function adminRoutes(app) {
     }
   })
 
+  // GET /api/admin/audit-log — Immutable record of administrative mutations (Admin & Operator)
+  app.get('/audit-log', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const { limit, offset, action, targetType, adminId } = request.query || {}
+      const data = await listAdminAuditLogs({ limit, offset, action, targetType, adminId })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to list audit logs')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_AUDIT_ERROR', message: err.message }
+      })
+    }
+  })
+
   // Strict admin guard for state-changing operational mutations
   const adminOnly = requireRole(['admin'])
+
+  // Helper to extract client IP safely
+  const getIp = (req) => req.headers['x-forwarded-for'] || req.ip || null
 
   // PUT /api/admin/users/:id/role — Change a user's role
   app.put('/users/:id/role', { preHandler: [adminOnly] }, async (request, reply) => {
@@ -110,7 +129,8 @@ export default async function adminRoutes(app) {
         active,
         reason,
         targetUserId,
-        actorUserId: request.user.id
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
       })
       return reply.send({ success: true, data: result, result })
     } catch (err) {
@@ -125,7 +145,10 @@ export default async function adminRoutes(app) {
   // POST /api/admin/controls/run-market-open — Trigger market open paper fill processing
   app.post('/controls/run-market-open', { preHandler: [adminOnly] }, async (request, reply) => {
     try {
-      const result = await triggerMarketOpenJob()
+      const result = await triggerMarketOpenJob({
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
       return reply.send({ success: true, data: result, result })
     } catch (err) {
       app.log.error(err, 'Market open job execution failed')
@@ -140,7 +163,14 @@ export default async function adminRoutes(app) {
   app.post('/controls/run-ai-research', { preHandler: [adminOnly] }, async (request, reply) => {
     const { session, provider, dryRun, apiKey } = request.body || {}
     try {
-      const result = await triggerAiDailyJob({ session, provider, dryRun, apiKey })
+      const result = await triggerAiDailyJob({
+        session,
+        provider,
+        dryRun,
+        apiKey,
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
       return reply.send({ success: true, data: result, result })
     } catch (err) {
       app.log.error(err, 'AI research job execution failed')
@@ -154,7 +184,10 @@ export default async function adminRoutes(app) {
   // POST /api/admin/controls/sync-evidence — Trigger strategy evidence sync
   app.post('/controls/sync-evidence', { preHandler: [adminOnly] }, async (request, reply) => {
     try {
-      const result = await triggerEvidenceSync()
+      const result = await triggerEvidenceSync({
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
       return reply.send({ success: true, data: result, result })
     } catch (err) {
       app.log.error(err, 'Evidence sync failed')
@@ -169,7 +202,11 @@ export default async function adminRoutes(app) {
   app.post('/controls/cleanup-workers', { preHandler: [adminOnly] }, async (request, reply) => {
     const { retentionMs } = request.body || {}
     try {
-      const result = await cleanupDeadWorkers({ retentionMs: retentionMs ? Number(retentionMs) : undefined })
+      const result = await cleanupDeadWorkers({
+        retentionMs: retentionMs ? Number(retentionMs) : undefined,
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
       return reply.send({ success: true, data: result, result })
     } catch (err) {
       app.log.error(err, 'Worker cleanup failed')
