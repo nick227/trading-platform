@@ -119,3 +119,6 @@
 .tl-public-password__toggle:hover{background:#f6f4ff}
 @media(max-width:760px){.tl-public-hero{grid-template-columns:minmax(0,1fr);gap:24px}.tl-public-workflow{margin-top:6px}.tl-public-hero__actions .tl-public-button{flex:1;min-width:155px}.tl-public-hero__facts{margin-bottom:22px}}
 @media(max-width:400px){.tl-public-workflow__head{flex-wrap:wrap}.tl-public-hero__actions{align-items:stretch;flex-direction:column}.tl-public-hero__actions .tl-public-button{width:100%}}
+
+.tl-public-password__field input{display:block;width:100%;min-height:44px;border:1px solid #cbd0dc;border-radius:8px;background:#fff;color:var(--tl-public-ink);font-size:15px;padding:10px 70px 10px 12px}
+.tl-public-password__field input:focus-visible{outline:3px solid #cbc3ff;outline-offset:1px;border-color:var(--tl-public-accent)}
