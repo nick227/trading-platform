@@ -56,14 +56,16 @@ export class SimulatedBroker {
     } catch (err) {
       throw wrapError({ code: 'ECONNABORTED', message: `simulator price unavailable: ${err.message}` })
     }
-    if (!px || px.session !== session || !(Number(px.close) > 0)) {
-      // Fail closed: never fill at a different session's price than the one decided on.
-      throw wrapError({ response: { status: 422, data: { message: `no ${session} close for ${ticker}` } }, message: '422' })
+    // A next-open intent must never be silently filled using the closing price.
+    // The quote must refer to the requested execution session.
+    const requestedOpen = this.config.executionModel === 'next_open'
+    const requestedPrice = requestedOpen ? Number(px?.open) : Number(px?.close)
+    if (!px || px.session !== session || !Number.isFinite(requestedPrice) || requestedPrice <= 0) {
+      throw wrapError({ response: { status: 422, data: { message: `no ${session} ${requestedOpen ? 'open' : 'close'} for ${ticker}` } }, message: '422' })
     }
     const at = this.now()
-    const isNextOpen = this.config.executionModel === 'next_open' && px.open && Number(px.open) > 0
-    const fillPrice = isNextOpen ? Number(px.open) : Number(px.close)
-    const priceModel = isNextOpen ? 'market_open' : 'daily_close'
+    const fillPrice = requestedPrice
+    const priceModel = requestedOpen ? 'market_open' : 'daily_close'
     const order = {
       alpacaOrderId: simOrderId(this.config, session, clientOrderId), clientOrderId, ticker, side, qty: Number(qty),
       status: 'filled', filledQty: Number(qty), filledAvgPrice: fillPrice, submittedAt: at, filledAt: at,
