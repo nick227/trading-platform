@@ -29,6 +29,19 @@ describe('Nav', () => {
     }
   })
 
+  it('renders Admin destination link when user has admin or operator role', () => {
+    authState.user = { fullName: 'Admin User', role: 'admin' }
+    renderNav()
+    const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
+    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Strategies', 'Bots', 'Admin'])
+    expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin')
+
+    cleanup()
+    authState.user = { fullName: 'Op User', role: 'operator' }
+    renderNav()
+    expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin')
+  })
+
   it('marks the active section, including nested bot routes and strategy routes', () => {
     renderNav('/bots/bot_1')
     expect(screen.getByRole('link', { name: 'Bots' })).toHaveAttribute('aria-current', 'page')
@@ -56,6 +69,22 @@ describe('Nav', () => {
     expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute('href', '/strategies')
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/auth')
     expect(screen.queryByTestId('mode-badge')).not.toBeInTheDocument()
+  })
+
+  it('shows Admin link when user possesses admin role', () => {
+    authState.user = { fullName: 'Ada Admin', role: 'admin' }
+    renderNav()
+    const adminLink = screen.getByRole('link', { name: 'Admin' })
+    expect(adminLink).toBeInTheDocument()
+    expect(adminLink).toHaveAttribute('href', '/admin')
+  })
+
+  it('shows Admin link when user possesses operator role', () => {
+    authState.user = { fullName: 'Sam Operator', role: 'operator' }
+    renderNav()
+    const adminLink = screen.getByRole('link', { name: 'Admin' })
+    expect(adminLink).toBeInTheDocument()
+    expect(adminLink).toHaveAttribute('href', '/admin')
   })
 })
 

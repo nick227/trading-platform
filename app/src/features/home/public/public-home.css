@@ -1,7 +1,7 @@
 .tl-public-home{--tl-public-accent:#5d42db;--tl-public-ink:#17212b;--tl-public-subtle:#667085;--tl-public-border:#e5e7eb;color:var(--tl-public-ink);background:#fff;min-height:calc(100vh - 56px)}
 .tl-public-home *{box-sizing:border-box}
 .tl-public-section{max-width:1180px;margin:0 auto;padding:72px 24px}
-.tl-public-hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:64px;align-items:center}
+.tl-public-hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:64px;align-items:flex-start}
 .tl-public-eyebrow{color:var(--tl-public-accent);font-size:12px;letter-spacing:.11em;font-weight:800;margin:0 0 16px}
 .tl-public-home h1{font-size:clamp(36px,4.6vw,62px);line-height:1.08;letter-spacing:-.055em;max-width:670px;margin:0 0 20px}
 .tl-public-home h2{font-size:clamp(24px,2.7vw,36px);line-height:1.15;letter-spacing:-.035em;margin:0 0 14px}

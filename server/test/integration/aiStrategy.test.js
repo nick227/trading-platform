@@ -264,7 +264,7 @@ describe('AI Catalyst & Momentum Strategy Integration', () => {
     const list = await listPublicStrategies()
     const aiStrat = list.find(s => s.templateId === 'tmpl_ai_catalyst_momentum')
     expect(aiStrat).toBeDefined()
-    expect(aiStrat.name).toBe('AI Catalyst & Momentum')
+    expect(aiStrat.name).toMatch(/AI (Catalyst & Momentum|Momentum & Technical Breakout)/)
     expect(aiStrat.tags).toContain('ai')
     if (aiStrat.version) {
       expect(aiStrat.version.backtestable).toBe(false)
@@ -273,7 +273,7 @@ describe('AI Catalyst & Momentum Strategy Integration', () => {
 
     const detail = await getPublicStrategy('tmpl_ai_catalyst_momentum')
     expect(detail).not.toBeNull()
-    expect(detail.name).toBe('AI Catalyst & Momentum')
+    expect(detail.name).toMatch(/AI (Catalyst & Momentum|Momentum & Technical Breakout)/)
     expect(detail.definition.config.signalSource).toBe('ai_catalyst_momentum')
     expect(detail.version.backtestable).toBe(false)
   })

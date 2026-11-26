@@ -113,9 +113,10 @@ function model(store, name) {
     async findFirst({ where, orderBy } = {}) {
       return clone(sortRows(rows().filter((r) => matches(r, where)), orderBy)[0] ?? null)
     },
-    async findMany({ where, orderBy, take } = {}) {
+    async findMany({ where, orderBy, take, skip } = {}) {
       const out = sortRows(rows().filter((r) => matches(r, where)), orderBy)
-      return clone(take ? out.slice(0, take) : out)
+      const start = skip || 0
+      return clone(take !== undefined ? out.slice(start, start + take) : out.slice(start))
     },
     async count({ where } = {}) {
       return rows().filter((r) => matches(r, where)).length
@@ -171,13 +172,21 @@ function model(store, name) {
       const i = rows().findIndex((r) => matches(r, where))
       return clone(rows().splice(i, 1)[0])
     },
+    async deleteMany({ where } = {}) {
+      const hit = rows().filter((r) => matches(r, where))
+      for (const row of hit) {
+        const idx = rows().indexOf(row)
+        if (idx !== -1) rows().splice(idx, 1)
+      }
+      return { count: hit.length }
+    },
   }
 }
 
 export function createMemoryPrisma() {
   const store = {}
   const client = { _store: store }
-  for (const name of ['execution', 'executionAudit', 'bot', 'botRule', 'botEvent', 'user', 'portfolio', 'brokerAccount', 'botTemplate', 'backtestRun', 'strategyVersion', 'strategyEvidence']) {
+  for (const name of ['execution', 'executionAudit', 'bot', 'botRule', 'botEvent', 'user', 'portfolio', 'brokerAccount', 'botTemplate', 'backtestRun', 'strategyVersion', 'strategyEvidence', 'workerStatus', 'subscription', 'fill']) {
     client[name] = model(store, name)
   }
   client.$transaction = async (arg) => {

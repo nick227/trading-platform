@@ -57,6 +57,15 @@ export default function Nav() {
                   </Link>
                 )
               })}
+              {(user.role === 'admin' || user.role === 'operator') && (
+                <Link
+                  to="/admin"
+                  className={`tl-nav-link ${location.pathname.startsWith('/admin') ? 'is-active' : ''}`}
+                  aria-current={location.pathname.startsWith('/admin') ? 'page' : undefined}
+                >
+                  Admin
+                </Link>
+              )}
               <Link
                 to="/profile"
                 className={`tl-nav-avatar ${location.pathname.startsWith('/profile') ? 'is-active' : ''}`}

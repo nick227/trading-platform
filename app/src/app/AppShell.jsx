@@ -12,6 +12,7 @@ import OrderConfirm from '../features/OrderConfirm'
 import AccountPage from '../features/account/AccountPage'
 import Auth from '../features/Auth'
 import PageSkeleton from '../components/PageSkeleton'
+import AdminRoute from '../features/admin/AdminRoute'
 import { useAuth } from './AuthProvider'
 import pageTitleService from '../services/pageTitleService'
 
@@ -19,6 +20,7 @@ const AssetsIndex = lazy(() => import('../features/AssetsIndex'))
 const StrategiesIndex = lazy(() => import('../features/strategies/StrategiesIndex'))
 const StrategyDetail = lazy(() => import('../features/strategies/StrategyDetail'))
 const Orders = lazy(() => import('../features/Orders'))
+const AdminDashboard = lazy(() => import('../features/admin/AdminDashboard'))
 
 /** Redirects logged-in users away from auth pages. */
 function AuthScreen() {
@@ -67,6 +69,7 @@ function AppLayout() {
       '/research': 'Research',
       '/opportunities': 'Opportunities',
       '/ops': 'Operations',
+      '/admin': 'Administration',
       '/auth': 'Authentication',
       '/login': 'Login',
       '/register': 'Register',
@@ -144,6 +147,16 @@ export function AppShell() {
         <Route path="/profile" element={<Protected><AccountPage /></Protected>} />
         <Route path="/profile/account" element={<Navigate to="/profile" replace />} />
         <Route path="/profile/broker" element={<Navigate to="/profile" replace />} />
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <Suspense fallback={<PageSkeleton />}>
+                <AdminDashboard />
+              </Suspense>
+            </AdminRoute>
+          }
+        />
         <Route path="/auth" element={<AuthScreen />} />
         <Route path="/login" element={<AuthScreen />} />
         <Route path="/register" element={<AuthScreen />} />
