@@ -133,4 +133,53 @@ describe('platform strategy evidence', () => {
     expect(detail.body.data.results).toHaveLength(6)
     expect((await request(app.server).get('/api/public/strategies/nope')).status).toBe(404)
   })
+
+  it('accurately distinguishes AI awaiting forward executions from unconfigured research evaluation', async () => {
+    // 1. Without canonical bot, AI forward window correctly reports unconfigured paper bot
+    await generateStrategyEvidence({ engine, config, now: NOW })
+    let rows = await h.db.strategyEvidence.findMany({})
+    let of = (id, w = 'forward', s = 'SPY') => rows.find((r) => r.templateId === id && r.window === w && r.symbol === s)
+    expect(of('tmpl_ai_catalyst_momentum', 'forward')).toMatchObject({
+      status: 'not_backtestable',
+      reason: expect.stringMatching(/no active paper trading bot is running/)
+    })
+    expect(of('tmpl_alpha_research', 'forward')).toMatchObject({
+      status: 'not_backtestable',
+      reason: expect.stringMatching(/Forward performance evaluation is not configured/)
+    })
+
+    // 2. When canonical AI bot is active with 0 executions, forward window transitions to awaiting_sessions
+    await h.db.bot.create({
+      data: {
+        id: 'bot_canonical_ai_catalyst_momentum',
+        name: 'AI Catalyst & Momentum Canonical Paper Bot',
+        templateId: 'tmpl_ai_catalyst_momentum',
+        userId: 'usr_platform_canonical',
+        enabled: true,
+        config: { signalSource: 'ai_catalyst_momentum', allocatedAmount: 10000 }
+      }
+    })
+
+    await generateStrategyEvidence({ engine, config, now: NOW, force: true })
+    rows = await h.db.strategyEvidence.findMany({})
+    const aiForward = of('tmpl_ai_catalyst_momentum', 'forward')
+    expect(aiForward).toMatchObject({
+      status: 'awaiting_sessions',
+      reason: 'This strategy has not recorded any qualifying forward paper trades. Performance results will become available when sufficient verified trading activity exists.'
+    })
+
+    // 3. API endpoint returns awaiting_sessions for forward window
+    const listRes = await request(app.server).get('/api/public/strategies')
+    const aiStrat = listRes.body.data.find((s) => s.templateId === 'tmpl_ai_catalyst_momentum')
+    expect(aiStrat.windows.forward).toMatchObject({
+      status: 'awaiting_sessions',
+      reason: 'This strategy has not recorded any qualifying forward paper trades. Performance results will become available when sufficient verified trading activity exists.'
+    })
+
+    // Historical windows remain explicitly not_backtestable
+    expect(aiStrat.windows['5Y']).toMatchObject({
+      status: 'not_backtestable',
+      reason: expect.stringMatching(/avoiding historical prompt look-ahead/)
+    })
+  })
 })

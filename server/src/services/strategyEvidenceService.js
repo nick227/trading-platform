@@ -211,12 +211,34 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
                 trades: []
               }
             })
+          } else if (t.window.id === 'forward' && bot && (!forwardStats || forwardStats.status === 'awaiting_sessions' || forwardStats.curve?.length === 0)) {
+            await save(t.symbol, t.window, {
+              startDate: null,
+              status: 'awaiting_sessions',
+              reason: 'This strategy has not recorded any qualifying forward paper trades. Performance results will become available when sufficient verified trading activity exists.'
+            })
+          } else if (t.window.id === 'forward' && !bot) {
+            await save(t.symbol, t.window, {
+              startDate: null,
+              status: 'not_backtestable',
+              reason: 'Forward performance evaluation is not configured for this strategy: no active paper trading bot is running.'
+            })
           } else {
             await save(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
           }
         }
       } else {
-        for (const t of todo) await save(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
+        for (const t of todo) {
+          if (t.window.id === 'forward') {
+            await save(t.symbol, t.window, {
+              startDate: null,
+              status: 'not_backtestable',
+              reason: 'Forward performance evaluation is not configured for this strategy: this strategy has neither a point-in-time research replay method nor an active canonical forward paper trading bot.'
+            })
+          } else {
+            await save(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
+          }
+        }
       }
       continue
     }
