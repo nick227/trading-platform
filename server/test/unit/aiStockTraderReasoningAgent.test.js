@@ -37,6 +37,7 @@ function fixtures(plan = planner) {
   let persisted
   const prismaClient = { botEvent: {
     findUnique: vi.fn(async () => persisted || null),
+    findMany: vi.fn(async () => []),
     create: vi.fn(async ({ data }) => { persisted = data; return data }),
     updateMany: vi.fn(async ({ data }) => { persisted = { ...persisted, ...data }; return { count: 1 } })
   } }

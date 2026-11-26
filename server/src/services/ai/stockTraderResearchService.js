@@ -7,6 +7,7 @@ import prisma from '../../loaders/prisma.js'
 import { getProvider } from './providers/providerRegistry.js'
 import { defaultAiBotDefinitionRegistry } from './botDefinitions.js'
 import { runToolGuidedStockResearch } from './stockTraderReasoningAgent.js'
+import { loadAiDecisionMemory } from './decisionMemory.js'
 import { createDefaultStockTraderContextRegistry } from './stockTraderContext.js'
 import { STOCK_TRADER_PROMPT_VERSION, buildStockTraderPrompts, validateStockTraderDecision } from './strategies/stockTraderDecision.js'
 
@@ -21,7 +22,8 @@ export async function runStockTraderResearch({
   registry = createDefaultStockTraderContextRegistry(),
   usageGovernor = null,
   engine = null,
-  toolRegistry = null
+  toolRegistry = null,
+  memoryLoader = loadAiDecisionMemory
 }) {
   if (!bot?.id || !bot?.portfolioId || !portfolio?.id || portfolio.id !== bot.portfolioId) {
     throw new Error('AI research bot/portfolio identity mismatch')
@@ -33,11 +35,15 @@ export async function runStockTraderResearch({
   const config = bot.config
   const definition = defaultAiBotDefinitionRegistry.resolveInstance(bot)
   if (providerName !== definition.provider) throw new Error('AI research provider differs from pinned bot definition')
+  const decisionMemory = definition.researchMode === 'tool_guided'
+    ? await memoryLoader({ bot, asOfSession: screening.asOfSession, prismaClient, engine })
+    : null
   const snapshot = await registry.assemble({
     session: screening.asOfSession,
     input: { screening, portfolio: portfolioSnapshot, config },
     modules: config.research?.contextModules,
-    maxBytes: definition.contextByteBudget
+    maxBytes: definition.contextByteBudget,
+    ...(decisionMemory ? { decisionMemory } : {})
   })
   const { systemPrompt, userPrompt } = buildStockTraderPrompts(snapshot, definition)
   const model = definition.model

@@ -40,7 +40,8 @@ export function createStockTraderContextRegistry() {
     },
 
     async assemble({ session, input, modules = STOCK_TRADER_REQUIRED_MODULES, maxBytes = 48_000,
-      evidenceRegistry = null, evidenceSourceIds = [], retrievedCutoff = null }) {
+      evidenceRegistry = null, evidenceSourceIds = [], retrievedCutoff = null,
+      decisionMemory = null }) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(session ?? '') || Number.isNaN(Date.parse(session + 'T00:00:00Z'))) {
         throw new Error('Valid session required for AI context')
       }
@@ -96,12 +97,17 @@ export function createStockTraderContextRegistry() {
           retrievedCutoff, maxBytes: Math.floor(maxBytes / 2)
         })
         : null
+      if (decisionMemory && (decisionMemory.asOfSession !== session ||
+          !Array.isArray(decisionMemory.history) || !Array.isArray(decisionMemory.observedPaperFills))) {
+        throw new ResearchContextError('memory', 'invalid or stale decision-memory snapshot')
+      }
       const snapshot = {
         strategyVersion: input?.config?.strategyVersion || AI_STOCK_TRADER_VERSION,
         asOfSession: session,
         context: ordered,
         unavailable: unavailable.sort((a, b) => a.id.localeCompare(b.id)),
-        ...(evidence ? { evidence } : {})
+        ...(evidence ? { evidence } : {}),
+        ...(decisionMemory ? { memory: decisionMemory } : {})
       }
       const json = JSON.stringify(snapshot)
       if (Buffer.byteLength(json, 'utf8') > maxBytes) throw new Error('AI research context exceeds byte budget')
