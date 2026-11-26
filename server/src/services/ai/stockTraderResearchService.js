@@ -78,7 +78,8 @@ export async function runStockTraderResearch({
     const response = await client.completeStructured({
       systemPrompt, userPrompt, model, temperature: 0.2, maxTokens: 1000
     })
-    await usageGovernor.settle(reservation, { usage: response.usage })
+    const settlement = await usageGovernor.settle(reservation, { usage: response.usage })
+    if (settlement?.settled !== true) throw new Error('AI usage settlement was not committed')
     settled = true
     const decision = validateStockTraderDecision(response.structured, snapshot)
     const publish = await prismaClient.botEvent.updateMany({
