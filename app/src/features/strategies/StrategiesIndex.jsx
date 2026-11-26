@@ -16,7 +16,7 @@ export default function StrategiesIndex() {
   }, [])
   return (
     <main className="tl-page tl-strategies-page" data-testid="strategies-index">
-      <PageIdentity title="Explore TradeLoom's automated trading strategies." description="TradeLoom publishes trading strategies with different rules and approaches to market conditions. You can review each strategy’s description and the results available from historical testing or simulated trading. Real-money brokerage execution is not yet available." />
+      <PageIdentity title="Automated trading strategies" description="Each published strategy uses its own approach to identifying trades. Review how it works and compare the historical or simulated results available for that strategy. Live brokerage trading is still under development." />
       {state.status === 'loading' && <span className="tl-skel" style={{ height: 240 }} aria-label="Loading strategies" />}
       {state.status === 'error' && <ContentState tone="error" title="Strategy information is unavailable." description="The list could not be loaded. You can reload the page to request it again." />}
       {state.status === 'done' && state.rows.length === 0 && <ContentState title="No strategies have been published." description="Published strategies and their available test results will appear here." />}

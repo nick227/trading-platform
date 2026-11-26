@@ -26,13 +26,14 @@ describe('public strategy evidence', () => {
     get.mockResolvedValue([{ templateId: 'a', name: 'A', description: 'd', asOf: '2026-11-20', windows: { '5Y': strategy.summary['5Y'], '1Y': strategy.summary['1Y'] } }, { templateId: 'r', name: 'Research', description: 'd', windows: { '5Y': { status: 'not_backtestable' } } }])
     render(<MemoryRouter><StrategiesIndex /></MemoryRouter>)
     const [a, r] = await screen.findAllByTestId('strategy-card')
-    expect(a).toHaveTextContent('The typical strategy return was +4.00%, compared with +60.00% from buying and holding the same investments.')
+    expect(a).toHaveTextContent('+4.00%')
+    expect(a).toHaveTextContent('+60.00%')
     expect(within(a).getByText('Typical strategy return')).toBeInTheDocument()
-    expect(within(a).getByText('Typical return from buying and holding')).toBeInTheDocument()
-    expect(a).toHaveTextContent('Five-year historical test')
+    expect(within(a).getByText('Buy-and-hold return')).toBeInTheDocument()
+    expect(a).toHaveTextContent('Historical results · Five years')
     expect(a.querySelectorAll('a')).toHaveLength(1)
     expect(a.querySelector('a')).toHaveAttribute('href', '/strategies/a')
-    expect(r).toHaveTextContent('This strategy cannot be evaluated with the available historical test.')
+    expect(r).toHaveTextContent('Historical results are unavailable because this strategy cannot be tested using the available historical method.')
     expect(within(r).queryByText('Typical strategy return')).not.toBeInTheDocument()
   })
   it('detail shows standardized results per symbol, the tested definition and its assumptions', async () => {
@@ -135,7 +136,7 @@ describe('AI strategy presentation', () => {
 
 describe('public strategy catalog contract', () => {
   it('uses published descriptions rather than constructing a trading rationale', () => {
-    expect(catalogOverview({name:'Undocumented'})).toMatch(/has not yet been published/)
+    expect(catalogOverview({name:'Undocumented'})).toMatch(/has not yet been described/)
     expect(catalogOverview({description:'The published strategy buys shares after a defined price signal.'}))
       .toBe('The published strategy buys shares after a defined price signal.')
   })
@@ -143,9 +144,9 @@ describe('public strategy catalog contract', () => {
     const negative = {status:'ok',symbolsTested:3,symbolsTraded:2,medianReturnPct:-7.25,medianBuyAndHoldPct:3.5}
     expect(catalogResult(negative,'5Y')).toContain('−7.25%')
     expect(catalogResult(negative,'5Y')).toContain('+3.50%')
-    expect(catalogPeriod('forward')).toBe('Simulated trading after publication')
-    expect(catalogResult({status:'awaiting_sessions'},'forward')).toMatch(/not yet enough completed/)
-    expect(catalogResult({status:'not_backtestable'},'5Y')).toMatch(/cannot be evaluated/)
+    expect(catalogPeriod('forward')).toBe('Simulated results · Since publication')
+    expect(catalogResult({status:'awaiting_sessions'},'forward')).toMatch(/has not completed enough simulated trading sessions/)
+    expect(catalogResult({status:'not_backtestable'},'5Y')).toMatch(/cannot be tested/)
   })
   it('prefers a completed available period but does not mislabel AI evidence', () => {
     expect(mainEvidenceWindow({windows:{'5Y':{status:'insufficient_data'},'1Y':{status:'ok'}}})).toBe('1Y')

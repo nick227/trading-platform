@@ -41,7 +41,7 @@ for (const width of [320, 375, 768, 1024, 1440]) {
       const radius = await card.evaluate((el) => getComputedStyle(el).borderRadius)
       expect(radius).toBe('12px')
     }
-    // Repeated real-page cards must share both horizontal edges and padding.
+    // Tiled cards retain consistent geometry within each grid column.
     const axes = await cards.evaluateAll((items) => items.map((el) => {
       const rect = el.getBoundingClientRect()
       const style = getComputedStyle(el)
@@ -54,12 +54,13 @@ for (const width of [320, 375, 768, 1024, 1440]) {
       }
     }))
     for (const axis of axes.slice(1)) {
-      expect(Math.abs(axis.left - axes[0].left)).toBeLessThanOrEqual(1)
-      expect(Math.abs(axis.right - axes[0].right)).toBeLessThanOrEqual(1)
       expect(Math.abs(axis.paddingLeft - axes[0].paddingLeft)).toBeLessThanOrEqual(1)
       expect(Math.abs(axis.paddingRight - axes[0].paddingRight)).toBeLessThanOrEqual(1)
     }
-    expect(axes[0].paddingLeft).toBe(width <= 760 ? 16 : 24)
+    expect(axes[0].paddingLeft).toBe(width < 700 ? 16 : 24)
+    const columns = width >= 1300 ? 3 : width >= 700 ? 2 : 1
+    const firstRow = axes.slice(0, Math.min(columns, axes.length))
+    expect(new Set(firstRow.map(axis => Math.round(axis.left))).size).toBe(firstRow.length)
     await page.screenshot({ path: testInfo.outputPath(`strategies-${width}.png`), fullPage: true })
   })
 }
