@@ -56,6 +56,14 @@ export async function updateAdminUserRole(userId, role) {
   return put(`/admin/users/${encodeURIComponent(userId)}/role`, { role })
 }
 
+export async function updateAdminUserStatus(userId, status) {
+  return put(`/admin/users/${encodeURIComponent(userId)}/status`, { status })
+}
+
+export async function fetchAdminUserDrilldown(userId) {
+  return get(`/admin/users/${encodeURIComponent(userId)}/drilldown`)
+}
+
 export async function setAdminEmergencyStop({ active, reason, targetUserId }) {
   return post('/admin/controls/emergency-stop', { active, reason, targetUserId })
 }

@@ -11,6 +11,8 @@ import {
   fetchAdminExecutions,
   cancelAdminExecution,
   updateAdminUserRole,
+  updateAdminUserStatus,
+  fetchAdminUserDrilldown,
   setAdminEmergencyStop,
   runAdminMarketOpen,
   runAdminAiResearch,
@@ -52,6 +54,10 @@ export default function AdminDashboard() {
   const [executionsTotal, setExecutionsTotal] = useState(0)
   const [executionStatusFilter, setExecutionStatusFilter] = useState('')
   const [executionTickerFilter, setExecutionTickerFilter] = useState('')
+
+  // User Support Drilldown states
+  const [selectedUserDrilldown, setSelectedUserDrilldown] = useState(null)
+  const [userDrilldownLoading, setUserDrilldownLoading] = useState(false)
 
   const showFeedback = (type, message) => {
     setFeedback({ type, message })
@@ -234,6 +240,40 @@ export default function AdminDashboard() {
       await loadAuditLogs()
     } catch (err) {
       showFeedback('error', `Failed to update role: ${err.serverMessage || err.message}`)
+    }
+  }
+
+  const handleToggleUserStatus = async (targetUserId, currentStatus, userEmail) => {
+    const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended'
+    const promptMsg = newStatus === 'suspended'
+      ? `Are you sure you want to SUSPEND ${userEmail}? They will be immediately blocked from logging in or placing trades.`
+      : `Reactivate account for ${userEmail}?`
+
+    if (!window.confirm(promptMsg)) return
+
+    setActionLoading(true)
+    try {
+      await updateAdminUserStatus(targetUserId, newStatus)
+      showFeedback('success', `Account status for ${userEmail} changed to '${newStatus}'.`)
+      await loadUsers(userSearch)
+      await loadOverview()
+      await loadAuditLogs()
+    } catch (err) {
+      showFeedback('error', `Failed to update account status: ${err.serverMessage || err.message}`)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleInspectUser = async (targetUserId) => {
+    setUserDrilldownLoading(true)
+    try {
+      const res = await fetchAdminUserDrilldown(targetUserId)
+      setSelectedUserDrilldown(res?.data || res)
+    } catch (err) {
+      showFeedback('error', `Failed to load user details: ${err.serverMessage || err.message}`)
+    } finally {
+      setUserDrilldownLoading(false)
     }
   }
 
@@ -1053,53 +1093,84 @@ export default function AdminDashboard() {
                 <tr>
                   <th>User</th>
                   <th>Role</th>
+                  <th>Status</th>
                   <th>Subscription</th>
-                  <th>Bots</th>
                   <th>Created</th>
-                  {isAdmin && <th>Manage Role</th>}
+                  <th>Actions & Support</th>
                 </tr>
               </thead>
               <tbody>
                 {users.length > 0 ? (
-                  users.map(u => (
-                    <tr key={u.id}>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{u.fullName || '—'}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{u.email}</div>
-                      </td>
-                      <td>
-                        <span className={`tl-admin-badge ${
-                          u.role === 'admin' ? 'tl-badge-purple' : u.role === 'operator' ? 'tl-badge-blue' : 'tl-badge-green'
-                        }`}>
-                          {u.role || 'user'}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{ fontSize: '0.8rem' }}>{u.subscription?.plan || 'BASIC'} ({u.subscription?.status || 'INACTIVE'})</span>
-                      </td>
-                      <td>{u.botCount ?? 0}</td>
-                      <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                      {isAdmin && (
+                  users.map(u => {
+                    const isSuspended = u.status === 'suspended'
+                    const isProtected = u.id === 'usr_platform_canonical'
+                    const isSelf = u.id === user?.id
+                    return (
+                      <tr key={u.id}>
                         <td>
-                          {u.id === 'usr_platform_canonical' ? (
-                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>System Protected</span>
-                          ) : u.id === user?.id ? (
-                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Current Account</span>
-                          ) : (
-                            <select
-                              className="tl-admin-select"
-                              value={u.role || 'user'}
-                              onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                            >
-                              <option value="user">User</option>
-                              <option value="operator">Operator</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                          )}
+                          <div style={{ fontWeight: 600 }}>{u.fullName || '—'}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{u.email}</div>
+                          <div style={{ fontSize: '0.7rem', color: '#64748b' }}><code>{u.id}</code></div>
                         </td>
-                      )}
-                    </tr>
-                  ))
+                        <td>
+                          <span className={`tl-admin-badge ${
+                            u.role === 'admin' ? 'tl-badge-purple' : u.role === 'operator' ? 'tl-badge-blue' : 'tl-badge-green'
+                          }`}>
+                            {u.role || 'user'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`tl-admin-badge ${isSuspended ? 'tl-badge-red' : 'tl-badge-green'}`}>
+                            {isSuspended ? 'Suspended' : 'Active'}
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: '0.8rem' }}>{u.subscription?.plan || 'BASIC'} ({u.subscription?.status || 'INACTIVE'})</span>
+                        </td>
+                        <td>{new Date(u.createdAt).toLocaleDateString()}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button
+                              className="tl-btn-secondary"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                              onClick={() => handleInspectUser(u.id)}
+                              disabled={userDrilldownLoading}
+                            >
+                              Support Details
+                            </button>
+                            {isAdmin && !isProtected && !isSelf && (
+                              <>
+                                <button
+                                  className={isSuspended ? 'tl-btn-primary' : 'tl-btn-danger'}
+                                  style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                                  onClick={() => handleToggleUserStatus(u.id, u.status || 'active', u.email)}
+                                  disabled={actionLoading}
+                                >
+                                  {isSuspended ? 'Reactivate' : 'Suspend'}
+                                </button>
+                                <select
+                                  className="tl-admin-select"
+                                  style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+                                  value={u.role || 'user'}
+                                  onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                                >
+                                  <option value="user">User</option>
+                                  <option value="operator">Operator</option>
+                                  <option value="admin">Admin</option>
+                                </select>
+                              </>
+                            )}
+                            {isProtected && (
+                              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>System Protected</span>
+                            )}
+                            {isSelf && (
+                              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Current User</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
                 ) : (
                   <tr>
                     <td colSpan="6" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
@@ -1110,6 +1181,176 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
+
+          {/* User Support Drilldown Modal */}
+          {selectedUserDrilldown && (
+            <div className="tl-modal-overlay" style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.75)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              padding: '1.5rem'
+            }}>
+              <div style={{
+                background: '#1e293b',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                width: '100%',
+                maxWidth: '850px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                padding: '1.5rem',
+                color: '#f8fafc'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #334155', paddingBottom: '0.75rem' }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+                      Customer Support: {selectedUserDrilldown.user?.fullName || selectedUserDrilldown.user?.email}
+                    </h2>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                      ID: <code>{selectedUserDrilldown.user?.id}</code> | Role: {selectedUserDrilldown.user?.role}
+                    </span>
+                  </div>
+                  <button
+                    className="tl-btn-secondary"
+                    onClick={() => setSelectedUserDrilldown(null)}
+                    style={{ fontSize: '1rem', padding: '0.25rem 0.6rem' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Quick Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Account Status</div>
+                    <div style={{ fontWeight: 600, color: selectedUserDrilldown.user?.status === 'suspended' ? '#f87171' : '#4ade80' }}>
+                      {selectedUserDrilldown.user?.status === 'suspended' ? 'Suspended' : 'Active'}
+                    </div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Subscription Tier</div>
+                    <div style={{ fontWeight: 600 }}>
+                      {selectedUserDrilldown.user?.subscription?.plan || 'Free'} ({selectedUserDrilldown.user?.subscription?.status || 'Active'})
+                    </div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Portfolios</div>
+                    <div style={{ fontWeight: 600 }}>
+                      {selectedUserDrilldown.portfolios?.length || 0}
+                    </div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Trading Bots</div>
+                    <div style={{ fontWeight: 600 }}>
+                      {selectedUserDrilldown.bots?.length || 0}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Portfolios List */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#cbd5e1' }}>User Portfolios</h4>
+                  {selectedUserDrilldown.portfolios?.length > 0 ? (
+                    <table className="tl-admin-table" style={{ fontSize: '0.75rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Portfolio ID</th>
+                          <th>Name</th>
+                          <th>Cash Balance</th>
+                          <th>Total Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedUserDrilldown.portfolios.map(p => (
+                          <tr key={p.id}>
+                            <td><code>{p.id}</code></td>
+                            <td>{p.name}</td>
+                            <td>${Number(p.cashBalance || 0).toFixed(2)}</td>
+                            <td>${Number(p.totalValue || 0).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>No portfolios found.</p>
+                  )}
+                </div>
+
+                {/* Bots List */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#cbd5e1' }}>User Trading Bots</h4>
+                  {selectedUserDrilldown.bots?.length > 0 ? (
+                    <table className="tl-admin-table" style={{ fontSize: '0.75rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Bot Name</th>
+                          <th>Type</th>
+                          <th>Template</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedUserDrilldown.bots.map(b => (
+                          <tr key={b.id}>
+                            <td style={{ fontWeight: 600 }}>{b.name}</td>
+                            <td>{b.botType}</td>
+                            <td>{b.templateId || '—'}</td>
+                            <td>
+                              <span className={`tl-admin-badge ${b.enabled ? 'tl-badge-green' : 'tl-badge-red'}`}>
+                                {b.enabled ? 'Running' : 'Paused'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>No bots configured.</p>
+                  )}
+                </div>
+
+                {/* Recent Executions */}
+                <div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#cbd5e1' }}>Recent Trades & Orders</h4>
+                  {selectedUserDrilldown.recentExecutions?.length > 0 ? (
+                    <table className="tl-admin-table" style={{ fontSize: '0.75rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Ticker</th>
+                          <th>Side</th>
+                          <th>Qty</th>
+                          <th>Status</th>
+                          <th>Filled Price</th>
+                          <th>Created</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedUserDrilldown.recentExecutions.map(e => (
+                          <tr key={e.id}>
+                            <td style={{ fontWeight: 600 }}>{e.ticker}</td>
+                            <td>{e.direction?.toUpperCase()}</td>
+                            <td>{e.quantity}</td>
+                            <td><span className="tl-admin-badge tl-badge-blue">{e.status}</span></td>
+                            <td>{e.filledPrice ? `$${Number(e.filledPrice).toFixed(2)}` : '—'}</td>
+                            <td>{new Date(e.createdAt).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>No recent executions.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -250,6 +250,7 @@ export async function listAdminUsers({
         email: true,
         fullName: true,
         role: true,
+        status: true,
         createdAt: true,
         subscription: true
       },
@@ -317,6 +318,105 @@ export async function updateUserRole({
   }
 
   return updated
+}
+
+/**
+ * Updates a user's account status (active | suspended).
+ */
+export async function updateUserStatus({
+  targetUserId,
+  newStatus,
+  actorUserId,
+  ipAddress = null,
+  prismaClient = prisma
+}) {
+  if (!['active', 'suspended'].includes(newStatus)) {
+    throw new Error(`Invalid status '${newStatus}'. Allowed: 'active', 'suspended'`)
+  }
+
+  if (targetUserId === PLATFORM_USER_ID) {
+    throw new Error('Cannot suspend canonical platform system user')
+  }
+
+  if (targetUserId === actorUserId && newStatus === 'suspended') {
+    throw new Error('Administrators cannot suspend their own account')
+  }
+
+  const user = await prismaClient.user.findUnique({
+    where: { id: targetUserId },
+    select: { id: true, email: true, status: true }
+  })
+
+  if (!user) {
+    throw new Error('Target user not found')
+  }
+
+  const updated = await prismaClient.user.update({
+    where: { id: targetUserId },
+    data: { status: newStatus },
+    select: { id: true, email: true, fullName: true, role: true, status: true }
+  })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: newStatus === 'suspended' ? 'suspend_user' : 'reactivate_user',
+      targetType: 'user',
+      targetId: targetUserId,
+      payload: { previousStatus: user.status || 'active', newStatus, targetEmail: user.email },
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return updated
+}
+
+/**
+ * Returns comprehensive user support drilldown: linked portfolios, bots, recent executions,
+ * and subscription metadata.
+ */
+export async function getUserDrilldown({
+  targetUserId,
+  prismaClient = prisma
+}) {
+  const user = await prismaClient.user.findUnique({
+    where: { id: targetUserId },
+    include: { subscription: true }
+  })
+
+  if (!user) {
+    throw new Error('Target user not found')
+  }
+
+  const [portfolios, bots, recentExecutions] = await Promise.all([
+    prismaClient.portfolio.findMany({
+      where: { userId: targetUserId }
+    }).catch(() => []),
+    prismaClient.bot.findMany({
+      where: { userId: targetUserId, deletedAt: null }
+    }).catch(() => []),
+    prismaClient.execution.findMany({
+      where: { userId: targetUserId },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    }).catch(() => [])
+  ])
+
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      status: user.status || 'active',
+      createdAt: user.createdAt,
+      subscription: user.subscription
+    },
+    portfolios,
+    bots,
+    recentExecutions
+  }
 }
 
 /**

@@ -17,6 +17,8 @@ import {
   listAdminExecutions,
   cancelAdminExecution,
   updateUserRole,
+  updateUserStatus,
+  getUserDrilldown,
   cleanupDeadWorkers,
   triggerAdminEmergencyStop,
   triggerMarketOpenJob,
@@ -65,6 +67,21 @@ export default async function adminRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'ADMIN_USERS_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/users/:id/drilldown — Comprehensive support view of user portfolios, bots, and trades
+  app.get('/users/:id/drilldown', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const { id } = request.params
+      const data = await getUserDrilldown({ targetUserId: id })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.warn({ err: err.message, userId: request.params.id }, 'User drilldown lookup failed')
+      return reply.code(404).send({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: err.message }
       })
     }
   })
@@ -199,6 +216,35 @@ export default async function adminRoutes(app) {
       return reply.code(400).send({
         success: false,
         error: { code: 'UPDATE_ROLE_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // PUT /api/admin/users/:id/status — Suspend or reactivate user account
+  app.put('/users/:id/status', { preHandler: [adminOnly] }, async (request, reply) => {
+    const { id } = request.params
+    const { status } = request.body || {}
+
+    if (!status) {
+      return reply.code(400).send({
+        success: false,
+        error: { code: 'INVALID_INPUT', message: 'status is required' }
+      })
+    }
+
+    try {
+      const user = await updateUserStatus({
+        targetUserId: id,
+        newStatus: status,
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
+      return reply.send({ success: true, data: user, user })
+    } catch (err) {
+      app.log.warn({ err: err.message, targetUserId: id, status }, 'Failed to update user status')
+      return reply.code(400).send({
+        success: false,
+        error: { code: 'UPDATE_STATUS_ERROR', message: err.message }
       })
     }
   })

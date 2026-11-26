@@ -425,3 +425,86 @@ describe('Order Blotter & Cancellation (GET /api/admin/executions, /:id/cancel)'
     expect(log.targetId).toBe('exec_pending_1')
   })
 })
+
+describe('User Account Governance & Support Drilldown (PUT /api/admin/users/:id/status, GET /:id/drilldown)', () => {
+  it('denies operators from modifying user account status (admin only)', async () => {
+    const res = await request(app.server)
+      .put('/api/admin/users/usr_reg/status')
+      .set('Authorization', `Bearer ${operatorToken}`)
+      .send({ status: 'suspended' })
+
+    expect(res.status).toBe(403)
+  })
+
+  it('prevents suspending the canonical system user', async () => {
+    const res = await request(app.server)
+      .put(`/api/admin/users/${PLATFORM_USER_ID}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'suspended' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error.message).toMatch(/canonical/i)
+  })
+
+  it('prevents an administrator from suspending their own account', async () => {
+    const res = await request(app.server)
+      .put('/api/admin/users/usr_adm/status')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'suspended' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error.message).toMatch(/cannot suspend/i)
+  })
+
+  it('allows admin to suspend a user, logs to audit trail, and blocks user access', async () => {
+    // Suspend user
+    const res = await request(app.server)
+      .put('/api/admin/users/usr_reg/status')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'suspended' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.user.status).toBe('suspended')
+
+    // Verify audit log captured suspend_user
+    const auditRes = await request(app.server)
+      .get('/api/admin/audit-log?action=suspend_user')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(auditRes.status).toBe(200)
+    expect(auditRes.body.data.logs.length).toBeGreaterThan(0)
+    const log = auditRes.body.data.logs[0]
+    expect(log.action).toBe('suspend_user')
+    expect(log.targetType).toBe('user')
+    expect(log.targetId).toBe('usr_reg')
+
+    // Verify suspended user is blocked
+    const blockedRes = await request(app.server)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${regularToken}`)
+
+    expect(blockedRes.status).toBe(403)
+    expect(blockedRes.body.code).toBe('ACCOUNT_SUSPENDED')
+
+    // Reactivate user
+    const reactivateRes = await request(app.server)
+      .put('/api/admin/users/usr_reg/status')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'active' })
+
+    expect(reactivateRes.status).toBe(200)
+    expect(reactivateRes.body.user.status).toBe('active')
+  })
+
+  it('returns full support drilldown for a user via /api/admin/users/:id/drilldown', async () => {
+    const res = await request(app.server)
+      .get('/api/admin/users/usr_reg/drilldown')
+      .set('Authorization', `Bearer ${operatorToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.user.id).toBe('usr_reg')
+    expect(Array.isArray(res.body.data.bots)).toBe(true)
+    expect(Array.isArray(res.body.data.recentExecutions)).toBe(true)
+  })
+})

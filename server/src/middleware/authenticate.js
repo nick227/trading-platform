@@ -18,6 +18,11 @@ export async function authenticate(request, reply) {
       request.log.warn('auth_user_not_found')
       return reply.code(401).send({ error: 'User not found' })
     }
+
+    if (user.status === 'suspended') {
+      request.log.warn({ userId: user.id }, 'auth_user_suspended')
+      return reply.code(403).send({ error: 'Account suspended by administration', code: 'ACCOUNT_SUSPENDED' })
+    }
     
     if (user.subscription?.status !== 'ACTIVE') {
       request.log.warn({ subscriptionStatus: user.subscription?.status ?? null }, 'auth_subscription_inactive')
