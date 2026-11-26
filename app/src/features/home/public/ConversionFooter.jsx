@@ -7,7 +7,7 @@ const FAQ = [
   {q:'Are stock research rankings buy recommendations?',a:'No. Rankings are research observations; they are not personalized investment advice or predictions of returns.'},
   {q:'Are TradeLoom accounts free during beta?',a:'Yes. All accounts are currently free during beta development. Paid memberships are planned for commercial release, but pricing and subscription terms have not been announced.'},
   {q:'What trading capabilities are available now?',a:'The beta includes available stock research, strategy evaluation, and supported paper-trading workflows. Live brokerage orders and deposits are not yet available.'},
-  {q:'Are backtest returns guaranteed?',a:'No. Backtests and paper trades are simulated observations, not returns earned by investors, and do not predict future results.'},
+  {q:'Do historical tests predict investment returns?',a:'No. Historical testing and simulated orders do not reflect actual customer investment returns or predict how a strategy will perform in live markets.'},
 ]
 
 export default function ConversionFooter() {

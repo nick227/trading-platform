@@ -1,11 +1,11 @@
 export const JOURNEY = [
-  { number:'01',title:'Examine available strategies',body:'Compare published strategy results, historical backtests, and supporting research before selecting an approach.' },
-  { number:'02',title:'Configure a trading workflow',body:'Set up an eligible strategy using the parameters and execution controls supported by the current beta.' },
-  { number:'03',title:'Monitor orders and positions',body:'Review recorded paper orders, portfolio holdings, valuation changes, and strategy decisions while brokerage execution is under development.' },
+  { number:'01',title:'Research and compare trading strategies',body:'TradeLoom provides published strategy results, market research, and details about the methods used to evaluate performance.' },
+  { number:'02',title:'Configure supported trading strategies',body:'Users can set up eligible strategies using the parameters and execution controls available in the current beta.' },
+  { number:'03',title:'Monitor trading activity and portfolios',body:'The beta records simulated orders, holdings, portfolio-value changes, and available strategy decisions. Real-money order execution is still being developed.' },
 ]
 export const CAPABILITIES = [
-  {title:'AI-assisted stock research',body:'Review Alpha Engine stock rankings and investigate the market observations available in the Research workspace.'},
-  {title:'Automated strategy execution',body:'Configure supported strategies and inspect the status of recorded paper-trading execution workflows.'},
-  {title:'Portfolio monitoring',body:'Review available cash, positions, fills, and portfolio-value changes recorded by the beta platform.'},
-  {title:'Strategy testing and evidence',body:'Compare historical backtests, forward paper observations, benchmark measures, and documented testing limitations.'},
+  {title:'AI-assisted stock research',body:'TradeLoom publishes ranked stock candidates and supporting research observations for further investigation.'},
+  {title:'Automated trading strategies',body:'The platform is being developed to execute configured strategies through brokerage connections. The beta currently supports eligible paper-trading workflows.'},
+  {title:'Portfolio monitoring',body:'Users can inspect recorded holdings, orders, and changes in portfolio value within supported beta workflows.'},
+  {title:'Strategy testing and reporting',body:'Historical tests and simulated trading records provide performance comparisons, market benchmarks, and documented limitations.'},
 ]

@@ -2,26 +2,26 @@ import { Link } from 'react-router-dom'
 
 const EVIDENCE_TYPES = [
   {
-    name:'Historical backtests',
-    detail:'Evaluate strategy rules over recorded market periods.',
+    name:'Testing strategies against past market data',
+    detail:'Historical backtesting shows how a strategy would have behaved using recorded prices and trading conditions.',
     limit:'Results depend on the data, assumptions, and test period.',
   },
   {
-    name:'Holdout evaluations',
-    detail:'Inspect available periods separated from development.',
-    limit:'Holdout results are still historical and can overstate future robustness.',
+    name:'Testing against historical data not used during development',
+    detail:'These tests use a separate period of past market data to check whether the strategy also performed outside the data used to develop it.',
+    limit:'Results from a separate historical period still do not establish future performance.',
   },
   {
-    name:'Forward paper trading',
-    detail:'Review simulated decisions and orders recorded after publication.',
-    limit:'A paper track record is not an actual investor return.',
+    name:'Testing with new market activity without placing real orders',
+    detail:'Paper trading records simulated decisions and orders as new market activity occurs after a strategy has been published.',
+    limit:'These observations do not represent returns earned with real money.',
   },
 ]
 const REPORT_FIELDS = [
-  ['Returns', 'Strategy median alongside a buy-and-hold benchmark'],
-  ['Risk', 'Available drawdown measurements and exposure'],
-  ['Execution', 'Trades, tested symbols, and nontrading periods'],
-  ['Traceability', 'Strategy version, observation window, and methodology'],
+  ['Returns', 'Typical strategy result compared with buying and holding the same investments'],
+  ['Risk', 'Available measures of portfolio declines and market exposure'],
+  ['Activity', 'Recorded trades, investments tested, and periods without trades'],
+  ['Test details', 'Strategy version, dates covered, and how the results were calculated'],
 ]
 
 /** Methodology explains actual strategy-detail reports without fabricating a backtest. */
@@ -47,8 +47,8 @@ export default function EvidenceMethodSection() {
           ))}
         </div>
         <div className="tl-public-panel tl-public-method__report">
-          <p className="tl-public-method__eyebrow">INSIDE A STRATEGY REPORT</p>
-          <h3>Compare performance and examine risk.</h3>
+          <p className="tl-public-method__eyebrow">STRATEGY REPORT CONTENT</p>
+          <h3>Strategy reports include performance comparisons and available risk measurements.</h3>
           <dl>
             {REPORT_FIELDS.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
           </dl>

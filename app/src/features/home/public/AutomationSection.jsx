@@ -1,26 +1,16 @@
-import { useEffect, useState } from 'react'
-import PipelinePulse from './PipelinePulse'
+import { Link } from 'react-router-dom'
 
+/** Public product description; internal operational events are not an AI decision diagram. */
 export default function AutomationSection() {
-  const [visible, setVisible] = useState(false)
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') { setVisible(true); return }
-    const element = document.getElementById('public-automation')
-    if (!element) { setVisible(true); return }
-    const observer = new IntersectionObserver(entries => {
-      if (entries.some(item => item.isIntersecting)) { setVisible(true); observer.disconnect() }
-    }, {rootMargin:'320px'})
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [])
   return (
     <section className="tl-public-section" id="public-automation" aria-labelledby="public-automation-title">
       <header className="tl-public-section-head">
-        <p className="tl-public-eyebrow">AUTOMATED PAPER TRADING</p>
-        <h2 id="public-automation-title">Trading strategies are designed to operate through automated execution workflows.</h2>
-        <p>TradeLoom coordinates market data, research decisions, order processing, portfolio valuation, and strategy reporting. The current beta records the execution status of supported paper-trading stages. Real-money brokerage execution is planned for a future release.</p>
+        <p className="tl-public-eyebrow">AUTOMATED TRADING</p>
+        <h2 id="public-automation-title">TradeLoom is being developed to automate trading strategies through connected brokerage accounts.</h2>
+        <p>TradeLoom brings together market research, strategy configuration, automated execution, and portfolio monitoring. The goal is to help users manage trading systems without placing every order manually.</p>
+        <p>Live brokerage execution is still under development. The current beta provides access to supported research, strategy testing, and paper-trading functionality.</p>
       </header>
-      {visible ? <PipelinePulse/> : <div className="tl-public-panel tl-public-pipeline__state" aria-hidden="true">Automation status</div>}
+      <Link className="tl-public-text-link" to="/strategies">Review published strategy results <span aria-hidden="true">↗</span></Link>
     </section>
   )
 }

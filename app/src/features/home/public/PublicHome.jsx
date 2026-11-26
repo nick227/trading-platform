@@ -16,7 +16,7 @@ export default function PublicHome() {
         <div className="tl-public-hero__copy">
           <p className="tl-public-eyebrow">AUTOMATED TRADING PLATFORM</p>
           <h1 id="welcome-title">Automated trading with integrated research, strategy testing, and portfolio management.</h1>
-          <p className="tl-public-lede">TradeLoom is being developed to research market opportunities, evaluate trading strategies, and automate execution through connected brokerage accounts. The current beta supports available paper-trading workflows while live brokerage trading is under development.</p>
+          <p className="tl-public-lede">TradeLoom is being developed to combine market research, strategy testing, and automated trade execution through connected brokerage accounts. Users can currently explore supported research and testing features while real-money brokerage execution is being developed.</p>
           <p className="tl-public-disclosure"><strong>Beta access is currently free.</strong> Real-money brokerage execution is not yet available.</p>
         </div>
         <AuthPanel />
