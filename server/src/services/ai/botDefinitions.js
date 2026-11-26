@@ -8,7 +8,8 @@
 import {
   AI_STOCK_TRADER_DEFAULTS,
   AI_STOCK_TRADER_STRATEGY_ID,
-  AI_STOCK_TRADER_VERSION
+  AI_STOCK_TRADER_VERSION,
+  AI_STOCK_TRADER_AGENT_VERSION
 } from './strategies/aiStockTraderStrategy.js'
 
 export const AI_BOT_RISK_POLICIES = Object.freeze(['stock_trader_paper_v1'])
@@ -68,6 +69,12 @@ function normalize(def) {
   if (!['openai', 'mock'].includes(def.provider)) {
     throw new AiBotDefinitionError('Provider is not supported by the registered AI platform')
   }
+  if (!['one_shot', 'tool_guided'].includes(def.researchMode || 'one_shot')) {
+    throw new AiBotDefinitionError('Unrecognized AI reasoning mode')
+  }
+  if (def.researchMode === 'tool_guided' && (def.maxModelCalls < 2 || !def.researchTools.length)) {
+    throw new AiBotDefinitionError('Tool-guided reasoning requires two model calls and approved research tools')
+  }
   return freezeDeep({
     schemaVersion: def.schemaVersion,
     id: def.id,
@@ -85,7 +92,8 @@ function normalize(def) {
     tokenBudget: def.tokenBudget,
     contextByteBudget: def.contextByteBudget,
     riskPolicyId: def.riskPolicyId,
-    outputSchemaVersion: def.outputSchemaVersion
+    outputSchemaVersion: def.outputSchemaVersion,
+    researchMode: def.researchMode || 'one_shot'
   })
 }
 
@@ -153,9 +161,22 @@ export const VANILLA_AI_STOCK_TRADER_DEFINITION = freezeDeep({
   tokenBudget: 1000,
   contextByteBudget: 48_000,
   riskPolicyId: 'stock_trader_paper_v1',
-  outputSchemaVersion: 'stock-trader-decisions-v1'
+  outputSchemaVersion: 'stock-trader-decisions-v1',
+  researchMode: 'one_shot'
+})
+
+export const VANILLA_AI_STOCK_TRADER_AGENT_DEFINITION = freezeDeep({
+  ...VANILLA_AI_STOCK_TRADER_DEFINITION,
+  version: AI_STOCK_TRADER_AGENT_VERSION,
+  philosophy: 'Independently investigate eligible securities and compare evidence without committing to a single technical indicator strategy.',
+  reasoningInstructions: 'Choose which deterministic questions to investigate, interpret the returned data, challenge contradictions, decide or abstain, and explain your judgment in English. Never calculate numerical results or invent evidence.',
+  researchTools: ['get_stock_metrics', 'compare_candidates', 'get_portfolio_state', 'get_historical_prices'],
+  maxModelCalls: 2,
+  tokenBudget: 3000,
+  researchMode: 'tool_guided'
 })
 
 export const defaultAiBotDefinitionRegistry = createAiBotDefinitionRegistry([
-  VANILLA_AI_STOCK_TRADER_DEFINITION
+  VANILLA_AI_STOCK_TRADER_DEFINITION,
+  VANILLA_AI_STOCK_TRADER_AGENT_DEFINITION
 ])
