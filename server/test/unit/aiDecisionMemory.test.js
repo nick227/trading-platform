@@ -103,7 +103,7 @@ describe('MR 15 AI decision memory', () => {
     const baseline = await registry.assemble({ session: date, input })
     const extended = await registry.assemble({ session: date, input, decisionMemory: memory })
     expect(extended.fingerprint).not.toBe(baseline.fingerprint)
-    expect(buildStockTraderPrompts(extended).userPrompt).toContain('prior')
+    expect(buildStockTraderPrompts(extended).userPrompt).toContain('decisionMemory')
     await expect(registry.assemble({
       session: date, input,
       decisionMemory: { ...memory, asOfSession: '2026-11-26' }
