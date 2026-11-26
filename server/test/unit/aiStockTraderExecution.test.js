@@ -18,8 +18,9 @@ function fixtures() {
   const audits = []
   const prismaClient = {
     user: { findUnique: vi.fn().mockResolvedValue({ riskSettings: null }) },
+    portfolio: { update: vi.fn(async () => portfolio) },
     execution: {
-      findMany: vi.fn(async () => executions.filter(x => x.status === 'queued' && x.direction === 'buy')),
+      findMany: vi.fn(async ({ where }) => where.filledQuantity ? [] : executions.filter(x => ['queued','processing','submitted','partially_filled','needs_reconciliation'].includes(x.status))),
       findFirst: vi.fn(async ({ where }) => executions.find(e => where.OR.some(k => e.clientOrderId === k.clientOrderId || e.activeIntentKey === k.activeIntentKey)) || null),
       create: vi.fn(async ({ data }) => { executions.push(data); return data })
     },

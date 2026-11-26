@@ -12,19 +12,17 @@ describe('flagship paper portfolio', () => {
   it('reconciles cash and marks holdings from real fill-derived accounting', async () => {
     const portfolio = await loadStockTraderPaperPortfolio({
       bot, screening,
-      fillLoader: async () => [{ filledQuantity: 2 }],
-      accountant: () => ({ hasFills: true, performance: { realizedPnl: 20 }, openPositions: { AAPL: { quantity: 2, avgPrice: 100 } } })
+      fillLoader: async () => [{ id: 'filled-buy', ticker: 'AAPL', direction: 'buy', filledQuantity: 2, filledPrice: 100, fees: 0, commission: 0, simSession: '2026-11-24' }]
     })
-    expect(portfolio.cash).toBe(9820)
-    expect(portfolio.totalEquity).toBe(10040)
+    expect(portfolio.cash).toBe(9800)
+    expect(portfolio.totalEquity).toBe(10020)
     expect(portfolio.positions[0].unrealizedPnl).toBe(20)
   })
 
   it('fails closed when a held symbol has no current price', async () => {
     await expect(loadStockTraderPaperPortfolio({
       bot, screening: { ...screening, shortlist: [] },
-      fillLoader: async () => [],
-      accountant: () => ({ hasFills: false, openPositions: { AAPL: { quantity: 1, avgPrice: 100 } } })
+      fillLoader: async () => [{ id: 'buy', ticker: 'AAPL', direction: 'buy', filledQuantity: 1, filledPrice: 100, simSession: '2026-11-24' }]
     })).rejects.toThrow(/position mark/)
   })
 

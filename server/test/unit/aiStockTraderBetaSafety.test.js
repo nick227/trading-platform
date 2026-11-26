@@ -15,8 +15,8 @@ describe('AI flagship beta release safety', () => {
 
   it('uses actual FIFO realized P&L when rebuilding post-sale cash', async () => {
     const trades = [
-      { id: 'buy', ticker: 'AAPL', direction: 'buy', filledQuantity: 2, filledPrice: 100, createdAt: '2026-11-20T10:00:00Z' },
-      { id: 'sell', ticker: 'AAPL', direction: 'sell', filledQuantity: 1, filledPrice: 125, createdAt: '2026-11-24T10:00:00Z' }
+      { id: 'buy', ticker: 'AAPL', direction: 'buy', filledQuantity: 2, filledPrice: 100, simSession: '2026-11-20', createdAt: '2026-11-20T10:00:00Z' },
+      { id: 'sell', ticker: 'AAPL', direction: 'sell', filledQuantity: 1, filledPrice: 125, simSession: '2026-11-24', createdAt: '2026-11-24T10:00:00Z' }
     ]
     const result = await loadStockTraderPaperPortfolio({
       bot: { id: 'bot', config: createAiStockTraderConfig() },
