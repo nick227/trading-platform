@@ -122,3 +122,12 @@
 
 .tl-public-password__field input{display:block;width:100%;min-height:44px;border:1px solid #cbd0dc;border-radius:8px;background:#fff;color:var(--tl-public-ink);font-size:15px;padding:10px 70px 10px 12px}
 .tl-public-password__field input:focus-visible{outline:3px solid #cbc3ff;outline-offset:1px;border-color:var(--tl-public-accent)}
+
+/* MR2: available versus future membership clarity */
+.tl-public-plan__header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tl-public-plan__status{font-size:11px;font-weight:750;padding:5px 10px;border-radius:6px;background:#eaf5ee;color:#285c44}
+.tl-public-plan__status--planned{background:#f3f0ff;color:#5d42db}
+.tl-public-plan__cadence{font-size:14px;font-weight:500;color:var(--tl-public-subtle);letter-spacing:0}
+.tl-public-plan__future{font-size:11px;color:var(--tl-public-subtle)}
+.tl-public-plan--premium{border-width:1px;border-color:#cfc7f9;background:#faf9ff}
+.tl-public-plan .tl-public-button{margin-top:24px}
