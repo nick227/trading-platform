@@ -277,4 +277,65 @@ describe('AdminDashboard', () => {
       expect(mockCycleDetail).toHaveBeenCalledWith('cycle-1')
     })
   })
+
+  it('switches to Pipeline Monitor, displays 10-Symbol market data diagnostics and handles feed re-validation', async () => {
+    const mockDiagnostics = {
+      status: 'healthy',
+      session: '2026-11-25',
+      summary: { total: 10, healthy: 10, stale: 0, missing: 0 },
+      symbols: [
+        {
+          symbol: 'AAPL',
+          session: '2026-11-25',
+          status: 'healthy',
+          open: 230.10,
+          close: 232.50,
+          high: 233.00,
+          low: 229.80,
+          volume: 45000000,
+          barsCount: 22,
+          reason: null
+        },
+        {
+          symbol: 'MSFT',
+          session: '2026-11-25',
+          status: 'healthy',
+          open: 420.00,
+          close: 425.10,
+          high: 426.00,
+          low: 419.50,
+          volume: 21000000,
+          barsCount: 22,
+          reason: null
+        }
+      ]
+    }
+
+    vi.spyOn(adminClient, 'fetchAdminMarketDataDiagnostics').mockResolvedValue(mockDiagnostics)
+    const mockRevalidate = vi.spyOn(adminClient, 'revalidateAdminMarketFeed').mockResolvedValue(mockDiagnostics)
+
+    render(<AdminDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Bird's Eye Overview")).toBeInTheDocument()
+    })
+
+    const pipelineTab = screen.getByRole('button', { name: /Pipeline Monitor/i })
+    pipelineTab.click()
+
+    await waitFor(() => {
+      expect(screen.getByText(/10-Symbol Universe Market Data Feed Diagnostics/i)).toBeInTheDocument()
+      expect(screen.getByText('Feed Healthy (10/10)')).toBeInTheDocument()
+      expect(screen.getAllByText('Sound · Zero Leakage').length).toBeGreaterThan(0)
+      expect(screen.getByText('AAPL')).toBeInTheDocument()
+      expect(screen.getByText('MSFT')).toBeInTheDocument()
+    })
+
+    const revalidateBtn = screen.getByRole('button', { name: /Re-validate Universe Feeds/i })
+    revalidateBtn.click()
+
+    await waitFor(() => {
+      expect(mockRevalidate).toHaveBeenCalledWith({ session: '2026-11-25' })
+    })
+  })
 })

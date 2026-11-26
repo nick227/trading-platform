@@ -102,3 +102,13 @@ export async function fetchAdminAiDecisions({ symbol = null, action = null, sess
   if (session) params.session = session
   return get('/admin/ai/decisions', params)
 }
+
+export async function fetchAdminMarketDataDiagnostics({ session = null } = {}) {
+  const params = {}
+  if (session) params.session = session
+  return get('/admin/market-data/diagnostics', params)
+}
+
+export async function revalidateAdminMarketFeed({ session = null } = {}) {
+  return post('/admin/market-data/revalidate', { session })
+}

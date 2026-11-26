@@ -20,7 +20,9 @@ import {
   cleanupAdminWorkers,
   fetchAdminAiCycles,
   fetchAdminAiCycleDetail,
-  fetchAdminAiDecisions
+  fetchAdminAiDecisions,
+  fetchAdminMarketDataDiagnostics,
+  revalidateAdminMarketFeed
 } from '../../api/adminClient'
 import '../../styles/admin.css'
 
@@ -79,6 +81,10 @@ export default function AdminDashboard() {
   const [aiSymbolSearch, setAiSymbolSearch] = useState('')
   const [aiActionFilter, setAiActionFilter] = useState('')
   const [aiDecisionsPage, setAiDecisionsPage] = useState(0)
+
+  // Market Data Diagnostics states
+  const [marketDataDiagnostics, setMarketDataDiagnostics] = useState(null)
+  const [revalidatingFeed, setRevalidatingFeed] = useState(false)
 
   // In-app Action Confirmation Dialog states (replacing window.prompt and window.confirm)
   const [actionDialog, setActionDialog] = useState(null)
@@ -207,6 +213,29 @@ export default function AdminDashboard() {
     }
   }
 
+  const loadMarketDataDiagnostics = useCallback(async (session = null) => {
+    try {
+      const data = await fetchAdminMarketDataDiagnostics({ session })
+      setMarketDataDiagnostics(data)
+    } catch (err) {
+      showFeedback('error', `Failed to load market data diagnostics: ${err.serverMessage || err.message}`)
+    }
+  }, [])
+
+  const handleRevalidateMarketFeed = async (session = null) => {
+    setRevalidatingFeed(true)
+    try {
+      const res = await revalidateAdminMarketFeed({ session })
+      setMarketDataDiagnostics(res)
+      showFeedback('success', `Market data feed re-validated. Status: ${res?.status?.toUpperCase()} (${res?.summary?.healthy || 0}/${res?.summary?.total || 10} symbols healthy).`)
+      await loadAuditLogs(auditPage)
+    } catch (err) {
+      showFeedback('error', `Market feed re-validation failed: ${err.serverMessage || err.message}`)
+    } finally {
+      setRevalidatingFeed(false)
+    }
+  }
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
@@ -217,10 +246,11 @@ export default function AdminDashboard() {
       loadBots(botSearch, botStatusFilter, botTypeFilter, botPage),
       loadExecutions(executionStatusFilter, executionTickerFilter, blotterPage),
       loadAiCycles(aiCyclePage),
-      loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage)
+      loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage),
+      loadMarketDataDiagnostics()
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, loadMarketDataDiagnostics, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
 
   useEffect(() => {
     refreshAll()
@@ -239,6 +269,8 @@ export default function AdminDashboard() {
       } else if (activeTab === 'ai_research') {
         loadAiCycles(aiCyclePage)
         loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage)
+      } else if (activeTab === 'pipeline') {
+        loadMarketDataDiagnostics()
       }
     }, 15000) // Poll active tab dataset & overview every 15s
     return () => clearInterval(timer)
@@ -267,7 +299,8 @@ export default function AdminDashboard() {
     loadAiDecisions,
     aiSymbolSearch,
     aiActionFilter,
-    aiDecisionsPage
+    aiDecisionsPage,
+    loadMarketDataDiagnostics
   ])
 
   // Global ESC key listener to dismiss open inspection modals & action dialogs
@@ -1216,6 +1249,99 @@ export default function AdminDashboard() {
                 </div>
               </div>
             )}
+
+            {/* Universe Ticker Feed Diagnostics Matrix */}
+            <div className="tl-admin-table-wrapper" style={{ marginTop: '1.5rem' }}>
+              <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1rem' }}>
+                    10-Symbol Universe Market Data Feed Diagnostics
+                    {marketDataDiagnostics?.status && (
+                      <span className={`tl-admin-badge ${marketDataDiagnostics.status === 'healthy' ? 'tl-badge-green' : 'tl-badge-amber'}`} style={{ marginLeft: '0.5rem' }}>
+                        {marketDataDiagnostics.status === 'healthy' ? 'Feed Healthy (10/10)' : `Feed Degraded (${marketDataDiagnostics.summary?.healthy || 0}/10)`}
+                      </span>
+                    )}
+                  </h4>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                    Target Session: <strong>{marketDataDiagnostics?.session || 'Current Expected'}</strong> · Source: <code>alpha-engine</code> (Point-in-Time Adjusted Bars)
+                  </span>
+                </div>
+                {isAdmin && (
+                  <button
+                    className="tl-btn-secondary"
+                    style={{ fontSize: '0.8rem' }}
+                    onClick={() => handleRevalidateMarketFeed(marketDataDiagnostics?.session)}
+                    disabled={revalidatingFeed || actionLoading}
+                  >
+                    {revalidatingFeed ? 'Re-validating Feeds...' : '↻ Re-validate Universe Feeds'}
+                  </button>
+                )}
+              </div>
+              <table className="tl-admin-table">
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Feed Health</th>
+                    <th>Latest Bar Session</th>
+                    <th>Open / Close Price</th>
+                    <th>High / Low Range</th>
+                    <th>Volume</th>
+                    <th>Historical Bars</th>
+                    <th>Diagnostics / Anomalies</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {marketDataDiagnostics?.symbols?.length > 0 ? (
+                    marketDataDiagnostics.symbols.map(s => {
+                      const statusBadge = s.status === 'healthy' ? 'tl-badge-green' : s.status === 'stale' ? 'tl-badge-amber' : 'tl-badge-red'
+                      return (
+                        <tr key={s.symbol}>
+                          <td><strong>{s.symbol}</strong></td>
+                          <td>
+                            <span className={`tl-admin-badge ${statusBadge}`}>
+                              {s.status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                            {s.session || '—'}
+                          </td>
+                          <td>
+                            <div>Close: {s.close != null ? `$${s.close.toFixed(2)}` : '—'}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                              Open: {s.open != null ? `$${s.open.toFixed(2)}` : '—'}
+                            </div>
+                          </td>
+                          <td style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                            {s.high != null && s.low != null ? `$${s.low.toFixed(2)} – $${s.high.toFixed(2)}` : '—'}
+                          </td>
+                          <td style={{ fontWeight: 500, fontSize: '0.8rem' }}>
+                            {s.volume != null ? Number(s.volume).toLocaleString() : '—'}
+                          </td>
+                          <td>
+                            <span style={{ color: s.barsCount >= 20 ? '#4ade80' : '#f87171', fontWeight: 600, fontSize: '0.8rem' }}>
+                              {s.barsCount} bars
+                            </span>
+                          </td>
+                          <td>
+                            {s.reason ? (
+                              <span style={{ fontSize: '0.75rem', color: '#f87171' }}>{s.reason}</span>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: '#4ade80' }}>Sound · Zero Leakage</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan="8" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
+                        Loading universe market data feed telemetry...
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1641,6 +1767,22 @@ export default function AdminDashboard() {
                 disabled={actionLoading || !isAdmin}
               >
                 {actionLoading ? 'Processing...' : '↻ Synchronize Evidence'}
+              </button>
+            </div>
+          </div>
+
+          <div className="tl-control-panel">
+            <h3>Universe Market Feed Re-validation</h3>
+            <p>
+              Re-executes zero-lookahead ingestion diagnostics and bar sanity validation across all 10 universe tickers for the target session.
+            </p>
+            <div className="tl-control-actions">
+              <button
+                className="tl-btn-secondary"
+                onClick={() => handleRevalidateMarketFeed(marketDataDiagnostics?.session)}
+                disabled={revalidatingFeed || actionLoading || !isAdmin}
+              >
+                {revalidatingFeed ? 'Re-validating Feeds...' : '↻ Re-validate Universe Market Feeds'}
               </button>
             </div>
           </div>
