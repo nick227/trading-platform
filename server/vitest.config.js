@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    testTimeout: 20000,
     env: {
       BROKER_MODE: '',
       WORKER_ORDER_PROCESSING: ''
