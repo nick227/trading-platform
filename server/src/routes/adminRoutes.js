@@ -26,7 +26,9 @@ import {
   triggerEvidenceSync,
   listAdminAiResearchCycles,
   getAdminAiCycleDetail,
-  listAdminAiSymbolDecisions
+  listAdminAiSymbolDecisions,
+  getAdminMarketDataDiagnostics,
+  revalidateAdminMarketFeed
 } from '../services/adminService.js'
 
 export default async function adminRoutes(app) {
@@ -413,6 +415,40 @@ export default async function adminRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'ADMIN_AI_DECISIONS_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/market-data/diagnostics — Ticker feed health, freshness, and numerical checks
+  app.get('/market-data/diagnostics', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const { session } = request.query || {}
+      const data = await getAdminMarketDataDiagnostics({ session })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to get market data diagnostics')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_MARKET_DATA_DIAGNOSTICS_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // POST /api/admin/market-data/revalidate — Trigger live re-validation and log audit trail
+  app.post('/market-data/revalidate', { preHandler: [adminOnly] }, async (request, reply) => {
+    try {
+      const { session } = request.body || {}
+      const data = await revalidateAdminMarketFeed({
+        session,
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to revalidate market feed')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_MARKET_DATA_REVALIDATE_ERROR', message: err.message }
       })
     }
   })

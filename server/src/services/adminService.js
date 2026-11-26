@@ -11,6 +11,8 @@ import { runAiStrategyMarketOpenJob } from '../jobs/aiStrategyMarketOpenJob.js'
 import { generateStrategyEvidence } from './strategyEvidenceService.js'
 import { activateEmergencyStop, clearEmergencyStop, getEmergencyStop } from './emergencyStopService.js'
 import { PLATFORM_USER_ID } from './ai/aiBotService.js'
+import { validateAndIngestDailyMarketData, DEFAULT_TRADABLE_SYMBOLS } from './ai/aiMarketDataService.js'
+import { getExpectedCompletedExchangeSession, isExchangeTradingDay } from '../utils/marketCalendar.js'
 
 export const VALID_ROLES = ['user', 'operator', 'admin']
 
@@ -1177,4 +1179,101 @@ export async function listAdminAiSymbolDecisions({
     limit,
     offset
   }
+}
+
+/**
+ * Returns universe-wide market data ingestion diagnostics across all 10 tradable symbols.
+ */
+export async function getAdminMarketDataDiagnostics({
+  session = null,
+  prismaClient = prisma
+} = {}) {
+  const targetSession = session || getExpectedCompletedExchangeSession()
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const isTodayTradingDay = isExchangeTradingDay(todayStr)
+
+  const validation = await validateAndIngestDailyMarketData({
+    session: targetSession
+  })
+
+  const symbolsList = DEFAULT_TRADABLE_SYMBOLS.map(sym => {
+    const detail = validation.symbolDetails?.[sym]
+    const isStale = validation.staleSymbols?.find(s => s.symbol === sym)
+    const isMissing = validation.missingSymbols?.includes(sym)
+    const isInvalid = validation.invalidBars?.find(i => i.symbol === sym)
+
+    let status = 'healthy'
+    let reason = null
+
+    if (isMissing) {
+      status = 'missing'
+      reason = 'No market bars returned from Alpha Engine'
+    } else if (isStale) {
+      status = 'stale'
+      reason = `Latest bar (${isStale.latestBarDate}) lags session (${isStale.expectedSession})`
+    } else if (isInvalid) {
+      status = 'invalid'
+      reason = isInvalid.reason || 'Bar failed numerical integrity check'
+    }
+
+    return {
+      symbol: sym,
+      status,
+      session: detail?.session || isStale?.latestBarDate || null,
+      barsCount: detail?.barsCount || 0,
+      open: detail?.open != null ? Number(detail.open) : null,
+      high: detail?.high != null ? Number(detail.high) : null,
+      low: detail?.low != null ? Number(detail.low) : null,
+      close: detail?.close != null ? Number(detail.close) : null,
+      volume: detail?.volume != null ? Number(detail.volume) : null,
+      source: detail?.source || 'alpha-engine',
+      reason
+    }
+  })
+
+  return {
+    session: targetSession,
+    isTodayTradingDay,
+    status: validation.valid ? 'healthy' : 'degraded',
+    reason: validation.reason,
+    summary: {
+      total: DEFAULT_TRADABLE_SYMBOLS.length,
+      healthy: symbolsList.filter(s => s.status === 'healthy').length,
+      stale: symbolsList.filter(s => s.status === 'stale').length,
+      missing: symbolsList.filter(s => s.status === 'missing').length,
+      invalid: symbolsList.filter(s => s.status === 'invalid').length
+    },
+    symbols: symbolsList
+  }
+}
+
+/**
+ * Administrative action to trigger market data ingestion validation against Alpha Engine.
+ */
+export async function revalidateAdminMarketFeed({
+  session = null,
+  actorUserId = null,
+  ipAddress = null,
+  prismaClient = prisma
+} = {}) {
+  const diagnostics = await getAdminMarketDataDiagnostics({ session, prismaClient })
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'revalidate_market_data',
+      targetType: 'market_feed',
+      targetId: diagnostics.session,
+      payload: {
+        session: diagnostics.session,
+        status: diagnostics.status,
+        healthyCount: diagnostics.summary.healthy,
+        total: diagnostics.summary.total
+      },
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return diagnostics
 }
