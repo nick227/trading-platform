@@ -70,7 +70,7 @@ describe('redesigned versions', () => {
       summary: { ...strategy.summary, development: sum, holdout: { ...sum, medianReturnPct: -1 } },
       versions: [{ id: 'sv_new0000000000000', current: true, selected: true, firstSession: '2026-11-24' }, { id: 'sv_old0000000000000', current: false, selected: false, firstSession: '2026-11-23' }] })
     render(<MemoryRouter initialEntries={['/strategies/tmpl_loss_guard']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
-    expect(await screen.findByTestId('strategy-design')).toHaveTextContent('Strategy design and comparison')
+    expect(await screen.findByTestId('strategy-design')).toHaveTextContent('How this strategy is defined and compared')
     fireEvent.click(screen.getByRole('button', { name: 'How this strategy is defined and compared' }))
     expect(screen.getByTestId('strategy-design')).toHaveTextContent('After Nov 21, 2025')
     fireEvent.click(screen.getByRole('button', { name: 'Later historical test' }))
@@ -126,7 +126,7 @@ describe('AI strategy presentation', () => {
       return aiStrategy
     })
     render(<MemoryRouter initialEntries={['/strategies/tmpl_ai_catalyst_momentum']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
-    expect(await screen.findByRole('alert')).toHaveTextContent('Decisions unavailable')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Recorded strategy evaluations could not be loaded.')
     expect(screen.queryByText('No decisions yet.')).not.toBeInTheDocument()
   })
 })
