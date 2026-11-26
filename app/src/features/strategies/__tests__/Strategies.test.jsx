@@ -25,8 +25,9 @@ describe('public strategy evidence', () => {
     render(<MemoryRouter><StrategiesIndex /></MemoryRouter>)
     const [a, r] = await screen.findAllByTestId('strategy-card')
     expect(a).toHaveTextContent('The typical strategy return was +4.00%, compared with +60.00% from buying and holding the same investments.')
-    expect(a).toHaveTextContent('This strategy did not place a trade on any of the 2 stocks tested.')
-    expect(a).toHaveTextContent('0 of 2 tested stocks')
+    expect(a).toHaveTextContent('Five-year historical test')
+    expect(a.querySelectorAll('a')).toHaveLength(1)
+    expect(a.querySelector('a')).toHaveAttribute('href', '/strategies/a')
     expect(r).toHaveTextContent('This strategy cannot be evaluated with the available historical test.')
   })
   it('detail shows standardized results per symbol, the tested definition and its assumptions', async () => {
