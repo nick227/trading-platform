@@ -1,0 +1,20 @@
+.tl-public-home{--tl-public-accent:#5d42db;--tl-public-ink:#17212b;--tl-public-subtle:#667085;--tl-public-border:#e5e7eb;color:var(--tl-public-ink);background:#fff;min-height:calc(100vh - 56px)}
+.tl-public-home *{box-sizing:border-box}
+.tl-public-section{max-width:1180px;margin:0 auto;padding:72px 24px}
+.tl-public-hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:64px;align-items:center}
+.tl-public-eyebrow{color:var(--tl-public-accent);font-size:12px;letter-spacing:.11em;font-weight:800;margin:0 0 16px}
+.tl-public-home h1{font-size:clamp(36px,4.6vw,62px);line-height:1.08;letter-spacing:-.055em;max-width:670px;margin:0 0 20px}
+.tl-public-home h2{font-size:clamp(24px,2.7vw,36px);line-height:1.15;letter-spacing:-.035em;margin:0 0 14px}
+.tl-public-lede{font-size:clamp(16px,1.5vw,20px);line-height:1.55;color:var(--tl-public-subtle);max-width:580px}
+.tl-public-disclosure{font-size:13px;color:var(--tl-public-subtle);margin-top:28px}
+.tl-public-panel{background:#fff;border:1px solid var(--tl-public-border);border-radius:16px;padding:32px;min-width:0}
+.tl-public-panel--entry{box-shadow:0 18px 54px rgba(23,33,43,.075)}
+.tl-public-panel p{color:var(--tl-public-subtle);font-size:14px;line-height:1.55}
+.tl-public-button{display:flex;align-items:center;justify-content:center;text-decoration:none;min-height:46px;width:100%;border-radius:9px;font-size:14px;font-weight:700;padding:10px 16px;margin-top:12px;transition:background-color .16s ease,border-color .16s ease}
+.tl-public-button--primary{background:var(--tl-public-accent);color:#fff}
+.tl-public-button--primary:hover{background:#4930be;color:#fff}
+.tl-public-button--secondary{background:#fff;color:var(--tl-public-accent);border:1px solid #c9bff7}
+.tl-public-button--secondary:hover{background:#f6f4ff}
+.tl-public-button:focus-visible{outline:3px solid #9b8cf4;outline-offset:3px}
+@media(max-width:760px){.tl-public-section{padding:40px 20px}.tl-public-hero{grid-template-columns:minmax(0,1fr);gap:28px}.tl-public-panel{padding:24px}.tl-public-home h1{font-size:clamp(34px,9vw,48px)}}
+@media(prefers-reduced-motion:reduce){.tl-public-home *{transition:none!important}}
