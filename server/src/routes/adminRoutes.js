@@ -325,9 +325,11 @@ export default async function adminRoutes(app) {
   // POST /api/admin/controls/sync-evidence — Trigger strategy evidence sync
   app.post('/controls/sync-evidence', { preHandler: [adminOnly] }, async (request, reply) => {
     try {
+      const { force = true } = request.body || {}
       const result = await triggerEvidenceSync({
         actorUserId: request.user.id,
-        ipAddress: getIp(request)
+        ipAddress: getIp(request),
+        force
       })
       return reply.send({ success: true, data: result, result })
     } catch (err) {

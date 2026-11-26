@@ -979,9 +979,10 @@ export async function triggerAiDailyJob({
 export async function triggerEvidenceSync({
   actorUserId = null,
   ipAddress = null,
-  prismaClient = prisma
+  prismaClient = prisma,
+  force = true
 } = {}) {
-  const res = await generateStrategyEvidence({ prismaClient })
+  const res = await generateStrategyEvidence({ prismaClient, force })
 
   if (actorUserId) {
     await logAdminAction({
