@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { strategyDisplayName } from '../../ui/strategyPresentation'
 import { catalogOverview, catalogPeriod } from './strategyCatalogCopy'
-import StrategyEvidencePreview from './StrategyEvidencePreview'
+import StrategyResultSummary from './StrategyResultSummary'
 import StrategyThumbnail from './StrategyThumbnail'
 
 export function mainEvidenceWindow(strategy) {
@@ -30,7 +30,7 @@ export default function StrategyCard({ strategy }) {
         </header>
         <section className="tl-strategy-catalog-card__evidence" aria-label="Published test results">
           <h3 className="tl-strategy-catalog-card__period">{catalogPeriod(window)}</h3>
-          <StrategyEvidencePreview summary={summary} window={window} />
+          <StrategyResultSummary summary={summary} window={window} />
         </section>
         <footer className="tl-strategy-catalog-card__footer">
           <Link className="tl-strategy-catalog-card__action" to={`/strategies/${encodeURIComponent(strategy.templateId)}`}>

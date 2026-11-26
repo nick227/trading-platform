@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { get } from '../../../api/client'
 import StrategyDetail from '../StrategyDetail'
-import { catalogOverview, catalogPeriod, catalogResult } from '../strategyCatalogCopy'
+import { catalogOverview, catalogPeriod, catalogResult, catalogResultHeading, STRATEGY_EXPLANATIONS } from '../strategyCatalogCopy'
 import { mainEvidenceWindow } from '../StrategyCard'
 import StrategiesIndex from '../StrategiesIndex'
 import TemplateBaseline, { behaviourKey } from '../../bots/builder/TemplateBaseline'
@@ -28,15 +28,16 @@ describe('public strategy evidence', () => {
     const [a, r] = await screen.findAllByTestId('strategy-card')
     expect(a).toHaveTextContent('+4.00%')
     expect(a).toHaveTextContent('+60.00%')
-    expect(within(a).getByText('Strategy return')).toBeInTheDocument()
-    expect(within(a).getByText('Buy-and-hold return')).toBeInTheDocument()
-    expect(a).toHaveTextContent('Five-year historical test')
+    expect(within(a).getByText('Typical strategy return')).toBeInTheDocument()
+    expect(within(a).getByText('Typical buy-and-hold return')).toBeInTheDocument()
+    expect(a).toHaveTextContent('Historical test · Five years')
     expect(a.querySelectorAll('a')).toHaveLength(1)
     expect(a.querySelector('a')).toHaveAttribute('href', '/strategies/a')
     expect(within(a).getByRole('link', { name: /View strategy/ })).toBeInTheDocument()
     expect(within(a).getByTestId('strategy-thumbnail')).toHaveAttribute('aria-hidden', 'true')
-    expect(r).toHaveTextContent('This strategy does not have results from the available historical tests.')
-    expect(within(r).queryByText('Strategy return')).not.toBeInTheDocument()
+    expect(r).toHaveTextContent('Results unavailable')
+    expect(r).toHaveTextContent('This strategy cannot be evaluated using the available historical testing method.')
+    expect(within(r).queryByText('Typical strategy return')).not.toBeInTheDocument()
   })
   it('detail shows standardized results per symbol, the tested definition and its assumptions', async () => {
     get.mockResolvedValue(strategy)
@@ -145,13 +146,28 @@ describe('public strategy catalog contract', () => {
   it('preserves losses, incomplete tests, and simulated evidence labels', () => {
     const negative = {status:'ok',symbolsTested:3,symbolsTraded:2,medianReturnPct:-7.25,medianBuyAndHoldPct:3.5}
     expect(catalogResult(negative,'5Y')).toBeNull()
-    expect(catalogPeriod('forward')).toBe('Results since publication')
-    expect(catalogResult({status:'awaiting_sessions'},'forward')).toMatch(/not yet enough completed trading sessions/)
-    expect(catalogResult({status:'not_backtestable'},'5Y')).toMatch(/does not have results/)
-    expect(catalogResult({status:'not_backtestable'},'forward')).toMatch(/since publication are not available/)
+    expect(catalogPeriod('forward')).toBe('Simulated trading · Since publication')
+    expect(catalogResult({status:'awaiting_sessions'},'forward')).toMatch(/not enough completed trading sessions/)
+    expect(catalogResult({status:'not_backtestable'},'5Y')).toMatch(/cannot be evaluated/)
+    expect(catalogResult({status:'not_backtestable'},'forward')).toMatch(/since this strategy was introduced/)
   })
   it('prefers a completed available period but does not mislabel AI evidence', () => {
     expect(mainEvidenceWindow({windows:{'5Y':{status:'insufficient_data'},'1Y':{status:'ok'}}})).toBe('1Y')
     expect(mainEvidenceWindow({tags:['ai'],windows:{'5Y':{status:'ok'},forward:{status:'awaiting_sessions'}}})).toBe('forward')
+  })
+})
+
+describe('corrected catalog presentation', () => {
+  it('provides reviewed, purpose-first descriptions for all seven published strategies', () => {
+    expect(Object.keys(STRATEGY_EXPLANATIONS)).toHaveLength(7)
+    for (const [templateId, explanation] of Object.entries(STRATEGY_EXPLANATIONS)) {
+      expect(catalogOverview({templateId, description:'Unreviewed technical jargon.'})).toBe(explanation)
+      expect(explanation.split(/(?<=[.!?])\s+/)).toHaveLength(2)
+    }
+  })
+  it('uses the same prominent typography for unavailable and completed test headings', () => {
+    expect(catalogResultHeading({status:'awaiting_sessions'})).toBe('Results pending')
+    expect(catalogResultHeading({status:'not_backtestable'})).toBe('Results unavailable')
+    expect(catalogResultHeading({status:'ok',symbolsTraded:0})).toBe('No trades recorded')
   })
 })

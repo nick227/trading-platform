@@ -29,9 +29,9 @@ for(const width of [320,375,768,1024,1440]) {
     }
     await expect(cards.first()).toContainText('−7.25%')
     await expect(cards.first()).toContainText('+3.50%')
-    await expect(cards.first()).toContainText('Strategy return')
-    await expect(cards.nth(1)).toContainText('not yet enough completed trading sessions')
-    await expect(cards.nth(2)).toContainText('does not have results from the available historical tests')
+    await expect(cards.first()).toContainText('Typical strategy return')
+    await expect(cards.nth(1)).toContainText('not enough completed trading sessions')
+    await expect(cards.nth(2)).toContainText('cannot be evaluated using the available historical testing method')
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1)
   })
 }
@@ -100,7 +100,7 @@ test('thumbnail and information sections follow identical geometry for mixed-len
   await page.goto('/strategies')
   const measurements=await page.getByTestId('strategy-card').evaluateAll(items=>items.map(el=>{
     const bounds=key=>{const r=el.querySelector(key).getBoundingClientRect();return {top:Math.round(r.top),height:Math.round(r.height),bottom:Math.round(r.bottom)}}
-    return {image:bounds('.tl-strategy-thumbnail'),identity:bounds('.tl-strategy-catalog-card__identity'),evidence:bounds('.tl-strategy-catalog-card__evidence'),footer:bounds('.tl-strategy-catalog-card__footer'),height:Math.round(el.getBoundingClientRect().height)}
+    return {image:bounds('.tl-strategy-thumbnail'),identity:bounds('.tl-strategy-catalog-card__identity'),evidence:bounds('.tl-strategy-catalog-card__evidence'),footer:bounds('.tl-strategy-catalog-card__footer'),height:Math.round(el.getBoundingClientRect().height),title:el.querySelector('.tl-strategy-catalog-card__description').textContent}
   }))
   for(const item of measurements.slice(1)){
     expect(item.image.height).toBe(measurements[0].image.height)
@@ -108,5 +108,26 @@ test('thumbnail and information sections follow identical geometry for mixed-len
     expect(item.evidence.height).toBe(measurements[0].evidence.height)
     expect(item.footer.top).toBe(measurements[0].footer.top)
     expect(item.height).toBe(measurements[0].height)
+    expect(item.title.length).toBeGreaterThan(50)
   }
+})
+
+test('pending and unavailable cards have a readable primary result, with no truncated descriptions',async ({page})=>{
+  await page.setViewportSize({width:1440,height:900})
+  await mockCatalog(page)
+  await page.goto('/strategies')
+  const cards=page.getByTestId('strategy-card')
+  await expect(cards.nth(1).locator('.tl-strategy-result__value')).toHaveText('Results pending')
+  await expect(cards.nth(2).locator('.tl-strategy-result__value')).toHaveText('Results unavailable')
+  const checks=await cards.evaluateAll(items=>items.map(card=>{
+    const identity=card.querySelector('.tl-strategy-catalog-card__identity')
+    const description=card.querySelector('.tl-strategy-catalog-card__description')
+    const evidence=card.querySelector('.tl-strategy-catalog-card__evidence')
+    return {
+      identityFits:identity.scrollHeight<=identity.clientHeight+1,
+      descriptionFits:description.scrollHeight<=description.clientHeight+1,
+      evidenceFits:evidence.scrollHeight<=evidence.clientHeight+1
+    }
+  }))
+  expect(checks.every(item=>item.identityFits&&item.descriptionFits&&item.evidenceFits)).toBe(true)
 })
