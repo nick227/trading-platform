@@ -94,3 +94,13 @@ test('methodology distinguishes historical, holdout and forward evidence', async
   await expect(section.getByText('Forward paper trading')).toBeVisible()
   await expect(section.getByRole('link',{name:'Review published strategy reports'})).toHaveAttribute('href','/strategies')
 })
+
+test('product and trust copy links to real workflows with no unsupported checkout', async ({page}) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading',{name:'Research, automation, and portfolio oversight.'})).toBeVisible()
+  await expect(page.getByRole('heading',{name:'Simulated trading, clearly identified.'})).toBeVisible()
+  await expect(page.getByRole('heading',{name:'Create a free TradeLoom account.'})).toBeVisible()
+  await expect(page.getByRole('navigation',{name:'Public homepage links'})).toBeVisible()
+  await expect(page.getByText('Are stock research rankings buy recommendations?')).toBeVisible()
+  await expect(page.getByRole('link',{name:'Inspect strategies without signing in'})).toHaveAttribute('href','/strategies')
+})

@@ -201,3 +201,29 @@
 .tl-public-method__report .tl-public-method__disclaimer{font-size:11px;margin:12px 0 0}
 @media(max-width:880px){.tl-public-method-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:400px){.tl-public-method__type{padding:16px}.tl-public-method__report dl div{grid-template-columns:minmax(0,1fr);gap:4px}}
+
+/* MR7: shared visual geometry, sober typography, and consistent section rhythm. */
+.tl-public-home{--tl-public-ink:#162131;--tl-public-subtle:#586579;--tl-public-border:#dfe5ed;--tl-public-accent:#5842cb}
+.tl-public-section{padding-top:clamp(48px,6.3vw,84px);padding-bottom:clamp(48px,6.3vw,84px)}
+.tl-public-section:not(.tl-public-hero)+.tl-public-section{border-top:1px solid #edf0f5}
+.tl-public-home h1{letter-spacing:-.055em;max-width:660px}
+.tl-public-home h2{letter-spacing:-.04em}
+.tl-public-panel{border-radius:14px}
+.tl-public-button{border-radius:9px;font-weight:750;min-height:46px}
+.tl-public-section-head{max-width:750px}
+.tl-public-story-grid{gap:16px;align-items:stretch}
+.tl-public-story{min-height:174px;padding:28px}
+.tl-public-story h3{font-size:19px;letter-spacing:-.02em}
+.tl-public-story p{font-size:13px;line-height:1.6}
+.tl-public-story>span{font-variant-numeric:tabular-nums}
+.tl-public-feature-links{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+.tl-public-trust .tl-public-panel{max-width:none;background:#f7f9fc;border:1px solid #e2e7ef;padding:40px}
+.tl-public-final{background:#f8f7fe;border-color:#e5e0fb;gap:14px}
+.tl-public-final .tl-public-button{width:100%;max-width:280px}
+.tl-public-footer{max-width:1180px;align-items:center;flex-wrap:wrap}
+.tl-public-footer nav{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.tl-public-footer nav a{color:var(--tl-public-ink);font-size:12px;text-decoration:none;font-weight:700}
+.tl-public-footer nav a:hover{text-decoration:underline}
+.tl-public-home :is(a,button,summary,input):focus-visible{outline:3px solid #a698f7;outline-offset:3px}
+@media(max-width:760px){.tl-public-section{padding:44px 20px}.tl-public-story{min-height:0;padding:22px}.tl-public-trust .tl-public-panel{padding:24px}.tl-public-footer{align-items:start}}
+@media(max-width:375px){.tl-public-section{padding-left:16px;padding-right:16px}}
