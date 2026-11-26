@@ -11,6 +11,7 @@ on:
       - 'server/src/jobs/aiStockTrader*.js'
       - 'worker/src/broker/simulatedBroker.js'
       - 'server/src/routes/publicAiStockTrader.js'
+      - 'server/scripts/flagshipStockTraderControl.mjs'
       - 'server/src/routes/aiStrategyRoutes.js'
       - 'server/src/utils/marketCalendar.js'
       - 'server/src/loaders/routes.js'
@@ -30,5 +31,5 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Generate Prisma client
         run: npm run db:generate --workspace=server
-      - name: AI replay evaluation, external sources and execution regressions
-        run: npm exec --workspace=server -- vitest run test/unit/aiStockTraderFoundation.test.js test/unit/aiStockScreener.test.js test/unit/aiStockTraderContext.test.js test/unit/aiStockTraderDecision.test.js test/unit/aiStockTraderExecution.test.js test/unit/aiStockTraderPortfolio.test.js test/unit/aiUsageGovernor.test.js test/unit/aiStockTraderDailyJob.test.js test/unit/aiStockTraderDashboard.test.js test/unit/aiStockTraderBetaSafety.test.js test/unit/aiPaperExecutionClaims.test.js test/unit/aiStockTraderAccounting.test.js test/unit/aiBotDefinitions.test.js test/unit/aiEvidenceRegistry.test.js test/unit/aiResearchToolGateway.test.js test/unit/aiStockTraderReasoningAgent.test.js test/unit/aiDecisionMemory.test.js test/unit/aiExternalEvidenceAdapters.test.js test/unit/aiBotEvaluationLab.test.js test/integration/adminAiRoutes.test.js
+      - name: AI release gates, end-to-end paper lifecycle and research regressions
+        run: npm exec --workspace=server -- vitest run test/unit/aiStockTraderFoundation.test.js test/unit/aiStockScreener.test.js test/unit/aiStockTraderContext.test.js test/unit/aiStockTraderDecision.test.js test/unit/aiStockTraderExecution.test.js test/unit/aiStockTraderPortfolio.test.js test/unit/aiUsageGovernor.test.js test/unit/aiStockTraderDailyJob.test.js test/unit/aiStockTraderDashboard.test.js test/unit/aiStockTraderBetaSafety.test.js test/unit/aiPaperExecutionClaims.test.js test/unit/aiStockTraderAccounting.test.js test/unit/aiBotDefinitions.test.js test/unit/aiEvidenceRegistry.test.js test/unit/aiResearchToolGateway.test.js test/unit/aiStockTraderReasoningAgent.test.js test/unit/aiDecisionMemory.test.js test/unit/aiExternalEvidenceAdapters.test.js test/unit/aiBotEvaluationLab.test.js test/unit/aiFlagshipBetaReadiness.test.js test/unit/aiFlagshipBetaLifecycle.test.js test/integration/adminAiRoutes.test.js

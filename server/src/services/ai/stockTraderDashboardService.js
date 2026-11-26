@@ -70,6 +70,17 @@ export async function readPublicStockTraderDashboard({
       asOfSession: e.metadata.decision.asOfSession,
       marketSummary: e.metadata.decision.marketSummary,
       model: e.metadata.model || null,
+      // Publish high-level research provenance, never raw provider prompts,
+      // full tool outputs, account credentials or untrusted source text.
+      investigation: e.metadata.investigation ? {
+        focus: String(e.metadata.investigation.plan?.focus || '').slice(0, 300),
+        toolsUsed: [...new Set((e.metadata.investigation.toolTrace || [])
+          .map(item => item.toolId).filter(id => typeof id === 'string'))].slice(0, 10),
+        toolCalls: Number(e.metadata.investigation.toolUsage?.calls) || 0,
+        modelCalls: Number(e.metadata.investigation.providerCalls) || 0,
+        priorResearchCycles: Array.isArray(e.metadata.snapshot?.memory?.history)
+          ? e.metadata.snapshot.memory.history.length : 0
+      } : null,
       decisions: e.metadata.decision.decisions.map(d => ({
         symbol: d.symbol, action: d.action, confidence: finite(d.confidence),
         thesis: d.thesis, evidence: Array.isArray(d.evidence) ? d.evidence : [],

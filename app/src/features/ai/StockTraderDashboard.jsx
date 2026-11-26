@@ -51,6 +51,10 @@ export default function StockTraderDashboard() {
               <h3>Research · {sessionDate(cycle.asOfSession, { year: true })}</h3>
               <p className="tl-small tl-muted">{cycle.model || 'Model unavailable'} · Generated {dateTime(cycle.createdAt)}</p>
               {cycle.marketSummary && <p>{cycle.marketSummary}</p>}
+              {cycle.investigation && <div className="tl-flow-card" data-testid="flagship-investigation">
+                <p><strong>AI investigation</strong>{cycle.investigation.focus ? ` · ${cycle.investigation.focus}` : ''}</p>
+                <p className="tl-small tl-muted">Read-only tools: {cycle.investigation.toolsUsed?.length ? cycle.investigation.toolsUsed.join(', ').replaceAll('_', ' ') : 'None requested'} · Tool requests: {cycle.investigation.toolCalls} · Model calls: {cycle.investigation.modelCalls} · Earlier research cycles reviewed: {cycle.investigation.priorResearchCycles}</p>
+              </div>}
               <div className="tl-ai-decisions">{cycle.decisions.map(decision =>
                 <details key={decision.symbol} className="tl-flow-card">
                   <summary><strong>{decision.symbol}</strong> · <span className={decision.action === 'BUY' ? 'tl-pos' : decision.action === 'SELL' ? 'tl-neg' : 'tl-muted'}>{decision.action}</span> · Model conviction {ratioPct(decision.confidence, 0)}</summary>
