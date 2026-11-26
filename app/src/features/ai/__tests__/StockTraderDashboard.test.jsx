@@ -21,11 +21,15 @@ describe('flagship public dashboard', () => {
       research: [{
         id: 'research-1', asOfSession: '2026-11-25', createdAt: '2026-11-25T22:00:00Z',
         model: 'mock', marketSummary: 'No sufficient setup',
+        investigation: { focus: 'Compare eligible opportunities', toolsUsed: ['get_stock_metrics'], toolCalls: 1, modelCalls: 2, priorResearchCycles: 1 },
         decisions: [{ symbol: 'AAPL', action: 'HOLD', confidence: 0.6, thesis: 'Wait', evidence: [], risks: [] }]
       }]
     })
     render(<StockTraderDashboard />)
     expect(await screen.findByText('No sufficient setup')).toBeInTheDocument()
+    expect(screen.getByTestId('flagship-investigation')).toHaveTextContent('Compare eligible opportunities')
+    expect(screen.getByTestId('flagship-investigation')).toHaveTextContent('get stock metrics')
+    expect(screen.getByTestId('flagship-investigation')).toHaveTextContent('Model calls: 2')
     expect(screen.getByTestId('flagship-no-positions')).toBeInTheDocument()
     expect(screen.getByTestId('flagship-no-orders')).toBeInTheDocument()
     expect(screen.getByText(/not a calibrated probability/)).toBeInTheDocument()
