@@ -158,6 +158,18 @@ export default function AdminDashboard() {
     return () => clearInterval(timer)
   }, [refreshAll, loadOverview])
 
+  // Global ESC key listener to dismiss open inspection modals
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setSelectedBotDetail(null)
+        setSelectedUserDrilldown(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   // Operational Control Handlers
   const handleMarketOpen = async () => {
     setActionLoading(true)
@@ -765,19 +777,28 @@ export default function AdminDashboard() {
 
           {/* Bot Inspection Modal / Drawer */}
           {selectedBotDetail && (
-            <div className="tl-modal-overlay" style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0,0,0,0.75)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 9999,
-              padding: '1.5rem'
-            }}>
+            <div
+              className="tl-modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Bot Inspector"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setSelectedBotDetail(null)
+              }}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.75)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 9999,
+                padding: '1.5rem'
+              }}
+            >
               <div style={{
                 background: '#1e293b',
                 border: '1px solid #334155',
@@ -1234,19 +1255,28 @@ export default function AdminDashboard() {
 
           {/* User Support Drilldown Modal */}
           {selectedUserDrilldown && (
-            <div className="tl-modal-overlay" style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0,0,0,0.75)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 9999,
-              padding: '1.5rem'
-            }}>
+            <div
+              className="tl-modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Customer Support Drilldown"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setSelectedUserDrilldown(null)
+              }}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.75)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 9999,
+                padding: '1.5rem'
+              }}
+            >
               <div style={{
                 background: '#1e293b',
                 border: '1px solid #334155',
