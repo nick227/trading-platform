@@ -194,4 +194,87 @@ describe('AdminDashboard', () => {
       expect(mockFetchUsers).toHaveBeenCalledWith(expect.objectContaining({ offset: 20, limit: 20 }))
     })
   })
+
+  it('switches to AI Research & Decisions tab, renders telemetry and opens explainability modal', async () => {
+    vi.spyOn(adminClient, 'fetchAdminAiCycles').mockResolvedValue({
+      total: 1,
+      metrics: {
+        totalCycles: 1,
+        totalCostUsd: 0.00048,
+        totalTokens: 1950,
+        latestModel: 'gpt-4o-mini-2024-07-18'
+      },
+      cycles: [
+        {
+          id: 'cycle-1',
+          session: '2026-11-25',
+          intendedSession: '2026-11-26',
+          model: 'gpt-4o-mini-2024-07-18',
+          marketSummary: 'Risk-on regime with tech leadership',
+          isReplay: false,
+          estimatedCostUsd: 0.00048,
+          usage: { total_tokens: 1950 },
+          decisionCounts: { buy: 1, hold: 1, sell: 0 }
+        }
+      ]
+    })
+
+    vi.spyOn(adminClient, 'fetchAdminAiDecisions').mockResolvedValue({
+      total: 1,
+      decisions: [
+        {
+          cycleId: 'cycle-1',
+          session: '2026-11-25',
+          symbol: 'AAPL',
+          action: 'BUY',
+          confidence: 0.88,
+          thesis: 'Strong institutional accumulation above 20-day moving average.',
+          exitRule: { stopLossPct: 4.0, takeProfitPct: 8.0, timeStopDays: 5 }
+        }
+      ]
+    })
+
+    const mockCycleDetail = vi.spyOn(adminClient, 'fetchAdminAiCycleDetail').mockResolvedValue({
+      id: 'cycle-1',
+      session: '2026-11-25',
+      model: 'gpt-4o-mini-2024-07-18',
+      provider: 'openai',
+      marketSummary: 'Risk-on regime with tech leadership',
+      isReplay: false,
+      symbolEvaluations: [
+        {
+          symbol: 'AAPL',
+          action: 'BUY',
+          confidence: 0.88,
+          thesis: 'Strong institutional accumulation above 20-day moving average.',
+          exitRule: { stopLossPct: 4.0, takeProfitPct: 8.0, timeStopDays: 5 },
+          evidence: { trend: 'bullish', volumeMultiple: 1.5 }
+        }
+      ]
+    })
+
+    render(<AdminDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Bird's Eye Overview")).toBeInTheDocument()
+    })
+
+    const aiTab = screen.getByRole('button', { name: /AI Research & Decisions/i })
+    aiTab.click()
+
+    await waitFor(() => {
+      expect(screen.getByText('Autonomous AI Research Cycles')).toBeInTheDocument()
+      expect(screen.getByText('Risk-on regime with tech leadership')).toBeInTheDocument()
+      expect(screen.getByText('1 BUY')).toBeInTheDocument()
+      expect(screen.getByText('Strong institutional accumulation above 20-day moving average.')).toBeInTheDocument()
+    })
+
+    const inspectBtn = screen.getByRole('button', { name: /Inspect Decisions & Theses/i })
+    inspectBtn.click()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: 'AI Decision Explainability Inspector' })).toBeInTheDocument()
+      expect(mockCycleDetail).toHaveBeenCalledWith('cycle-1')
+    })
+  })
 })

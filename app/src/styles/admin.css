@@ -394,3 +394,43 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* AI Explainability & Research Inspector Styles */
+.tl-ai-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.tl-ai-metric-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+
+.tl-ai-metric-label {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tl-ai-metric-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.tl-thesis-box {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.825rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin-top: 0.5rem;
+}

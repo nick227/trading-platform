@@ -17,7 +17,10 @@ import {
   runAdminMarketOpen,
   runAdminAiResearch,
   runAdminEvidenceSync,
-  cleanupAdminWorkers
+  cleanupAdminWorkers,
+  fetchAdminAiCycles,
+  fetchAdminAiCycleDetail,
+  fetchAdminAiDecisions
 } from '../../api/adminClient'
 import '../../styles/admin.css'
 
@@ -63,6 +66,19 @@ export default function AdminDashboard() {
   // User Support Drilldown states
   const [selectedUserDrilldown, setSelectedUserDrilldown] = useState(null)
   const [userDrilldownLoading, setUserDrilldownLoading] = useState(false)
+
+  // AI Research & Decisions states
+  const [aiCycles, setAiCycles] = useState([])
+  const [aiCyclesTotal, setAiCyclesTotal] = useState(0)
+  const [aiCyclesMetrics, setAiCyclesMetrics] = useState(null)
+  const [aiCyclePage, setAiCyclePage] = useState(0)
+  const [selectedAiCycleDetail, setSelectedAiCycleDetail] = useState(null)
+  const [aiCycleDetailLoading, setAiCycleDetailLoading] = useState(false)
+  const [aiDecisions, setAiDecisions] = useState([])
+  const [aiDecisionsTotal, setAiDecisionsTotal] = useState(0)
+  const [aiSymbolSearch, setAiSymbolSearch] = useState('')
+  const [aiActionFilter, setAiActionFilter] = useState('')
+  const [aiDecisionsPage, setAiDecisionsPage] = useState(0)
 
   // In-app Action Confirmation Dialog states (replacing window.prompt and window.confirm)
   const [actionDialog, setActionDialog] = useState(null)
@@ -151,6 +167,46 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  const loadAiCycles = useCallback(async (page = 0) => {
+    try {
+      const data = await fetchAdminAiCycles({ limit: 20, offset: page * 20 })
+      setAiCycles(data?.cycles || [])
+      setAiCyclesTotal(data?.total || 0)
+      setAiCyclesMetrics(data?.metrics || null)
+      setAiCyclePage(page)
+    } catch (err) {
+      showFeedback('error', `Failed to load AI cycles: ${err.serverMessage || err.message}`)
+    }
+  }, [])
+
+  const loadAiDecisions = useCallback(async (sym = '', act = '', page = 0) => {
+    try {
+      const data = await fetchAdminAiDecisions({
+        symbol: sym || null,
+        action: act || null,
+        limit: 20,
+        offset: page * 20
+      })
+      setAiDecisions(data?.decisions || [])
+      setAiDecisionsTotal(data?.total || 0)
+      setAiDecisionsPage(page)
+    } catch (err) {
+      showFeedback('error', `Failed to load AI decisions: ${err.serverMessage || err.message}`)
+    }
+  }, [])
+
+  const handleInspectAiCycle = async (cycleId) => {
+    setAiCycleDetailLoading(true)
+    try {
+      const data = await fetchAdminAiCycleDetail(cycleId)
+      setSelectedAiCycleDetail(data)
+    } catch (err) {
+      showFeedback('error', `Failed to fetch AI cycle detail: ${err.serverMessage || err.message}`)
+    } finally {
+      setAiCycleDetailLoading(false)
+    }
+  }
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
@@ -159,10 +215,12 @@ export default function AdminDashboard() {
       loadUsers(userSearch, userPage),
       loadAuditLogs(auditPage),
       loadBots(botSearch, botStatusFilter, botTypeFilter, botPage),
-      loadExecutions(executionStatusFilter, executionTickerFilter, blotterPage)
+      loadExecutions(executionStatusFilter, executionTickerFilter, blotterPage),
+      loadAiCycles(aiCyclePage),
+      loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage)
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
 
   useEffect(() => {
     refreshAll()
@@ -178,6 +236,9 @@ export default function AdminDashboard() {
         loadActivity(activityPage)
       } else if (activeTab === 'audit') {
         loadAuditLogs(auditPage)
+      } else if (activeTab === 'ai_research') {
+        loadAiCycles(aiCyclePage)
+        loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage)
       }
     }, 15000) // Poll active tab dataset & overview every 15s
     return () => clearInterval(timer)
@@ -200,7 +261,13 @@ export default function AdminDashboard() {
     loadActivity,
     activityPage,
     loadAuditLogs,
-    auditPage
+    auditPage,
+    loadAiCycles,
+    aiCyclePage,
+    loadAiDecisions,
+    aiSymbolSearch,
+    aiActionFilter,
+    aiDecisionsPage
   ])
 
   // Global ESC key listener to dismiss open inspection modals & action dialogs
@@ -212,6 +279,7 @@ export default function AdminDashboard() {
         }
         setSelectedBotDetail(null)
         setSelectedUserDrilldown(null)
+        setSelectedAiCycleDetail(null)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -496,6 +564,12 @@ export default function AdminDashboard() {
           onClick={() => setActiveTab('pipeline')}
         >
           AI Pipeline Monitor
+        </button>
+        <button
+          className={`tl-admin-tab ${activeTab === 'ai_research' ? 'active' : ''}`}
+          onClick={() => setActiveTab('ai_research')}
+        >
+          AI Research & Decisions ({aiCyclesTotal})
         </button>
         <button
           className={`tl-admin-tab ${activeTab === 'controls' ? 'active' : ''}`}
@@ -1143,6 +1217,380 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* TAB: AI RESEARCH & DECISIONS EXPLAINABILITY INSPECTOR */}
+      {activeTab === 'ai_research' && (
+        <div>
+          {/* AI Metrics Grid */}
+          <div className="tl-ai-metrics-grid">
+            <div className="tl-ai-metric-card">
+              <div className="tl-ai-metric-label">Autonomous AI Model</div>
+              <div className="tl-ai-metric-value" style={{ fontSize: '1.1rem', color: '#c084fc' }}>
+                {aiCyclesMetrics?.latestModel || 'gpt-4o-mini-2024-07-18'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                Provider: OpenAI Structured Outputs
+              </div>
+            </div>
+            <div className="tl-ai-metric-card">
+              <div className="tl-ai-metric-label">Completed Research Cycles</div>
+              <div className="tl-ai-metric-value" style={{ color: '#38bdf8' }}>
+                {aiCyclesTotal}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                Daily 10-Symbol Point-in-Time Runs
+              </div>
+            </div>
+            <div className="tl-ai-metric-card">
+              <div className="tl-ai-metric-label">Total Token Spend ($)</div>
+              <div className="tl-ai-metric-value" style={{ color: '#4ade80' }}>
+                ${Number(aiCyclesMetrics?.totalCostUsd || 0).toFixed(5)}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                {Number(aiCyclesMetrics?.totalTokens || 0).toLocaleString()} Total Tokens
+              </div>
+            </div>
+          </div>
+
+          {/* Research Cycles Table */}
+          <div className="tl-admin-table-wrapper" style={{ marginBottom: '2rem' }}>
+            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1rem' }}>Autonomous AI Research Cycles</h3>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                  Daily point-in-time LLM market regime analysis and multi-symbol evaluations
+                </span>
+              </div>
+              <button
+                className="tl-btn-secondary"
+                style={{ fontSize: '0.8rem' }}
+                onClick={() => loadAiCycles(aiCyclePage)}
+              >
+                ↻ Refresh Cycles
+              </button>
+            </div>
+            <table className="tl-admin-table">
+              <thead>
+                <tr>
+                  <th>Observation Session</th>
+                  <th>Execution Session</th>
+                  <th>Observation Mode</th>
+                  <th>Macro Regime Summary</th>
+                  <th>Symbol Decisions</th>
+                  <th>Model / Cost</th>
+                  <th>Explainability Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aiCycles.length > 0 ? (
+                  aiCycles.map(c => (
+                    <tr key={c.id}>
+                      <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
+                        {c.session || '—'}
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                          {new Date(c.createdAt).toLocaleTimeString()}
+                        </div>
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <code>{c.intendedSession || 'Next Open'}</code>
+                      </td>
+                      <td>
+                        <span className={`tl-admin-badge ${c.isReplay ? 'tl-badge-amber' : 'tl-badge-green'}`}>
+                          {c.isReplay ? 'Replay' : 'Forward Live'}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ maxWidth: '300px', fontSize: '0.8rem', color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.marketSummary || '—'}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <span className="tl-admin-badge tl-badge-green">{c.decisionCounts?.buy ?? 0} BUY</span>
+                          <span className="tl-admin-badge tl-badge-amber">{c.decisionCounts?.hold ?? 0} HOLD</span>
+                          <span className="tl-admin-badge tl-badge-red">{c.decisionCounts?.sell ?? 0} SELL</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 500 }}>{c.model}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                          ${Number(c.estimatedCostUsd || 0).toFixed(5)} ({c.usage?.total_tokens || 0} tok)
+                        </div>
+                      </td>
+                      <td>
+                        <button
+                          className="tl-btn-secondary"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                          onClick={() => handleInspectAiCycle(c.id)}
+                          disabled={aiCycleDetailLoading}
+                        >
+                          Inspect Decisions & Theses
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="7" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
+                      No AI research cycles recorded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div className="tl-admin-pagination">
+              <span className="tl-admin-pagination-info">
+                Showing {aiCyclesTotal > 0 ? aiCyclePage * 20 + 1 : 0}–{Math.min((aiCyclePage + 1) * 20, aiCyclesTotal)} of {aiCyclesTotal} research cycles
+              </span>
+              <div className="tl-admin-pagination-actions">
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={aiCyclePage === 0}
+                  onClick={() => loadAiCycles(aiCyclePage - 1)}
+                >
+                  ◀ Previous
+                </button>
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={(aiCyclePage + 1) * 20 >= aiCyclesTotal}
+                  onClick={() => loadAiCycles(aiCyclePage + 1)}
+                >
+                  Next ▶
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Symbol-Level Decisions Search & Explorer */}
+          <div className="tl-admin-table-wrapper">
+            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Historical Symbol Decisions & Explainability</h3>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  placeholder="Filter by ticker (e.g. AAPL)..."
+                  className="tl-admin-input"
+                  style={{ flex: '1 1 180px' }}
+                  value={aiSymbolSearch}
+                  onChange={(e) => setAiSymbolSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') loadAiDecisions(aiSymbolSearch, aiActionFilter, 0)
+                  }}
+                />
+                <select
+                  className="tl-admin-select"
+                  value={aiActionFilter}
+                  onChange={(e) => {
+                    setAiActionFilter(e.target.value)
+                    loadAiDecisions(aiSymbolSearch, e.target.value, 0)
+                  }}
+                >
+                  <option value="">All Actions</option>
+                  <option value="BUY">BUY Only</option>
+                  <option value="HOLD">HOLD Only</option>
+                  <option value="SELL">SELL Only</option>
+                </select>
+                <button
+                  className="tl-btn-secondary"
+                  onClick={() => loadAiDecisions(aiSymbolSearch, aiActionFilter, 0)}
+                >
+                  Search Decisions
+                </button>
+              </div>
+            </div>
+            <table className="tl-admin-table">
+              <thead>
+                <tr>
+                  <th>Session</th>
+                  <th>Symbol</th>
+                  <th>Action</th>
+                  <th>Confidence</th>
+                  <th>Exit Rules (SL / TP / Time)</th>
+                  <th>Model Thesis & Analytical Chain of Thought</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aiDecisions.length > 0 ? (
+                  aiDecisions.map((d, idx) => {
+                    const actionClass = d.action === 'BUY' ? 'tl-badge-green' : d.action === 'SELL' ? 'tl-badge-red' : 'tl-badge-amber'
+                    return (
+                      <tr key={`${d.cycleId}-${d.symbol}-${idx}`}>
+                        <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: '#94a3b8' }}>
+                          {d.session}
+                        </td>
+                        <td>
+                          <strong>{d.symbol}</strong>
+                        </td>
+                        <td>
+                          <span className={`tl-admin-badge ${actionClass}`}>
+                            {d.action}
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{ fontWeight: 600 }}>{Math.round((d.confidence || 0) * 100)}%</span>
+                        </td>
+                        <td style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                          {d.exitRule?.stopLossPct ? (
+                            <div>SL: -{d.exitRule.stopLossPct}% · TP: +{d.exitRule.takeProfitPct}% · {d.exitRule.timeStopDays}d</div>
+                          ) : '—'}
+                        </td>
+                        <td style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                          {d.thesis}
+                        </td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
+                      No symbol decisions found matching filter criteria.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div className="tl-admin-pagination">
+              <span className="tl-admin-pagination-info">
+                Showing {aiDecisionsTotal > 0 ? aiDecisionsPage * 20 + 1 : 0}–{Math.min((aiDecisionsPage + 1) * 20, aiDecisionsTotal)} of {aiDecisionsTotal} decisions
+              </span>
+              <div className="tl-admin-pagination-actions">
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={aiDecisionsPage === 0}
+                  onClick={() => loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage - 1)}
+                >
+                  ◀ Previous
+                </button>
+                <button
+                  className="tl-admin-pagination-btn"
+                  disabled={(aiDecisionsPage + 1) * 20 >= aiDecisionsTotal}
+                  onClick={() => loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage + 1)}
+                >
+                  Next ▶
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* CYCLE EXPLAINABILITY MODAL */}
+          {selectedAiCycleDetail && (
+            <div
+              className="tl-modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-label="AI Decision Explainability Inspector"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setSelectedAiCycleDetail(null)
+              }}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.75)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 9999,
+                padding: '1.5rem'
+              }}
+            >
+              <div style={{
+                background: '#1e293b',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                width: '100%',
+                maxWidth: '900px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                padding: '1.5rem',
+                color: '#f8fafc'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #334155', paddingBottom: '0.75rem' }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+                      AI Research Cycle Explainability: {selectedAiCycleDetail.session}
+                    </h2>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                      Model: <code>{selectedAiCycleDetail.model}</code> · Provider: {selectedAiCycleDetail.provider} · Mode: {selectedAiCycleDetail.isReplay ? 'Replay' : 'Forward Live'}
+                    </span>
+                  </div>
+                  <button
+                    className="tl-btn-secondary"
+                    onClick={() => setSelectedAiCycleDetail(null)}
+                    style={{ fontSize: '1rem', padding: '0.25rem 0.6rem' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Macro Market Summary */}
+                <div style={{
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  borderRadius: '6px',
+                  padding: '1rem',
+                  marginBottom: '1.25rem'
+                }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#93c5fd', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
+                    Macro Regime & Market Summary
+                  </div>
+                  <div style={{ fontSize: '0.875rem', color: '#e2e8f0', lineHeight: '1.5' }}>
+                    {selectedAiCycleDetail.marketSummary || 'No summary recorded.'}
+                  </div>
+                </div>
+
+                {/* Symbol Evaluations Detail */}
+                <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem' }}>
+                  Universe Symbol Evaluations ({selectedAiCycleDetail.symbolEvaluations?.length || 0})
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {selectedAiCycleDetail.symbolEvaluations?.map(ev => {
+                    const actionClass = ev.action === 'BUY' ? 'tl-badge-green' : ev.action === 'SELL' ? 'tl-badge-red' : 'tl-badge-amber'
+                    return (
+                      <div
+                        key={ev.symbol}
+                        style={{
+                          background: '#0f172a',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: '6px',
+                          padding: '1rem'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{ev.symbol}</span>
+                            <span className={`tl-admin-badge ${actionClass}`}>{ev.action}</span>
+                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                              Confidence: <strong>{Math.round((ev.confidence || 0) * 100)}%</strong>
+                            </span>
+                          </div>
+                          {ev.exitRule?.stopLossPct && (
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                              Stop Loss: -{ev.exitRule.stopLossPct}% · Take Profit: +{ev.exitRule.takeProfitPct}% · Max Days: {ev.exitRule.timeStopDays}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#cbd5e1', lineHeight: '1.5', marginBottom: '0.5rem' }}>
+                          <strong>Thesis:</strong> {ev.thesis}
+                        </div>
+                        {ev.evidence && (
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', background: 'rgba(255,255,255,0.03)', padding: '0.4rem 0.6rem', borderRadius: '4px' }}>
+                            {ev.evidence.trend && <span>Trend: <code>{ev.evidence.trend}</code> </span>}
+                            {ev.evidence.volumeMultiple && <span>· Volume: <code>{ev.evidence.volumeMultiple}x</code> </span>}
+                            {ev.evidence.catalyst && <span>· Catalyst: {ev.evidence.catalyst}</span>}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

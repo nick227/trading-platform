@@ -83,3 +83,22 @@ export async function runAdminEvidenceSync() {
 export async function cleanupAdminWorkers(retentionMinutes = 10) {
   return post('/admin/controls/cleanup-workers', { retentionMs: retentionMinutes * 60 * 1000 })
 }
+
+export async function fetchAdminAiCycles({ limit = 20, offset = 0, session = null, isReplay = null } = {}) {
+  const params = { limit, offset }
+  if (session) params.session = session
+  if (isReplay !== null) params.isReplay = isReplay
+  return get('/admin/ai/cycles', params)
+}
+
+export async function fetchAdminAiCycleDetail(cycleId) {
+  return get(`/admin/ai/cycles/${encodeURIComponent(cycleId)}`)
+}
+
+export async function fetchAdminAiDecisions({ symbol = null, action = null, session = null, limit = 50, offset = 0 } = {}) {
+  const params = { limit, offset }
+  if (symbol) params.symbol = symbol
+  if (action) params.action = action
+  if (session) params.session = session
+  return get('/admin/ai/decisions', params)
+}
