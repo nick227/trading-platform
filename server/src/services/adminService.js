@@ -615,6 +615,139 @@ export async function toggleAdminBot({
 }
 
 /**
+ * Lists platform executions across bots and users with filters (status, ticker, botId).
+ */
+export async function listAdminExecutions({
+  limit = 50,
+  offset = 0,
+  status = null,
+  ticker = null,
+  botId = null,
+  prismaClient = prisma
+} = {}) {
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50))
+  const safeOffset = Math.max(0, Number(offset) || 0)
+
+  const where = {}
+  if (status && status !== 'all') where.status = status
+  if (ticker && ticker.trim()) where.ticker = ticker.trim().toUpperCase()
+  if (botId) where.botId = botId
+
+  const [executions, total] = await Promise.all([
+    prismaClient.execution.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: safeOffset,
+      take: safeLimit
+    }),
+    prismaClient.execution.count({ where })
+  ])
+
+  const userIds = [...new Set(executions.map(e => e.userId).filter(Boolean))]
+  const botIds = [...new Set(executions.map(e => e.botId).filter(Boolean))]
+
+  const [users, bots] = await Promise.all([
+    userIds.length > 0
+      ? prismaClient.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, email: true, fullName: true }
+        }).catch(() => [])
+      : [],
+    botIds.length > 0
+      ? prismaClient.bot.findMany({
+          where: { id: { in: botIds } },
+          select: { id: true, name: true, templateId: true, botType: true }
+        }).catch(() => [])
+      : []
+  ])
+
+  const userMap = new Map(users.map(u => [u.id, u]))
+  const botMap = new Map(bots.map(b => [b.id, b]))
+
+  const enriched = executions.map(e => ({
+    ...e,
+    user: userMap.get(e.userId) || { id: e.userId, email: 'unknown' },
+    bot: botMap.get(e.botId) || null,
+    diagnostics: e.refusalReason || e.cancelReason || e.cancelRequestReason || null
+  }))
+
+  return {
+    total,
+    offset: safeOffset,
+    limit: safeLimit,
+    executions: enriched
+  }
+}
+
+/**
+ * Administratively cancels a pending or queued execution.
+ */
+export async function cancelAdminExecution({
+  executionId,
+  reason = 'Admin cancelled execution from blotter',
+  actorUserId,
+  ipAddress = null,
+  prismaClient = prisma
+}) {
+  const execution = await prismaClient.execution.findUnique({
+    where: { id: executionId }
+  })
+
+  if (!execution) {
+    throw new Error(`Execution '${executionId}' not found`)
+  }
+
+  if (['filled', 'partially_filled'].includes(execution.status)) {
+    throw new Error(`Cannot cancel execution with status '${execution.status}'`)
+  }
+
+  if (execution.status === 'cancelled') {
+    return execution
+  }
+
+  const updated = await prismaClient.execution.update({
+    where: { id: executionId },
+    data: {
+      status: 'cancelled',
+      cancelReason: reason,
+      cancelRequestedAt: new Date(),
+      cancelRequestedBy: actorUserId
+    }
+  })
+
+  await prismaClient.executionAudit.create({
+    data: {
+      id: `aud_cancel_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      executionId,
+      userId: execution.userId,
+      eventType: 'cancel_requested',
+      detail: `Administrative cancellation: ${reason}`,
+      metadata: { actorUserId, previousStatus: execution.status }
+    }
+  }).catch(() => null)
+
+  if (actorUserId) {
+    await logAdminAction({
+      adminId: actorUserId,
+      action: 'cancel_execution',
+      targetType: 'execution',
+      targetId: executionId,
+      payload: {
+        ticker: execution.ticker,
+        direction: execution.direction,
+        quantity: execution.quantity,
+        previousStatus: execution.status,
+        reason
+      },
+      ipAddress,
+      prismaClient
+    })
+  }
+
+  return updated
+}
+
+/**
  * Removes dead/stale worker records older than the retention threshold.
  */
 export async function cleanupDeadWorkers({

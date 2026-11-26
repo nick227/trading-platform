@@ -8,6 +8,8 @@ import {
   fetchAdminBots,
   fetchAdminBotDetail,
   toggleAdminBot,
+  fetchAdminExecutions,
+  cancelAdminExecution,
   updateAdminUserRole,
   setAdminEmergencyStop,
   runAdminMarketOpen,
@@ -44,6 +46,12 @@ export default function AdminDashboard() {
   const [botTypeFilter, setBotTypeFilter] = useState('')
   const [selectedBotDetail, setSelectedBotDetail] = useState(null)
   const [botDetailLoading, setBotDetailLoading] = useState(false)
+
+  // Execution Blotter states
+  const [executions, setExecutions] = useState([])
+  const [executionsTotal, setExecutionsTotal] = useState(0)
+  const [executionStatusFilter, setExecutionStatusFilter] = useState('')
+  const [executionTickerFilter, setExecutionTickerFilter] = useState('')
 
   const showFeedback = (type, message) => {
     setFeedback({ type, message })
@@ -105,6 +113,21 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  const loadExecutions = useCallback(async (status = '', ticker = '') => {
+    try {
+      const data = await fetchAdminExecutions({
+        limit: 50,
+        offset: 0,
+        status: status || null,
+        ticker: ticker || null
+      })
+      setExecutions(data?.executions || [])
+      setExecutionsTotal(data?.total || 0)
+    } catch (err) {
+      showFeedback('error', `Failed to load order blotter: ${err.serverMessage || err.message}`)
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
@@ -112,10 +135,11 @@ export default function AdminDashboard() {
       loadActivity(),
       loadUsers(userSearch),
       loadAuditLogs(),
-      loadBots(botSearch, botStatusFilter, botTypeFilter)
+      loadBots(botSearch, botStatusFilter, botTypeFilter),
+      loadExecutions(executionStatusFilter, executionTickerFilter)
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, userSearch, botSearch, botStatusFilter, botTypeFilter])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, userSearch, botSearch, botStatusFilter, botTypeFilter, executionStatusFilter, executionTickerFilter])
 
   useEffect(() => {
     refreshAll()
@@ -240,6 +264,24 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleCancelExecution = async (executionId, ticker) => {
+    const reason = window.prompt(`Reason for cancelling execution for ${ticker} (${executionId}):`, 'Admin manual cancellation from blotter')
+    if (!reason) return
+
+    setActionLoading(true)
+    try {
+      await cancelAdminExecution(executionId, reason)
+      showFeedback('success', `Execution ${executionId} cancelled successfully.`)
+      await loadExecutions(executionStatusFilter, executionTickerFilter)
+      await loadOverview()
+      await loadAuditLogs()
+    } catch (err) {
+      showFeedback('error', `Failed to cancel execution: ${err.serverMessage || err.message}`)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const pipeline = overview?.pipeline || {}
   const stages = pipeline?.stages || {}
   const metrics = overview || {}
@@ -308,6 +350,12 @@ export default function AdminDashboard() {
           onClick={() => setActiveTab('bots')}
         >
           Bot Fleet ({botsTotal})
+        </button>
+        <button
+          className={`tl-admin-tab ${activeTab === 'blotter' ? 'active' : ''}`}
+          onClick={() => setActiveTab('blotter')}
+        >
+          Order Blotter ({executionsTotal})
         </button>
         <button
           className={`tl-admin-tab ${activeTab === 'pipeline' ? 'active' : ''}`}
@@ -1104,6 +1152,134 @@ export default function AdminDashboard() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* TAB: ORDER BLOTTER */}
+      {activeTab === 'blotter' && (
+        <div>
+          {/* Blotter Filter Toolbar */}
+          <div className="tl-admin-toolbar" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Filter by ticker (e.g. AAPL)..."
+              className="tl-admin-input"
+              style={{ flex: '1 1 180px' }}
+              value={executionTickerFilter}
+              onChange={(e) => setExecutionTickerFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') loadExecutions(executionStatusFilter, executionTickerFilter)
+              }}
+            />
+            <select
+              className="tl-admin-select"
+              value={executionStatusFilter}
+              onChange={(e) => {
+                setExecutionStatusFilter(e.target.value)
+                loadExecutions(e.target.value, executionTickerFilter)
+              }}
+            >
+              <option value="">All Statuses</option>
+              <option value="pending_fill">Pending Fill</option>
+              <option value="queued">Queued</option>
+              <option value="filled">Filled</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="failed">Failed</option>
+              <option value="refused">Refused / Rejected</option>
+            </select>
+            <button
+              className="tl-btn-secondary"
+              onClick={() => loadExecutions(executionStatusFilter, executionTickerFilter)}
+            >
+              Filter Blotter
+            </button>
+          </div>
+
+          {/* Blotter Table */}
+          <div className="tl-admin-table-wrapper">
+            <table className="tl-admin-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Execution ID</th>
+                  <th>Ticker / Side</th>
+                  <th>Quantity</th>
+                  <th>Target vs Fill</th>
+                  <th>Status</th>
+                  <th>Bot / User</th>
+                  <th>Diagnostics / Reason</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {executions.length > 0 ? (
+                  executions.map(ex => {
+                    const isCancellable = ['queued', 'pending_fill', 'processing'].includes(ex.status)
+                    const statusClass = ex.status === 'filled' ? 'tl-badge-green' : ex.status === 'cancelled' || ex.status === 'failed' || ex.status === 'refused' ? 'tl-badge-red' : 'tl-badge-amber'
+                    return (
+                      <tr key={ex.id}>
+                        <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: '#94a3b8' }}>
+                          {new Date(ex.createdAt).toLocaleString()}
+                        </td>
+                        <td>
+                          <code style={{ fontSize: '0.75rem' }}>{ex.id}</code>
+                        </td>
+                        <td>
+                          <span style={{ fontWeight: 700, marginRight: '0.5rem' }}>{ex.ticker}</span>
+                          <span className={`tl-admin-badge ${ex.direction === 'buy' ? 'tl-badge-green' : 'tl-badge-red'}`}>
+                            {ex.direction?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{ex.quantity}</td>
+                        <td>
+                          <div>Target: ${Number(ex.price || 0).toFixed(2)}</div>
+                          {ex.filledPrice && (
+                            <div style={{ fontSize: '0.75rem', color: '#4ade80' }}>
+                              Fill: ${Number(ex.filledPrice).toFixed(2)}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <span className={`tl-admin-badge ${statusClass}`}>
+                            {ex.status}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 500, fontSize: '0.8rem' }}>{ex.bot?.name || ex.botId || 'Manual'}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{ex.user?.email || ex.userId}</div>
+                        </td>
+                        <td>
+                          {ex.diagnostics ? (
+                            <span style={{ fontSize: '0.75rem', color: '#f87171' }}>{ex.diagnostics}</span>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          {isCancellable && isAdmin && (
+                            <button
+                              className="tl-btn-danger"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                              onClick={() => handleCancelExecution(ex.id, ex.ticker)}
+                              disabled={actionLoading}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="9" style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>
+                      No executions found matching filter criteria.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

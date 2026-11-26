@@ -14,6 +14,8 @@ import {
   listAdminBots,
   getAdminBotDetail,
   toggleAdminBot,
+  listAdminExecutions,
+  cancelAdminExecution,
   updateUserRole,
   cleanupDeadWorkers,
   triggerAdminEmergencyStop,
@@ -112,11 +114,47 @@ export default async function adminRoutes(app) {
     }
   })
 
+  // GET /api/admin/executions — Real-time order blotter across all platform bots & users
+  app.get('/executions', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const { limit, offset, status, ticker, botId } = request.query || {}
+      const data = await listAdminExecutions({ limit, offset, status, ticker, botId })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to list executions')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'ADMIN_EXECUTIONS_ERROR', message: err.message }
+      })
+    }
+  })
+
   // Strict admin guard for state-changing operational mutations
   const adminOnly = requireRole(['admin'])
 
   // Helper to extract client IP safely
   const getIp = (req) => req.headers['x-forwarded-for'] || req.ip || null
+
+  // POST /api/admin/executions/:id/cancel — Administrative cancellation of pending order
+  app.post('/executions/:id/cancel', { preHandler: [adminOnly] }, async (request, reply) => {
+    try {
+      const { id } = request.params
+      const { reason } = request.body || {}
+      const updated = await cancelAdminExecution({
+        executionId: id,
+        reason,
+        actorUserId: request.user.id,
+        ipAddress: getIp(request)
+      })
+      return reply.send({ success: true, data: updated, execution: updated })
+    } catch (err) {
+      app.log.error(err, 'Failed to cancel execution')
+      return reply.code(400).send({
+        success: false,
+        error: { code: 'EXECUTION_CANCEL_ERROR', message: err.message }
+      })
+    }
+  })
 
   // POST /api/admin/bots/:id/toggle — Individual bot pause/resume switch
   app.post('/bots/:id/toggle', { preHandler: [adminOnly] }, async (request, reply) => {

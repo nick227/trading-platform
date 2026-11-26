@@ -343,3 +343,85 @@ describe('Bot Fleet Management (GET /api/admin/bots, /:id, /:id/toggle)', () => 
     expect(log.targetId).toBe('bot_test_1')
   })
 })
+
+describe('Order Blotter & Cancellation (GET /api/admin/executions, /:id/cancel)', () => {
+  beforeEach(async () => {
+    // Seed an additional pending execution
+    await h.db.execution.create({
+      data: {
+        id: 'exec_pending_1',
+        userId: 'usr_reg',
+        portfolioId: 'port_1',
+        botId: 'bot_test_1',
+        ticker: 'MSFT',
+        direction: 'buy',
+        quantity: 10,
+        price: 420,
+        notional: 4200,
+        status: 'pending_fill'
+      }
+    })
+  })
+
+  it('denies unauthenticated requests to /api/admin/executions', async () => {
+    const res = await request(app.server).get('/api/admin/executions')
+    expect(res.status).toBe(401)
+  })
+
+  it('allows operators to query executions with ticker and status filters', async () => {
+    const res = await request(app.server)
+      .get('/api/admin/executions?ticker=MSFT&status=pending_fill')
+      .set('Authorization', `Bearer ${operatorToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.total).toBe(1)
+    const ex = res.body.data.executions[0]
+    expect(ex.id).toBe('exec_pending_1')
+    expect(ex.ticker).toBe('MSFT')
+    expect(ex.status).toBe('pending_fill')
+  })
+
+  it('denies operator from cancelling an execution (admin only)', async () => {
+    const res = await request(app.server)
+      .post('/api/admin/executions/exec_pending_1/cancel')
+      .set('Authorization', `Bearer ${operatorToken}`)
+      .send({ reason: 'Operator test' })
+
+    expect(res.status).toBe(403)
+  })
+
+  it('prevents cancelling already filled executions', async () => {
+    const res = await request(app.server)
+      .post('/api/admin/executions/exec_1/cancel')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Admin cancel attempt on filled' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error.message).toMatch(/cannot cancel/i)
+  })
+
+  it('allows admin to cancel pending execution and logs to audit trail', async () => {
+    const res = await request(app.server)
+      .post('/api/admin/executions/exec_pending_1/cancel')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Admin manual test cancel' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.execution.status).toBe('cancelled')
+    expect(res.body.execution.cancelReason).toBe('Admin manual test cancel')
+
+    // Verify audit log captured cancel_execution
+    const auditRes = await request(app.server)
+      .get('/api/admin/audit-log?action=cancel_execution')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(auditRes.status).toBe(200)
+    expect(auditRes.body.data.logs.length).toBeGreaterThan(0)
+    const log = auditRes.body.data.logs[0]
+    expect(log.action).toBe('cancel_execution')
+    expect(log.targetType).toBe('execution')
+    expect(log.targetId).toBe('exec_pending_1')
+  })
+})

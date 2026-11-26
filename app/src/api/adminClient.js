@@ -40,6 +40,18 @@ export async function toggleAdminBot(botId) {
   return post(`/admin/bots/${encodeURIComponent(botId)}/toggle`)
 }
 
+export async function fetchAdminExecutions({ limit = 50, offset = 0, status = null, ticker = null, botId = null } = {}) {
+  const params = { limit, offset }
+  if (status) params.status = status
+  if (ticker) params.ticker = ticker
+  if (botId) params.botId = botId
+  return get('/admin/executions', params)
+}
+
+export async function cancelAdminExecution(executionId, reason) {
+  return post(`/admin/executions/${encodeURIComponent(executionId)}/cancel`, { reason })
+}
+
 export async function updateAdminUserRole(userId, role) {
   return put(`/admin/users/${encodeURIComponent(userId)}/role`, { role })
 }
