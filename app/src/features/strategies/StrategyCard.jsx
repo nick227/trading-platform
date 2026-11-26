@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom'
 import { strategyDisplayName } from '../../ui/strategyPresentation'
-import { catalogOverview, catalogPeriod, catalogResult } from './strategyCatalogCopy'
+import { catalogOverview, catalogPeriod } from './strategyCatalogCopy'
+import StrategyEvidencePreview from './StrategyEvidencePreview'
 
 export function mainEvidenceWindow(strategy) {
   const windows = strategy?.windows || {}
   const isAi = strategy?.tags?.includes('ai') || strategy?.templateId === 'tmpl_ai_catalyst_momentum'
   if (isAi) return 'forward'
+  if (windows['5Y']?.status === 'ok') return '5Y'
+  if (windows['1Y']?.status === 'ok') return '1Y'
   if (windows['5Y']) return '5Y'
   if (windows['1Y']) return '1Y'
   if (windows.holdout) return 'holdout'
@@ -27,7 +30,7 @@ export default function StrategyCard({ strategy }) {
         <p className="tl-strategy-catalog-card__description">{catalogOverview(strategy)}</p>
         <div className="tl-strategy-catalog-card__evidence">
           <p className="tl-strategy-catalog-card__period">{catalogPeriod(window)}</p>
-          <p className="tl-strategy-catalog-card__result">{catalogResult(summary, window)}</p>
+          <StrategyEvidencePreview summary={summary} window={window} />
         </div>
         <span className="tl-strategy-catalog-card__action">Read the full strategy report <span aria-hidden="true">→</span></span>
       </Link>

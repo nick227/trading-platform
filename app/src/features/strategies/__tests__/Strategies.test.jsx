@@ -25,10 +25,13 @@ describe('public strategy evidence', () => {
     render(<MemoryRouter><StrategiesIndex /></MemoryRouter>)
     const [a, r] = await screen.findAllByTestId('strategy-card')
     expect(a).toHaveTextContent('The typical strategy return was +4.00%, compared with +60.00% from buying and holding the same investments.')
+    expect(within(a).getByText('Typical strategy return')).toBeInTheDocument()
+    expect(within(a).getByText('Typical return from buying and holding')).toBeInTheDocument()
     expect(a).toHaveTextContent('Five-year historical test')
     expect(a.querySelectorAll('a')).toHaveLength(1)
     expect(a.querySelector('a')).toHaveAttribute('href', '/strategies/a')
     expect(r).toHaveTextContent('This strategy cannot be evaluated with the available historical test.')
+    expect(within(r).queryByText('Typical strategy return')).not.toBeInTheDocument()
   })
   it('detail shows standardized results per symbol, the tested definition and its assumptions', async () => {
     get.mockResolvedValue(strategy)
