@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   AI_BOT_DEFINITION_SCHEMA_VERSION,
   VANILLA_AI_STOCK_TRADER_DEFINITION,
+  VANILLA_AI_STOCK_TRADER_AGENT_DEFINITION,
   createAiBotDefinitionRegistry,
   defaultAiBotDefinitionRegistry
 } from '../../src/services/ai/botDefinitions.js'
@@ -48,7 +49,7 @@ describe('MR 11 versioned AI bot definitions', () => {
     expect(registry.list()).toHaveLength(2)
     expect(registry.get('tmpl_ai_value_research', '1.0.0').researchTools).toEqual(['get_company_research'])
     expect(() => registry.register(VANILLA_AI_STOCK_TRADER_DEFINITION)).toThrow(/already registered/)
-    expect(defaultAiBotDefinitionRegistry.list()).toHaveLength(1)
+    expect(defaultAiBotDefinitionRegistry.list()).toHaveLength(2)
   })
 
   it('rejects unauthorized tools, context, model changes and unknown risk policies', () => {
@@ -66,6 +67,12 @@ describe('MR 11 versioned AI bot definitions', () => {
     const instance = makeBot()
     instance.config.research.cadence = 'weekly'
     expect(defaultAiBotDefinitionRegistry.resolveInstance(instance).schedule).toBe('daily')
+  })
+
+  it('registers the vanilla agent with two calls and approved deterministic research tools', () => {
+    expect(VANILLA_AI_STOCK_TRADER_AGENT_DEFINITION.researchMode).toBe('tool_guided')
+    expect(VANILLA_AI_STOCK_TRADER_AGENT_DEFINITION.maxModelCalls).toBe(2)
+    expect(VANILLA_AI_STOCK_TRADER_AGENT_DEFINITION.researchTools).toContain('get_stock_metrics')
   })
 
   it('rejects excessive model and context budgets', () => {
