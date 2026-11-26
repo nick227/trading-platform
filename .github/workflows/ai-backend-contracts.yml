@@ -23,5 +23,5 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Generate Prisma client
         run: npm run db:generate --workspace=server
-      - name: AI foundation, screening and context tests
-        run: npm exec --workspace=server -- vitest run test/unit/aiStockTraderFoundation.test.js test/unit/aiStockScreener.test.js test/unit/aiStockTraderContext.test.js
+      - name: AI foundation, screening, context and decisions tests
+        run: npm exec --workspace=server -- vitest run test/unit/aiStockTraderFoundation.test.js test/unit/aiStockScreener.test.js test/unit/aiStockTraderContext.test.js test/unit/aiStockTraderDecision.test.js
