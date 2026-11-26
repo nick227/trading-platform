@@ -8,7 +8,7 @@ test('public homepage survives all evidence endpoint failures without blocking r
   await page.route('**/api/public/strategies/tmpl_ai_catalyst_momentum/pipeline', route => route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'unavailable'})}))
   await page.goto('/')
   const home = page.getByTestId('public-home')
-  await expect(home.getByRole('heading',{name:'AI stock research and automated trading.'})).toBeVisible()
+  await expect(home.getByRole('heading',{name:'Trading bots you can watch and control.'})).toBeVisible()
   await expect(home.getByRole('button',{name:'Create free account'})).toBeVisible()
   await page.locator('#public-live-evidence').scrollIntoViewIfNeeded()
   await expect(page.locator('#public-live-evidence')).toContainText('Strategy data is temporarily unavailable.')
