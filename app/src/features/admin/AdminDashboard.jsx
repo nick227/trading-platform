@@ -61,7 +61,10 @@ export default function AdminDashboard() {
 
   const showFeedback = (type, message) => {
     setFeedback({ type, message })
-    setTimeout(() => setFeedback(null), 6000)
+    // Automatically dismiss success notices after 6s, but keep errors persistent until operator dismisses
+    if (type !== 'error') {
+      setTimeout(() => setFeedback(null), 6000)
+    }
   }
 
   const loadOverview = useCallback(async () => {
