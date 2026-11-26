@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import AuthPanel from './AuthPanel'
 import './public-home.css'
 
 /** Logged-out marketing page. Never couple rendering to market-data availability. */
@@ -12,12 +12,7 @@ export default function PublicHome() {
           <p className="tl-public-lede">Choose a strategy, assign simulated capital, and follow every decision. Pause or stop whenever you choose.</p>
           <p className="tl-public-disclosure"><strong>Paper trading only.</strong> No deposits or live orders.</p>
         </div>
-        <div className="tl-public-panel tl-public-panel--entry">
-          <h2>Get started with TradeLoom</h2>
-          <p>See the strategies and results before you create an account.</p>
-          <Link className="tl-public-button tl-public-button--primary" to="/auth">Create an account</Link>
-          <Link className="tl-public-button tl-public-button--secondary" to="/strategies">Explore public strategies</Link>
-        </div>
+        <AuthPanel />
       </section>
     </main>
   )
