@@ -13,7 +13,7 @@ describe('flagship paper portfolio', () => {
     const portfolio = await loadStockTraderPaperPortfolio({
       bot, screening,
       fillLoader: async () => [{ filledQuantity: 2 }],
-      accountant: () => ({ realizedPnl: 20, openPositions: { AAPL: { quantity: 2, avgPrice: 100 } } })
+      accountant: () => ({ hasFills: true, performance: { realizedPnl: 20 }, openPositions: { AAPL: { quantity: 2, avgPrice: 100 } } })
     })
     expect(portfolio.cash).toBe(9820)
     expect(portfolio.totalEquity).toBe(10040)
@@ -24,7 +24,7 @@ describe('flagship paper portfolio', () => {
     await expect(loadStockTraderPaperPortfolio({
       bot, screening: { ...screening, shortlist: [] },
       fillLoader: async () => [],
-      accountant: () => ({ realizedPnl: 0, openPositions: { AAPL: { quantity: 1, avgPrice: 100 } } })
+      accountant: () => ({ hasFills: false, openPositions: { AAPL: { quantity: 1, avgPrice: 100 } } })
     })).rejects.toThrow(/position mark/)
   })
 
