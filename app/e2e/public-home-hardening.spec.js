@@ -16,7 +16,7 @@ test('public homepage survives all evidence endpoint failures without blocking r
   await expect(page.locator('#public-stock-research')).toContainText('Stock ranking data is temporarily unavailable.')
   await page.locator('#public-automation').scrollIntoViewIfNeeded()
   await expect(page.locator('#public-automation')).toContainText('Pipeline activity is temporarily unavailable.')
-  await expect(home.getByRole('button',{name:'Create free account'})).toBeVisible()
+  await expect(home.getByRole('button',{name:'Create beta account'})).toBeVisible()
   expect(errors).toEqual([])
 })
 
