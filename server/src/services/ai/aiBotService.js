@@ -123,6 +123,7 @@ export async function executeAiStrategyCycle({
   botId = null,
   session = null,
   providerName = 'openai',
+  providerOptions = {},
   dryRun = false,
   isReplay = false,
   mode = 'forward',
@@ -353,7 +354,7 @@ export async function executeAiStrategyCycle({
     }
 
     if (wonClaim) {
-      const provider = getProvider(providerName)
+      const provider = getProvider(providerName, providerOptions)
       llmResponse = await provider.completeStructured({
         systemPrompt,
         userPrompt,

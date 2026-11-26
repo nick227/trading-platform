@@ -138,9 +138,9 @@ export default async function adminRoutes(app) {
 
   // POST /api/admin/controls/run-ai-research — Trigger daily AI research & decision cycle
   app.post('/controls/run-ai-research', { preHandler: [adminOnly] }, async (request, reply) => {
-    const { session, provider, dryRun } = request.body || {}
+    const { session, provider, dryRun, apiKey } = request.body || {}
     try {
-      const result = await triggerAiDailyJob({ session, provider, dryRun })
+      const result = await triggerAiDailyJob({ session, provider, dryRun, apiKey })
       return reply.send({ success: true, data: result, result })
     } catch (err) {
       app.log.error(err, 'AI research job execution failed')

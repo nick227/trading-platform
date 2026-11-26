@@ -359,12 +359,16 @@ export async function triggerAiDailyJob({
   session = null,
   provider = 'openai',
   dryRun = false,
+  apiKey = null,
   prismaClient = prisma
 } = {}) {
+  const providerOptions = apiKey ? { apiKey } : {}
   return runAiStrategyDailyJob({
     session,
     providerName: provider,
+    providerOptions,
     dryRun,
+    force: true,
     prismaClient
   })
 }

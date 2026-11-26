@@ -34,6 +34,7 @@ export async function runAiStrategyDailyJob({
   force = false,
   dryRun = false,
   providerName = 'openai',
+  providerOptions = {},
   now = new Date(),
   syncEvidence = true,
   prismaClient = prisma,
@@ -210,6 +211,7 @@ export async function runAiStrategyDailyJob({
         botId: bot.id,
         session: activeSession,
         providerName,
+        providerOptions,
         dryRun,
         prismaClient,
         engine
