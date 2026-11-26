@@ -9,7 +9,8 @@ import {
   AI_STOCK_TRADER_PLATFORM_PORTFOLIO_ID,
   AI_STOCK_TRADER_PLATFORM_USER_ID,
   AI_STOCK_TRADER_STRATEGY_ID,
-  createAiStockTraderAgentConfig
+  createAiStockTraderAgentConfig,
+  AI_STOCK_TRADER_AGENT_VERSION
 } from './strategies/aiStockTraderStrategy.js'
 
 export async function getOrCreatePlatformAiStockTrader({
@@ -78,4 +79,41 @@ export async function getOrCreatePlatformAiStockTrader({
   }
 
   return { bot, user, portfolio }
+}
+
+/**
+ * Explicit disabled-only operator migration. Never modifies a live bot,
+ * changes its risk caps, or rewrites a bot that has simulated fills.
+ */
+export async function upgradeDisabledPlatformStockTraderToAgent({ prismaClient = prisma } = {}) {
+  const bot = await prismaClient.bot.findUnique({
+    where: { id: AI_STOCK_TRADER_PLATFORM_BOT_ID }
+  })
+  if (!bot || bot.enabled || bot.deletedAt || bot.templateId !== AI_STOCK_TRADER_STRATEGY_ID ||
+      bot.userId !== AI_STOCK_TRADER_PLATFORM_USER_ID ||
+      bot.portfolioId !== AI_STOCK_TRADER_PLATFORM_PORTFOLIO_ID ||
+      bot.config?.mode !== 'paper') {
+    throw new Error('Only the disabled, platform-owned paper flagship can be migrated')
+  }
+  if (bot.config.strategyVersion === AI_STOCK_TRADER_AGENT_VERSION) {
+    return { botId: bot.id, upgraded: false, version: AI_STOCK_TRADER_AGENT_VERSION }
+  }
+  if (bot.config.strategyVersion !== '1.0.0') {
+    throw new Error('Unknown legacy AI bot version; manual review required')
+  }
+  const executions = await prismaClient.execution.count({ where: { botId: bot.id } })
+  if (executions !== 0) {
+    throw new Error('Existing paper orders or fills require operator reconciliation before migration')
+  }
+  const config = createAiStockTraderAgentConfig({
+    objective: bot.config.objective,
+    universe: bot.config.universe,
+    research: { cadence: bot.config.research?.cadence }
+  })
+  const changed = await prismaClient.bot.updateMany({
+    where: { id: bot.id, enabled: false },
+    data: { config }
+  })
+  if (changed.count !== 1) throw new Error('Bot activation changed during explicit migration')
+  return { botId: bot.id, upgraded: true, version: config.strategyVersion }
 }
