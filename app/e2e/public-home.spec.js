@@ -19,7 +19,7 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     await expect(home.locator('input[name="password"]')).toHaveAttribute('type','password')
     await expect(home.getByRole('button',{name:'Create free account'})).toBeVisible()
     await expect(home.getByRole('heading',{name:/Start free/})).toBeVisible()
-    await expect(home.getByRole('heading',{name:'See what the bots actually do.'})).toBeVisible()
+    await expect(home.getByRole('heading',{name:'Examine recorded results before choosing a strategy.'})).toBeVisible()
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1)
     await home.getByRole('button',{name:'Sign in'}).click()
     await expect(home.getByRole('heading',{name:'Welcome back'})).toBeVisible()
@@ -31,3 +31,18 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     await expect(home.getByText(/Live brokerage orders are disabled/)).toBeVisible()
   })
 }
+
+test('public evidence cards preserve source results and missing evidence states', async ({ page }) => {
+  await page.route('**/api/public/strategies', route => route.fulfill({
+    status: 200, contentType:'application/json', body:JSON.stringify({data:[
+      {templateId:'test-historical',name:'Historical sample',windows:{'1Y':{status:'ok',medianReturnPct:-3.5,medianBuyAndHoldPct:2.25,symbolsTested:5,trades:4}}},
+      {templateId:'tmpl_ai_catalyst_momentum',name:'AI session pending',tags:['ai'],windows:{forward:{status:'awaiting_sessions'}}}
+    ]})
+  }))
+  await page.goto('/')
+  await page.getByTestId('public-live-evidence').scrollIntoViewIfNeeded()
+  await expect(page.getByText('−3.50%')).toBeVisible()
+  await expect(page.getByText('+2.25%')).toBeVisible()
+  await expect(page.getByText('Awaiting forward paper sessions')).toBeVisible()
+  await expect(page.getByText('Historical sample')).toBeVisible()
+})

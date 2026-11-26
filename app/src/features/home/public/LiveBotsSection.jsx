@@ -1,54 +1,88 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { loadPublicStrategies, summaryLine } from '../../strategies/strategiesApi'
+import { loadPublicStrategies, pctText } from '../../strategies/strategiesApi'
 import PipelinePulse from './PipelinePulse'
 
-const STRATEGY = 'tmpl_ai_catalyst_momentum'
+const AI_TEMPLATE = 'tmpl_ai_catalyst_momentum'
+const isAiStrategy = row => row.templateId === AI_TEMPLATE || row.tags?.includes('ai')
+
+function evidenceFor(row) {
+  const ai = isAiStrategy(row)
+  const window = ai ? 'forward' : row.windows?.['1Y'] ? '1Y' : '5Y'
+  return { window, ai, evidence: row.windows?.[window] }
+}
+
+function Metric({ label, value }) {
+  return <div className="tl-public-result__metric"><dt>{label}</dt><dd>{value}</dd></div>
+}
+
+function ResultCard({ row }) {
+  const { window, ai, evidence } = evidenceFor(row)
+  const ready = evidence?.status === 'ok'
+  const templateId = row.templateId
+  return (
+    <article className="tl-public-panel tl-public-result" data-testid="public-result-card">
+      <div className="tl-public-result__topline">
+        <span className="tl-public-result-type">{ai ? 'AI · FORWARD PAPER' : 'STRATEGY · HISTORICAL TEST'}</span>
+        <span className="tl-public-result__window">{window === 'forward' ? 'Since publication' : window === '1Y' ? '1-year test' : '5-year test'}</span>
+      </div>
+      <h3>{row.name || row.title || templateId}</h3>
+      {ready ? (
+        <dl className="tl-public-result__metrics">
+          <Metric label="Median return" value={pctText(evidence.medianReturnPct)} />
+          <Metric label="Buy & hold" value={pctText(evidence.medianBuyAndHoldPct)} />
+          <Metric label="Symbols tested" value={Number.isFinite(evidence.symbolsTested) ? evidence.symbolsTested : '—'} />
+          <Metric label="Trades" value={Number.isFinite(evidence.trades) ? evidence.trades : '—'} />
+        </dl>
+      ) : (
+        <div className="tl-public-result__unavailable" role="status">{evidence?.status === 'awaiting_sessions' ? 'Awaiting forward paper sessions' : evidence?.status === 'not_backtestable' ? 'Historical test not available' : 'No completed results published'}</div>
+      )}
+      <span className="tl-public-result-meta">{ready ? 'Published simulated evidence' : 'No completed return available'}</span>
+      <Link to={`/strategies/${encodeURIComponent(templateId)}`} className="tl-public-result-link">Inspect strategy and methodology <span aria-hidden="true">↗</span></Link>
+    </article>
+  )
+}
 
 function StrategyEvidence() {
-  const [result,setResult] = useState({status:'loading',rows:[]})
-  useEffect(()=>{
+  const [result, setResult] = useState({status:'loading',rows:[]})
+  useEffect(() => {
     let active = true
     loadPublicStrategies()
-      .then(data=>{if(active)setResult({status:'ready',rows:Array.isArray(data)?data:[]})})
-      .catch(()=>{if(active)setResult({status:'error',rows:[]})})
-    return ()=>{active=false}
-  },[])
-  if (result.status==='loading') return <div className="tl-public-panel tl-public-result-state" role="status">Loading published strategy evidence…</div>
-  if (result.status==='error') return <div className="tl-public-panel tl-public-result-state" role="status">Strategy data is temporarily unavailable. <Link to="/strategies">Browse strategies</Link></div>
-  if (result.rows.length===0) return <div className="tl-public-panel tl-public-result-state">No published strategy results yet. <Link to="/strategies">View strategies</Link></div>
-  const ordered = [...result.rows].sort((a,b)=>Number(b.templateId===STRATEGY)-Number(a.templateId===STRATEGY)).slice(0,3)
-  return <div className="tl-public-results-grid">{ordered.map(row=>{
-    const ai = row.templateId===STRATEGY || row.tags?.includes('ai')
-    const evidence = ai?row.windows?.forward:row.windows?.['1Y']
-    return <article className="tl-public-panel tl-public-result" key={row.templateId}>
-      <span className="tl-public-result-type">{ai?'AI-MANAGED · FORWARD PAPER':'STRATEGY · HISTORICAL TEST'}</span>
-      <h3>{row.name||row.title||row.templateId}</h3>
-      <p>{summaryLine(evidence)}</p>
-      <span className="tl-public-result-meta">{evidence?.status==='ok'?'Published evidence':'Evidence still accumulating'}</span>
-      <Link to={`/strategies/${encodeURIComponent(row.templateId)}`} className="tl-public-result-link">Inspect results and methodology →</Link>
-    </article>
-  })}</div>
+      .then(data => { if (active) setResult({status:'ready',rows:Array.isArray(data) ? data : []}) })
+      .catch(() => { if (active) setResult({status:'error',rows:[]}) })
+    return () => { active = false }
+  }, [])
+  if (result.status === 'loading') return <div className="tl-public-panel tl-public-result-state" role="status">Loading published strategy evidence…</div>
+  if (result.status === 'error') return <div className="tl-public-panel tl-public-result-state" role="status">Strategy data is temporarily unavailable. <Link to="/strategies">Browse strategies</Link></div>
+  if (result.rows.length === 0) return <div className="tl-public-panel tl-public-result-state">No published strategy results yet. <Link to="/strategies">View strategies</Link></div>
+  const selected = [...result.rows].sort((a,b) => Number(isAiStrategy(b)) - Number(isAiStrategy(a))).slice(0,3)
+  return (
+    <div className="tl-public-results-grid">
+      {selected.map(row => <ResultCard row={row} key={row.templateId} />)}
+    </div>
+  )
 }
 
 export default function LiveBotsSection() {
-  const [visible,setVisible]=useState(false)
-  useEffect(()=>{
-    if(typeof IntersectionObserver==='undefined'){setVisible(true);return}
-    const el=document.getElementById('public-live-evidence')
-    if(!el){setVisible(true);return}
-    const observer=new IntersectionObserver(entries=>{if(entries.some(x=>x.isIntersecting)){setVisible(true);observer.disconnect()}},{rootMargin:'320px'})
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') { setVisible(true); return }
+    const el = document.getElementById('public-live-evidence')
+    if (!el) { setVisible(true); return }
+    const observer = new IntersectionObserver(entries => { if (entries.some(x => x.isIntersecting)) { setVisible(true); observer.disconnect() } }, {rootMargin:'320px'})
     observer.observe(el)
-    return ()=>observer.disconnect()
-  },[])
-  return <section className="tl-public-section" id="public-live-evidence" aria-labelledby="live-evidence-title">
-    <header className="tl-public-section-head">
-      <p className="tl-public-eyebrow">REAL PLATFORM EVIDENCE</p>
-      <h2 id="live-evidence-title">See what the bots actually do.</h2>
-      <p>Real published strategy records, not fabricated marketing results. Forward paper trading and historical tests are labeled separately, including losses and inactive strategies.</p>
-    </header>
-    <div className="tl-public-evidence-area">{visible?<><PipelinePulse/><StrategyEvidence/></>:<div className="tl-public-panel tl-public-result-state" aria-hidden="true">Strategy evidence</div>}</div>
-    <p className="tl-public-disclosure">Returns are simulated or historical, not returns earned by customers. Data updates after publication; results can be negative. Past performance is not predictive.</p>
-    <Link className="tl-public-text-link" to="/strategies">See every public strategy →</Link>
-  </section>
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <section className="tl-public-section" id="public-live-evidence" aria-labelledby="live-evidence-title">
+      <header className="tl-public-section-head">
+        <p className="tl-public-eyebrow">PUBLISHED STRATEGY EVIDENCE</p>
+        <h2 id="live-evidence-title">Examine recorded results before choosing a strategy.</h2>
+        <p>These figures come from TradeLoom's public evidence API. Forward paper results and historical backtests are different. Incomplete and negative results are not hidden.</p>
+      </header>
+      <div className="tl-public-evidence-area">{visible ? <><PipelinePulse/><StrategyEvidence/></> : <div className="tl-public-panel tl-public-result-state" aria-hidden="true">Strategy evidence</div>}</div>
+      <p className="tl-public-disclosure">Figures are based on historical or simulated trading, not actual customer returns. Results may be negative or incomplete; simulations do not predict future performance.</p>
+      <Link className="tl-public-text-link" to="/strategies">Compare all published strategies <span aria-hidden="true">↗</span></Link>
+    </section>
+  )
 }
