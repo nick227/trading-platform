@@ -103,6 +103,14 @@ export async function getBrokerStatus() {
   return status
 }
 
+export async function fetchReconcileStatus() {
+  return apiFetch('/account/reconcile-status')
+}
+
+export async function triggerReconcile() {
+  return apiFetch('/account/reconcile', { method: 'POST' })
+}
+
 // ── Profile updates ──────────────────────────────────────────────────────────
 // These are placeholders — implement the server endpoints when needed.
 

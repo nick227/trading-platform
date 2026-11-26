@@ -2,9 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import BrokerTab from '../BrokerTab'
 import * as AuthProviderModule from '../../../app/AuthProvider.jsx'
+import * as ProfileClientModule from '../../../api/profileClient.js'
 
 vi.mock('../../../app/AuthProvider.jsx', () => ({
   useAuth: vi.fn(),
+}))
+
+vi.mock('../../../api/profileClient.js', () => ({
+  fetchReconcileStatus: vi.fn(),
+  triggerReconcile: vi.fn(),
 }))
 
 describe('BrokerTab', () => {
@@ -109,6 +115,76 @@ describe('BrokerTab', () => {
     await waitFor(() => {
       expect(saveAlpacaKeys).toHaveBeenCalledWith('PKTESTKEY123', 'SKTESTSECRET456', true)
       expect(screen.getByText(/Alpaca paper account connected/i)).toBeInTheDocument()
+    })
+  })
+
+  it('renders in-sync ledger status and triggers manual reconciliation', async () => {
+    ProfileClientModule.fetchReconcileStatus.mockResolvedValue({
+      synced: true,
+      lastSyncStatus: 'ok',
+      lastSyncedAt: '2026-11-26T04:00:00Z',
+      inSync: true,
+      mismatchCount: 0,
+      mismatchDetails: [],
+      positionSource: 'db'
+    })
+    ProfileClientModule.triggerReconcile.mockResolvedValue({
+      imported: 3,
+      scannedOrders: 10,
+      inSync: true
+    })
+
+    AuthProviderModule.useAuth.mockReturnValue({
+      brokerStatus: { connected: true, paper: true, status: 'active', equity: 100000 },
+      saveAlpacaKeys,
+      refreshBrokerStatus,
+      disconnectBroker
+    })
+
+    render(<BrokerTab />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Broker Ledger & Position Reconciliation/i)).toBeInTheDocument()
+      expect(screen.getByText(/✓ Ledger In Sync/i)).toBeInTheDocument()
+    })
+
+    const reconcileBtn = screen.getByRole('button', { name: /Reconcile Activity Now/i })
+    fireEvent.click(reconcileBtn)
+
+    await waitFor(() => {
+      expect(ProfileClientModule.triggerReconcile).toHaveBeenCalledTimes(1)
+      expect(screen.getByText(/Reconciliation complete. Scanned 10 orders \(imported 3\)/i)).toBeInTheDocument()
+    })
+  })
+
+  it('renders position drift warning and mismatch details table when ledger is drifted', async () => {
+    ProfileClientModule.fetchReconcileStatus.mockResolvedValue({
+      synced: true,
+      lastSyncStatus: 'ok',
+      lastSyncedAt: '2026-11-26T04:00:00Z',
+      inSync: false,
+      mismatchCount: 2,
+      mismatchDetails: [
+        { symbol: 'AAPL', localQty: 10, brokerQty: 0, brokerAvgPrice: 0 },
+        { symbol: 'SPY', localQty: 50, brokerQty: 45, brokerAvgPrice: 590.5 }
+      ],
+      positionSource: 'broker'
+    })
+
+    AuthProviderModule.useAuth.mockReturnValue({
+      brokerStatus: { connected: true, paper: true, status: 'active', equity: 100000 },
+      saveAlpacaKeys,
+      refreshBrokerStatus,
+      disconnectBroker
+    })
+
+    render(<BrokerTab />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/⚠ Position Drift \(2 mismatches\)/i)).toBeInTheDocument()
+      expect(screen.getByText('AAPL')).toBeInTheDocument()
+      expect(screen.getByText('SPY')).toBeInTheDocument()
+      expect(screen.getByText('$590.50')).toBeInTheDocument()
     })
   })
 })
