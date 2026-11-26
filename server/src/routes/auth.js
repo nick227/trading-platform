@@ -50,7 +50,7 @@ export default async function authRoutes(fastify, opts = {}) {
       }
     })
 
-    return reply.code(201).send({ id: user.id, email: user.email, fullName: user.fullName })
+    return reply.code(201).send({ id: user.id, email: user.email, fullName: user.fullName, role: user.role || 'user' })
   })
 
   // POST /api/auth/login
@@ -83,7 +83,7 @@ export default async function authRoutes(fastify, opts = {}) {
       maxAge: 7 * 24 * 60 * 60
     })
 
-    return { id: user.id, email: user.email, fullName: user.fullName }
+    return { id: user.id, email: user.email, fullName: user.fullName, role: user.role || 'user' }
   })
 
   // GET /api/auth/client-address — proxy-chain diagnostic for setting TRUST_PROXY.
@@ -110,7 +110,7 @@ export default async function authRoutes(fastify, opts = {}) {
 
   // GET /api/auth/me  — returns current user from cookie
   fastify.get('/me', { preHandler: [authenticate] }, async (request) => {
-    const { id, email, fullName, subscription } = request.user
-    return { id, email, fullName, plan: subscription?.plan, subscriptionStatus: subscription?.status }
+    const { id, email, fullName, role, subscription } = request.user
+    return { id, email, fullName, role: role || 'user', plan: subscription?.plan, subscriptionStatus: subscription?.status }
   })
 }

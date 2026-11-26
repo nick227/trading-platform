@@ -320,6 +320,7 @@ model User {
   email        String        @unique
   passwordHash String
   fullName     String
+  role         String        @default("user") // user | operator | admin
   riskSettings Json?         // User-specific risk limits and preferences
   createdAt    DateTime      @default(now())
   subscription Subscription?

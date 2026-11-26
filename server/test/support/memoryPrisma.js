@@ -81,6 +81,7 @@ const DEFAULTS = {
   }),
   bot: () => ({ enabled: true, deletedAt: null, config: {} }),
   botRule: () => ({ enabled: true, config: {} }),
+  user: () => ({ role: 'user' }),
 }
 
 // Single-column @unique constraints from schema.prisma (NULLs never conflict, as in MySQL).
