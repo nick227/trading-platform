@@ -64,7 +64,7 @@ describe('flagship daily orchestration', () => {
       prismaClient: f.prismaClient, engine: f.engine, provider: f.provider,
       botLoader: async () => ({ bot: f.bot, portfolio: f.portfolio }),
       fillLoader: async () => [],
-      accountant: () => ({ realizedPnl: 0, openPositions: {} }),
+      accountant: () => ({ hasFills: false, openPositions: {} }),
       pendingProcessor: async () => ({ filledExecutions: [], failedExecutions: [] }),
       riskEvaluator: async () => ({ allowed: true }),
       usageGovernor: f.usageGovernor
