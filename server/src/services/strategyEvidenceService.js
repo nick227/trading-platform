@@ -154,23 +154,34 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
     const todo = symbols.flatMap((s) => windows.filter((w) => force ? true : !existing.has(`${s}|${w.id}`)).map((w) => ({ symbol: s, window: w })))
     if (!todo.length) continue
     const base = { strategyVersionId: v.id, templateId: template.id, endDate: end, executionModel: STANDARD.executionModel, riskPolicyVersion: RISK_POLICY_VERSION }
-    const save = async (symbol, window, data) => {
-      const id = `se_${sha([v.id, symbol, window.id, end]).slice(0, 24)}`
-      if (typeof prismaClient?.strategyEvidence?.upsert === 'function') {
-        await prismaClient.strategyEvidence.upsert({
-          where: { id },
-          create: { id, ...base, symbol, window: window.id, ...data },
-          update: { ...data }
+    const batch = []
+    const queueSave = (symbol, window, data) => {
+      batch.push({ symbol, window, data })
+    }
+    const commitBatch = async () => {
+      if (!batch.length) return
+      if (typeof prismaClient?.$transaction === 'function') {
+        const ops = batch.map(({ symbol, window, data }) => {
+          const id = `se_${sha([v.id, symbol, window.id, end]).slice(0, 24)}`
+          return prismaClient.strategyEvidence.upsert({
+            where: { id },
+            create: { id, ...base, symbol, window: window.id, ...data },
+            update: { ...data }
+          })
         })
+        await prismaClient.$transaction(ops)
       } else {
-        const row = await prismaClient.strategyEvidence.findUnique({ where: { id } }).catch(() => null)
-        if (row) {
-          await prismaClient.strategyEvidence.update({ where: { id }, data })
-        } else {
-          await prismaClient.strategyEvidence.create({ data: { id, ...base, symbol, window: window.id, ...data } })
+        for (const { symbol, window, data } of batch) {
+          const id = `se_${sha([v.id, symbol, window.id, end]).slice(0, 24)}`
+          const row = await prismaClient.strategyEvidence.findUnique({ where: { id } }).catch(() => null)
+          if (row) {
+            await prismaClient.strategyEvidence.update({ where: { id }, data })
+          } else {
+            await prismaClient.strategyEvidence.create({ data: { id, ...base, symbol, window: window.id, ...data } })
+          }
         }
       }
-      created += 1
+      created += batch.length
     }
     if (!version.backtestable) {
       if (template.id === 'tmpl_ai_catalyst_momentum' || template.botType === 'strategy_based') {
@@ -188,7 +199,7 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
         }
         for (const t of todo) {
           if (t.window.id === 'forward' && forwardStats && forwardStats.status === 'ok' && forwardStats.curve.length > 0) {
-            await save(t.symbol, t.window, {
+            queueSave(t.symbol, t.window, {
               startDate: forwardStats.curve[0]?.date || version.firstSession,
               status: 'ok',
               reason: null,
@@ -212,34 +223,35 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
               }
             })
           } else if (t.window.id === 'forward' && bot && (!forwardStats || forwardStats.status === 'awaiting_sessions' || forwardStats.curve?.length === 0)) {
-            await save(t.symbol, t.window, {
+            queueSave(t.symbol, t.window, {
               startDate: null,
               status: 'awaiting_sessions',
               reason: 'This strategy has not recorded any qualifying forward paper trades. Performance results will become available when sufficient verified trading activity exists.'
             })
           } else if (t.window.id === 'forward' && !bot) {
-            await save(t.symbol, t.window, {
+            queueSave(t.symbol, t.window, {
               startDate: null,
               status: 'not_backtestable',
               reason: 'Forward performance evaluation is not configured for this strategy: no active paper trading bot is running.'
             })
           } else {
-            await save(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
+            queueSave(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
           }
         }
       } else {
         for (const t of todo) {
           if (t.window.id === 'forward') {
-            await save(t.symbol, t.window, {
+            queueSave(t.symbol, t.window, {
               startDate: null,
               status: 'not_backtestable',
               reason: 'Forward performance evaluation is not configured for this strategy: this strategy has neither a point-in-time research replay method nor an active canonical forward paper trading bot.'
             })
           } else {
-            await save(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
+            queueSave(t.symbol, t.window, { startDate: t.window.start, status: 'not_backtestable', reason: version.reason })
           }
         }
       }
+      await commitBatch()
       continue
     }
     const bySymbol = new Map()
@@ -250,30 +262,30 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
       try {
         ds = await loadDataset({ symbols: [symbol], start: earliest, end, regimeSymbols: regimeSymbolsOf(v.definition.rules) }, { engine })
       } catch (err) {
-        for (const w of wins) await save(symbol, w, { startDate: w.start, status: 'no_data', reason: `Price data unavailable: ${String(err.message).slice(0, 200)}` })
+        for (const w of wins) queueSave(symbol, w, { startDate: w.start, status: 'no_data', reason: `Price data unavailable: ${String(err.message).slice(0, 200)}` })
         continue
       }
       for (const w of wins) {
         // Forward: strictly after the version's first published session.
         const start = w.id === 'forward' ? ds.data.calendar.find((d) => d > version.firstSession) ?? null : w.start
         if (!start || start > end) {
-          await save(symbol, w, { startDate: null, status: 'awaiting_sessions', reason: `Starts with the first session after ${version.firstSession}.` })
+          queueSave(symbol, w, { startDate: null, status: 'awaiting_sessions', reason: `Starts with the first session after ${version.firstSession}.` })
           continue
         }
         if (!ds.coverage[symbol] || ds.data.unusable.includes(symbol)) {
-          await save(symbol, w, { startDate: start, status: 'no_data', reason: 'No usable price history for this symbol and window.' })
+          queueSave(symbol, w, { startDate: start, status: 'no_data', reason: 'No usable price history for this symbol and window.' })
           continue
         }
         const { rules, parameters } = resolveRules(v.definition, ds.data.bars[symbol] ?? [], start)
         if (!rules) {
-          await save(symbol, w, { startDate: start, status: 'no_data', reason: 'No price before the window to standardize the trigger.' })
+          queueSave(symbol, w, { startDate: start, status: 'no_data', reason: 'No price before the window to standardize the trigger.' })
           continue
         }
         const r = await runBacktest({
           bot: { id: `platform:${v.id}`, config: { ...v.definition.config, tickers: [symbol] }, rules },
           symbols: [symbol], start, end: w.end ?? end, executionModel: STANDARD.executionModel, startingCash: STANDARD.startingCash, riskSettings: {}, restrictMode: 'block', data: ds.data,
         })
-        await save(symbol, w, {
+        queueSave(symbol, w, {
           startDate: start, status: 'ok', dataFingerprint: ds.fingerprint, parameters,
           results: {
             range: r.range, capital: r.capital, metrics: r.metrics,
@@ -286,6 +298,7 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
         await yieldEvery()
       }
     }
+    await commitBatch()
   }
   return { end, created }
 }
@@ -327,9 +340,17 @@ async function currentVersion(prismaClient, template) {
 }
 
 async function latestRows(prismaClient, versionId) {
-  const latest = await prismaClient.strategyEvidence.findFirst({ where: { strategyVersionId: versionId }, orderBy: { endDate: 'desc' }, select: { endDate: true } })
+  const latest = await prismaClient.strategyEvidence.findFirst({
+    where: { strategyVersionId: versionId },
+    orderBy: { endDate: 'desc' },
+    select: { endDate: true }
+  })
   if (!latest) return { endDate: null, rows: [] }
-  return { endDate: latest.endDate, rows: await prismaClient.strategyEvidence.findMany({ where: { strategyVersionId: versionId, endDate: latest.endDate }, orderBy: { symbol: 'asc' } }) }
+  const rows = await prismaClient.strategyEvidence.findMany({
+    where: { strategyVersionId: versionId, endDate: latest.endDate },
+    orderBy: { symbol: 'asc' }
+  })
+  return { endDate: latest.endDate, rows }
 }
 
 export async function listPublicStrategies({ prismaClient = prisma } = {}) {

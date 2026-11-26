@@ -28,7 +28,8 @@ import {
   getAdminAiCycleDetail,
   listAdminAiSymbolDecisions,
   getAdminMarketDataDiagnostics,
-  revalidateAdminMarketFeed
+  revalidateAdminMarketFeed,
+  getResearchPublicationDiagnostics
 } from '../services/adminService.js'
 
 export default async function adminRoutes(app) {
@@ -451,6 +452,20 @@ export default async function adminRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'ADMIN_MARKET_DATA_REVALIDATE_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/admin/research/pipeline-diagnostics — Research publication pipeline health and evidence diagnostics
+  app.get('/research/pipeline-diagnostics', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      const data = await getResearchPublicationDiagnostics()
+      return reply.send({ success: true, data })
+    } catch (err) {
+      app.log.error(err, 'Failed to fetch research pipeline diagnostics')
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'RESEARCH_DIAGNOSTICS_ERROR', message: err.message }
       })
     }
   })

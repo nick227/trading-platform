@@ -13,6 +13,7 @@ import { activateEmergencyStop, clearEmergencyStop, getEmergencyStop } from './e
 import { PLATFORM_USER_ID } from './ai/aiBotService.js'
 import { validateAndIngestDailyMarketData, DEFAULT_TRADABLE_SYMBOLS } from './ai/aiMarketDataService.js'
 import { getExpectedCompletedExchangeSession, isExchangeTradingDay } from '../utils/marketCalendar.js'
+import { engineClient } from '../clients/engine.js'
 
 export const VALID_ROLES = ['user', 'operator', 'admin']
 
@@ -1277,4 +1278,122 @@ export async function revalidateAdminMarketFeed({
   }
 
   return diagnostics
+}
+
+/**
+ * Diagnostic inspect function for the signed research publication pipeline.
+ * Monitors Alpha Engine publication freshness, integrity gate verification,
+ * and downstream trading eligibility.
+ */
+export async function getResearchPublicationDiagnostics({
+  engine = engineClient,
+  universe = ['AAPL', 'AMZN', 'GOOGL', 'JPM', 'META', 'MSFT', 'NVDA', 'QQQ', 'SPY', 'XOM']
+} = {}) {
+  let engineHealth = null
+  try {
+    engineHealth = await (typeof engine.getHealth === 'function' ? engine.getHealth() : null)
+  } catch {
+    // optional
+  }
+
+  // Check universe research signals
+  const symbols = []
+  let latestPubId = null
+  let latestPubInfo = null
+
+  for (const sym of universe) {
+    try {
+      const found = await engine.locateResearchPrediction(sym, 'default', { mode: 'live' })
+      if (found) {
+        if (!latestPubId && found.publicationId) {
+          latestPubId = found.publicationId
+          latestPubInfo = found
+        }
+        let ev = null
+        try {
+          const trace = await engine.getPredictionTrace(found.predictionId)
+          ev = trace?.evidence?.snapshot ?? trace?.evidence ?? null
+        } catch { /* optional */ }
+        const q = found.quality ?? {}
+        symbols.push({
+          symbol: sym,
+          status: 'signal',
+          direction: ev?.direction ?? 'BUY',
+          score: ev?.confidence ?? ev?.rankScore ?? null,
+          predictionId: found.predictionId,
+          eligibleForTrading: q.edgeOverBaseline === true && q.genuineOutOfSample === true && found.run?.intelligenceConfidenceTier === 'full',
+          edgeOverBaseline: q.edgeOverBaseline ?? false,
+          genuineOutOfSample: q.genuineOutOfSample ?? false,
+          qualityVerdict: found.researchQuality?.verdict ?? 'unverified'
+        })
+      } else {
+        symbols.push({
+          symbol: sym,
+          status: 'no_signal',
+          direction: null,
+          score: null,
+          predictionId: null,
+          eligibleForTrading: false,
+          edgeOverBaseline: false,
+          genuineOutOfSample: false,
+          qualityVerdict: 'no_signal'
+        })
+      }
+    } catch (err) {
+      symbols.push({
+        symbol: sym,
+        status: 'error',
+        error: err.message,
+        eligibleForTrading: false
+      })
+    }
+  }
+
+  let publicationRecord = null
+  if (latestPubId && typeof engine.getResearchPublication === 'function') {
+    try {
+      publicationRecord = await engine.getResearchPublication(latestPubId)
+    } catch {
+      // fallback
+    }
+  }
+
+  const gates = publicationRecord?.gates ?? []
+  const failedGates = gates.filter((g) => g.status === 'fail').map((g) => g.gate)
+  const isHealthy = latestPubInfo?.run?.runStatus === 'HEALTHY'
+  const eligibleCount = symbols.filter((s) => s.eligibleForTrading).length
+
+  return {
+    timestamp: new Date().toISOString(),
+    status: latestPubId ? (isHealthy ? 'healthy' : 'degraded') : 'dormant',
+    publication: latestPubInfo ? {
+      id: latestPubId,
+      marketDate: latestPubInfo.marketDate,
+      publishedAt: latestPubInfo.rankedAt,
+      model: latestPubInfo.researchQuality?.model ?? 'trend_momentum_v1',
+      runStatus: latestPubInfo.run?.runStatus ?? 'UNKNOWN',
+      publisherKeyId: publicationRecord?.publisher_key_id ?? 'registered_key',
+      workerId: publicationRecord?.worker_id ?? 'scheduled_worker',
+      schemaVersion: publicationRecord?.schema_version ?? 'research-publication/v1',
+    } : null,
+    gates,
+    failedGates,
+    quality: latestPubInfo?.quality ?? null,
+    researchQuality: latestPubInfo?.researchQuality ?? null,
+    engineHealth: engineHealth?.live_bars ?? null,
+    summary: {
+      pipelineActive: Boolean(latestPubId),
+      operationalStatus: latestPubInfo?.run?.runStatus ?? 'INACTIVE',
+      symbolsEvaluated: symbols.length,
+      signalsCount: symbols.filter((s) => s.status === 'signal').length,
+      tradingEligibleCount: eligibleCount,
+      tradingEligibilityVerdict: eligibleCount > 0 ? 'ELIGIBLE' : 'PROTECTED_NO_EDGE',
+      explanation: eligibleCount === 0 && latestPubInfo
+        ? 'Research publication is healthy and verified, but trading is prevented because the published model has not demonstrated a statistically significant edge over buy-and-hold on genuine out-of-sample data.'
+        : !latestPubId
+        ? 'No research publications have been accepted by the operational engine yet.'
+        : 'Research signals are qualified and eligible for trading.'
+    },
+    symbols
+  }
 }

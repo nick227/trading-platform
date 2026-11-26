@@ -358,6 +358,17 @@ export const engineClient = {
     return engineFetch('/api/market/daily-bars?' + params.toString())
   },
 
+  /** Alpha Engine operational health check. */
+  async getHealth() {
+    return engineFetch('/health')
+  },
+
+  /** Retrieve a verified research publication record by ID directly from Alpha Engine. */
+  async getResearchPublication(publicationId) {
+    if (!publicationId) return null
+    return engineFetch(`/api/research/publications/${encodeURIComponent(publicationId)}`)
+  },
+
   /** Point-in-time regime per session over [start, end] (backtests). */
   async getRegimeHistory(ticker, start, end) {
     const params = new URLSearchParams({ start, end })
