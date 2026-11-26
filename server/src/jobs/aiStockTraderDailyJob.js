@@ -70,7 +70,7 @@ export async function runStockTraderDailyJob({
   })
   const governor = usageGovernor || createAiUsageGovernor({ prismaClient, env })
   const research = await runStockTraderResearch({
-    bot, portfolio, screening, portfolioSnapshot, prismaClient, provider, usageGovernor: governor
+    bot, portfolio, screening, portfolioSnapshot, prismaClient, provider, usageGovernor: governor, engine
   })
   if (!research.ok) return { ok: true, skipped: true, reason: research.reason, screening, research, fills }
   const orders = await queueStockTraderPaperOrders({
