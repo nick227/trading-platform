@@ -97,7 +97,7 @@ export function createStockTraderContextRegistry() {
         })
         : null
       const snapshot = {
-        strategyVersion: AI_STOCK_TRADER_VERSION,
+        strategyVersion: input?.config?.strategyVersion || AI_STOCK_TRADER_VERSION,
         asOfSession: session,
         context: ordered,
         unavailable: unavailable.sort((a, b) => a.id.localeCompare(b.id)),
