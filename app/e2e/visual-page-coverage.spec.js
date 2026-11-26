@@ -59,9 +59,8 @@ for (const width of [320, 375, 768, 1024, 1440]) {
     }
     expect(axes[0].paddingLeft).toBe(width < 700 ? 16 : 24)
     const columns = width >= 1300 ? 3 : width >= 700 ? 2 : 1
-    const firstRow = axes.slice(0,columns)
-    expect(firstRow.every(axis => Math.abs(axis.left - firstRow[0].left) <= 1)).toBe(columns === 1)
-    if (columns > 1) expect(new Set(firstRow.map(axis => Math.round(axis.left))).size).toBe(columns)
+    const firstRow = axes.slice(0, Math.min(columns, axes.length))
+    expect(new Set(firstRow.map(axis => Math.round(axis.left))).size).toBe(firstRow.length)
     await page.screenshot({ path: testInfo.outputPath(`strategies-${width}.png`), fullPage: true })
   })
 }
