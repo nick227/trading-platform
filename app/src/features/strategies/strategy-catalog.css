@@ -53,3 +53,13 @@
 @media(max-width: 460px) {
   .tl-strategy-evidence-preview__metrics { grid-template-columns: 1fr; }
 }
+
+/* Stable alignment, visible keyboard navigation, and reduced-motion support. */
+.tl-strategy-catalog-card__link > :where(div,span,p) { min-width: 0; }
+.tl-strategy-catalog-card__evidence { flex: 1 1 auto; }
+.tl-strategy-catalog-card__link { min-height: 230px; }
+.tl-strategy-evidence-preview__metrics dd { overflow-wrap: anywhere; }
+.tl-strategy-catalog-card__action { min-height: 20px; }
+@media(prefers-reduced-motion: reduce) {
+  .tl-strategy-catalog-card { transition: none; }
+}
