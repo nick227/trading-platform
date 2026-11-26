@@ -1,0 +1,27 @@
+name: TradeLoom AI Backend Contracts
+
+on:
+  pull_request:
+    paths:
+      - 'server/src/services/ai/**'
+      - 'server/src/jobs/aiStrategy*.js'
+      - 'server/test/**'
+      - 'server/package.json'
+      - '.github/workflows/ai-backend-contracts.yml'
+  workflow_dispatch:
+
+jobs:
+  ai-backend-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install server dependencies
+        run: npm install --no-audit --no-fund
+      - name: Generate Prisma client
+        run: npm run db:generate --workspace=server
+      - name: AI foundation unit tests
+        run: npm exec --workspace=server -- vitest run test/unit/aiStockTraderFoundation.test.js
