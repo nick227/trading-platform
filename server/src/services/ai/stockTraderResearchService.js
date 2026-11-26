@@ -5,6 +5,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import prisma from '../../loaders/prisma.js'
 import { getProvider } from './providers/providerRegistry.js'
+import { defaultAiBotDefinitionRegistry } from './botDefinitions.js'
 import { createDefaultStockTraderContextRegistry } from './stockTraderContext.js'
 import { STOCK_TRADER_PROMPT_VERSION, buildStockTraderPrompts, validateStockTraderDecision } from './strategies/stockTraderDecision.js'
 
@@ -27,16 +28,20 @@ export async function runStockTraderResearch({
   }
   if (!screening?.asOfSession) throw new Error('Screening session missing')
   const config = bot.config
+  const definition = defaultAiBotDefinitionRegistry.resolveInstance(bot)
+  if (providerName !== definition.provider) throw new Error('AI research provider differs from pinned bot definition')
   const snapshot = await registry.assemble({
     session: screening.asOfSession,
     input: { screening, portfolio: portfolioSnapshot, config },
-    modules: config.research?.contextModules
+    modules: config.research?.contextModules,
+    maxBytes: definition.contextByteBudget
   })
-  const { systemPrompt, userPrompt } = buildStockTraderPrompts(snapshot)
-  const model = config.model || 'gpt-4o-mini'
+  const { systemPrompt, userPrompt } = buildStockTraderPrompts(snapshot, definition)
+  const model = definition.model
   const fingerprint = createHash('sha256').update(JSON.stringify({
     botId: bot.id, portfolioId: portfolio.id, providerName, model,
     promptVersion: STOCK_TRADER_PROMPT_VERSION,
+    definitionVersion: definition.version,
     snapshotFingerprint: snapshot.fingerprint,
     systemPrompt, userPrompt
   })).digest('hex')
@@ -82,7 +87,7 @@ export async function runStockTraderResearch({
     reservation = await usageGovernor.reserve({ botId: bot.id, jobKey: fingerprint, model })
     const client = provider || getProvider(providerName)
     const response = await client.completeStructured({
-      systemPrompt, userPrompt, model, temperature: 0.2, maxTokens: 1000
+      systemPrompt, userPrompt, model, temperature: 0.2, maxTokens: definition.tokenBudget
     })
     const settlement = await usageGovernor.settle(reservation, { usage: response.usage })
     if (settlement?.settled !== true) throw new Error('AI usage settlement was not committed')
@@ -99,6 +104,7 @@ export async function runStockTraderResearch({
           strategy: config.strategyId,
           strategyVersion: config.strategyVersion,
           promptVersion: STOCK_TRADER_PROMPT_VERSION,
+          definitionVersion: definition.version,
           providerName,
           model: response.model || model,
           usage: response.usage || null,
