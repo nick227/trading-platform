@@ -62,3 +62,25 @@ test('stock research shows actual published ranking fields and no made-up data d
   await expect(picker.getByText('Publication date unavailable')).toBeVisible()
   await expect(picker.getByRole('link',{name:/Open stock research/})).toHaveAttribute('href','/research')
 })
+
+test('automation pipeline distinguishes recorded, skipped and unrecorded stages', async ({page}) => {
+  await page.route('**/api/public/strategies/tmpl_ai_catalyst_momentum/pipeline', route => route.fulfill({
+    status:200,contentType:'application/json',body:JSON.stringify({data:{
+      status:'healthy',pendingOrdersCount:0,stages:{
+        market_data_ingestion:{status:'ok',session:'2026-11-24'},
+        pending_order_execution:{status:'skipped',session:'2026-11-24'},
+        ai_research_decision:{status:'unrecorded'},
+        portfolio_valuation:{status:'ok',session:'2026-11-24'},
+        strategy_evidence_publication:{status:'unrecorded'}
+      }
+    }})
+  }))
+  await page.goto('/')
+  await page.locator('#public-automation').scrollIntoViewIfNeeded()
+  const pipeline = page.getByTestId('public-pipeline')
+  await expect(pipeline).toBeVisible()
+  await expect(pipeline.getByText('2 of 5 stages')).toBeVisible()
+  await expect(pipeline.getByText('Skipped')).toBeVisible()
+  await expect(pipeline.getByText('Not recorded')).toHaveCount(2)
+  await expect(pipeline.getByText('Pending paper orders').first()).toBeVisible()
+})

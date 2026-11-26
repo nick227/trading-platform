@@ -3,6 +3,7 @@ import AuthPanel from './AuthPanel'
 import PricingSection from './PricingSection'
 import LiveBotsSection from './LiveBotsSection'
 import StockResearchSection from './StockResearchSection'
+import AutomationSection from './AutomationSection'
 import ProductStorySection from './ProductStorySection'
 import ConversionFooter from './ConversionFooter'
 import './public-home.css'
@@ -61,6 +62,7 @@ export default function PublicHome() {
       <PricingSection />
       <LiveBotsSection />
       <StockResearchSection />
+      <AutomationSection />
       <ProductStorySection />
       <ConversionFooter />
     </main>
