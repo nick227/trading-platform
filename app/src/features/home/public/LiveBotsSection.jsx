@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { loadPublicStrategies, pctText } from '../../strategies/strategiesApi'
-import PipelinePulse from './PipelinePulse'
 
 const AI_TEMPLATE = 'tmpl_ai_catalyst_momentum'
 const isAiStrategy = row => row.templateId === AI_TEMPLATE || row.tags?.includes('ai')
@@ -80,7 +79,7 @@ export default function LiveBotsSection() {
         <h2 id="live-evidence-title">Examine recorded results before choosing a strategy.</h2>
         <p>These figures come from TradeLoom's public evidence API. Forward paper results and historical backtests are different. Incomplete and negative results are not hidden.</p>
       </header>
-      <div className="tl-public-evidence-area">{visible ? <><PipelinePulse/><StrategyEvidence/></> : <div className="tl-public-panel tl-public-result-state" aria-hidden="true">Strategy evidence</div>}</div>
+      <div className="tl-public-evidence-area">{visible ? <StrategyEvidence/> : <div className="tl-public-panel tl-public-result-state" aria-hidden="true">Strategy evidence</div>}</div>
       <p className="tl-public-disclosure">Figures are based on historical or simulated trading, not actual customer returns. Results may be negative or incomplete; simulations do not predict future performance.</p>
       <Link className="tl-public-text-link" to="/strategies">Compare all published strategies <span aria-hidden="true">↗</span></Link>
     </section>
