@@ -1,5 +1,6 @@
 import AuthPanel from './AuthPanel'
 import PricingSection from './PricingSection'
+import LiveBotsSection from './LiveBotsSection'
 import './public-home.css'
 
 /** Logged-out marketing page. Never couple rendering to market-data availability. */
@@ -16,6 +17,7 @@ export default function PublicHome() {
         <AuthPanel />
       </section>
       <PricingSection />
+      <LiveBotsSection />
     </main>
   )
 }
