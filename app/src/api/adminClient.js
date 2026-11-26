@@ -116,3 +116,11 @@ export async function revalidateAdminMarketFeed({ session = null } = {}) {
 export async function fetchAdminResearchDiagnostics() {
   return get('/admin/research/pipeline-diagnostics')
 }
+
+export async function fetchAdminEvidenceStorage() {
+  return get('/admin/controls/evidence-storage')
+}
+
+export async function compactAdminEvidence() {
+  return post('/admin/controls/compact-evidence')
+}

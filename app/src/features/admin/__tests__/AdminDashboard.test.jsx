@@ -420,4 +420,43 @@ describe('AdminDashboard', () => {
       expect(mockFetch).toHaveBeenCalled()
     })
   })
+
+  it('switches to Operational Controls, renders evidence storage metrics and triggers compaction', async () => {
+    const mockStorage = {
+      totalRows: 240,
+      distinctSessions: 5,
+      compactedRows: 180,
+      activeRows: 60,
+      sharedCurveRows: 36,
+      estimatedStorageKb: 120
+    }
+    vi.spyOn(adminClient, 'fetchAdminEvidenceStorage').mockResolvedValue(mockStorage)
+    const mockCompact = vi.spyOn(adminClient, 'compactAdminEvidence').mockResolvedValue({
+      success: true,
+      data: { compactedRows: 30 }
+    })
+
+    render(<AdminDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Bird's Eye Overview")).toBeInTheDocument()
+    })
+
+    const controlsTab = screen.getByRole('button', { name: /Operational Controls/i })
+    controlsTab.click()
+
+    await waitFor(() => {
+      expect(screen.getByText(/Strategy Evidence Compaction & Storage/i)).toBeInTheDocument()
+      expect(screen.getByText('240')).toBeInTheDocument()
+      expect(screen.getByText('180')).toBeInTheDocument()
+      expect(screen.getByText('120 KB')).toBeInTheDocument()
+    })
+
+    const compactBtn = screen.getByRole('button', { name: /📦 Compact Superseded Evidence/i })
+    compactBtn.click()
+
+    await waitFor(() => {
+      expect(mockCompact).toHaveBeenCalled()
+    })
+  })
 })

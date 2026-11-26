@@ -23,7 +23,9 @@ import {
   fetchAdminAiDecisions,
   fetchAdminMarketDataDiagnostics,
   revalidateAdminMarketFeed,
-  fetchAdminResearchDiagnostics
+  fetchAdminResearchDiagnostics,
+  fetchAdminEvidenceStorage,
+  compactAdminEvidence
 } from '../../api/adminClient'
 import '../../styles/admin.css'
 
@@ -90,6 +92,9 @@ export default function AdminDashboard() {
   // Research Publication Pipeline states
   const [researchDiagnostics, setResearchDiagnostics] = useState(null)
   const [researchLoading, setResearchLoading] = useState(false)
+
+  // Strategy Evidence Storage & Compaction states
+  const [evidenceStorage, setEvidenceStorage] = useState(null)
 
   // In-app Action Confirmation Dialog states (replacing window.prompt and window.confirm)
   const [actionDialog, setActionDialog] = useState(null)
@@ -256,6 +261,18 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  const loadEvidenceStorage = useCallback(async () => {
+    try {
+      const res = await fetchAdminEvidenceStorage()
+      const data = res?.data ?? res
+      if (data) {
+        setEvidenceStorage(data)
+      }
+    } catch (err) {
+      // optional
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     await Promise.all([
@@ -268,10 +285,11 @@ export default function AdminDashboard() {
       loadAiCycles(aiCyclePage),
       loadAiDecisions(aiSymbolSearch, aiActionFilter, aiDecisionsPage),
       loadMarketDataDiagnostics(),
-      loadResearchDiagnostics()
+      loadResearchDiagnostics(),
+      loadEvidenceStorage()
     ])
     setLoading(false)
-  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, loadMarketDataDiagnostics, loadResearchDiagnostics, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
+  }, [loadOverview, loadActivity, loadUsers, loadAuditLogs, loadBots, loadExecutions, loadAiCycles, loadAiDecisions, loadMarketDataDiagnostics, loadResearchDiagnostics, loadEvidenceStorage, userSearch, userPage, botSearch, botStatusFilter, botTypeFilter, botPage, executionStatusFilter, executionTickerFilter, blotterPage, activityPage, auditPage, aiCyclePage, aiSymbolSearch, aiActionFilter, aiDecisionsPage])
 
   useEffect(() => {
     refreshAll()
@@ -293,6 +311,8 @@ export default function AdminDashboard() {
         loadResearchDiagnostics()
       } else if (activeTab === 'pipeline') {
         loadMarketDataDiagnostics()
+      } else if (activeTab === 'controls') {
+        loadEvidenceStorage()
       }
     }, 15000) // Poll active tab dataset & overview every 15s
     return () => clearInterval(timer)
@@ -376,6 +396,21 @@ export default function AdminDashboard() {
       await refreshAll()
     } catch (err) {
       showFeedback('error', `Evidence sync failed: ${err.serverMessage || err.message}`)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleEvidenceCompaction = async () => {
+    setActionLoading(true)
+    try {
+      const res = await compactAdminEvidence()
+      const count = res?.data?.compactedRows ?? res?.result?.compactedRows ?? res?.compactedRows ?? 0
+      showFeedback('success', `Compacted historical strategy evidence snapshots. Pruned time-series curves from ${count} superseded rows.`)
+      await loadEvidenceStorage()
+      await refreshAll()
+    } catch (err) {
+      showFeedback('error', `Evidence compaction failed: ${err.serverMessage || err.message}`)
     } finally {
       setActionLoading(false)
     }
@@ -1986,6 +2021,30 @@ export default function AdminDashboard() {
                 disabled={actionLoading || !isAdmin}
               >
                 {actionLoading ? 'Processing...' : '↻ Synchronize Evidence'}
+              </button>
+            </div>
+          </div>
+
+          <div className="tl-control-panel">
+            <h3>Strategy Evidence Compaction & Storage</h3>
+            <p>
+              Preserves permanent scalar audit facts (returns, drawdowns, trades, fingerprints) while pruning bulky time-series curves from older superseded snapshots to keep Railway database storage lean.
+            </p>
+            {evidenceStorage && (
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0.5rem 0', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <span>Total Rows: <strong style={{ color: '#f8fafc' }}>{evidenceStorage.totalRows}</strong></span>
+                <span>Sessions: <strong style={{ color: '#38bdf8' }}>{evidenceStorage.distinctSessions}</strong></span>
+                <span>Compacted: <strong style={{ color: '#4ade80' }}>{evidenceStorage.compactedRows}</strong></span>
+                <span>Payload: <strong style={{ color: '#c084fc' }}>{evidenceStorage.estimatedStorageKb} KB</strong></span>
+              </div>
+            )}
+            <div className="tl-control-actions">
+              <button
+                className="tl-btn-secondary"
+                onClick={handleEvidenceCompaction}
+                disabled={actionLoading || !isAdmin}
+              >
+                {actionLoading ? 'Compacting...' : '📦 Compact Superseded Evidence'}
               </button>
             </div>
           </div>
