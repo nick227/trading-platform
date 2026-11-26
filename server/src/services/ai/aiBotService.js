@@ -942,7 +942,7 @@ export async function processPendingAiExecutions(botId, {
                 price: currentPrice,
                 origin: 'bot',
                 sourceType: isReplayMode ? 'AI_REPLAY' : 'AI_STRATEGY',
-                sourceId: STRATEGY_ID,
+                sourceId: bot.templateId || STRATEGY_ID,
                 status: 'queued',
                 simSession: targetSession, // Look-ahead protected: queues for next session
                 clientOrderId,
