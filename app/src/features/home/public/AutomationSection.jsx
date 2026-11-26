@@ -17,8 +17,8 @@ export default function AutomationSection() {
     <section className="tl-public-section" id="public-automation" aria-labelledby="public-automation-title">
       <header className="tl-public-section-head">
         <p className="tl-public-eyebrow">AUTOMATED PAPER TRADING</p>
-        <h2 id="public-automation-title">Track the work behind each trading cycle.</h2>
-        <p>Market data, pending simulated orders, AI research, portfolio valuation, and evidence publication are separate stages. The platform records their execution state so you can distinguish completed work from missing or failed events.</p>
+        <h2 id="public-automation-title">Trading strategies are designed to operate through automated execution workflows.</h2>
+        <p>TradeLoom coordinates market data, research decisions, order processing, portfolio valuation, and strategy reporting. The current beta records the execution status of supported paper-trading stages. Real-money brokerage execution is planned for a future release.</p>
       </header>
       {visible ? <PipelinePulse/> : <div className="tl-public-panel tl-public-pipeline__state" aria-hidden="true">Automation status</div>}
     </section>

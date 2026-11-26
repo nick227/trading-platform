@@ -14,10 +14,10 @@ export default function PublicHome() {
     <main className="tl-public-home" data-testid="public-home">
       <section className="tl-public-section tl-public-hero" aria-labelledby="welcome-title">
         <div className="tl-public-hero__copy">
-          <p className="tl-public-eyebrow">AUTOMATED PAPER TRADING</p>
-          <h1 id="welcome-title">Trading bots you can watch and control.</h1>
-          <p className="tl-public-lede">Choose a strategy, assign simulated capital, and follow every decision. Pause or stop whenever you choose.</p>
-          <p className="tl-public-disclosure"><strong>Paper trading only.</strong> No deposits or live orders.</p>
+          <p className="tl-public-eyebrow">AUTOMATED TRADING PLATFORM</p>
+          <h1 id="welcome-title">Automated trading with integrated research, strategy testing, and portfolio management.</h1>
+          <p className="tl-public-lede">TradeLoom is being developed to research market opportunities, evaluate trading strategies, and automate execution through connected brokerage accounts. The current beta supports available paper-trading workflows while live brokerage trading is under development.</p>
+          <p className="tl-public-disclosure"><strong>Beta access is currently free.</strong> Real-money brokerage execution is not yet available.</p>
         </div>
         <AuthPanel />
       </section>

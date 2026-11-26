@@ -30,8 +30,8 @@ export default function EvidenceMethodSection() {
     <section className="tl-public-section" id="public-testing" aria-labelledby="public-testing-title">
       <header className="tl-public-section-head">
         <p className="tl-public-eyebrow">BACKTESTING & METHODOLOGY</p>
-        <h2 id="public-testing-title">Test results need context.</h2>
-        <p>TradeLoom publishes strategy results with comparative measures and method details. Check which period produced a result and what happened when a strategy did not trade or produced a loss.</p>
+        <h2 id="public-testing-title">Evaluate trading strategies using historical and forward-testing results.</h2>
+        <p>TradeLoom publishes historical backtests and available forward paper-trading observations with performance comparisons, execution records, and testing limitations. Each report distinguishes the conditions under which the results were produced.</p>
       </header>
       <div className="tl-public-method-grid">
         <div className="tl-public-method__types">
