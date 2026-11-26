@@ -94,4 +94,40 @@ describe('AdminDashboard', () => {
       expect(screen.getByText('Platform Emergency Kill Switch')).toBeInTheDocument()
     })
   })
+
+  it('opens in-app action dialog for emergency stop confirmation and calls setAdminEmergencyStop', async () => {
+    const mockSetEmergencyStop = vi.spyOn(adminClient, 'setAdminEmergencyStop').mockResolvedValue({ success: true })
+
+    render(<AdminDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Bird's Eye Overview")).toBeInTheDocument()
+    })
+
+    const controlsTab = screen.getByRole('button', { name: 'Operational Controls' })
+    controlsTab.click()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('🚨 Trigger Emergency Stop')[0]).toBeInTheDocument()
+    })
+
+    const stopButton = screen.getAllByText('🚨 Trigger Emergency Stop')[0]
+    stopButton.click()
+
+    // Verify modal dialog appears
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: '🚨 Trigger Platform Emergency Stop' })).toBeInTheDocument()
+      expect(screen.getByText(/CRITICAL ACTION: This will immediately pause all platform bots/i)).toBeInTheDocument()
+    })
+
+    // Click confirm in the modal
+    const dialog = screen.getByRole('dialog', { name: '🚨 Trigger Platform Emergency Stop' })
+    const confirmButton = dialog.querySelector('.tl-btn-danger')
+    expect(confirmButton).toBeInTheDocument()
+    confirmButton.click()
+
+    await waitFor(() => {
+      expect(mockSetEmergencyStop).toHaveBeenCalledWith(expect.objectContaining({ active: true }))
+    })
+  })
 })

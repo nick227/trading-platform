@@ -59,6 +59,10 @@ export default function AdminDashboard() {
   const [selectedUserDrilldown, setSelectedUserDrilldown] = useState(null)
   const [userDrilldownLoading, setUserDrilldownLoading] = useState(false)
 
+  // In-app Action Confirmation Dialog states (replacing window.prompt and window.confirm)
+  const [actionDialog, setActionDialog] = useState(null)
+  const [actionDialogInput, setActionDialogInput] = useState('')
+
   const showFeedback = (type, message) => {
     setFeedback({ type, message })
     // Automatically dismiss success notices after 6s, but keep errors persistent until operator dismisses
@@ -158,17 +162,20 @@ export default function AdminDashboard() {
     return () => clearInterval(timer)
   }, [refreshAll, loadOverview])
 
-  // Global ESC key listener to dismiss open inspection modals
+  // Global ESC key listener to dismiss open inspection modals & action dialogs
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        if (!actionLoading) {
+          setActionDialog(null)
+        }
         setSelectedBotDetail(null)
         setSelectedUserDrilldown(null)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [actionLoading])
 
   // Operational Control Handlers
   const handleMarketOpen = async () => {
@@ -223,27 +230,32 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleToggleEmergencyStop = async () => {
+  const handleToggleEmergencyStop = () => {
     const isCurrentlyActive = Boolean(overview?.emergencyStop?.active)
-    const promptMsg = isCurrentlyActive
-      ? 'Clear platform emergency stop and allow automated bot trading?'
-      : 'ACTIVATE EMERGENCY STOP? This will immediately pause platform bots and cancel active executions.'
-
-    if (!window.confirm(promptMsg)) return
-
-    setActionLoading(true)
-    try {
-      const res = await setAdminEmergencyStop({
-        active: !isCurrentlyActive,
-        reason: isCurrentlyActive ? 'Admin cleared stop' : 'Admin activated stop via dashboard'
-      })
-      showFeedback('success', `Emergency stop ${!isCurrentlyActive ? 'ACTIVATED' : 'CLEARED'}.`)
-      await refreshAll()
-    } catch (err) {
-      showFeedback('error', `Emergency stop toggle failed: ${err.serverMessage || err.message}`)
-    } finally {
-      setActionLoading(false)
-    }
+    setActionDialog({
+      title: isCurrentlyActive ? 'Clear Platform Emergency Stop' : '🚨 Trigger Platform Emergency Stop',
+      message: isCurrentlyActive
+        ? 'Are you sure you want to clear the platform emergency stop and allow automated bot trading to resume?'
+        : 'CRITICAL ACTION: This will immediately pause all platform bots and cancel active paper executions across all users.',
+      confirmLabel: isCurrentlyActive ? 'Clear Stop & Resume' : 'ACTIVATE EMERGENCY STOP',
+      confirmVariant: isCurrentlyActive ? 'primary' : 'danger',
+      onConfirm: async () => {
+        setActionLoading(true)
+        try {
+          await setAdminEmergencyStop({
+            active: !isCurrentlyActive,
+            reason: isCurrentlyActive ? 'Admin cleared stop' : 'Admin activated stop via dashboard'
+          })
+          showFeedback('success', `Emergency stop ${!isCurrentlyActive ? 'ACTIVATED' : 'CLEARED'}.`)
+          await refreshAll()
+        } catch (err) {
+          showFeedback('error', `Emergency stop toggle failed: ${err.serverMessage || err.message}`)
+        } finally {
+          setActionLoading(false)
+          setActionDialog(null)
+        }
+      }
+    })
   }
 
   const handleRoleChange = async (targetUserId, newRole) => {
@@ -258,26 +270,31 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleToggleUserStatus = async (targetUserId, currentStatus, userEmail) => {
+  const handleToggleUserStatus = (targetUserId, currentStatus, userEmail) => {
     const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended'
-    const promptMsg = newStatus === 'suspended'
-      ? `Are you sure you want to SUSPEND ${userEmail}? They will be immediately blocked from logging in or placing trades.`
-      : `Reactivate account for ${userEmail}?`
-
-    if (!window.confirm(promptMsg)) return
-
-    setActionLoading(true)
-    try {
-      await updateAdminUserStatus(targetUserId, newStatus)
-      showFeedback('success', `Account status for ${userEmail} changed to '${newStatus}'.`)
-      await loadUsers(userSearch)
-      await loadOverview()
-      await loadAuditLogs()
-    } catch (err) {
-      showFeedback('error', `Failed to update account status: ${err.serverMessage || err.message}`)
-    } finally {
-      setActionLoading(false)
-    }
+    setActionDialog({
+      title: newStatus === 'suspended' ? `Suspend Account: ${userEmail}` : `Reactivate Account: ${userEmail}`,
+      message: newStatus === 'suspended'
+        ? `Are you sure you want to SUSPEND ${userEmail}? The user will be immediately rejected with 403 Forbidden on all sessions and unable to place trades.`
+        : `Reactivate account for ${userEmail} and restore platform access?`,
+      confirmLabel: newStatus === 'suspended' ? 'Suspend Account' : 'Reactivate Account',
+      confirmVariant: newStatus === 'suspended' ? 'danger' : 'primary',
+      onConfirm: async () => {
+        setActionLoading(true)
+        try {
+          await updateAdminUserStatus(targetUserId, newStatus)
+          showFeedback('success', `Account status for ${userEmail} changed to '${newStatus}'.`)
+          await loadUsers(userSearch)
+          await loadOverview()
+          await loadAuditLogs()
+        } catch (err) {
+          showFeedback('error', `Failed to update account status: ${err.serverMessage || err.message}`)
+        } finally {
+          setActionLoading(false)
+          setActionDialog(null)
+        }
+      }
+    })
   }
 
   const handleInspectUser = async (targetUserId) => {
@@ -292,19 +309,31 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleToggleBot = async (botId, currentEnabled) => {
-    setActionLoading(true)
-    try {
-      await toggleAdminBot(botId)
-      showFeedback('success', `Bot successfully ${currentEnabled ? 'paused' : 'resumed'}.`)
-      await loadBots(botSearch, botStatusFilter, botTypeFilter)
-      await loadOverview()
-      await loadAuditLogs()
-    } catch (err) {
-      showFeedback('error', `Failed to toggle bot: ${err.serverMessage || err.message}`)
-    } finally {
-      setActionLoading(false)
-    }
+  const handleToggleBot = (botId, currentEnabled, botName) => {
+    const name = botName || botId
+    setActionDialog({
+      title: currentEnabled ? `Pause Bot: ${name}` : `Resume Bot: ${name}`,
+      message: currentEnabled
+        ? `Are you sure you want to PAUSE '${name}' (${botId})? Automated trade evaluations and order generations will be halted.`
+        : `Resume automated trading operations for '${name}' (${botId})?`,
+      confirmLabel: currentEnabled ? 'Pause Bot' : 'Resume Bot',
+      confirmVariant: currentEnabled ? 'danger' : 'primary',
+      onConfirm: async () => {
+        setActionLoading(true)
+        try {
+          await toggleAdminBot(botId)
+          showFeedback('success', `Bot successfully ${currentEnabled ? 'paused' : 'resumed'}.`)
+          await loadBots(botSearch, botStatusFilter, botTypeFilter)
+          await loadOverview()
+          await loadAuditLogs()
+        } catch (err) {
+          showFeedback('error', `Failed to toggle bot: ${err.serverMessage || err.message}`)
+        } finally {
+          setActionLoading(false)
+          setActionDialog(null)
+        }
+      }
+    })
   }
 
   const handleInspectBot = async (botId) => {
@@ -319,22 +348,31 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleCancelExecution = async (executionId, ticker) => {
-    const reason = window.prompt(`Reason for cancelling execution for ${ticker} (${executionId}):`, 'Admin manual cancellation from blotter')
-    if (!reason) return
-
-    setActionLoading(true)
-    try {
-      await cancelAdminExecution(executionId, reason)
-      showFeedback('success', `Execution ${executionId} cancelled successfully.`)
-      await loadExecutions(executionStatusFilter, executionTickerFilter)
-      await loadOverview()
-      await loadAuditLogs()
-    } catch (err) {
-      showFeedback('error', `Failed to cancel execution: ${err.serverMessage || err.message}`)
-    } finally {
-      setActionLoading(false)
-    }
+  const handleCancelExecution = (executionId, ticker) => {
+    setActionDialogInput('Admin manual cancellation from blotter')
+    setActionDialog({
+      title: `Cancel Order: ${ticker} (${executionId})`,
+      message: `Provide a reason for administrative cancellation of pending order ${executionId}:`,
+      showInput: true,
+      inputPlaceholder: 'Reason for cancellation...',
+      confirmLabel: 'Confirm Order Cancellation',
+      confirmVariant: 'danger',
+      onConfirm: async (reason) => {
+        setActionLoading(true)
+        try {
+          await cancelAdminExecution(executionId, reason || 'Admin cancelled from blotter')
+          showFeedback('success', `Execution ${executionId} cancelled successfully.`)
+          await loadExecutions(executionStatusFilter, executionTickerFilter)
+          await loadOverview()
+          await loadAuditLogs()
+        } catch (err) {
+          showFeedback('error', `Failed to cancel execution: ${err.serverMessage || err.message}`)
+        } finally {
+          setActionLoading(false)
+          setActionDialog(null)
+        }
+      }
+    })
   }
 
   const pipeline = overview?.pipeline || {}
@@ -753,7 +791,7 @@ export default function AdminDashboard() {
                               <button
                                 className={b.enabled ? 'tl-btn-danger' : 'tl-btn-primary'}
                                 style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                                onClick={() => handleToggleBot(b.id, b.enabled)}
+                                onClick={() => handleToggleBot(b.id, b.enabled, b.name)}
                                 disabled={actionLoading}
                               >
                                 {b.enabled ? 'Pause' : 'Resume'}
@@ -1672,6 +1710,81 @@ export default function AdminDashboard() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* IN-APP ACTION CONFIRMATION MODAL */}
+      {actionDialog && (
+        <div
+          className="tl-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={actionDialog.title}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !actionLoading) setActionDialog(null)
+          }}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '1.5rem'
+          }}
+        >
+          <div style={{
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            width: '100%',
+            maxWidth: '520px',
+            padding: '1.5rem',
+            color: '#f8fafc',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+          }}>
+            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>{actionDialog.title}</h3>
+            <p style={{ fontSize: '0.875rem', color: '#cbd5e1', lineHeight: '1.5', margin: '0 0 1rem 0' }}>
+              {actionDialog.message}
+            </p>
+            {actionDialog.showInput && (
+              <div style={{ marginBottom: '1.25rem' }}>
+                <textarea
+                  className="tl-admin-input"
+                  style={{
+                    width: '100%',
+                    minHeight: '80px',
+                    padding: '0.5rem',
+                    fontSize: '0.85rem',
+                    boxSizing: 'border-box'
+                  }}
+                  value={actionDialogInput}
+                  onChange={(e) => setActionDialogInput(e.target.value)}
+                  placeholder={actionDialog.inputPlaceholder}
+                />
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                className="tl-btn-secondary"
+                onClick={() => setActionDialog(null)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                className={actionDialog.confirmVariant === 'danger' ? 'tl-btn-danger' : 'tl-btn-primary'}
+                onClick={() => actionDialog.onConfirm(actionDialogInput)}
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Processing...' : actionDialog.confirmLabel}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
