@@ -23,7 +23,8 @@ export async function runStockTraderResearch({
   usageGovernor = null,
   engine = null,
   toolRegistry = null,
-  memoryLoader = loadAiDecisionMemory
+  memoryLoader = loadAiDecisionMemory,
+  externalEvidenceRegistry = null
 }) {
   if (!bot?.id || !bot?.portfolioId || !portfolio?.id || portfolio.id !== bot.portfolioId) {
     throw new Error('AI research bot/portfolio identity mismatch')
@@ -43,7 +44,11 @@ export async function runStockTraderResearch({
     input: { screening, portfolio: portfolioSnapshot, config },
     modules: config.research?.contextModules,
     maxBytes: definition.contextByteBudget,
-    ...(decisionMemory ? { decisionMemory } : {})
+    ...(decisionMemory ? { decisionMemory } : {}),
+    ...(definition.evidenceSources.length ? {
+      evidenceRegistry: externalEvidenceRegistry,
+      evidenceSourceIds: definition.evidenceSources
+    } : {})
   })
   const { systemPrompt, userPrompt } = buildStockTraderPrompts(snapshot, definition)
   const model = definition.model
