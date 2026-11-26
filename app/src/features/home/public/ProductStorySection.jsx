@@ -7,7 +7,7 @@ export default function ProductStorySection() {
       <header className="tl-public-section-head">
         <p className="tl-public-eyebrow">PRODUCT WORKFLOW</p>
         <h2 id="public-how-title">TradeLoom connects research, strategy selection, and automated execution.</h2>
-        <p>TradeLoom is designed to connect market research with strategy configuration, automated order execution, and portfolio monitoring. Supported beta workflows currently use paper trading.</p>
+        <p>TradeLoom is designed to bring market research, strategy configuration, trade execution, and portfolio monitoring into one system. Live brokerage execution is under development; available beta trading workflows use simulated orders.</p>
       </header>
       <div className="tl-public-story-grid">{JOURNEY.map(item=><article className="tl-public-panel tl-public-story" key={item.number}><span>{item.number}</span><h3>{item.title}</h3><p>{item.body}</p></article>)}</div>
     </section>
@@ -15,7 +15,7 @@ export default function ProductStorySection() {
       <header className="tl-public-section-head">
         <p className="tl-public-eyebrow">PLATFORM CAPABILITIES</p>
         <h2 id="public-features-title">The platform integrates stock research, automated strategies, and portfolio management.</h2>
-        <p>Review stock candidates, configure available strategy controls, and monitor recorded trading activity. Live brokerage execution remains under development.</p>
+        <p>The platform combines stock research, supported strategy controls, and portfolio reporting. Brokerage connections for real-money orders are planned for a later release.</p>
       </header>
       <div className="tl-public-story-grid tl-public-story-grid--features">{CAPABILITIES.map(item=><article className="tl-public-panel tl-public-story" key={item.title}><h3>{item.title}</h3><p>{item.body}</p></article>)}</div>
       <div className="tl-public-feature-links">

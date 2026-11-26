@@ -28,10 +28,10 @@ function ResultCard({ row }) {
       <h3>{row.name || row.title || templateId}</h3>
       {ready ? (
         <dl className="tl-public-result__metrics">
-          <Metric label="Median return" value={pctText(evidence.medianReturnPct)} />
-          <Metric label="Buy & hold" value={pctText(evidence.medianBuyAndHoldPct)} />
-          <Metric label="Symbols tested" value={Number.isFinite(evidence.symbolsTested) ? evidence.symbolsTested : '—'} />
-          <Metric label="Trades" value={Number.isFinite(evidence.trades) ? evidence.trades : '—'} />
+          <Metric label="Typical return" value={pctText(evidence.medianReturnPct)} />
+          <Metric label="Buy-and-hold comparison" value={pctText(evidence.medianBuyAndHoldPct)} />
+          <Metric label="Stocks tested" value={Number.isFinite(evidence.symbolsTested) ? evidence.symbolsTested : '—'} />
+          <Metric label="Recorded trades" value={Number.isFinite(evidence.trades) ? evidence.trades : '—'} />
         </dl>
       ) : (
         <div className="tl-public-result__unavailable" role="status">{evidence?.status === 'awaiting_sessions' ? 'Awaiting forward paper sessions' : evidence?.status === 'not_backtestable' ? 'Historical test not available' : 'No completed results published'}</div>
@@ -80,7 +80,7 @@ export default function LiveBotsSection() {
         <p>Explore published strategy results, compare historical performance, and inspect the trading activity recorded during supported simulations. Historical and forward paper observations are identified separately, including losses and incomplete records.</p>
       </header>
       <div className="tl-public-evidence-area">{visible ? <StrategyEvidence/> : <div className="tl-public-panel tl-public-result-state" aria-hidden="true">Strategy evidence</div>}</div>
-      <p className="tl-public-disclosure">Figures are based on historical or simulated trading, not actual customer returns. Results may be negative or incomplete; simulations do not predict future performance.</p>
+      <p className="tl-public-disclosure">These results come from historical testing or simulated trades, not investor accounts. Results may include losses or incomplete records and do not predict future investment performance.</p>
       <Link className="tl-public-text-link" to="/strategies">Compare all published strategies <span aria-hidden="true">↗</span></Link>
     </section>
   )
