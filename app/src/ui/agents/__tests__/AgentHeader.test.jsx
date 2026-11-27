@@ -5,7 +5,7 @@ import {researchAgentStatus,traderAgentStatus} from '../agentExperience'
 describe('Shared agent experience',()=>{
   it('does not mistake saved questions for active research',()=>{
     expect(researchAgentStatus({partner:{id:'p'},selected:{status:'queued'}})).toBe('question_saved')
-    expect(researchAgentStatus({partner:{id:'p'},busy:true})).toBe('investigating')
+    expect(researchAgentStatus({partner:{id:'p'},busy:true})).toBe('working')
     expect(researchAgentStatus({partner:{id:'p'},selected:{status:'completed',report:{}}})).toBe('findings_available')
   })
   it('shows truthful paper permissions and errors',()=>{
