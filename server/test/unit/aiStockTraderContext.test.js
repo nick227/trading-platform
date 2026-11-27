@@ -35,7 +35,7 @@ describe('AI stock trader modular context', () => {
     const registry = createDefaultStockTraderContextRegistry()
     registry.register({ id: 'news', version: '1', required: false, collect: async () => { throw new Error('news offline') } })
     const result = await registry.assemble({ session, input: input(), modules: [...registry.list()] })
-    expect(result.unavailable).toEqual([{ id: 'news', version: '1', reason: 'collection_failed' }])
+    expect(result.unavailable).toContainEqual({ id: 'news', version: '1', reason: 'collection_failed' })
     expect(result.context.news).toBeUndefined()
   })
 

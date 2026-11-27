@@ -782,6 +782,7 @@ model ResearchMandateVersion {
 model ResearchSession {
   id             String    @id @default(cuid()) @db.VarChar(191)
   partnerId      String    @db.VarChar(191)
+  parentSessionId String?  @db.VarChar(191)
   mandateVersion Int
   question       String    @db.Text
   status         String    @default("queued") @db.VarChar(20)
@@ -792,6 +793,7 @@ model ResearchSession {
   partner        ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   messages       ResearchMessage[]
   @@index([partnerId, createdAt])
+  @@index([parentSessionId])
   @@index([status, createdAt])
 }
 

@@ -2,14 +2,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   approveMandate, createResearchPartner, createResearchSession, getResearchPartner,
-  listResearchPartners, listResearchSessions, proposeMandate, runResearchSession
+  listResearchPartners, listResearchSessions, proposeMandate, runResearchSession,
+  getResearchSession, addResearchFeedback, createFollowUpResearch
 } from './researchPartnerApi'
 import './researchPartnerWorkspace.css'
 
 const message = error => error?.serverMessage || error?.message || 'Request failed'
 
-function Report({ session }) {
+function Report({ session, onFeedback, onFollowUp, busy }) {
   const report = session?.report
+  const [feedback, setFeedback] = useState('')
+  const [category, setCategory] = useState('challenge')
+  const [followUp, setFollowUp] = useState('')
   return <section className="tl-section" aria-label="Research report">
     <div className="tl-section-head"><h2 className="tl-section-title">Investigation</h2>
       <span className="tl-tag">{session.status}</span></div>
@@ -31,6 +35,37 @@ function Report({ session }) {
       {report.limitations?.length > 0 && <p className="tl-section-note">{report.limitations.join(' ')}</p>}
       {report.uncertainties?.length > 0 && <div><h3>Uncertainties</h3><ul>{report.uncertainties.map((item,i) => <li key={i}>{item}</li>)}</ul></div>}
       {report.followUpQuestions?.length > 0 && <div><h3>Follow-up questions</h3><ul>{report.followUpQuestions.map((item,i) => <li key={i}>{item}</li>)}</ul></div>}
+
+      <div className="rp-preview">
+        <h3>Review or challenge these findings</h3>
+        {session.messages?.filter(m => m.sources?.kind === 'feedback').map(m =>
+          <p key={m.id} className="tl-section-note">{m.sources.category}: {m.content}</p>)}
+        <form className="rp-form" onSubmit={async event => {
+          event.preventDefault()
+          if (await onFeedback({ text: feedback, category })) setFeedback('')
+        }}>
+          <label htmlFor="rp-feedback-type">Feedback type</label>
+          <select id="rp-feedback-type" value={category} onChange={e => setCategory(e.target.value)}>
+            <option value="challenge">Challenge conclusion</option>
+            <option value="clarification">Request clarification</option>
+            <option value="correction">Suggest a correction</option>
+            <option value="additional_evidence">Add a research lead</option>
+          </select>
+          <label htmlFor="rp-feedback-text">Your feedback</label>
+          <textarea id="rp-feedback-text" required maxLength={2000} rows={3}
+            value={feedback} onChange={e => setFeedback(e.target.value)}/>
+          <button className="tl-btn tl-btn--secondary" disabled={busy} type="submit">Save feedback</button>
+        </form>
+        <form className="rp-form" onSubmit={async event => {
+          event.preventDefault()
+          if (await onFollowUp(followUp)) setFollowUp('')
+        }}>
+          <label htmlFor="rp-follow-up-question">Investigate a follow-up question</label>
+          <textarea id="rp-follow-up-question" required maxLength={6000} rows={2}
+            value={followUp} onChange={e => setFollowUp(e.target.value)}/>
+          <button className="tl-btn tl-btn--primary" disabled={busy} type="submit">Save follow-up investigation</button>
+        </form>
+      </div>
     </>}
   </section>
 }
@@ -94,6 +129,23 @@ export default function ResearchPartnerWorkspace() {
       setNotice('Research mandate revised. Earlier sessions retain their original mandate version.')
     })
   }
+
+  const onFeedback = async input => action(async () => {
+    await addResearchFeedback(partner.id, selected.id, input)
+    setSelected(await getResearchSession(partner.id, selected.id))
+    setNotice('Feedback saved without changing the original report.')
+    return true
+  })
+  const onFollowUp = async text => action(async () => {
+    const created = await createFollowUpResearch(partner.id, selected.id, text)
+    setSessions(old => [created, ...old])
+    setSelected(created)
+    setNotice('New investigation saved with a link to the earlier report.')
+    return true
+  })
+  const onSelectSession = async session => action(async () => {
+    setSelected(await getResearchSession(partner.id, session.id))
+  })
   const onResearch = async event => {
     event.preventDefault()
     await action(async () => {
@@ -174,12 +226,12 @@ export default function ResearchPartnerWorkspace() {
           <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>Save and investigate</button>
         </form>
       </section>
-      {selected && <Report session={selected} />}
+      {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback} onFollowUp={onFollowUp} busy={busy} />}
       <section className="tl-section">
         <h2 className="tl-section-title">Research history</h2>
         {!sessions.length && <p className="tl-section-note">No investigations yet.</p>}
         <div className="rp-history">{sessions.map(s => <button className="rp-history-item"
-          key={s.id} onClick={() => setSelected(s)} type="button">
+          key={s.id} onClick={() => onSelectSession(s)} type="button">
           <span>{s.question}</span><span className="tl-small tl-muted">{s.status} · Mandate v{s.mandateVersion}</span>
         </button>)}</div>
       </section>
