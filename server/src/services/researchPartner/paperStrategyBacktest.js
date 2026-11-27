@@ -6,7 +6,7 @@ import { isExchangeTradingDay } from '../../utils/marketCalendar.js'
 
 const DAY_MS = 86_400_000
 const round = number => Number(number.toFixed(2))
-const dateValid = s => /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && Number.isFinite(Date.parse(s+'T12:00:00Z'))
+const dateValid = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s+'T12:00:00Z'))
 const completedDate = s => new Date(s+'T12:00:00Z').toISOString().slice(0,10) === s
 const match = (rules, indicators) => rules.every(({field,operator,value}) => Number.isFinite(indicators?.[field]) &&
   (operator === 'gte' ? indicators[field] >= value : indicators[field] <= value))
