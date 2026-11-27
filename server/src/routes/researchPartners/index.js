@@ -9,6 +9,7 @@ import { createResearchStrategyService } from '../../services/researchPartner/pa
 import { createPaperStrategyProposalRuntime } from '../../services/researchPartner/paperStrategyProposalRuntime.js'
 import { createResearchMonitorService } from '../../services/researchPartner/researchMonitor.js'
 import { createResearchBacktestService } from '../../services/researchPartner/paperStrategyBacktestService.js'
+import { createPaperForwardService } from '../../services/researchPartner/paperStrategyForwardService.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
@@ -18,6 +19,7 @@ const strategies = createResearchStrategyService()
 const paperProposals = createPaperStrategyProposalRuntime()
 const monitors = createResearchMonitorService()
 const backtests = createResearchBacktestService()
+const forward = createPaperForwardService()
 const proposalRuntime = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
@@ -246,6 +248,36 @@ export default async function researchPartnerRoutes(app) {
     try { return { data: await backtests.list(owned(request), request.params.id,
       request.params.strategyId) } }
     catch (e) { return handle(reply, e) }
+  })
+
+
+  app.post('/:id/paper-strategies/:strategyId/forward/activate', { schema:{body:{
+    ...bodySchema,required:['expectedVersion','confirmation'],
+    properties:{expectedVersion:{type:'integer',minimum:1},
+      confirmation:{type:'string',const:'PAPER_ONLY'}}
+  }}},async(request,reply)=>{
+    try{return reply.code(201).send({data:await forward.activate(owned(request),request.params.id,
+      request.params.strategyId,request.body)})}
+    catch(e){return handle(reply,e)}
+  })
+  app.get('/:id/paper-strategies/:strategyId/forward',async(request,reply)=>{
+    try{return {data:await forward.get(owned(request),request.params.id,request.params.strategyId)}}
+    catch(e){return handle(reply,e)}
+  })
+  app.post('/:id/paper-strategies/:strategyId/forward/status', {schema:{body:{
+    ...bodySchema,required:['status'],properties:{status:{type:'string',enum:['active','paused']}}
+  }}},async(request,reply)=>{
+    try{return {data:await forward.setStatus(owned(request),request.params.id,
+      request.params.strategyId,request.body.status)}}
+    catch(e){return handle(reply,e)}
+  })
+  app.post('/:id/paper-strategies/:strategyId/forward/cycles', {schema:{body:{
+    ...bodySchema,required:['asOfSession'],
+    properties:{asOfSession:{type:'string',pattern:'^[0-9]{4}-[0-9]{2}-[0-9]{2}$'}}
+  }}},async(request,reply)=>{
+    try{return reply.code(201).send({data:await forward.cycle(owned(request),request.params.id,
+      request.params.strategyId,request.body)})}
+    catch(e){return handle(reply,e)}
   })
 
   app.post('/:id/theses', { schema: { body: { ...bodySchema, required: ['statement'],
