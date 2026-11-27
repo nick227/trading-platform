@@ -103,4 +103,20 @@ describe('MR 12 universal research evidence', () => {
     expect(extended.evidence.records).toHaveLength(1)
     expect(extended.fingerprint).not.toBe(baseline.fingerprint)
   })
+
+  it('canonicalizes nested input without mutating it and keeps hash independent of key order', () => {
+    const common = {
+      sourceId: 'news',
+      cutoff: Date.parse(day + 'T23:59:59.999Z'),
+      retrievedCutoff: Date.parse(day + 'T23:59:59.999Z')
+    }
+    const firstContent = { z: [{ y: 2, a: 1 }], b: { n: 3, a: 4 } }
+    const secondContent = { b: { a: 4, n: 3 }, z: [{ a: 1, y: 2 }] }
+    const first = validateEvidenceItem(article('x', { kind: 'structured', content: firstContent }), common)
+    const second = validateEvidenceItem(article('x', { kind: 'structured', content: secondContent }), common)
+    expect(first.contentHash).toBe(second.contentHash)
+    expect(first.content).toEqual(second.content)
+    expect(Object.keys(firstContent)).toEqual(['z', 'b'])
+    expect(first.trustBoundary).toBe('source_data')
+  })
 })

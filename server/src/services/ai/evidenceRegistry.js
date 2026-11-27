@@ -37,12 +37,21 @@ function canonical(value) {
   return value
 }
 
-function safeStringify(value, source) {
+function encodeCanonical(value, source) {
+  let normalized
   let encoded
-  try { encoded = JSON.stringify(canonical(value)) }
-  catch { throw new EvidenceError(source, 'content is not JSON serializable') }
+  try {
+    normalized = canonical(value)
+    encoded = JSON.stringify(normalized)
+  } catch {
+    throw new EvidenceError(source, 'content is not JSON serializable')
+  }
   if (typeof encoded !== 'string') throw new EvidenceError(source, 'content must be serializable')
-  return encoded
+  return { normalized, encoded }
+}
+
+function safeStringify(value, source) {
+  return encodeCanonical(value, source).encoded
 }
 
 export function validateEvidenceItem(item, { sourceId, cutoff, retrievedCutoff, maxItemBytes = MAX_ITEM_BYTES }) {
@@ -75,14 +84,15 @@ export function validateEvidenceItem(item, { sourceId, cutoff, retrievedCutoff, 
       typeof item.content.text !== 'string' || !item.content.data || typeof item.content.data !== 'object')) {
     throw new EvidenceError(sourceId, 'mixed evidence requires text and data')
   }
-  const content = safeStringify(item.content, sourceId)
+  // Canonicalize exactly once: use the same representation for hashing and output.
+  const { normalized: normalizedContent, encoded: content } = encodeCanonical(item.content, sourceId)
   if (Buffer.byteLength(content, 'utf8') > maxItemBytes) throw new EvidenceError(sourceId, 'item byte limit exceeded')
   const normalized = {
     id: item.id.trim(), sourceId, kind: item.kind, quality: item.quality,
     title: item.title.trim(), url: item.url || null,
     publishedAt: item.publishedAt, availableAt: item.availableAt,
     retrievedAt: item.retrievedAt, effectiveAt: item.effectiveAt || null,
-    content: canonical(item.content),
+    content: normalizedContent,
     // Textual evidence is untrusted source material even if the source is credible.
     trustBoundary: item.kind === 'structured' ? 'source_data' : 'untrusted_text'
   }
