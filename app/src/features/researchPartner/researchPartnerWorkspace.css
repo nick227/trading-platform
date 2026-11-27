@@ -156,3 +156,34 @@
   padding-top: 12px; }
 .rp-strategy-rule-group .rp-strategy-rule:first-of-type { border-top: 0; }
 @media(max-width:680px) { .rp-strategy-rule-group > .tl-btn { justify-self: stretch; width: 100%; } }
+
+/* UX-05: sequential, evidence-first paper simulation review */
+.rp-testing-journey { display: grid; align-content: start; gap: 16px; min-width: 0;
+  padding: 18px; border: 1px solid var(--border, #bfc4ca); border-radius: 10px; }
+.rp-testing-journey h4, .rp-testing-journey h5, .rp-testing-journey p { margin: 0; }
+.rp-testing-header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.rp-testing-header > div { display: grid; gap: 8px; }
+.rp-testing-progress { display: grid; grid-template-columns: repeat(3,minmax(0,1fr));
+  list-style: none; gap: 8px; padding: 0; margin: 0; }
+.rp-testing-progress li { min-width: 0; padding: 12px; border-radius: 8px;
+  border: 1px solid var(--border, #bfc4ca); font-size: .875rem; }
+.rp-testing-progress .is-current { font-weight: 700; border-color: currentColor; }
+.rp-testing-summary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 12px; padding: 16px; border-radius: 10px; background: var(--surface-secondary,rgba(128,128,128,.07)); }
+.rp-testing-summary p { overflow-wrap: anywhere; }
+.rp-testing-summary .tl-section-note { grid-column: 1/-1; }
+.rp-testing-gap { display: grid; gap: 10px; padding: 16px;
+  border: 1px solid var(--border,#bfc4ca); border-radius: 10px; }
+.rp-testing-acknowledgment { display: flex; align-items: start; gap: 10px; }
+.rp-testing-acknowledgment input { flex: 0 0 auto; margin-top: 4px; }
+.rp-testing-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.rp-testing-actions > .tl-btn { min-width: 200px; }
+.rp-testing-journey > .tl-btn { justify-self: start; }
+@media(max-width:680px) {
+  .rp-testing-journey { padding: 14px; }
+  .rp-testing-header { flex-direction: column; }
+  .rp-testing-progress li { text-align: center; padding: 10px 5px; font-size: .78rem; }
+  .rp-testing-summary { grid-template-columns: 1fr; }
+  .rp-testing-actions { flex-direction: column; }
+  .rp-testing-actions > .tl-btn, .rp-testing-journey > .tl-btn { width: 100%; }
+}

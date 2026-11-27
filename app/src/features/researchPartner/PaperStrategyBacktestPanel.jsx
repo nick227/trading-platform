@@ -3,7 +3,7 @@ import { listPaperStrategyBacktests, runPaperStrategyBacktest } from './research
 
 const describeError = error => error?.serverMessage || error?.message || 'Historical replay failed'
 
-export default function PaperStrategyBacktestPanel({ partnerId, strategy }) {
+export default function PaperStrategyBacktestPanel({ partnerId, strategy, onRunsChange }) {
   const [startSession, setStartSession] = useState('')
   const [endSession, setEndSession] = useState('')
   const [runs, setRuns] = useState([])
@@ -27,7 +27,9 @@ export default function PaperStrategyBacktestPanel({ partnerId, strategy }) {
       await runPaperStrategyBacktest(partnerId, strategy.id, {
         expectedVersion: strategy.currentVersion, startSession, endSession
       })
-      setRuns(await listPaperStrategyBacktests(partnerId, strategy.id))
+      const updated = await listPaperStrategyBacktests(partnerId, strategy.id)
+      setRuns(updated)
+      onRunsChange?.(updated)
       setNotice('Historical replay saved. No orders were placed.')
     } catch (err) { setError(describeError(err)) }
     finally { setBusy(false) }
@@ -44,7 +46,7 @@ export default function PaperStrategyBacktestPanel({ partnerId, strategy }) {
       <label htmlFor={'rp-backtest-end-' + strategy.id}>End date</label>
       <input id={'rp-backtest-end-' + strategy.id} type="date" required
         value={endSession} onChange={e => setEndSession(e.target.value)} />
-      <button className="tl-btn tl-btn--secondary" type="submit" disabled={busy}>
+      <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>
         {busy ? 'Evaluating…' : 'Run historical replay'}
       </button>
     </form>
