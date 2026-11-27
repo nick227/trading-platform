@@ -19,6 +19,7 @@ import pageTitleService from '../services/pageTitleService'
 const AssetsIndex = lazy(() => import('../features/AssetsIndex'))
 const StrategiesIndex = lazy(() => import('../features/strategies/StrategiesIndex'))
 const StockTraderDashboard = lazy(() => import('../features/ai/StockTraderDashboard'))
+const StockDiscoveryPage = lazy(() => import('../features/ai/StockDiscoveryPage'))
 const ResearchPartnerWorkspace = lazy(() => import('../features/researchPartner/ResearchPartnerWorkspace'))
 const StrategyDetail = lazy(() => import('../features/strategies/StrategyDetail'))
 const Orders = lazy(() => import('../features/Orders'))
@@ -71,7 +72,7 @@ function AppLayout() {
       '/profile': 'Account',
       '/research': 'Research',
       '/research-partners': 'AI Research Partner',
-      '/opportunities': 'Opportunities',
+      '/opportunities': 'AI Stock Discovery',
       '/ops': 'Operations',
       '/admin': 'Administration',
       '/auth': 'Authentication',
@@ -107,6 +108,7 @@ export function AppShell() {
         {/* Former Landing dashboard; secondary research surface (see TRADELOOM_CONSUMER_UX_PLAN.md M6). */}
         <Route path="/research" element={<Protected><Landing /></Protected>} />
         <Route path="/research-partners" element={<Protected><Suspense fallback={<PageSkeleton />}><ResearchPartnerWorkspace /></Suspense></Protected>} />
+        <Route path="/opportunities" element={<Suspense fallback={<PageSkeleton />}><StockDiscoveryPage /></Suspense>} />
         <Route path="/portfolio" element={<Navigate to="/#holdings" replace />} />
         <Route
           path="/assets"
@@ -132,7 +134,7 @@ export function AppShell() {
         {/* Former mock-data history page; the bot page timeline replaces it. */}
         <Route path="/bots/:botId/history" element={<BotHistoryRedirect />} />
         <Route path="/strategies/:templateId/history" element={<FeaturedRedirect />} />
-        {/* Public read-only flagship paper-trading evidence. */}
+        {/* Public read-only flagship paper-trading evidence & intelligence. */}
         <Route path="/ai-stock-trader" element={<Suspense fallback={<PageSkeleton />}><StockTraderDashboard /></Suspense>} />
         {/* Public: platform strategy evidence, no account needed. */}
         <Route path="/strategies" element={<Suspense fallback={<PageSkeleton />}><StrategiesIndex /></Suspense>} />

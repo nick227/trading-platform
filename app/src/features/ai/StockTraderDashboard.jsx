@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { get } from '../../api/client'
 import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } from '../../ui/format'
+import StockDiscoveryPanel from './StockDiscoveryPanel'
 
 function Stat({ label, value, detail }) {
   return <div className="tl-stat"><dt>{label}</dt><dd>{value}<small>{detail}</small></dd></div>
 }
 
 export default function StockTraderDashboard() {
+  const navigate = useNavigate()
   const [state, setState] = useState({ status: 'loading', data: null })
   const refresh = useCallback(() => {
     setState(s => ({ ...s, status: 'loading' }))
@@ -21,9 +24,21 @@ export default function StockTraderDashboard() {
     <section className="tl-section">
       <div className="tl-section-head">
         <h1 className="tl-section-title">AI Stock Trader</h1>
-        <button type="button" className="tl-link-btn" onClick={refresh} disabled={state.status === 'loading'}>Refresh</button>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <a
+            href="/opportunities"
+            className="tl-link-btn"
+            onClick={e => {
+              e.preventDefault()
+              navigate('/opportunities')
+            }}
+          >
+            Stock Discovery Explorer →
+          </a>
+          <button type="button" className="tl-link-btn" onClick={refresh} disabled={state.status === 'loading'}>Refresh</button>
+        </div>
       </div>
-      <p className="tl-lead-sentence">Autonomous stock screening, AI research and simulated portfolio management.</p>
+      <p className="tl-lead-sentence">Autonomous stock discovery, qualitative AI research and simulated portfolio management.</p>
       <p className="tl-section-note">Platform-owned paper trading. No customer funds are invested. Historical or simulated results do not guarantee future returns.</p>
     </section>
     {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
@@ -43,6 +58,7 @@ export default function StockTraderDashboard() {
         {data.performance?.totalPnl === null || !data.performance ? <p className="tl-section-note">Portfolio return is not yet available from verified fill and price data.</p> : null}
         {data.performance?.totalEquity != null && <p className="tl-section-note">Estimated paper equity: <strong>{money(data.performance.totalEquity)}</strong></p>}
       </section>
+      {data.discovery && <StockDiscoveryPanel discovery={data.discovery} compact />}
       <section className="tl-section" aria-labelledby="flagship-research-heading">
         <div className="tl-section-head"><h2 id="flagship-research-heading" className="tl-section-title">AI research and decisions</h2></div>
         {!data.research?.length ? <p data-testid="flagship-no-research">No completed AI research cycle has been recorded.</p> :
