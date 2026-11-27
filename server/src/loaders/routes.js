@@ -1,4 +1,5 @@
 import authRoutes from '../routes/auth.js'
+import researchPartnerRoutes from '../routes/researchPartners/index.js'
 import strategiesRoutes from '../routes/strategies.js'
 import predictionsRoutes from '../routes/predictions.js'
 import operatorBotRoutes from '../routes/bot.js'
@@ -42,6 +43,7 @@ export default async function registerRoutes(app) {
   await app.register(async (secured) => {
     secured.addHook('preHandler', authenticate)
     await secured.register(botRoutes, { prefix: '/api/bots' })
+    await secured.register(researchPartnerRoutes, { prefix: '/api/research-partners' })
     await secured.register(backtestRoutes, { prefix: '/api/backtests' })
   })
   await app.register(executionRoutes,   { prefix: '/api/executions' })
