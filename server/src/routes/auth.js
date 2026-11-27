@@ -2,6 +2,11 @@ import bcrypt from 'bcryptjs'
 import prisma from '../loaders/prisma.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { AuthThrottle } from '../middleware/authThrottle.js'
+import {
+  DEFAULT_PAPER_ACCOUNT_KIND,
+  DEFAULT_PAPER_STARTING_CASH,
+  defaultPaperPortfolioIdForUser
+} from '../services/defaultPaperPortfolioService.js'
 
 export default async function authRoutes(fastify, opts = {}) {
   const isProduction = process.env.NODE_ENV === 'production'
@@ -35,22 +40,55 @@ export default async function authRoutes(fastify, opts = {}) {
     if (existing) return reply.code(409).send({ error: 'Email already registered' })
 
     const passwordHash = await bcrypt.hash(password, 12)
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        fullName,
-        subscription: {
-          create: {
-            status: 'ACTIVE',
-            plan: 'BASIC',
-            endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30-day trial
-          }
+    const userData = {
+      email,
+      passwordHash,
+      fullName,
+      subscription: {
+        create: {
+          status: 'ACTIVE',
+          plan: 'BASIC',
+          endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30-day trial
         }
       }
-    })
+    }
 
-    return reply.code(201).send({ id: user.id, email: user.email, fullName: user.fullName, role: user.role || 'user' })
+    const provisionDefaultPaper = async (dbClient, userId) => {
+      if (typeof dbClient?.portfolio?.upsert !== 'function') return null
+      return dbClient.portfolio.upsert({
+        where: { defaultPaperUserId: userId },
+        update: {},
+        create: {
+          id: defaultPaperPortfolioIdForUser(userId),
+          userId,
+          defaultPaperUserId: userId,
+          accountKind: DEFAULT_PAPER_ACCOUNT_KIND,
+          name: 'Simulated Paper Portfolio',
+          cashBalance: DEFAULT_PAPER_STARTING_CASH,
+          totalValue: DEFAULT_PAPER_STARTING_CASH
+        }
+      })
+    }
+
+    const { user, portfolio } = typeof prisma.$transaction === 'function'
+      ? await prisma.$transaction(async (tx) => {
+          const createdUser = await tx.user.create({ data: userData })
+          const createdPortfolio = await provisionDefaultPaper(tx, createdUser.id)
+          return { user: createdUser, portfolio: createdPortfolio }
+        })
+      : await (async () => {
+          const createdUser = await prisma.user.create({ data: userData })
+          const createdPortfolio = await provisionDefaultPaper(prisma, createdUser.id)
+          return { user: createdUser, portfolio: createdPortfolio }
+        })()
+
+    return reply.code(201).send({
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role || 'user',
+      ...(portfolio ? { defaultPaperPortfolioId: portfolio.id } : {})
+    })
   })
 
   // POST /api/auth/login

@@ -4,8 +4,9 @@ import { encrypt } from '../utils/encryption.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 import { getReconcileStatus, reconcileBrokerActivity } from '../services/brokerReconciliationService.js'
-import { simulationConfig } from '../services/simulationService.js'
+import { DEFAULT_TRADABLE_SYMBOLS, simulationConfig } from '../services/simulationService.js'
 import { valuePortfolio, valueHistory } from '../services/portfolioValuationService.js'
+import { ensureDefaultPaperPortfolio } from '../services/defaultPaperPortfolioService.js'
 
 async function fetchAlpacaAccount(userId) {
   // Simulator mode never contacts Alpaca.
@@ -151,7 +152,25 @@ export default async function accountRoutes(fastify) {
       })
     }
     const broker = await prisma.brokerAccount.findUnique({ where: { userId: String(userId) } })
-    if (!broker) return reply.send({ connected: false })
+    if (!broker) {
+      const paperPortfolio = await ensureDefaultPaperPortfolio(userId, { prismaClient: prisma })
+      const v = await valuePortfolio(userId, { prismaClient: prisma, fetchBrokerAccount: null })
+      return reply.send({
+        connected: true,
+        paper: true,
+        simulated: true,
+        mode: 'paper_daily',
+        session: v.pricesAsOf ?? null,
+        status: 'default_simulated_paper',
+        portfolioId: paperPortfolio.id,
+        tradableSymbols: DEFAULT_TRADABLE_SYMBOLS,
+        lastVerifiedAt: null,
+        accountNumber: null,
+        equity: v.equity,
+        cash: v.cash,
+        buyingPower: v.cash !== null ? Math.max(0, v.cash) : null,
+      })
+    }
 
     const alpaca = await fetchAlpacaAccount(userId)
     return reply.send({

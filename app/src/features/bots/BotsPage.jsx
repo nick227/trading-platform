@@ -13,6 +13,7 @@ import { listJoin, money, plural, ratioPct, sessionDate, signedMoney } from '../
 import { loadBotsPage } from './botsApi'
 import CompareBots from './compare/CompareBots'
 import { summaryLine } from '../strategies/strategiesApi'
+import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
 
 // Below these, results are an anecdote, not evidence.
 export const MIN_CLOSED_TRADES = 5
@@ -183,6 +184,7 @@ export default function BotsPage() {
       <p className="tl-section-note">
         Want to investigate an idea first? <Link to={researchPartnerHref}>Open your AI Research Partner</Link> or <Link to="/ai-stock-trader">inspect the Flagship AI Stock Trader</Link>.
       </p>
+      <PersonalAiTraderCard />
 
       {state.loading ? (
         <div aria-hidden="true" data-testid="bots-loading">

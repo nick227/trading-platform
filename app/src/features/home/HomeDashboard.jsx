@@ -10,6 +10,7 @@ import { useBotControls } from '../../ui/useBotControls'
 import { ago, dateTime, listJoin, money, moneyWhole, plural, sessionDate, shares, signedMoney, signedPct, tone } from '../../ui/format'
 import HoldingDetail from './HoldingDetail'
 import { loadHome } from './homeApi'
+import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
 
 export const fmtMoney = money
 export const fmtSignedMoney = signedMoney
@@ -310,6 +311,7 @@ export default function HomeDashboard() {
           <WorkshopOverview bots={data.bots} error={data.botsError} activity={data.activity} brokerStatus={brokerStatus} />
           <div className={`tl-workshop-dashboard${data.bots.length ? '' : ' tl-workshop-dashboard--empty'}`}>
             <Portfolio valuation={data.valuation} history={data.history} error={data.valuationError} />
+            <PersonalAiTraderCard compact onUpdated={refresh} />
             {data.bots.length > 0 && (
               <section className="tl-section" id="activity" aria-labelledby="home-activity-title">
                 <div className="tl-section-head">

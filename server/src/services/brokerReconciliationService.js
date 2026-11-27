@@ -2,6 +2,7 @@ import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { getUserAlpacaCredentialsOrThrow } from './alpacaClockService.js'
 import { simulationConfig } from './simulationService.js'
+import { ensureExternalBrokeragePortfolio } from './defaultPaperPortfolioService.js'
 
 const OVERLAP_MS = 5 * 60 * 1000
 const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
@@ -21,22 +22,11 @@ function mapBrokerStatusToExecutionStatus(status) {
 }
 
 async function getOrCreateDefaultPortfolioId(userId) {
-  const existing = await prisma.portfolio.findFirst({
-    where: { userId },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true }
+  const portfolio = await ensureExternalBrokeragePortfolio(userId, {
+    prismaClient: prisma,
+    generatePortfolioId: () => generateId(ID_PREFIXES.PORTFOLIO)
   })
-  if (existing) return existing.id
-
-  const created = await prisma.portfolio.create({
-    data: {
-      id: generateId(ID_PREFIXES.PORTFOLIO),
-      userId,
-      name: 'Main Portfolio'
-    },
-    select: { id: true }
-  })
-  return created.id
+  return portfolio.id
 }
 
 async function fetchAlpacaOrders({ baseUrl, apiKey, apiSecret, after }) {

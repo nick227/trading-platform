@@ -4,7 +4,13 @@ import { runAiStrategyMarketOpenJob } from '../jobs/aiStrategyMarketOpenJob.js'
 import { getAiPipelineStatus } from '../services/ai/aiPipelineTracker.js'
 import { evaluatePaperPortfolioIntelligence } from '../services/ai/portfolioIntelligenceService.js'
 import { evaluateAiPerformanceIntelligence } from '../services/ai/aiPerformanceIntelligenceService.js'
+import {
+  PersonalTraderConfigError,
+  configurePersonalAiTrader,
+  getPersonalAiTraderState
+} from '../services/ai/personalAiTraderService.js'
 import { AI_STOCK_TRADER_PLATFORM_BOT_ID } from '../services/ai/strategies/aiStockTraderStrategy.js'
+import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireAdmin.js'
 
 /**
@@ -12,6 +18,43 @@ import { requireRole } from '../middleware/requireAdmin.js'
  */
 export default async function aiStrategyRoutes(app) {
   const adminOnly = requireRole(['admin'])
+
+  // GET /api/ai/personal-trader — Authenticated user's Personal AI Trader state, paper portfolio & lifecycle
+  app.get('/personal-trader', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      const state = await getPersonalAiTraderState(request.user.id)
+      return reply.send({ success: true, data: state })
+    } catch (err) {
+      const status = err instanceof PersonalTraderConfigError ? 400 : 500
+      return reply.code(status).send({
+        success: false,
+        error: { code: err.code || 'PERSONAL_TRADER_LOOKUP_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // PUT /api/ai/personal-trader — Strictly structured Personal AI Trader setup/update (zero freeform text)
+  app.put('/personal-trader', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      const state = await configurePersonalAiTrader(request.user.id, request.body ?? {})
+      return reply.send({ success: true, data: state })
+    } catch (err) {
+      if (err instanceof PersonalTraderConfigError) {
+        return reply.code(400).send({
+          success: false,
+          error: {
+            code: err.code,
+            field: err.field || null,
+            message: err.message
+          }
+        })
+      }
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'PERSONAL_TRADER_SAVE_ERROR', message: err.message }
+      })
+    }
+  })
 
   // GET /api/ai/portfolio-intelligence — Evaluate holdings, concentration & rebalance proposals for a paper bot
   app.get('/portfolio-intelligence', async (request, reply) => {

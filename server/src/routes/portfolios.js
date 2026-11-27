@@ -1,23 +1,36 @@
+import prisma from '../loaders/prisma.js'
 import portfoliosService from '../services/portfoliosService.js'
 import { authenticate } from '../middleware/authenticate.js'
+import { simulationConfig } from '../services/simulationService.js'
+import {
+  ensureDefaultPaperPortfolio,
+  ensureExternalBrokeragePortfolio
+} from '../services/defaultPaperPortfolioService.js'
 
 export default async function portfoliosRoutes(app) {
   // Enforce authentication across all portfolio endpoints
   app.addHook('preHandler', authenticate)
 
-  // GET /api/portfolios/default — returns or creates the authenticated user's portfolio.
+  // GET /api/portfolios/default — returns or creates the authenticated user's default portfolio,
+  // keeping simulated paper portfolios strictly separated from external brokerage portfolios.
   app.get('/default', async (request, reply) => {
     const userId = request.user?.id
     if (!userId) {
       return reply.code(401).send({ error: 'User authentication required' })
     }
 
-    const result = await portfoliosService.getPortfolios({ userId, limit: 1 })
-    const existing = result.data?.[0]
-    if (existing) return reply.send({ data: existing })
+    if (!simulationConfig().enabled) {
+      const externalBroker = await prisma.brokerAccount.findUnique({
+        where: { userId: String(userId) }
+      })
+      if (externalBroker) {
+        const brokerPortfolio = await ensureExternalBrokeragePortfolio(userId, { prismaClient: prisma })
+        return reply.send({ data: brokerPortfolio })
+      }
+    }
 
-    const created = await portfoliosService.createPortfolio({ name: 'Main Portfolio', userId })
-    return reply.code(201).send({ data: created })
+    const paperPortfolio = await ensureDefaultPaperPortfolio(userId, { prismaClient: prisma })
+    return reply.send({ data: paperPortfolio })
   })
 
   // GET /api/portfolios — returns portfolios belonging strictly to the authenticated user.

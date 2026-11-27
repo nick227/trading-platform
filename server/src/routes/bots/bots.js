@@ -4,6 +4,7 @@ import { getUserAlpacaCredentialsOrThrow } from '../../services/alpacaClockServi
 import { simulationConfig } from '../../services/simulationService.js'
 import { BotSaveError, saveBot } from '../../services/botConfigService.js'
 import { botValueHistory } from '../../services/portfolioValuationService.js'
+import { ensureDefaultPaperPortfolio } from '../../services/defaultPaperPortfolioService.js'
 import prisma from '../../loaders/prisma.js'
 
 async function ensureBrokerConnectedOrReply(userId, reply) {
@@ -13,7 +14,12 @@ async function ensureBrokerConnectedOrReply(userId, reply) {
     await getUserAlpacaCredentialsOrThrow(userId)
     return true
   } catch (error) {
-    if (error?.code === 'BROKER_NOT_CONFIGURED' || error?.code === 'BROKER_CREDENTIALS_INVALID') {
+    if (error?.code === 'BROKER_NOT_CONFIGURED') {
+      // Keyless users operate on their unique default simulated paper portfolio
+      await ensureDefaultPaperPortfolio(userId, { prismaClient: prisma })
+      return true
+    }
+    if (error?.code === 'BROKER_CREDENTIALS_INVALID') {
       reply.code(403).send({ error: { code: error.code, message: error.message } })
       return false
     }
@@ -31,7 +37,11 @@ async function ensureBroker(userId) {
   try {
     await getUserAlpacaCredentialsOrThrow(userId)
   } catch (error) {
-    if (['BROKER_NOT_CONFIGURED', 'BROKER_CREDENTIALS_INVALID', 'LIVE_TRADING_DISABLED'].includes(error?.code)) throw new BotSaveError(403, error.code, error.message)
+    if (error?.code === 'BROKER_NOT_CONFIGURED') {
+      await ensureDefaultPaperPortfolio(userId, { prismaClient: prisma })
+      return
+    }
+    if (['BROKER_CREDENTIALS_INVALID', 'LIVE_TRADING_DISABLED'].includes(error?.code)) throw new BotSaveError(403, error.code, error.message)
     throw error
   }
 }

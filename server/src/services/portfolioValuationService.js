@@ -15,6 +15,11 @@ import prisma from '../loaders/prisma.js'
 import { calculateFifoAccounting, isBrokerFill } from './botAccountingService.js'
 import { currentSimSession, parseSimOrderId, simulationConfig, isSimulatedOrderId } from './simulationService.js'
 import { engineClient } from '../clients/engine.js'
+import {
+  defaultPaperPortfolioIdForUser,
+  ensureDefaultPaperPortfolio,
+  findDefaultPaperPortfolio
+} from './defaultPaperPortfolioService.js'
 
 const round2 = (n) => Number(n.toFixed(2))
 
@@ -44,13 +49,26 @@ function sortFills(fills) {
 }
 
 /** The fills that belong to a user's portfolio in the current mode. */
-export async function loadPortfolioFills(userId, { prismaClient = prisma, config = simulationConfig() } = {}) {
+export async function loadPortfolioFills(userId, { prismaClient = prisma, config = simulationConfig(), modeOverride = null, paperPortfolioId = null } = {}) {
   const rows = await prismaClient.execution.findMany({
     where: { userId, filledQuantity: { gt: 0 }, filledPrice: { gt: 0 } },
     orderBy: [{ filledAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
   })
   const fills = rows.filter(isBrokerFill)
-  return sortFills(config.enabled ? fills.filter((e) => isSimulatedOrderId(e.brokerOrderId)) : fills.filter((e) => !isSimulatedOrderId(e.brokerOrderId)))
+  const expectedPaperPortfolioId = paperPortfolioId || (userId ? defaultPaperPortfolioIdForUser(userId) : null)
+
+  if (modeOverride === 'simulated_paper') {
+    return sortFills(
+      fills.filter((e) => e.portfolioId === expectedPaperPortfolioId || isSimulatedOrderId(e.brokerOrderId))
+    )
+  }
+  if (config.enabled) {
+    return sortFills(fills.filter((e) => isSimulatedOrderId(e.brokerOrderId)))
+  }
+  // External brokerage mode strictly excludes simulated paper fills and the default paper portfolio
+  return sortFills(
+    fills.filter((e) => !isSimulatedOrderId(e.brokerOrderId) && e.portfolioId !== expectedPaperPortfolioId)
+  )
 }
 
 /** Latest known daily close per ticker. Missing prices are omitted (→ unvalued), never guessed. */
@@ -143,7 +161,7 @@ export function buildValuation({ fills, marks = { prices: {}, sessions: {} }, st
   const perf = accounting.performance
   return {
     source,
-    simulated: source === 'simulator',
+    simulated: source === 'simulator' || source === 'simulated_paper',
     session,
     startingCash,
     cash,
@@ -171,18 +189,57 @@ export function buildValuation({ fills, marks = { prices: {}, sessions: {} }, st
  *   none      → no account
  */
 export async function valuePortfolio(userId, { prismaClient = prisma, config = simulationConfig(), engine = engineClient, fetchBrokerAccount = null } = {}) {
-  const fills = await loadPortfolioFills(userId, { prismaClient, config })
-  const tickers = [...new Set(fills.map((f) => String(f.ticker).toUpperCase()))]
-  const marks = await loadPriceMarks(tickers, { engine })
   if (config.enabled) {
+    const fills = await loadPortfolioFills(userId, { prismaClient, config })
+    const tickers = [...new Set(fills.map((f) => String(f.ticker).toUpperCase()))]
+    const marks = await loadPriceMarks(tickers, { engine })
     const session = config.mode === 'paper_daily' ? await currentSimSession({ config, engine }).catch(() => null) : config.session
     return { ...buildValuation({ fills, marks, startingCash: config.startingCash, source: 'simulator', session }), simMode: config.mode }
   }
+
   const broker = fetchBrokerAccount ? await fetchBrokerAccount(userId) : null
-  if (!broker) return { ...buildValuation({ fills, marks, source: 'none' }), cash: null, equity: null, totalPnl: null, totalPnlPct: null }
-  const v = buildValuation({ fills, marks, brokerCash: broker.cash, source: 'broker' })
-  const brokerEquity = Number(broker.equity)
-  return { ...v, equity: Number.isFinite(brokerEquity) ? round2(brokerEquity) : v.equity }
+  if (broker) {
+    const fills = await loadPortfolioFills(userId, { prismaClient, config })
+    const tickers = [...new Set(fills.map((f) => String(f.ticker).toUpperCase()))]
+    const marks = await loadPriceMarks(tickers, { engine })
+    const v = buildValuation({ fills, marks, brokerCash: broker.cash, source: 'broker' })
+    const brokerEquity = Number(broker.equity)
+    return { ...v, equity: Number.isFinite(brokerEquity) ? round2(brokerEquity) : v.equity }
+  }
+
+  // If the user explicitly connected a live/invalid broker row, do not mask it with simulated paper
+  const hasExternalBrokerRow = typeof prismaClient?.brokerAccount?.findUnique === 'function'
+    ? Boolean(await prismaClient.brokerAccount.findUnique({ where: { userId: String(userId) } }).catch(() => null))
+    : false
+
+  if (!hasExternalBrokerRow && typeof prismaClient?.portfolio?.upsert === 'function') {
+    const paperPortfolio = await ensureDefaultPaperPortfolio(userId, { prismaClient })
+    const paperFills = await loadPortfolioFills(userId, {
+      prismaClient,
+      config,
+      modeOverride: 'simulated_paper',
+      paperPortfolioId: paperPortfolio.id
+    })
+    const tickers = [...new Set(paperFills.map((f) => String(f.ticker).toUpperCase()))]
+    const marks = await loadPriceMarks(tickers, { engine })
+    const startingCash = Number(paperPortfolio.cashBalance) || 10_000
+    return {
+      ...buildValuation({
+        fills: paperFills,
+        marks,
+        startingCash,
+        source: 'simulated_paper',
+        session: null
+      }),
+      simMode: 'paper_daily',
+      defaultPaperPortfolioId: paperPortfolio.id
+    }
+  }
+
+  const fills = await loadPortfolioFills(userId, { prismaClient, config })
+  const tickers = [...new Set(fills.map((f) => String(f.ticker).toUpperCase()))]
+  const marks = await loadPriceMarks(tickers, { engine })
+  return { ...buildValuation({ fills, marks, source: 'none' }), cash: null, equity: null, totalPnl: null, totalPnlPct: null }
 }
 
 /**
@@ -247,7 +304,32 @@ async function loadCloses(tickers, range, engine) {
 }
 
 export async function valueHistory(userId, { prismaClient = prisma, config = simulationConfig(), engine = engineClient, range = '3M' } = {}) {
-  if (!config.enabled) return { source: 'unavailable', reason: 'Value history is derived from simulator fills; no broker history is stored.', points: [] }
+  if (!config.enabled) {
+    const hasExternalBrokerRow = typeof prismaClient?.brokerAccount?.findUnique === 'function'
+      ? Boolean(await prismaClient.brokerAccount.findUnique({ where: { userId: String(userId) } }).catch(() => null))
+      : false
+    const paperPortfolio = !hasExternalBrokerRow
+      ? await findDefaultPaperPortfolio(userId, { prismaClient })
+      : null
+    if (!paperPortfolio) {
+      return { source: 'unavailable', reason: 'Value history is derived from simulator fills; no broker history is stored.', points: [] }
+    }
+    const startingCash = Number(paperPortfolio.cashBalance) || 10_000
+    const paperFills = await loadPortfolioFills(userId, {
+      prismaClient,
+      config,
+      modeOverride: 'simulated_paper',
+      paperPortfolioId: paperPortfolio.id
+    })
+    if (!paperFills.length) return { source: 'simulated_paper', startingCash, points: [] }
+    const closesByTicker = await loadCloses([...new Set(paperFills.map((f) => String(f.ticker).toUpperCase()))], range, engine)
+    return {
+      source: 'simulated_paper',
+      startingCash,
+      priceSource: 'Alpha Engine daily close',
+      points: buildValueSeries({ fills: paperFills, closesByTicker, startingCash }),
+    }
+  }
   const fills = await loadPortfolioFills(userId, { prismaClient, config })
   if (!fills.length) return { source: 'simulator', startingCash: config.startingCash, points: [] }
   const closesByTicker = await loadCloses([...new Set(fills.map((f) => String(f.ticker).toUpperCase()))], range, engine)

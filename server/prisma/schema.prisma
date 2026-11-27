@@ -95,13 +95,15 @@ model Prediction {
 }
 
 model Portfolio {
-  id          String      @id @db.VarChar(191)
-  userId      String      // Using STUB_USER_ID for now
-  name        String
-  cashBalance Decimal     @default(0) @db.Decimal(12, 2)
-  totalValue  Decimal     @default(0) @db.Decimal(12, 2)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id                 String      @id @db.VarChar(191)
+  userId             String      // Using STUB_USER_ID for now
+  name               String
+  accountKind        String      @default("custom") @db.VarChar(32)
+  defaultPaperUserId String?     @unique @db.VarChar(191)
+  cashBalance        Decimal     @default(0) @db.Decimal(12, 2)
+  totalValue         Decimal     @default(0) @db.Decimal(12, 2)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   executions Execution[]
   bots       Bot[]
@@ -109,6 +111,7 @@ model Portfolio {
 
   @@index([createdAt])
   @@index([userId])
+  @@index([userId, accountKind])
   @@index([updatedAt])
   @@index([totalValue])
 }
