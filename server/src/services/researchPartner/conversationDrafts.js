@@ -23,7 +23,7 @@ export function createConversationDraftService({
     if (session.status !== 'completed') throw new ResearchPartnerConflictError('Selected investigation must be completed')
     return session
   }
-  async function contextFor(userId, partnerId, partner, session) {
+  async function contextFor(partnerId, partner, session) {
     const recent = await db.researchSession.findMany({
       where: { partnerId }, orderBy: { createdAt: 'desc' }, take: 5,
       select: { question: true, status: true }
@@ -49,7 +49,7 @@ export function createConversationDraftService({
       const session = await completedSession(userId, partnerId, sessionId)
       const result = await interpreter.interpret({
         userId, partnerId, text, hasCompletedSession: Boolean(session),
-        context: await contextFor(userId, partnerId, partner, session)
+        context: await contextFor(partnerId, partner, session)
       })
       return db.researchConversationDraft.create({ data: {
         partnerId, sessionId: session?.id ?? null,
@@ -82,7 +82,7 @@ export function createConversationDraftService({
       if (combined.length > 2000) throw new ResearchPartnerInputError('Clarification context exceeds budget')
       const interpretation = await interpreter.interpret({
         userId, partnerId, text: combined, hasCompletedSession: Boolean(session),
-        context: await contextFor(userId, partnerId, partner, session)
+        context: await contextFor(partnerId, partner, session)
       })
       const changed = await db.researchConversationDraft.updateMany({
         where: { id: draft.id, partnerId, revision: expectedRevision, status: 'pending',
