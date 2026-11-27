@@ -11,6 +11,7 @@ import { ago, dateTime, listJoin, money, moneyWhole, plural, sessionDate, shares
 import HoldingDetail from './HoldingDetail'
 import { loadHome } from './homeApi'
 import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
+import CopilotProposalsInbox from '../ai/CopilotProposalsInbox'
 
 export const fmtMoney = money
 export const fmtSignedMoney = signedMoney
@@ -311,6 +312,7 @@ export default function HomeDashboard() {
           <WorkshopOverview bots={data.bots} error={data.botsError} activity={data.activity} brokerStatus={brokerStatus} />
           <div className={`tl-workshop-dashboard${data.bots.length ? '' : ' tl-workshop-dashboard--empty'}`}>
             <Portfolio valuation={data.valuation} history={data.history} error={data.valuationError} />
+            <CopilotProposalsInbox onResolved={refresh} />
             <PersonalAiTraderCard compact onUpdated={refresh} />
             {data.bots.length > 0 && (
               <section className="tl-section" id="activity" aria-labelledby="home-activity-title">

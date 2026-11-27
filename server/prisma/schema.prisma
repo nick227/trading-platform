@@ -971,3 +971,40 @@ model ResearchPaperCycle {
   activation   ResearchPaperActivation @relation(fields:[activationId],references:[id],onDelete:Restrict)
   @@unique([activationId,session])
 }
+
+model CopilotProposal {
+  id                     String    @id @db.VarChar(191)
+  userId                 String    @db.VarChar(191)
+  botId                  String    @db.VarChar(191)
+  portfolioId            String    @db.VarChar(191)
+  signalSession          String    @db.VarChar(10)
+  symbol                 String    @db.VarChar(16)
+  action                 String    @db.VarChar(8)
+  quantity               Int
+  referencePrice         Float
+  estimatedNotional      Float
+  targetAllocationPct    Float?
+  confidence             Float?
+  thesis                 String    @db.Text
+  evidence               Json
+  risks                  Json
+  exitRule               Json?
+  approvalMode           String    @db.VarChar(24)
+  mode                   String    @default("paper") @db.VarChar(16)
+  status                 String    @db.VarChar(24)
+  deadlineSession        String    @db.VarChar(10)
+  deadlineAt             DateTime
+  isEarlyCloseDeadline   Boolean   @default(false)
+  targetExecutionSession String?   @db.VarChar(10)
+  executionId            String?   @unique @db.VarChar(191)
+  statusReason           String?   @db.VarChar(191)
+  decidedAt              DateTime?
+  executedAt             DateTime?
+  revision               Int       @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([botId, signalSession, symbol])
+  @@index([userId, status, deadlineAt])
+  @@index([portfolioId, status])
+}

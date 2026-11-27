@@ -9,6 +9,12 @@ import {
   configurePersonalAiTrader,
   getPersonalAiTraderState
 } from '../services/ai/personalAiTraderService.js'
+import {
+  CopilotProposalError,
+  approveCopilotProposal,
+  cancelCopilotProposal,
+  listUserCopilotProposals
+} from '../services/ai/copilotProposalService.js'
 import { AI_STOCK_TRADER_PLATFORM_BOT_ID } from '../services/ai/strategies/aiStockTraderStrategy.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireAdmin.js'
@@ -52,6 +58,50 @@ export default async function aiStrategyRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'PERSONAL_TRADER_SAVE_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/ai/copilot-proposals — Reconciles exchange-calendar deadlines and returns user's proposals
+  app.get('/copilot-proposals', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      const data = await listUserCopilotProposals(request.user.id)
+      return reply.send({ success: true, data })
+    } catch (err) {
+      const status = err instanceof CopilotProposalError ? err.status : 500
+      return reply.code(status).send({
+        success: false,
+        error: { code: err.code || 'COPILOT_PROPOSALS_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // POST /api/ai/copilot-proposals/:id/approve — Explicit approval before NYSE deadline (atomic CAS)
+  app.post('/copilot-proposals/:id/approve', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      const data = await approveCopilotProposal(request.user.id, request.params.id)
+      return reply.send({ success: true, data })
+    } catch (err) {
+      const status = err instanceof CopilotProposalError ? err.status : 500
+      return reply.code(status).send({
+        success: false,
+        error: { code: err.code || 'COPILOT_APPROVE_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // POST /api/ai/copilot-proposals/:id/cancel — Explicit veto/cancellation before NYSE deadline (atomic CAS)
+  app.post('/copilot-proposals/:id/cancel', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      const data = await cancelCopilotProposal(request.user.id, request.params.id, {
+        reason: request.body?.reason || 'cancelled_by_user'
+      })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      const status = err instanceof CopilotProposalError ? err.status : 500
+      return reply.code(status).send({
+        success: false,
+        error: { code: err.code || 'COPILOT_CANCEL_ERROR', message: err.message }
       })
     }
   })
