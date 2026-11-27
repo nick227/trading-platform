@@ -51,6 +51,7 @@ describe('MR 20 — Genuine Qualitative Research', () => {
       expect(rows[0].title).toBe('Apple reports solid enterprise demand')
       expect(rows[0].publishedAt).toBe('2026-11-20T14:00:00.000Z')
       expect(rows[0].availableAt).toBe('2026-11-20T14:00:00.000Z')
+      expect(rows[0].retrievedAt <= '2026-11-20T16:30:00.000Z').toBe(true)
     })
 
     it('fails gracefully and returns empty array when credentials or client fail', async () => {
@@ -105,6 +106,51 @@ describe('MR 20 — Genuine Qualitative Research', () => {
       expect(filings[0].filingType).toBe('10-K')
       expect(filings[0].verifiedSource).toBe(true)
       expect(filings[0].url).toContain('sec.gov')
+      expect(filings[0].retrievedAt <= '2026-11-20T16:30:00.000Z').toBe(true)
+    })
+
+    it('preserves historical filings and news in evidenceRegistry when wall-clock time is past session cutoff', async () => {
+      const registry = createProductionExternalEvidenceRegistry({
+        news: params => fetchNewsEvidence({
+          ...params,
+          client: {
+            getNews: async () => [{
+              id: 'hist_news_1',
+              headline: 'Prior session enterprise expansion',
+              url: 'https://news.provider.com/hist-1',
+              publishedAt: '2026-11-20T15:00:00Z',
+              summary: 'Verified prior session article',
+              symbols: ['MSFT']
+            }]
+          }
+        }),
+        filings: params => fetchSecFilingsEvidence({
+          ...params,
+          client: {
+            getFilings: async () => [{
+              id: 'sec_0000789019-26-000050',
+              title: 'MSFT Form 10-Q Filing (2026-11-18)',
+              url: 'https://www.sec.gov/Archives/edgar/data/789019/000078901926000050/msft-10q.htm',
+              publishedAt: '2026-11-18T21:00:00Z',
+              filingType: '10-Q',
+              accession: '0000789019-26-000050',
+              issuer: 'MSFT',
+              summary: 'Quarterly report',
+              verifiedSource: true
+            }]
+          }
+        })
+      })
+
+      const assembled = await registry.assemble({
+        sourceIds: ['news', 'filings'],
+        asOfSession: '2026-11-20',
+        input: { screening: { shortlist: [{ symbol: 'MSFT' }] } }
+      })
+
+      expect(assembled.unavailable).toEqual([])
+      expect(assembled.records).toHaveLength(2)
+      expect(assembled.records.map(r => r.sourceId).sort()).toEqual(['filings', 'news'])
     })
   })
 
@@ -188,7 +234,6 @@ describe('MR 20 — Genuine Qualitative Research', () => {
       expect(filingRecord).toBeTruthy()
       expect(filingRecord.quality).toBe('verified')
 
-      // Now test tool-guided research execution with get_research_evidence
       const mockInvokeModel = vi.fn(async ({ phase }) => {
         if (phase === 'plan') {
           return {
@@ -201,7 +246,6 @@ describe('MR 20 — Genuine Qualitative Research', () => {
             }
           }
         }
-        // Phase 2: final decision citing qualitative evidence
         return {
           structured: {
             marketSummary: 'Market supported by data center growth.',
