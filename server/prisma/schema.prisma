@@ -764,6 +764,7 @@ model ResearchPartner {
   archivedAt            DateTime?
   mandates              ResearchMandateVersion[]
   sessions              ResearchSession[]
+  dialogues             ResearchMandateDialogue[]
   @@index([userId, status, createdAt])
 }
 
@@ -806,4 +807,19 @@ model ResearchMessage {
   createdAt DateTime @default(now())
   session   ResearchSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   @@index([sessionId, createdAt])
+}
+
+model ResearchMandateDialogue {
+  id          String   @id @default(cuid()) @db.VarChar(191)
+  partnerId   String   @db.VarChar(191)
+  baseVersion Int
+  revision    Int      @default(0)
+  status      String   @default("draft") @db.VarChar(24)
+  transcript  Json
+  proposal    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  partner ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  @@index([partnerId, updatedAt])
 }
