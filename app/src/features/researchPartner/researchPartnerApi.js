@@ -46,3 +46,12 @@ export const runPaperStrategyBacktest = (id, strategyId, input) =>
   post(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/backtests', input)
 export const listPaperStrategyBacktests = (id, strategyId) =>
   get(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/backtests')
+
+export const getPaperForwardAccount = (id,strategyId) =>
+  get(part(id)+'/paper-strategies/'+encodeURIComponent(strategyId)+'/forward')
+export const activatePaperForward = (id,strategyId,payload) =>
+  post(part(id)+'/paper-strategies/'+encodeURIComponent(strategyId)+'/forward/activate',payload)
+export const runPaperForwardCycle = (id,strategyId,asOfSession) =>
+  post(part(id)+'/paper-strategies/'+encodeURIComponent(strategyId)+'/forward/cycles',{asOfSession})
+export const setPaperForwardStatus = (id,strategyId,status) =>
+  post(part(id)+'/paper-strategies/'+encodeURIComponent(strategyId)+'/forward/status',{status})

@@ -1,6 +1,7 @@
 import prisma from '../../loaders/prisma.js'
 import { engineClient } from '../../clients/engine.js'
 import { getExpectedCompletedExchangeSession } from '../../utils/marketCalendar.js'
+import { nextStockTraderSession } from '../ai/stockTraderTradingSession.js'
 import { newPaperForwardState, stepResearchPaperForward } from './paperStrategyForward.js'
 import { ResearchPartnerConflictError, ResearchPartnerNotFoundError } from './repository.js'
 import { ResearchPartnerInputError } from './mandate.js'
@@ -45,7 +46,9 @@ export function createPaperForwardService({db=prisma,engine=engineClient,now=()=
       const cycles=await db.researchPaperCycle.findMany({
         where:{activationId:account.id},orderBy:{createdAt:'desc'},take:20
       })
-      return {...account,cycles}
+      return {...account,cycles,
+        nextSession: account.lastSession ? nextStockTraderSession(account.lastSession) : account.initialSession,
+        latestCompletedSession: getExpectedCompletedExchangeSession(now())}
     },
     async setStatus(userId,partnerId,strategyId,status) {
       if(!['active','paused'].includes(status))
