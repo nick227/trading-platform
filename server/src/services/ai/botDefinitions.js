@@ -170,9 +170,10 @@ export const VANILLA_AI_STOCK_TRADER_DEFINITION = freezeDeep({
 export const VANILLA_AI_STOCK_TRADER_AGENT_DEFINITION = freezeDeep({
   ...VANILLA_AI_STOCK_TRADER_DEFINITION,
   version: AI_STOCK_TRADER_AGENT_VERSION,
-  philosophy: 'Independently investigate eligible securities and compare evidence without committing to a single technical indicator strategy.',
-  reasoningInstructions: 'Choose which deterministic questions to investigate, interpret the returned data, challenge contradictions, decide or abstain, and explain your judgment in English. Never calculate numerical results or invent evidence.',
-  researchTools: ['get_stock_metrics', 'compare_candidates', 'get_portfolio_state', 'get_historical_prices'],
+  philosophy: 'Independently investigate eligible securities, filings, and market news without committing to a single technical indicator strategy.',
+  reasoningInstructions: 'Choose which deterministic questions to investigate, interpret the returned data, evaluate qualitative news catalysts and company disclosures, challenge contradictions, decide or abstain, and explain your judgment in English. Never calculate numerical results or invent evidence.',
+  researchTools: ['get_stock_metrics', 'compare_candidates', 'get_portfolio_state', 'get_historical_prices', 'get_research_evidence'],
+  evidenceSources: ['news', 'filings'],
   maxModelCalls: 2,
   tokenBudget: 3000,
   researchMode: 'tool_guided'

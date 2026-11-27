@@ -9,6 +9,7 @@ import { defaultAiBotDefinitionRegistry } from './botDefinitions.js'
 import { runToolGuidedStockResearch } from './stockTraderReasoningAgent.js'
 import { loadAiDecisionMemory } from './decisionMemory.js'
 import { createDefaultStockTraderContextRegistry } from './stockTraderContext.js'
+import { createProductionExternalEvidenceRegistry } from './evidence/productionEvidenceFetchers.js'
 import { STOCK_TRADER_PROMPT_VERSION, buildStockTraderPrompts, validateStockTraderDecision } from './strategies/stockTraderDecision.js'
 
 export async function runStockTraderResearch({
@@ -39,6 +40,7 @@ export async function runStockTraderResearch({
   const decisionMemory = definition.researchMode === 'tool_guided'
     ? await memoryLoader({ bot, asOfSession: screening.asOfSession, prismaClient, engine })
     : null
+  const activeEvidenceRegistry = externalEvidenceRegistry || (definition.evidenceSources?.length ? createProductionExternalEvidenceRegistry() : null)
   const snapshot = await registry.assemble({
     session: screening.asOfSession,
     input: { screening, portfolio: portfolioSnapshot, config },
@@ -46,7 +48,7 @@ export async function runStockTraderResearch({
     maxBytes: definition.contextByteBudget,
     ...(decisionMemory ? { decisionMemory } : {}),
     ...(definition.evidenceSources.length ? {
-      evidenceRegistry: externalEvidenceRegistry,
+      evidenceRegistry: activeEvidenceRegistry,
       evidenceSourceIds: definition.evidenceSources
     } : {})
   })
