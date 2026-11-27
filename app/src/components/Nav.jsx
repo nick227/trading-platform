@@ -8,6 +8,7 @@ const routes = [
   { path: '/', label: 'Home', match: (p) => p === '/' || p === '/portfolio' || p === '/history' },
   { path: '/strategies', label: 'Strategies', match: (p) => p.startsWith('/strategies') },
   { path: '/bots', label: 'Bots', match: (p) => p.startsWith('/bots') },
+  { path: '/research-partners', label: 'AI Research', match: (p) => p.startsWith('/research-partners') },
 ]
 
 function Mark() {
