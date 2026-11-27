@@ -102,27 +102,96 @@ export async function runToolGuidedStockResearch({
     }
   }
 
-  const finalPrompts = buildStockTraderPrompts(snapshot, definition)
-  const finalSystemPrompt = finalPrompts.systemPrompt.replace(
-    'You do not have live news, external tools, or access to data beyond this research snapshot.',
-    'You have access only to this research snapshot and the read-only tool results supplied below.'
-  ) + '\nEvaluate the significance of tool evidence. Do not recalculate metrics. Explain evidence conflicts, uncertainties, and why alternatives are rejected.'
-  const finalUserPrompt = JSON.stringify({
-    originalResearch: JSON.parse(finalPrompts.userPrompt),
-    investigation: { focus: plan.focus, results, trace: session.getTrace() }
-  })
-  const decisionResponse = await invokeModel({
-    phase: 'decision',
-    systemPrompt: finalSystemPrompt,
-    userPrompt: finalUserPrompt,
-    maxTokens: definition.tokenBudget
-  })
+  let providerCalls = 1
+  let followUpPlan = null
+  let finalDecisionOutput = null
+
+  // If definition allows >= 3 calls, allow a bounded follow-up inquiry if initial results raise new questions
+  if (definition.maxModelCalls >= 3 && session.getUsage().calls < session.getUsage().maxCalls) {
+    const followUpSystemPrompt = `You are an investment researcher reviewing initial tool results.
+Evaluate whether the initial research findings are sufficient to make final recommendations, or if ONE follow-up tool inquiry is required to resolve uncertainty or conflicting evidence.
+Available tools: ${definition.researchTools.join(', ')}
+Options:
+1. If follow-up inquiry needed, return ONLY: {"action":"follow_up","focus":"specific reason","requests":[{"toolId":"tool_name","args":{}}]}
+2. If evidence is sufficient, return ONLY: {"action":"decision","marketSummary":"...","decisions":[{"symbol":"...","action":"BUY|SELL|HOLD",...}]}`
+    const followUpUserPrompt = JSON.stringify({
+      asOfSession: snapshot.asOfSession,
+      initialFocus: plan.focus,
+      initialResults: results,
+      remainingToolBudget: session.getUsage().maxCalls - session.getUsage().calls
+    })
+
+    const evaluationResponse = await invokeModel({
+      phase: 'follow_up_evaluation',
+      systemPrompt: followUpSystemPrompt,
+      userPrompt: followUpUserPrompt,
+      maxTokens: 1000
+    })
+    providerCalls += 1
+
+    const structured = evaluationResponse?.structured
+    if (structured?.action === 'follow_up' && Array.isArray(structured?.requests) && structured.requests.length > 0) {
+      try {
+        const validatedFollowUp = validateResearchPlan({
+          focus: structured.focus || 'Follow-up inquiry',
+          requests: structured.requests.slice(0, 1)
+        }, definition.researchTools)
+        followUpPlan = validatedFollowUp
+        for (const req of validatedFollowUp.requests) {
+          try {
+            const followUpRes = await session.execute(req.toolId, req.args)
+            results.push({ toolId: req.toolId, args: req.args, status: 'ok', result: followUpRes, isFollowUp: true })
+          } catch (fuErr) {
+            if (fuErr instanceof AiResearchToolError &&
+                ['research_tool_unavailable', 'tool_output_budget_exceeded'].includes(fuErr.code)) {
+              results.push({ toolId: req.toolId, args: req.args, status: 'unavailable', reason: fuErr.code, isFollowUp: true })
+            } else {
+              throw fuErr
+            }
+          }
+        }
+      } catch {
+        // Fallback: invalid follow-up request simply skips to final decision
+      }
+    } else if (structured?.decisions && Array.isArray(structured.decisions)) {
+      finalDecisionOutput = evaluationResponse
+    }
+  }
+
+  if (!finalDecisionOutput) {
+    const finalPrompts = buildStockTraderPrompts(snapshot, definition)
+    const finalSystemPrompt = finalPrompts.systemPrompt.replace(
+      'You do not have live news, external tools, or access to data beyond this research snapshot.',
+      'You have access only to this research snapshot and the read-only tool results supplied below.'
+    ) + '\nEvaluate the significance of tool evidence. Do not recalculate metrics. Explain evidence conflicts, uncertainties, and why alternatives are rejected.'
+    const finalUserPrompt = JSON.stringify({
+      originalResearch: JSON.parse(finalPrompts.userPrompt),
+      investigation: {
+        focus: plan.focus,
+        ...(followUpPlan ? { followUpFocus: followUpPlan.focus } : {}),
+        results,
+        trace: session.getTrace()
+      }
+    })
+    finalDecisionOutput = await invokeModel({
+      phase: 'decision',
+      systemPrompt: finalSystemPrompt,
+      userPrompt: finalUserPrompt,
+      maxTokens: definition.tokenBudget
+    })
+    providerCalls += 1
+  }
+
   return {
-    response: decisionResponse,
+    response: finalDecisionOutput,
     investigation: {
       version: STOCK_TRADER_AGENT_REASONING_VERSION,
-      plan, results, toolTrace: session.getTrace(), toolUsage: session.getUsage(),
-      providerCalls: 2
+      plan,
+      ...(followUpPlan ? { followUpPlan } : {}),
+      results,
+      toolTrace: session.getTrace(),
+      toolUsage: session.getUsage(),
+      providerCalls
     }
   }
 }

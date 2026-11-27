@@ -164,4 +164,25 @@ export function createDefaultStockTraderContextRegistry() {
         data: input.config?.execution
       })
     })
+    .register({
+      id: 'mandate', version: '1.0.0', required: false,
+      collect: async ({ session, input }) => {
+        if (!input?.mandate && !input?.config?.mandate) return null
+        const m = input.mandate || input.config.mandate
+        return {
+          asOf: session,
+          quality: 'valid',
+          source: 'user_research_mandate',
+          data: {
+            id: String(m.id || 'default_mandate'),
+            version: Number(m.version || 1),
+            objective: String(m.objective || '').trim().slice(0, 1000),
+            hypotheses: Array.isArray(m.hypotheses)
+              ? m.hypotheses.map(h => String(h).trim().slice(0, 500)).filter(Boolean).slice(0, 10)
+              : [],
+            preferences: typeof m.preferences === 'object' && m.preferences ? m.preferences : {}
+          }
+        }
+      }
+    })
 }
