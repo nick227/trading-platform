@@ -32,7 +32,8 @@ export function createPaperForwardService({db=prisma,engine=engineClient,now=()=
       try {
         return await db.researchPaperActivation.create({
           data:{strategyId,version:expectedVersion,status:'active',revision:0,
-            state:newPaperForwardState(),lastSession:null}
+            state:newPaperForwardState(),lastSession:null,
+            initialSession:getExpectedCompletedExchangeSession(now())}
         })
       }catch(error) {
         if(error.code==='P2002')throw new ResearchPartnerConflictError('Paper simulation already exists')
@@ -61,6 +62,8 @@ export function createPaperForwardService({db=prisma,engine=engineClient,now=()=
       const account=await activation(userId,partnerId,strategyId)
       if(account.status!=='active')throw new ResearchPartnerConflictError('Paper simulation is paused')
       const latest=getExpectedCompletedExchangeSession(now())
+      if(!account.lastSession && asOfSession!==account.initialSession)
+        throw new ResearchPartnerInputError('Initial paper session must match the activation baseline')
       if(typeof asOfSession!=='string'||asOfSession>latest)
         throw new ResearchPartnerInputError('Only completed market sessions may be simulated')
       const revision=await db.researchPaperStrategyVersion.findUnique({

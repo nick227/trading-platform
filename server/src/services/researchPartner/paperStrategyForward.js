@@ -22,7 +22,7 @@ export function newPaperForwardState(capital=10000) {
   if(!Number.isInteger(capital)||capital<1000||capital>100000)
     throw new ResearchPartnerInputError('Invalid simulation capital')
   return {initialCapital:capital,lastSession:null,pending:[],fills:[],
-    equityCurve:[],peakEquity:capital}
+    equityCurve:[],peakEquity:capital,maxDrawdownPct:0}
 }
 
 export async function stepResearchPaperForward({definition,state,asOfSession,engine}) {
@@ -49,12 +49,10 @@ export async function stepResearchPaperForward({definition,state,asOfSession,eng
     const assessment=scoreStockBars(symbol,bars,asOfSession)
     const close=Number(bars.at(-1)[4])
     const open=Number(bars.at(-1)[1])
-    if(!Number.isFinite(close)||close<=0||!Number.isFinite(open)||open<=0||
-      !['invalid_bar','invalid_chronology','future_data'].includes(assessment.reason)===false) {
-      // Malformed historical bars may not silently become valid marks.
-      if(['invalid_bar','invalid_chronology','future_data'].includes(assessment.reason))
-        throw new Error('Invalid market history: '+symbol)
-    }
+    if(!Number.isFinite(close)||close<=0||!Number.isFinite(open)||open<=0)
+      throw new Error('Invalid exact-session market mark: '+symbol)
+    if(['invalid_bar','invalid_chronology','future_data'].includes(assessment.reason))
+      throw new Error('Invalid market history: '+symbol)
     marks.set(symbol,{open,close,assessment})
   }
   const fills=[...state.fills]
@@ -101,6 +99,7 @@ export async function stepResearchPaperForward({definition,state,asOfSession,eng
     fills,allocatedCapital:initialCapital,asOfSession,quotes:closingQuotes
   })
   const peak=Math.max(state.peakEquity,equity.totalEquity)
+  const maxDrawdownPct=Math.max(state.maxDrawdownPct||0,100*(peak-equity.totalEquity)/peak)
   const curve=[...state.equityCurve,{
     session:asOfSession,equity:equity.totalEquity,cash:equity.cash,
     marketValue:round(equity.totalEquity-equity.cash)
@@ -125,11 +124,11 @@ export async function stepResearchPaperForward({definition,state,asOfSession,eng
   const future=newSignals.slice(0,spec.risk.maxOrdersPerCycle)
   if(fills.length>maxFills)throw new Error('Paper fill storage limit reached')
   return {
-    state:{...state,lastSession:asOfSession,pending:future,fills,equityCurve:curve,peakEquity:peak},
+    state:{...state,lastSession:asOfSession,pending:future,fills,equityCurve:curve,peakEquity:peak,maxDrawdownPct},
     event:{session:asOfSession,filled:executed,rejected,queued:future,
       equity:equity.totalEquity,cash:equity.cash,
       unrealizedPnl:equity.unrealizedPnl,realizedPnl:equity.realizedPnl,
       returnPct:round(100*(equity.totalEquity/initialCapital-1)),
-      maxDrawdownPct:round(Math.max(...curve.map(c=>100*(peak-c.equity)/peak)))}
+      maxDrawdownPct:round(maxDrawdownPct)}
   }
 }

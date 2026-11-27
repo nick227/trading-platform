@@ -932,6 +932,7 @@ model ResearchPaperActivation {
   status      String @default("active") @db.VarChar(16)
   revision    Int @default(0)
   lastSession String? @db.VarChar(10)
+  initialSession String @db.VarChar(10)
   state       Json
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

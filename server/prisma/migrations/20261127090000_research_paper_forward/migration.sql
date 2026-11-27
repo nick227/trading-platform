@@ -5,6 +5,7 @@ CREATE TABLE `ResearchPaperActivation` (
 `status` VARCHAR(16) NOT NULL DEFAULT 'active',
 `revision` INTEGER NOT NULL DEFAULT 0,
 `lastSession` VARCHAR(10) NULL,
+`initialSession` VARCHAR(10) NOT NULL,
 `state` JSON NOT NULL,
 `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 `updatedAt` DATETIME(3) NOT NULL,

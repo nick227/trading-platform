@@ -54,16 +54,29 @@ describe('RP-19 manually authorized paper forward execution',()=>{
   })
   it('fails closed on concurrent write ownership',async()=>{
     const account={id:'a',strategyId:'s',version:1,revision:0,status:'active',
-      lastSession:null,state:newPaperForwardState()}
+      lastSession:null,initialSession:'2026-11-23',state:newPaperForwardState()}
     const db={researchPaperStrategy:{findFirst:vi.fn().mockResolvedValue({id:'s'})},
       researchPaperActivation:{findUnique:vi.fn().mockResolvedValue(account),
         updateMany:vi.fn().mockResolvedValue({count:0})},
       researchPaperStrategyVersion:{findUnique:vi.fn().mockResolvedValue({definition})},
       researchPaperCycle:{create:vi.fn()},
       $transaction:vi.fn(async fn=>fn(db))}
-    const svc=createPaperForwardService({db,engine,now:()=>new Date('2026-11-25T23:00:00.000Z')})
+    const svc=createPaperForwardService({db,engine,now:()=>new Date('2026-11-23T22:00:00.000Z')})
     await expect(svc.cycle('u','p','s',{asOfSession:'2026-11-23'}))
       .rejects.toMatchObject({statusCode:409})
     expect(db.researchPaperCycle.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects cherry-picked historical starting sessions and keeps drawdown tied to past peaks',async()=>{
+    const account={id:'a',strategyId:'s',version:1,revision:0,status:'active',
+      lastSession:null,initialSession:'2026-11-24',state:newPaperForwardState()}
+    const db={researchPaperStrategy:{findFirst:vi.fn().mockResolvedValue({id:'s'})},
+      researchPaperActivation:{findUnique:vi.fn().mockResolvedValue(account)},
+      researchPaperStrategyVersion:{findUnique:vi.fn().mockResolvedValue({definition})}}
+    const svc=createPaperForwardService({db,engine,
+      now:()=>new Date('2026-11-25T22:00:00.000Z')})
+    await expect(svc.cycle('u','p','s',{asOfSession:'2026-11-23'}))
+      .rejects.toMatchObject({statusCode:400})
+    expect(newPaperForwardState()).toMatchObject({maxDrawdownPct:0,peakEquity:10000})
   })
 })
