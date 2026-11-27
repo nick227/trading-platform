@@ -146,3 +146,13 @@
   .rp-research-to-strategy { padding: 14px; }
   .rp-research-to-strategy .tl-btn { justify-self: stretch; width: 100%; }
 }
+
+.rp-strategy-rule-group { display: grid; gap: 12px; min-width: 0; margin: 0;
+  padding: 14px; border: 1px solid var(--border, #bfc4ca); border-radius: 10px; }
+.rp-strategy-rule-group legend { font-weight: 600; padding: 0 6px; }
+.rp-strategy-rule-group > p { margin: 0; }
+.rp-strategy-rule-group > .tl-btn { justify-self: start; }
+.rp-strategy-rule-group .rp-strategy-rule { border-top: 1px solid var(--border, #bfc4ca);
+  padding-top: 12px; }
+.rp-strategy-rule-group .rp-strategy-rule:first-of-type { border-top: 0; }
+@media(max-width:680px) { .rp-strategy-rule-group > .tl-btn { justify-self: stretch; width: 100%; } }
