@@ -41,7 +41,7 @@ describe('read-only research activity timeline', () => {
     expect(rows.find(row => row.kind === 'research_result').detail).toBe('Research summary')
     expect(rows.find(row => row.kind === 'research_failure').status).toBe('failed')
     expect(rows.find(row => row.id === 'research_saved:a').title).toBe('Research question saved')
-    expect(db.researchSession.findMany.mock.calls[0][0].take).toBeUndefined()
+    expect(db.researchSession.findMany.mock.calls[0][0].take).toBe(40)
   })
   it('labels paper fills as simulated and avoids conflating approval with execution', async () => {
     const db = makeDb()
