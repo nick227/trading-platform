@@ -34,3 +34,24 @@ export const createPaperStrategyFromResearch = (id, payload) => post(part(id) + 
 export const previewPaperStrategyWithAI = (id, instructions) => post(part(id) + '/paper-strategies/proposals', { instructions })
 export const approveResearchPaperStrategy = (id, strategyId, expectedVersion) =>
   post(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/approve', { expectedVersion })
+
+export const listResearchMonitors = id => get(part(id) + '/monitors')
+export const createResearchMonitor = (id, payload) => post(part(id) + '/monitors', payload)
+export const checkResearchMonitor = (id, monitorId) =>
+  post(part(id) + '/monitors/' + encodeURIComponent(monitorId) + '/check')
+export const setResearchMonitorStatus = (id, monitorId, status) =>
+  post(part(id) + '/monitors/' + encodeURIComponent(monitorId) + '/status', { status })
+
+export const runPaperStrategyBacktest = (id, strategyId, input) =>
+  post(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/backtests', input)
+export const listPaperStrategyBacktests = (id, strategyId) =>
+  get(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/backtests')
+
+export const getPaperForwardAccount = (id,strategyId) =>
+  get(part(id)+'/paper-strategies/'+encodeURIComponent(strategyId)+'/forward')
+export const activatePaperForward = (id,strategyId,payload) =>
+  post(part(id)+'/paper-strategies/'+encodeURIComponent(strategyId)+'/forward/activate',payload)
+export const runPaperForwardCycle = (id,strategyId,asOfSession) =>
+  post(part(id)+'/paper-strategies/'+encodeURIComponent(strategyId)+'/forward/cycles',{asOfSession})
+export const setPaperForwardStatus = (id,strategyId,status) =>
+  post(part(id)+'/paper-strategies/'+encodeURIComponent(strategyId)+'/forward/status',{status})

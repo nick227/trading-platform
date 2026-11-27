@@ -767,6 +767,7 @@ model ResearchPartner {
   dialogues             ResearchMandateDialogue[]
   theses                ResearchThesis[]
   paperStrategies        ResearchPaperStrategy[]
+  monitors               ResearchMonitor[]
   @@index([userId, status, createdAt])
 }
 
@@ -865,6 +866,8 @@ model ResearchPaperStrategy {
 
   partner ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   versions ResearchPaperStrategyVersion[]
+  backtests ResearchPaperBacktest[]
+  paperActivation ResearchPaperActivation?
   @@index([partnerId, createdAt])
 }
 model ResearchPaperStrategyVersion {
@@ -877,4 +880,72 @@ model ResearchPaperStrategyVersion {
 
   strategy ResearchPaperStrategy @relation(fields: [strategyId], references: [id], onDelete: Restrict)
   @@unique([strategyId, version])
+}
+
+model ResearchMonitor {
+  id              String   @id @default(cuid()) @db.VarChar(191)
+  partnerId       String   @db.VarChar(191)
+  name            String   @db.VarChar(120)
+  status          String   @default("active") @db.VarChar(16)
+  cadence         String   @default("daily") @db.VarChar(16)
+  symbols         Json
+  seenHashes      Json
+  lastFingerprint String?  @db.VarChar(191)
+  nextCheckAt     DateTime
+  lastCheckedAt   DateTime?
+  lastError       String?  @db.VarChar(500)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  partner ResearchPartner @relation(fields:[partnerId], references:[id], onDelete:Restrict)
+  events ResearchMonitorEvent[]
+  @@index([partnerId, createdAt])
+  @@index([status, nextCheckAt])
+}
+model ResearchMonitorEvent {
+  id        String   @id @default(cuid()) @db.VarChar(191)
+  monitorId String   @db.VarChar(191)
+  kind      String   @db.VarChar(32)
+  payload   Json
+  createdAt DateTime @default(now())
+
+  monitor ResearchMonitor @relation(fields:[monitorId], references:[id], onDelete:Restrict)
+  @@index([monitorId, createdAt])
+}
+
+model ResearchPaperBacktest {
+  id            String @id @default(cuid()) @db.VarChar(191)
+  strategyId    String @db.VarChar(191)
+  version       Int
+  startSession  String @db.VarChar(10)
+  endSession    String @db.VarChar(10)
+  result        Json
+  createdAt     DateTime @default(now())
+  strategy      ResearchPaperStrategy @relation(fields: [strategyId], references: [id], onDelete: Restrict)
+  @@index([strategyId, createdAt])
+}
+
+model ResearchPaperActivation {
+  id          String @id @default(cuid()) @db.VarChar(191)
+  strategyId  String @unique @db.VarChar(191)
+  version     Int
+  status      String @default("active") @db.VarChar(16)
+  revision    Int @default(0)
+  lastSession String? @db.VarChar(10)
+  initialSession String @db.VarChar(10)
+  state       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  strategy    ResearchPaperStrategy @relation(fields:[strategyId],references:[id],onDelete:Restrict)
+  cycles      ResearchPaperCycle[]
+}
+
+model ResearchPaperCycle {
+  id           String @id @default(cuid()) @db.VarChar(191)
+  activationId String @db.VarChar(191)
+  session      String @db.VarChar(10)
+  result       Json
+  createdAt    DateTime @default(now())
+  activation   ResearchPaperActivation @relation(fields:[activationId],references:[id],onDelete:Restrict)
+  @@unique([activationId,session])
 }
