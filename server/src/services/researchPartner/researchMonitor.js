@@ -66,7 +66,7 @@ export function createResearchMonitorService({
         const identity = key(record)
         if (currentKeys.includes(identity)) continue
         currentKeys.push(identity)
-        if (observed.size && !observed.has(identity)) {
+        if (monitor.lastCheckedAt && !observed.has(identity)) {
           additions.push({ id:record.id, source:record.source, title:record.title,
             url:record.url || null, publishedAt:record.publishedAt,
             availableAt:record.availableAt, contentHash:record.contentHash })
