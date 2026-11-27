@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import StrategyCard from './StrategyCard'
+import StrategyLeaderboard from './StrategyLeaderboard'
 import { loadPublicStrategies } from './strategiesApi'
 import { PageIdentity, ContentState } from '../../components/content/ContentBlocks'
 import './strategy-catalog.css'
 
-/** Public strategy catalog. Present recorded evidence without inferring missing results. */
+/** Public strategy catalog & cross-strategy leaderboard. Present recorded evidence without inferring missing results. */
 export default function StrategiesIndex() {
   const [state, setState] = useState({ status: 'loading', rows: [] })
   useEffect(() => {
@@ -33,6 +34,7 @@ export default function StrategiesIndex() {
           </div>
         </div>
       </section>
+      <StrategyLeaderboard />
       {state.status === 'loading' && <span className="tl-skel" style={{ height: 240 }} aria-label="Loading strategies" />}
       {state.status === 'error' && <ContentState tone="error" title="Strategy information is unavailable." description="The list could not be loaded. You can reload the page to request it again." />}
       {state.status === 'done' && state.rows.length === 0 && <ContentState title="No strategies have been published." description="Published strategies and their available test results will appear here." />}

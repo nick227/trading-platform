@@ -3,6 +3,10 @@ import { get } from '../../api/client'
 /** TradeLoom's standardized strategy evidence (public; no login needed). */
 export const loadPublicStrategies = () => get('/public/strategies')
 export const loadPublicStrategy = (templateId, version = null) => get(`/public/strategies/${encodeURIComponent(templateId)}`, version ? { version } : {})
+export const loadStrategyLeaderboard = async ({ track = 'overview', category = 'all', sortBy = 'risk_adjusted' } = {}) => {
+  const res = await get(`/public/strategies/leaderboard?track=${encodeURIComponent(track)}&category=${encodeURIComponent(category)}&sortBy=${encodeURIComponent(sortBy)}`)
+  return res && !Array.isArray(res) && Array.isArray(res.entries) ? res : null
+}
 
 export const WINDOW_LABELS = { '5Y': '5 years', '1Y': 'Last year', forward: 'Since published', development: 'Initial historical test', holdout: 'Later historical test' }
 
