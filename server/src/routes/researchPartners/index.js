@@ -5,11 +5,15 @@ import { createMandateProposalRuntime } from '../../services/researchPartner/man
 import { createResearchSessionService } from '../../services/researchPartner/researchSession.js'
 import { createMandateDialogueService } from '../../services/researchPartner/mandateDialogue.js'
 import { createResearchThesisService } from '../../services/researchPartner/researchThesis.js'
+import { createResearchStrategyService } from '../../services/researchPartner/paperStrategyService.js'
+import { createPaperStrategyProposalRuntime } from '../../services/researchPartner/paperStrategyProposalRuntime.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
 const dialogues = createMandateDialogueService()
 const theses = createResearchThesisService()
+const strategies = createResearchStrategyService()
+const paperProposals = createPaperStrategyProposalRuntime()
 const proposalRuntime = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
@@ -138,6 +142,62 @@ export default async function researchPartnerRoutes(app) {
   } } }, async (request, reply) => {
     try { return reply.code(201).send({ data: await sessions.createFollowUp(owned(request), request.params.id,
       request.params.sessionId, request.body.question) }) }
+    catch (e) { return handle(reply, e) }
+  })
+
+
+
+  app.post('/:id/paper-strategies/proposals', { schema: { body: {
+    ...bodySchema, required: ['instructions'],
+    properties: { instructions: { type: 'string', minLength: 1, maxLength: 3000 } }
+  } } }, async (request, reply) => {
+    try {
+      const partner = await repo.get(owned(request), request.params.id)
+      return { data: await paperProposals.propose({
+        userId: owned(request), partner, instructions: request.body.instructions
+      }) }
+    } catch (e) { return handle(reply, e) }
+  })
+
+  app.post('/:id/paper-strategies/from-research', { schema: { body: {
+    ...bodySchema, required: ['sessionId','findingIndex','definition'],
+    properties: { sessionId: { type: 'string', minLength: 1, maxLength: 191 },
+      findingIndex: { type: 'integer', minimum: 0, maximum: 11 },
+      definition: { type: 'object' } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await strategies.fromResearch(owned(request),
+      request.params.id, request.body) }) }
+    catch (e) { return handle(reply, e) }
+  })
+
+  app.post('/:id/paper-strategies', { schema: { body: { ...bodySchema,
+    required: ['definition'], properties: { definition: { type: 'object' } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await strategies.create(owned(request), request.params.id, request.body.definition) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/paper-strategies', async (request, reply) => {
+    try { return { data: await strategies.list(owned(request), request.params.id) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/paper-strategies/:strategyId', async (request, reply) => {
+    try { return { data: await strategies.get(owned(request), request.params.id, request.params.strategyId) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/paper-strategies/:strategyId/revisions', { schema: { body: { ...bodySchema,
+    required: ['expectedVersion','definition'], properties: {
+      expectedVersion: { type: 'integer', minimum: 1 }, definition: { type: 'object' }
+    }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await strategies.revise(owned(request), request.params.id,
+      request.params.strategyId, request.body.expectedVersion, request.body.definition) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/paper-strategies/:strategyId/approve', { schema: { body: { ...bodySchema,
+    required: ['expectedVersion'], properties: { expectedVersion: { type: 'integer', minimum: 1 } }
+  } } }, async (request, reply) => {
+    try { return { data: await strategies.approve(owned(request), request.params.id,
+      request.params.strategyId, request.body.expectedVersion) } }
     catch (e) { return handle(reply, e) }
   })
 

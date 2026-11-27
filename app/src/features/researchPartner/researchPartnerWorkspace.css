@@ -39,3 +39,11 @@
 .rp-thesis-row h3 { margin: 0 0 7px; }
 .rp-thesis-row ol { margin: 14px 0 0; padding-left: 22px; }
 .rp-thesis-row li { margin: 5px 0; }
+
+.rp-strategy-studio { display: grid; gap: 16px; }
+.rp-strategy-fields,.rp-strategy-preview { border: 1px solid var(--border, #bfc4ca); border-radius: 10px; padding: 16px; }
+.rp-strategy-rule { display: grid; gap: 8px; }
+.rp-strategy-research label { display: flex; align-items: center; gap: 10px; }
+.rp-strategy-research input[type="checkbox"] { width: auto; flex: 0 0 auto; }
+.rp-strategy-item { padding: 15px 0; border-top: 1px solid var(--border, #bfc4ca); }
+.rp-strategy-item p { margin: 5px 0 10px; }
