@@ -62,3 +62,10 @@
 .rp-backtest-result p { margin: 6px 0 10px; }
 .rp-backtest-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; }
 .rp-backtest-metrics span { display: grid; gap: 3px; font-size: .88rem; }
+
+.rp-forward-panel { border: 1px solid var(--border, #bfc4ca); border-radius: 10px; padding: 16px; margin: 16px 0; }
+.rp-forward-panel h4 { margin: 0 0 8px; }
+.rp-forward-activate { display: grid; gap: 12px; }
+.rp-forward-activate label { display: flex; align-items: start; gap: 10px; }
+.rp-forward-activate input[type="checkbox"] { width: auto; flex: 0 0 auto; }
+.rp-forward-result { border-top: 1px solid var(--border, #bfc4ca); margin-top: 14px; padding-top: 14px; }
