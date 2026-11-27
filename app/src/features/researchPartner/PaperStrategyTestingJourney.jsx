@@ -15,6 +15,7 @@ export default function PaperStrategyTestingJourney({ partnerId, strategy, onClo
   const [runs, setRuns] = useState([])
   const [activation, setActivation] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [retryKey, setRetryKey] = useState(0)
   const [error, setError] = useState('')
   const [acknowledgedGap, setAcknowledgedGap] = useState(false)
 
@@ -41,11 +42,11 @@ export default function PaperStrategyTestingJourney({ partnerId, strategy, onClo
     }).catch(err => { if (live) setError(describeError(err)) })
       .finally(() => { if (live) setLoading(false) })
     return () => { live = false }
-  }, [partnerId, strategy.id, strategy.currentVersion])
+  }, [partnerId, strategy.id, strategy.currentVersion, retryKey])
 
   const latest = runs[0]
   const hasResults = Boolean(latest)
-  const canAdvance = hasResults || acknowledgedGap
+  const canAdvance = !error && (hasResults || acknowledgedGap)
   return <section className="rp-testing-journey" aria-label={'Testing and paper simulation for ' + strategy.name}>
     <header className="rp-testing-header">
       <div>
@@ -62,8 +63,11 @@ export default function PaperStrategyTestingJourney({ partnerId, strategy, onClo
       ].map(([id,label],i)=><li key={id} aria-current={stage===id?'step':undefined}
         className={stage===id?'is-current':''}>{i+1}. {label}</li>)}
     </ol>
-    {error && <p role="alert" className="tl-notice tl-notice--error">{error}</p>}
-    {loading ? <p role="status">Loading strategy testing history…</p> : <>
+    {error && <div role="alert" className="tl-notice tl-notice--error">
+      <p>{error}. Historical evidence status is unknown until the request succeeds.</p>
+      <button type="button" className="tl-btn tl-btn--secondary" onClick={()=>setRetryKey(key=>key+1)}>Retry loading tests</button>
+    </div>}
+    {loading ? <p role="status">Loading strategy testing history…</p> : error ? null : <>
       {stage==='historical' && <>
         <h5>Test your rules against historical data</h5>
         <p className="tl-section-note">This is a historical simulation using available completed market sessions, not a prediction or live trading result.</p>
@@ -76,8 +80,8 @@ export default function PaperStrategyTestingJourney({ partnerId, strategy, onClo
         <h5>Review the evidence before paper activation</h5>
         {hasResults ? <div className="rp-testing-summary" aria-label="Latest historical test summary">
           <p><strong>Period:</strong> {latest.startSession} – {latest.endSession}</p>
-          <p><strong>Historical return:</strong> {latest.result?.returnPct ?? 'Unavailable'}%</p>
-          <p><strong>Maximum drawdown:</strong> {latest.result?.maxDrawdownPct ?? 'Unavailable'}%</p>
+          <p><strong>Historical return:</strong> {Number.isFinite(latest.result?.returnPct) ? latest.result.returnPct+'%' : 'Unavailable'}</p>
+          <p><strong>Maximum drawdown:</strong> {Number.isFinite(latest.result?.maxDrawdownPct) ? latest.result.maxDrawdownPct+'%' : 'Unavailable'}</p>
           <p><strong>Simulated fills:</strong> {latest.result?.fillCount ?? 'Unavailable'}</p>
           <p className="tl-section-note">This replay assumes zero fees and slippage. Results do not establish future performance or automated trading readiness.</p>
         </div> : <div className="rp-testing-gap">
@@ -98,6 +102,7 @@ export default function PaperStrategyTestingJourney({ partnerId, strategy, onClo
       {stage==='paper' && <>
         <h5>Manually simulate future completed sessions</h5>
         <p className="tl-section-note">Paper activation is separate from definition approval and historical testing. Activation creates a simulated account only; each completed session must still be processed manually.</p>
+        {activation && activation.version !== strategy.currentVersion && <p className="tl-section-note" role="status">This paper account is pinned to strategy version {activation.version}, not the current approved version {strategy.currentVersion}.</p>}
         <PaperForwardPanel partnerId={partnerId} strategy={strategy} />
         <button type="button" className="tl-btn tl-btn--secondary" onClick={()=>setStage('review')}>
           Review historical evidence
