@@ -33,3 +33,9 @@
 .rp-evidence-link { display: inline-block; margin-right: 12px; margin-top: 4px; }
 .rp-sources li { scroll-margin-top: 110px; }
 @media (max-width: 680px) { .rp-dialogue { padding: 14px; } }
+
+.rp-thesis-history { display: grid; gap: 12px; margin: 16px 0; }
+.rp-thesis-row { border: 1px solid var(--border, #bfc4ca); border-radius: 10px; padding: 16px; }
+.rp-thesis-row h3 { margin: 0 0 7px; }
+.rp-thesis-row ol { margin: 14px 0 0; padding-left: 22px; }
+.rp-thesis-row li { margin: 5px 0; }
