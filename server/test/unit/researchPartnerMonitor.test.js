@@ -57,4 +57,14 @@ describe('RP-16 evidence change detection',()=>{
     await expect(createResearchMonitorService(args).create('u','p',{name:'Track',symbols:['BAD!']})).rejects.toThrow()
     expect(args.evidenceCollector).not.toHaveBeenCalled()
   })
+
+  it('recognizes evidence arriving after an initially empty baseline',async()=>{
+    const args=fixture(evidence,[])
+    args.db.researchMonitor.findFirst.mockResolvedValue({
+      ...base,seenHashes:[],lastCheckedAt:new Date('2026-11-26T20:00:00.000Z')
+    })
+    const result=await createResearchMonitorService(args).check('u','p','m')
+    expect(result.additions).toBe(1)
+    expect(args.db.researchMonitorEvent.create).toHaveBeenCalledOnce()
+  })
 })
