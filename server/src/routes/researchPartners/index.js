@@ -8,6 +8,7 @@ import { createResearchThesisService } from '../../services/researchPartner/rese
 import { createResearchStrategyService } from '../../services/researchPartner/paperStrategyService.js'
 import { createPaperStrategyProposalRuntime } from '../../services/researchPartner/paperStrategyProposalRuntime.js'
 import { createResearchMonitorService } from '../../services/researchPartner/researchMonitor.js'
+import { createResearchBacktestService } from '../../services/researchPartner/paperStrategyBacktestService.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
@@ -16,6 +17,7 @@ const theses = createResearchThesisService()
 const strategies = createResearchStrategyService()
 const paperProposals = createPaperStrategyProposalRuntime()
 const monitors = createResearchMonitorService()
+const backtests = createResearchBacktestService()
 const proposalRuntime = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
@@ -224,6 +226,25 @@ export default async function researchPartnerRoutes(app) {
   } } }, async (request, reply) => {
     try { return { data: await strategies.approve(owned(request), request.params.id,
       request.params.strategyId, request.body.expectedVersion) } }
+    catch (e) { return handle(reply, e) }
+  })
+
+
+  app.post('/:id/paper-strategies/:strategyId/backtests', { schema: { body: {
+    ...bodySchema, required:['expectedVersion','startSession','endSession'],
+    properties:{
+      expectedVersion:{type:'integer',minimum:1},
+      startSession:{type:'string',pattern:'^[0-9]{4}-[0-9]{2}-[0-9]{2}$'},
+      endSession:{type:'string',pattern:'^[0-9]{4}-[0-9]{2}-[0-9]{2}$'}
+    }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await backtests.run(owned(request), request.params.id,
+      request.params.strategyId, request.body) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/paper-strategies/:strategyId/backtests', async (request, reply) => {
+    try { return { data: await backtests.list(owned(request), request.params.id,
+      request.params.strategyId) } }
     catch (e) { return handle(reply, e) }
   })
 
