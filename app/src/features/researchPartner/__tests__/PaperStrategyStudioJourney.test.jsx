@@ -43,7 +43,7 @@ describe('guided paper strategy creation', () => {
       .mockResolvedValueOnce([{ id: 'strategy1', name: 'My paper strategy', currentVersion: 1, status: 'draft' }])
     render(<PaperStrategyStudio partnerId="p1" session={null} />)
     fireEvent.click(screen.getByRole('button', { name: 'Define rules without AI' }))
-    expect(screen.getByText('20-session price change at least 5%')).toBeInTheDocument()
+    expect(screen.getByText(/20-session price change at least 5%/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Save paper strategy draft' }))
     await waitFor(() => expect(createResearchPaperStrategy).toHaveBeenCalledWith(
       'p1', expect.objectContaining({ mode: 'paper', risk: expect.objectContaining({ maxPositionPct: 0.1 }) })
