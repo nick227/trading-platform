@@ -3,6 +3,7 @@ import { loadBotFills, calculateFifoAccounting } from '../services/botAccounting
 import { runAiStrategyMarketOpenJob } from '../jobs/aiStrategyMarketOpenJob.js'
 import { getAiPipelineStatus } from '../services/ai/aiPipelineTracker.js'
 import { evaluatePaperPortfolioIntelligence } from '../services/ai/portfolioIntelligenceService.js'
+import { evaluateAiPerformanceIntelligence } from '../services/ai/aiPerformanceIntelligenceService.js'
 import { AI_STOCK_TRADER_PLATFORM_BOT_ID } from '../services/ai/strategies/aiStockTraderStrategy.js'
 import { requireRole } from '../middleware/requireAdmin.js'
 
@@ -22,6 +23,20 @@ export default async function aiStrategyRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'AI_PORTFOLIO_INTELLIGENCE_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // GET /api/ai/performance-intelligence — Attribution, benchmark comparison & hypothesis validation
+  app.get('/performance-intelligence', async (request, reply) => {
+    const botId = String(request.query?.botId || AI_STOCK_TRADER_PLATFORM_BOT_ID).trim()
+    try {
+      const result = await evaluateAiPerformanceIntelligence({ botId })
+      return reply.send({ success: true, data: result })
+    } catch (err) {
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'AI_PERFORMANCE_INTELLIGENCE_ERROR', message: err.message }
       })
     }
   })

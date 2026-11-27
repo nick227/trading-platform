@@ -11,6 +11,7 @@ import { processPendingAiExecutions } from '../../src/services/ai/aiBotService.j
 
 describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification', () => {
   const session = '2026-11-25'
+  const postCloseNow = new Date('2026-11-25T21:45:00Z') // 4:45 PM ET post-close on 2026-11-25
   const nextSession = '2026-11-27' // 2026-11-26 is Thanksgiving; next exchange trading day is Friday 2026-11-27
   const mondaySession = '2026-11-30'
   let platformBot
@@ -112,7 +113,7 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
 
   // Controlled AI provider simulating genuine qualitative reasoning
   const controlledProvider = {
-    completeStructured: async ({ systemPrompt, userPrompt }) => {
+    completeStructured: async ({ systemPrompt }) => {
       const isPlan = typeof systemPrompt === 'string' && systemPrompt.includes('investment researcher')
       if (isPlan) {
         return {
@@ -152,10 +153,19 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
     }
   }
 
+  let testSmokeEventId = null
+
   const cleanSessionState = async () => {
     if (!platformBot) return
     await prisma.botEvent.deleteMany({
-      where: { botId: platformBot.id, id: { startsWith: 'req_stock_' } }
+      where: {
+        botId: platformBot.id,
+        OR: [
+          { id: { startsWith: 'req_stock_' } },
+          { id: { startsWith: 'ev_exit_' } },
+          ...(testSmokeEventId ? [{ id: testSmokeEventId }] : [])
+        ]
+      }
     })
     await prisma.aiUsageCall.deleteMany({
       where: { botId: platformBot.id, NOT: { jobKey: { startsWith: 'flagship_beta_provider_smoke' } } }
@@ -181,10 +191,11 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
     })
     await cleanSessionState()
 
-    // Ensure verified smoke event exists for preflight readiness
+    // Ensure verified smoke event exists anchored to postCloseNow for deterministic preflight checks
+    testSmokeEventId = 'ev_smoke_' + randomUUID().replace(/-/g, '').slice(0, 16)
     await prisma.botEvent.create({
       data: {
-        id: 'ev_smoke_' + randomUUID().replace(/-/g, '').slice(0, 16),
+        id: testSmokeEventId,
         botId: platformBot.id,
         portfolioId: platformPortfolio.id,
         type: 'signal_hold',
@@ -192,7 +203,7 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
         metadata: {
           status: 'provider_smoke_verified',
           model: 'gpt-4o-mini',
-          verifiedAt: new Date().toISOString()
+          verifiedAt: '2026-11-25T21:00:00.000Z'
         }
       }
     })
@@ -211,7 +222,8 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
     const readiness = await readFlagshipAiBetaReadiness({
       prismaClient: prisma,
       engine: controlledEngine,
-      env: testEnv
+      env: testEnv,
+      now: postCloseNow
     })
 
     expect(readiness.readyToEnable).toBe(true)
@@ -223,6 +235,7 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
     // 1. Run post-close research cycle for session 2026-11-25
     const dailyResult = await runStockTraderDailyJob({
       env: testEnv,
+      now: postCloseNow,
       session,
       prismaClient: prisma,
       engine: controlledEngine,
@@ -251,6 +264,7 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
     // 2. Idempotent rerun: re-running research on same session does not duplicate orders
     const rerunResult = await runStockTraderDailyJob({
       env: testEnv,
+      now: postCloseNow,
       session,
       prismaClient: prisma,
       engine: controlledEngine,
@@ -271,7 +285,7 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
     expect(openResult.ok).toBe(true)
     expect(openResult.filledCount).toBeGreaterThanOrEqual(1)
 
-    // Verify order is now filled at next_open reference price (.00)
+    // Verify order is now filled at next_open reference price ($140.00)
     const filledOrder = await prisma.execution.findUnique({
       where: { id: queuedOrder.id }
     })
@@ -290,7 +304,7 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
     const nvdaPos = dashboard.positions.find(p => p.symbol === 'NVDA')
     expect(nvdaPos.averageCost).toBe(140.00)
     expect(nvdaPos.lastPrice).toBe(144.00)
-    expect(nvdaPos.unrealizedPnl).toBeGreaterThan(0) //  close vs  open
+    expect(nvdaPos.unrealizedPnl).toBeGreaterThan(0) // $144 close vs $140 open
 
     // Verify research audit transparency
     expect(dashboard.research.length).toBeGreaterThanOrEqual(1)
@@ -302,8 +316,8 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
   })
 
   it('Milestone 3 — Sustained Reliability & Close-Triggered Protective Exits', async () => {
-    // Protective exit verification: Next session close drops below stopLossPct (3.5% below  = .10)
-    const stopPrice = 133.00 //  is below the .10 stop loss threshold
+    // Protective exit verification: Next session close drops below stopLossPct (3.5% below $140 = $135.10)
+    const stopPrice = 133.00 // $133 is below the $135.10 stop loss threshold
     const droppedEngine = {
       ...controlledEngine,
       getSessionClose: async (ticker, targetSession = null) => {
@@ -314,7 +328,7 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
       }
     }
 
-    const exitResult = await processPendingAiExecutions(platformBot.id, {
+    await processPendingAiExecutions(platformBot.id, {
       currentSession: nextSession,
       prismaClient: prisma,
       engine: droppedEngine
@@ -346,7 +360,7 @@ describe('Flagship AI Stock Trader — End-to-End Beta Acceptance Verification',
       prismaClient: prisma,
       engine: {
         ...controlledEngine,
-        getSessionClose: async (ticker, targetSession = null) => ({
+        getSessionClose: async (ticker) => ({
           ticker,
           session: mondaySession,
           open: 132.50,

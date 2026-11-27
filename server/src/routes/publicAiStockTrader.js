@@ -1,6 +1,7 @@
 import { readPublicStockTraderDashboard } from '../services/ai/stockTraderDashboardService.js'
 import { discoverAutonomousOpportunities } from '../services/ai/stockDiscoveryService.js'
 import { evaluatePaperPortfolioIntelligence } from '../services/ai/portfolioIntelligenceService.js'
+import { evaluateAiPerformanceIntelligence } from '../services/ai/aiPerformanceIntelligenceService.js'
 
 /** Public, read-only flagship AI Stock Trader endpoints. Never triggers LLM calls or orders. */
 export default async function publicAiStockTraderRoutes(app) {
@@ -9,14 +10,16 @@ export default async function publicAiStockTraderRoutes(app) {
       const result = await readPublicStockTraderDashboard()
       let discovery = null
       let portfolioIntelligence = null
+      let performanceIntelligence = null
       if (result.status !== 'not_initialized') {
-        ;[discovery, portfolioIntelligence] = await Promise.all([
+        ;[discovery, portfolioIntelligence, performanceIntelligence] = await Promise.all([
           discoverAutonomousOpportunities({ limit: 12 }).catch(() => null),
-          evaluatePaperPortfolioIntelligence().catch(() => null)
+          evaluatePaperPortfolioIntelligence().catch(() => null),
+          evaluateAiPerformanceIntelligence().catch(() => null)
         ])
       }
       reply.header('Cache-Control', 'public, max-age=60')
-      return { data: { ...result, discovery, portfolioIntelligence } }
+      return { data: { ...result, discovery, portfolioIntelligence, performanceIntelligence } }
     } catch (error) {
       app.log.error(error, 'Flagship paper dashboard unavailable')
       return reply.code(503).send({ error: { code: 'PAPER_RESEARCH_UNAVAILABLE', message: 'Paper trading data is temporarily unavailable.' } })
@@ -48,6 +51,17 @@ export default async function publicAiStockTraderRoutes(app) {
     } catch (error) {
       app.log.error(error, 'Flagship portfolio intelligence unavailable')
       return reply.code(503).send({ error: { code: 'PORTFOLIO_INTELLIGENCE_UNAVAILABLE', message: 'Portfolio intelligence is temporarily unavailable.' } })
+    }
+  })
+
+  app.get('/performance-intelligence', async (_request, reply) => {
+    try {
+      const result = await evaluateAiPerformanceIntelligence()
+      reply.header('Cache-Control', 'public, max-age=60')
+      return { data: result }
+    } catch (error) {
+      app.log.error(error, 'Flagship performance intelligence unavailable')
+      return reply.code(503).send({ error: { code: 'PERFORMANCE_INTELLIGENCE_UNAVAILABLE', message: 'Performance intelligence is temporarily unavailable.' } })
     }
   })
 }
