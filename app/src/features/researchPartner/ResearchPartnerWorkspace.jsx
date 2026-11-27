@@ -10,6 +10,7 @@ import MandateDialoguePanel from './MandateDialoguePanel'
 import ThesisHistory from './ThesisHistory'
 import PaperStrategyStudio from './PaperStrategyStudio'
 import ResearchMonitorPanel from './ResearchMonitorPanel'
+import ResearchActivityTimeline from './ResearchActivityTimeline'
 import AgentHeader from '../../ui/agents/AgentHeader'
 import ResearchViewLinks from './ResearchViewLinks'
 import { researchAgentStatus } from '../../ui/agents/agentExperience'
@@ -375,6 +376,15 @@ export default function ResearchPartnerWorkspace() {
         </>}
         {focus === 'strategies' && <PaperStrategyStudio key={'studio-'+partner.id}
           partnerId={partner.id} session={selected}/>}
+        {focus === 'activity' && <ResearchActivityTimeline key={'activity-'+partner.id}
+          partnerId={partner.id}
+          onOpenSession={async sessionId => {
+            await action(async () => {
+              setSelected(await getResearchSession(partner.id, sessionId))
+              setFocus('research')
+            })
+          }}
+          onOpenStrategy={() => setFocus('strategies')}/>}
         {focus === 'monitoring' && <ResearchMonitorPanel key={'monitor-'+partner.id}
           partnerId={partner.id} watchlist={partner.mandate?.content?.watchlist || []}/>}
         {focus === 'theses' && <ThesisHistory key={partner.id} partnerId={partner.id} session={selected}/>}

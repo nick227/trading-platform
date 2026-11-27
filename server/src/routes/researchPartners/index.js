@@ -3,6 +3,7 @@ import { createResearchPartnerRepository } from '../../services/researchPartner/
 import { ResearchPartnerInputError } from '../../services/researchPartner/mandate.js'
 import { createMandateProposalRuntime } from '../../services/researchPartner/mandateProposalRuntime.js'
 import { createResearchSessionService } from '../../services/researchPartner/researchSession.js'
+import { createResearchActivityTimeline } from '../../services/researchPartner/activityTimeline.js'
 import { createConversationDraftService } from '../../services/researchPartner/conversationDrafts.js'
 import { createMandateDialogueService } from '../../services/researchPartner/mandateDialogue.js'
 import { createResearchThesisService } from '../../services/researchPartner/researchThesis.js'
@@ -14,6 +15,7 @@ import { createPaperForwardService } from '../../services/researchPartner/paperS
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
+const activity = createResearchActivityTimeline()
 const conversation = createConversationDraftService()
 const dialogues = createMandateDialogueService()
 const theses = createResearchThesisService()
@@ -151,6 +153,11 @@ export default async function researchPartnerRoutes(app) {
   } } }, async (request, reply) => {
     try { return { data: await conversation.close(owned(request), request.params.id,
       request.params.draftId, request.body) } }
+    catch (e) { return handle(reply, e) }
+  })
+
+  app.get('/:id/activity', async (request, reply) => {
+    try { return { data: await activity.list(owned(request), request.params.id) } }
     catch (e) { return handle(reply, e) }
   })
 

@@ -16,6 +16,7 @@ export const answerResearchClarification = (id, draftId, text, expectedRevision)
 export const closeConversationDraft = (id, draftId, expectedRevision, status) =>
   post(part(id) + '/conversation/' + encodeURIComponent(draftId) + '/close', { expectedRevision, status })
 export const interpretResearchMessage = (id, text, sessionId) => post(part(id) + '/conversation/interpret', { text, ...(sessionId ? { sessionId } : {}) })
+export const listResearchActivity = id => get(part(id) + '/activity')
 export const listResearchSessions = id => get(part(id) + '/sessions')
 export const createResearchSession = (id, question) => post(part(id) + '/sessions', { question })
 export const runResearchSession = (id, sessionId) => post(part(id) + '/sessions/' + encodeURIComponent(sessionId) + '/run')
