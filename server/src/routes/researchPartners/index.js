@@ -144,6 +144,17 @@ export default async function researchPartnerRoutes(app) {
   })
 
 
+  app.post('/:id/paper-strategies/from-research', { schema: { body: {
+    ...bodySchema, required: ['sessionId','findingIndex','definition'],
+    properties: { sessionId: { type: 'string', minLength: 1, maxLength: 191 },
+      findingIndex: { type: 'integer', minimum: 0, maximum: 11 },
+      definition: { type: 'object' } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await strategies.fromResearch(owned(request),
+      request.params.id, request.body) }) }
+    catch (e) { return handle(reply, e) }
+  })
+
   app.post('/:id/paper-strategies', { schema: { body: { ...bodySchema,
     required: ['definition'], properties: { definition: { type: 'object' } }
   } } }, async (request, reply) => {

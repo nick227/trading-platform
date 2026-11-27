@@ -33,6 +33,46 @@ export function createResearchStrategyService(db = prisma) {
         return { ...strategy, revision }
       })
     },
+    async fromResearch(userId, partnerId, { sessionId, findingIndex, definition }) {
+      // Do not treat model conclusions as measurements. All executable criteria
+      // arrive separately and must pass the strict paper strategy validator.
+      await partnerFor(userId, partnerId)
+      if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 191 ||
+          !Number.isInteger(findingIndex) || findingIndex < 0 || findingIndex >= 12) {
+        throw new ResearchPartnerInputError('Invalid research finding selection')
+      }
+      const session = await db.researchSession.findFirst({
+        where: { id: sessionId, partnerId, status: 'completed' }
+      })
+      if (!session || !session.report) throw new ResearchPartnerNotFoundError()
+      const finding = session.report.findings?.[findingIndex]
+      if (!finding || !['supported', 'challenged', 'inconclusive'].includes(finding.assessment) ||
+          typeof finding.claim !== 'string') {
+        throw new ResearchPartnerInputError('Completed research finding is unavailable')
+      }
+      const sourceLookup = new Map((session.report.evidence || []).map(source => [source.id, source]))
+      const references = Array.isArray(finding.evidenceIds) ? finding.evidenceIds : []
+      if (references.length > 10 || references.some(id => !sourceLookup.has(id))) {
+        throw new ResearchPartnerInputError('Research finding contains unavailable references')
+      }
+      // A finding without cited independent evidence remains provisional.
+      const provenance = {
+        kind: 'research_finding', sessionId, findingIndex,
+        mandateVersion: session.mandateVersion,
+        evidenceFingerprint: session.report.evidenceFingerprint || null,
+        sourceStatus: references.length ? 'cited_unverified_interpretation' : 'no_independent_sources',
+        finding: { claim: finding.claim.slice(0, 500), assessment: finding.assessment,
+          evidenceIds: references },
+        sources: references.map(id => {
+          const src = sourceLookup.get(id)
+          return { id, source: src.source, title: src.title || null,
+            url: src.url || null, publishedAt: src.publishedAt || null,
+            contentHash: src.contentHash || null }
+        })
+      }
+      const spec = validatePaperStrategy(definition)
+      return this.create(userId, partnerId, spec, provenance)
+    },
     async list(userId, partnerId) {
       await partnerFor(userId, partnerId)
       return db.researchPaperStrategy.findMany({
