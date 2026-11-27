@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
-  validateConversationInterpretation, createConversationInterpreter
+  validateConversationInterpretation, createConversationInterpreter, boundedConversationContext
 } from '../../src/services/researchPartner/conversationInterpretation.js'
 
 describe('Research Partner conversational intent preview', () => {
@@ -26,6 +26,21 @@ describe('Research Partner conversational intent preview', () => {
     const input = { type: 'follow_up', explanation: 'Investigate the previous finding.' }
     expect(validateConversationInterpretation(input).type).toBe('investigation')
     expect(validateConversationInterpretation(input, { hasCompletedSession: true }).type).toBe('follow_up')
+  })
+
+  it('bounds previous investigations and explicitly labels them as context', () => {
+    const context = boundedConversationContext({
+      mandateObjective: 'x'.repeat(700),
+      selectedInvestigation: { question: 'q'.repeat(800), summary: 's'.repeat(800) },
+      recentInvestigations: Array.from({ length: 9 }, (_, i) => ({
+        question: 'r'.repeat(300), status: i % 2 ? 'completed' : 'malicious'
+      }))
+    })
+    expect(context.mandateObjective).toHaveLength(500)
+    expect(context.selectedInvestigation.summary).toHaveLength(500)
+    expect(context.recentInvestigations).toHaveLength(5)
+    expect(context.recentInvestigations[0].status).toBe('unknown')
+    expect(context.recentInvestigations[0].question).toHaveLength(250)
   })
 
   it('requires opt-in enabled budget and never calls the model when disabled', async () => {
