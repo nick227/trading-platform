@@ -881,9 +881,14 @@ export async function processPendingAiExecutions(botId, {
           const returnPct = ((currentPrice - pos.avgPrice) / pos.avgPrice) * 100
 
           // Check if entry execution audit has custom exitRule thresholds from model decision
+          const openExecutionIds = Array.isArray(pos.lots)
+            ? pos.lots.map(l => l.id).filter(Boolean)
+            : []
           const entryAudit = await prismaClient.executionAudit.findFirst({
             where: {
-              execution: { botId, ticker, direction: 'buy', status: 'filled' },
+              ...(openExecutionIds.length
+                ? { executionId: { in: openExecutionIds } }
+                : { execution: { botId, ticker, direction: 'buy', status: 'filled' } }),
               eventType: 'execution_created'
             },
             orderBy: { createdAt: 'desc' }
@@ -915,7 +920,7 @@ export async function processPendingAiExecutions(botId, {
             // The active intent is scoped to the currently open FIFO lots, rather
             // than permanently reserved for this bot + ticker.
             const lotIds = Array.isArray(pos.lots) ? pos.lots.map(lot => String(lot.id)).sort() : []
-            if (!lotIds.length) throw new Error('Cannot identify open lots for protective exit')
+            if (!lotIds.length) continue // Safety: cannot identify open lots
             const positionKey = createHash('sha256').update(lotIds.join('|')).digest('hex').slice(0, 20)
             const activeIntentKey = `intent_ai_exit_${botId}_${ticker.toLowerCase()}_${positionKey}`
 
@@ -938,81 +943,92 @@ export async function processPendingAiExecutions(botId, {
             const execId = `exec_ai_exit_${randomUUID().replace(/-/g, '').slice(0, 16)}`
             const qty = pos.quantity
 
-            const execution = await prismaClient.execution.create({
-              data: {
-                id: execId,
-                botId,
-                portfolioId: bot.portfolioId,
-                userId: bot.userId,
+            try {
+              const execution = await prismaClient.execution.create({
+                data: {
+                  id: execId,
+                  botId,
+                  portfolioId: bot.portfolioId,
+                  userId: bot.userId,
+                  ticker,
+                  direction: 'sell',
+                  quantity: qty,
+                  price: currentPrice,
+                  origin: 'bot',
+                  sourceType: isReplayMode ? 'AI_REPLAY' : 'AI_STRATEGY',
+                  sourceId: bot.templateId || STRATEGY_ID,
+                  status: 'queued',
+                  simSession: targetSession, // Look-ahead protected: queues for next session
+                  clientOrderId,
+                  activeIntentKey,
+                  commission: 0,
+                  fees: 0,
+                  pnl: 0,
+                  signalScore: 1.0
+                }
+              })
+
+              await prismaClient.executionAudit.create({
+                data: {
+                  id: `aud_${randomUUID()}`,
+                  executionId: execution.id,
+                  userId: execution.userId,
+                  workerId: 'ai_daily_job',
+                  eventType: 'execution_created',
+                  detail: `Queued AI protective ${exitType} order for ${ticker} (${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}% vs threshold ${exitType === 'stop_loss' ? -stopLossPct : takeProfitPct}%) @ ref $${currentPrice.toFixed(2)}. Target session: ${targetSession} [close-triggered next-open execution]`,
+                  metadata: {
+                    exitType,
+                    returnPct,
+                    thresholdPct: exitType === 'stop_loss' ? -stopLossPct : takeProfitPct,
+                    avgCost: pos.avgPrice,
+                    signalSession: currentSession,
+                    targetSession,
+                    isReplay: isReplayMode,
+                    entryExecutionIds: openExecutionIds,
+                    exitModel: 'close_triggered_next_open'
+                  }
+                }
+              })
+
+              await prismaClient.botEvent.create({
+                data: {
+                  id: `ev_exit_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+                  botId,
+                  portfolioId: bot.portfolioId,
+                  type: 'rule_triggered',
+                  detail: `AI protective ${exitType} triggered for ${ticker} (${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%). Order queued for ${targetSession}`,
+                  metadata: {
+                    ticker,
+                    exitType,
+                    returnPct,
+                    thresholdPct: exitType === 'stop_loss' ? -stopLossPct : takeProfitPct,
+                    avgCost: pos.avgPrice,
+                    signalSession: currentSession,
+                    targetSession,
+                    exitModel: 'close_triggered_next_open'
+                  }
+                }
+              })
+
+              exitExecutions.push({
+                id: execution.id,
                 ticker,
                 direction: 'sell',
                 quantity: qty,
-                price: currentPrice,
-                origin: 'bot',
-                sourceType: isReplayMode ? 'AI_REPLAY' : 'AI_STRATEGY',
-                sourceId: bot.templateId || STRATEGY_ID,
-                status: 'queued',
-                simSession: targetSession, // Look-ahead protected: queues for next session
-                clientOrderId,
-                activeIntentKey,
-                commission: 0,
-                fees: 0,
-                pnl: 0,
-                signalScore: 1.0
+                referencePrice: currentPrice,
+                signalSession: currentSession,
+                targetSession,
+                exitType,
+                returnPct,
+                status: 'queued'
+              })
+            } catch (createErr) {
+              // P2002 uniqueness collision on clientOrderId or activeIntentKey indicates another worker queued this exit
+              if (createErr?.code === 'P2002') {
+                continue
               }
-            })
-
-            await prismaClient.executionAudit.create({
-              data: {
-                id: `aud_${randomUUID()}`,
-                executionId: execution.id,
-                userId: execution.userId,
-                workerId: 'ai_daily_job',
-                eventType: 'execution_created',
-                detail: `Queued AI protective ${exitType} order for ${ticker} (${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}% vs threshold ${exitType === 'stop_loss' ? -stopLossPct : takeProfitPct}%) @ ref $${currentPrice.toFixed(2)}. Target session: ${targetSession}`,
-                metadata: {
-                  exitType,
-                  returnPct,
-                  thresholdPct: exitType === 'stop_loss' ? -stopLossPct : takeProfitPct,
-                  avgCost: pos.avgPrice,
-                  signalSession: currentSession,
-                  targetSession,
-                  isReplay: isReplayMode
-                }
-              }
-            })
-
-            await prismaClient.botEvent.create({
-              data: {
-                id: `ev_exit_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
-                botId,
-                portfolioId: bot.portfolioId,
-                type: 'rule_triggered',
-                detail: `AI protective ${exitType} triggered for ${ticker} (${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%). Order queued for ${targetSession}`,
-                metadata: {
-                  ticker,
-                  exitType,
-                  returnPct,
-                  thresholdPct: exitType === 'stop_loss' ? -stopLossPct : takeProfitPct,
-                  avgCost: pos.avgPrice,
-                  signalSession: currentSession,
-                  targetSession
-                }
-              }
-            })
-
-            exitExecutions.push({
-              id: execution.id,
-              ticker,
-              direction: 'sell',
-              quantity: qty,
-              referencePrice: currentPrice,
-              signalSession: currentSession,
-              targetSession,
-              exitType,
-              returnPct,
-              status: 'queued'
-            })
+              console.error(`[processPendingAiExecutions] failed to queue protective exit for ${ticker}:`, createErr?.message ?? createErr)
+            }
           }
         }
       }
