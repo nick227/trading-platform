@@ -237,7 +237,7 @@ export default function ResearchPartnerWorkspace() {
     if (!proposedIntent || proposedIntent.proposal.type === 'clarify' || busy) return
     // Bind to the persisted source session, not whatever the user happened to select later.
     const text = proposedIntent.answerText
-      ? proposedIntent.requestText + '\\nClarification: ' + proposedIntent.answerText
+      ? proposedIntent.requestText + ' Clarification: ' + proposedIntent.answerText
       : proposedIntent.requestText
     const success = await executeResearchIntent({
       type: proposedIntent.proposal.type, text, parentSessionId: proposedIntent.sessionId
