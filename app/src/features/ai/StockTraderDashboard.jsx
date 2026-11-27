@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { get } from '../../api/client'
 import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } from '../../ui/format'
 import StockDiscoveryPanel from './StockDiscoveryPanel'
+import PortfolioIntelligencePanel from './PortfolioIntelligencePanel'
 
 function Stat({ label, value, detail }) {
   return <div className="tl-stat"><dt>{label}</dt><dd>{value}<small>{detail}</small></dd></div>
@@ -58,6 +59,7 @@ export default function StockTraderDashboard() {
         {data.performance?.totalPnl === null || !data.performance ? <p className="tl-section-note">Portfolio return is not yet available from verified fill and price data.</p> : null}
         {data.performance?.totalEquity != null && <p className="tl-section-note">Estimated paper equity: <strong>{money(data.performance.totalEquity)}</strong></p>}
       </section>
+      {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
       {data.discovery && <StockDiscoveryPanel discovery={data.discovery} compact />}
       <section className="tl-section" aria-labelledby="flagship-research-heading">
         <div className="tl-section-head"><h2 id="flagship-research-heading" className="tl-section-title">AI research and decisions</h2></div>

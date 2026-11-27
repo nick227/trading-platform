@@ -2,6 +2,8 @@ import { executeAiStrategyCycle, getAiDecisionsHistory, getOrCreateCanonicalAiBo
 import { loadBotFills, calculateFifoAccounting } from '../services/botAccountingService.js'
 import { runAiStrategyMarketOpenJob } from '../jobs/aiStrategyMarketOpenJob.js'
 import { getAiPipelineStatus } from '../services/ai/aiPipelineTracker.js'
+import { evaluatePaperPortfolioIntelligence } from '../services/ai/portfolioIntelligenceService.js'
+import { AI_STOCK_TRADER_PLATFORM_BOT_ID } from '../services/ai/strategies/aiStockTraderStrategy.js'
 import { requireRole } from '../middleware/requireAdmin.js'
 
 /**
@@ -9,6 +11,21 @@ import { requireRole } from '../middleware/requireAdmin.js'
  */
 export default async function aiStrategyRoutes(app) {
   const adminOnly = requireRole(['admin'])
+
+  // GET /api/ai/portfolio-intelligence — Evaluate holdings, concentration & rebalance proposals for a paper bot
+  app.get('/portfolio-intelligence', async (request, reply) => {
+    const botId = String(request.query?.botId || AI_STOCK_TRADER_PLATFORM_BOT_ID).trim()
+    try {
+      const result = await evaluatePaperPortfolioIntelligence({ botId })
+      return reply.send({ success: true, data: result })
+    } catch (err) {
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'AI_PORTFOLIO_INTELLIGENCE_ERROR', message: err.message }
+      })
+    }
+  })
+
   // POST /api/ai/strategies/:templateId/run — Triggers autonomous daily research & decision cycle
   app.post('/strategies/:templateId/run', { preHandler: [adminOnly] }, async (request, reply) => {
     const { templateId } = request.params
