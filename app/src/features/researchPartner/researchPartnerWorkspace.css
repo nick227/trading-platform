@@ -187,3 +187,29 @@
   .rp-testing-actions { flex-direction: column; }
   .rp-testing-actions > .tl-btn, .rp-testing-journey > .tl-btn { width: 100%; }
 }
+
+/* UX-06: calm, readable activity chronology with distinct evidence states. */
+.rp-activity { display: grid; gap: 16px; }
+.rp-activity .tl-section-head { align-items: start; gap: 16px; }
+.rp-activity .tl-section-head > div { display: grid; gap: 8px; min-width: 0; }
+.rp-activity .tl-section-head p { margin: 0; }
+.rp-activity-list { display: grid; gap: 0; list-style: none; padding: 0; margin: 0; }
+.rp-activity-event { display: grid; gap: 9px; position: relative; padding: 16px 0 16px 22px;
+  border-left: 2px solid var(--border, #bfc4ca); min-width: 0; }
+.rp-activity-event::before { content: ''; position: absolute; left: -6px; top: 21px;
+  width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+.rp-activity-event__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.rp-activity-event__meta time { color: var(--text-muted, #68717e); font-size: .83rem; }
+.rp-activity-event h3, .rp-activity-event p { margin: 0; overflow-wrap: anywhere; }
+.rp-activity-event h3 { font-size: 1rem; }
+.rp-activity-event > .tl-btn { justify-self: start; }
+.rp-activity-status { display: inline-block; padding: 3px 9px; border-radius: 5px;
+  font-size: .78rem; border: 1px solid var(--border, #bfc4ca); }
+.rp-activity-status--failed, .rp-activity-status--needs_input { font-weight: 650; }
+.rp-activity-error { display: grid; gap: 12px; }
+.rp-activity-error .tl-btn { justify-self: start; }
+@media (max-width:680px) {
+  .rp-activity .tl-section-head { flex-direction: column; align-items: stretch; }
+  .rp-activity .tl-section-head .tl-btn,
+  .rp-activity-event > .tl-btn { width: 100%; }
+}
