@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   approveMandate, createResearchPartner, createResearchSession, getResearchPartner,
   listResearchPartners, listResearchSessions, runResearchSession,
-  getResearchSession, addResearchFeedback, createFollowUpResearch
+  getResearchSession, addResearchFeedback, createFollowUpResearch, interpretResearchMessage
 } from './researchPartnerApi'
 import MandateDialoguePanel from './MandateDialoguePanel'
 import ThesisHistory from './ThesisHistory'
@@ -102,6 +102,8 @@ export default function ResearchPartnerWorkspace() {
   const [objective, setObjective] = useState('')
   const [question, setQuestion] = useState('')
   const [directionSeed, setDirectionSeed] = useState('')
+  const [interpretWithAI, setInterpretWithAI] = useState(false)
+  const [proposedIntent, setProposedIntent] = useState(null)
   const [focus, setFocus] = useState('research')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -130,7 +132,7 @@ export default function ResearchPartnerWorkspace() {
       const created = await createResearchPartner({ name, objective })
       const full = await getResearchPartner(created.id)
       setPartner(full); setPartners(old => [created, ...old]); setSessions([])
-      setName(''); setObjective(''); setSelected(null); setFocus('research'); setDirectionSeed('')
+      setName(''); setObjective(''); setSelected(null); setFocus('research'); setDirectionSeed(''); setProposedIntent(null)
     })
   }
   const onSelect = async id => {
@@ -138,7 +140,7 @@ export default function ResearchPartnerWorkspace() {
       setPartner(await getResearchPartner(id))
       setSessions(await listResearchSessions(id))
       setSelected(null)
-      setFocus('research'); setDirectionSeed('')
+      setFocus('research'); setDirectionSeed(''); setProposedIntent(null)
     })
   }
   const onFeedback = async input => action(async () => {
@@ -159,29 +161,53 @@ export default function ResearchPartnerWorkspace() {
     setFocus('research')
   })
 
-  const onResearch = async event => {
-    event.preventDefault()
-    if (busy) return
-    const intent = resolveResearchIntent(question, Boolean(selected))
-    if (intent.type === 'empty') return
+  const executeResearchIntent = async intent => {
     if (intent.type === 'mandate_proposal') {
-      // Prepare the existing governed dialogue; never approve a mandate from the composer.
+      // Stage an existing governed dialogue, but do not submit or approve it.
       setDirectionSeed(intent.text)
       setQuestion('')
-      setNotice('Review the proposed direction below. Your mandate will not change without approval.')
+      setProposedIntent(null)
+      setNotice('Review the direction proposal below. Your mandate will not change without approval.')
       return
     }
     await action(async () => {
-      const created = intent.type === 'follow_up'
+      const followUpEligible = intent.type === 'follow_up' && selected?.status === 'completed'
+      const created = followUpEligible
         ? await createFollowUpResearch(partner.id, selected.id, intent.text)
         : await createResearchSession(partner.id, intent.text)
       setQuestion('')
+      setProposedIntent(null)
       setSessions(old => [created, ...old])
       setSelected(created)
-      setNotice(intent.type === 'follow_up'
+      setNotice(followUpEligible
         ? 'Follow-up saved and linked to the previous investigation. Run it when ready.'
         : 'Question saved. Run research explicitly when you are ready.')
     })
+  }
+  const onResearch = async event => {
+    event.preventDefault()
+    if (busy) return
+    const text = question.trim()
+    if (!text) return
+    if (!interpretWithAI) {
+      await executeResearchIntent(resolveResearchIntent(text, selected?.status === 'completed'))
+      return
+    }
+    await action(async () => {
+      const interpretation = await interpretResearchMessage(
+        partner.id, text, selected?.status === 'completed' ? selected.id : null
+      )
+      setProposedIntent({ ...interpretation, text })
+      if (interpretation.type === 'clarify') {
+        setNotice('The Research Partner needs one clarification before saving a request.')
+      } else {
+        setNotice('Review the proposed action. Nothing has been saved or executed.')
+      }
+    })
+  }
+  const onConfirmInterpretation = async () => {
+    if (!proposedIntent || proposedIntent.type === 'clarify' || busy) return
+    await executeResearchIntent(proposedIntent)
   }
   const onRun = async () => {
     await action(async () => {
@@ -243,12 +269,33 @@ export default function ResearchPartnerWorkspace() {
             <form className="rp-form" onSubmit={onResearch}>
               <label htmlFor="rp-question">Ask your Research Partner</label>
               <textarea id="rp-question" value={question} onChange={e => setQuestion(e.target.value)}
-                rows={3} maxLength={6000} required
+                rows={3} maxLength={interpretWithAI ? 2000 : 6000} required
+                onInput={() => setProposedIntent(null)}
                 placeholder="Ask a question, request a follow-up, or change your research direction…" />
+              <label className="rp-ai-optin">
+                <input type="checkbox" checked={interpretWithAI} disabled={busy}
+                  onChange={e => { setInterpretWithAI(e.target.checked); setProposedIntent(null) }} />
+                Use AI to interpret my request (uses configured research AI budget)
+              </label>
               <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>
-                Continue
+                {interpretWithAI ? 'Interpret request' : 'Continue'}
               </button>
             </form>
+            {proposedIntent && <section className="rp-intent-proposal" aria-label="Proposed research action">
+              <h3>{proposedIntent.type === 'clarify' ? 'Clarification needed' : 'Review proposed action'}</h3>
+              <p>{proposedIntent.type === 'clarify' ? proposedIntent.clarification : proposedIntent.explanation}</p>
+              {proposedIntent.type !== 'clarify' && <>
+                <p className="tl-small tl-muted">{
+                  proposedIntent.type === 'mandate_proposal' ? 'Propose research direction' :
+                    proposedIntent.type === 'follow_up' ? 'Save a linked follow-up' :
+                      'Save a new investigation'
+                } · No automatic model run, mandate approval, or trade.</p>
+                <button type="button" className="tl-btn tl-btn--primary"
+                  disabled={busy} onClick={onConfirmInterpretation}>Confirm proposed action</button>
+              </>}
+              <button type="button" className="tl-btn tl-btn--secondary"
+                disabled={busy} onClick={() => setProposedIntent(null)}>Dismiss proposal</button>
+            </section>}
           </section>
           {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback}
             onFollowUp={onFollowUp} onRun={onRun} busy={busy}/>}
