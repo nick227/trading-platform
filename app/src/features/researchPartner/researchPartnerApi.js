@@ -41,3 +41,8 @@ export const checkResearchMonitor = (id, monitorId) =>
   post(part(id) + '/monitors/' + encodeURIComponent(monitorId) + '/check')
 export const setResearchMonitorStatus = (id, monitorId, status) =>
   post(part(id) + '/monitors/' + encodeURIComponent(monitorId) + '/status', { status })
+
+export const runPaperStrategyBacktest = (id, strategyId, input) =>
+  post(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/backtests', input)
+export const listPaperStrategyBacktests = (id, strategyId) =>
+  get(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/backtests')

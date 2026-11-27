@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import PaperStrategyBacktestPanel from './PaperStrategyBacktestPanel'
 import {
   listResearchPaperStrategies, createResearchPaperStrategy, createPaperStrategyFromResearch,
   previewPaperStrategyWithAI, approveResearchPaperStrategy
@@ -148,6 +149,7 @@ export default function PaperStrategyStudio({ partnerId, session }) {
         <p className="tl-small tl-muted">Version {item.currentVersion} · {item.status.replaceAll('_',' ')} · Paper definition only</p>
         {item.versions?.[0]?.provenance?.kind==='research_finding'&&
           <p className="tl-small">Linked to investigation {item.versions[0].provenance.sessionId}</p>}
+        {item.status==='approved_paper_definition' && <PaperStrategyBacktestPanel partnerId={partnerId} strategy={item} />}
         {item.status==='draft'&&<button type="button" className="tl-btn tl-btn--secondary"
           disabled={busy} onClick={()=>approve(item)}>Approve definition</button>}
       </article>)}
