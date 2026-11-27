@@ -3,7 +3,7 @@ import { createResearchPartnerRepository } from '../../services/researchPartner/
 import { ResearchPartnerInputError } from '../../services/researchPartner/mandate.js'
 import { createMandateProposalRuntime } from '../../services/researchPartner/mandateProposalRuntime.js'
 import { createResearchSessionService } from '../../services/researchPartner/researchSession.js'
-import { createConversationInterpreter } from '../../services/researchPartner/conversationInterpretation.js'
+import { createConversationDraftService } from '../../services/researchPartner/conversationDrafts.js'
 import { createMandateDialogueService } from '../../services/researchPartner/mandateDialogue.js'
 import { createResearchThesisService } from '../../services/researchPartner/researchThesis.js'
 import { createResearchStrategyService } from '../../services/researchPartner/paperStrategyService.js'
@@ -14,7 +14,7 @@ import { createPaperForwardService } from '../../services/researchPartner/paperS
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
-const interpreter = createConversationInterpreter()
+const conversation = createConversationDraftService()
 const dialogues = createMandateDialogueService()
 const theses = createResearchThesisService()
 const strategies = createResearchStrategyService()
@@ -115,24 +115,43 @@ export default async function researchPartnerRoutes(app) {
     catch (e) { return handle(reply, e) }
   })
 
+  app.get('/:id/conversation', async (request, reply) => {
+    try { return { data: await conversation.list(owned(request), request.params.id) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/conversation/:draftId', async (request, reply) => {
+    try { return { data: await conversation.get(owned(request), request.params.id, request.params.draftId) } }
+    catch (e) { return handle(reply, e) }
+  })
   app.post('/:id/conversation/interpret', { schema: { body: {
-    ...bodySchema, required: ['text'],
-    properties: {
+    ...bodySchema, required: ['text'], properties: {
       text: { type: 'string', minLength: 1, maxLength: 2000 },
       sessionId: { type: 'string', minLength: 1, maxLength: 191 }
     }
   } } }, async (request, reply) => {
-    try {
-      const userId = owned(request)
-      await repo.get(userId, request.params.id)
-      const session = request.body.sessionId
-        ? await sessions.get(userId, request.params.id, request.body.sessionId)
-        : null
-      return { data: await interpreter.interpret({
-        userId, partnerId: request.params.id, text: request.body.text,
-        hasCompletedSession: session?.status === 'completed'
-      }) }
-    } catch (e) { return handle(reply, e) }
+    try { return reply.code(201).send({ data: await conversation.start(
+      owned(request), request.params.id, request.body
+    ) }) } catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/conversation/:draftId/answer', { schema: { body: {
+    ...bodySchema, required: ['text', 'expectedRevision'], properties: {
+      text: { type: 'string', minLength: 1, maxLength: 700 },
+      expectedRevision: { type: 'integer', minimum: 1 }
+    }
+  } } }, async (request, reply) => {
+    try { return { data: await conversation.answer(owned(request), request.params.id,
+      request.params.draftId, request.body) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/conversation/:draftId/close', { schema: { body: {
+    ...bodySchema, required: ['status', 'expectedRevision'], properties: {
+      status: { type: 'string', enum: ['dismissed','confirmed'] },
+      expectedRevision: { type: 'integer', minimum: 1 }
+    }
+  } } }, async (request, reply) => {
+    try { return { data: await conversation.close(owned(request), request.params.id,
+      request.params.draftId, request.body) } }
+    catch (e) { return handle(reply, e) }
   })
 
   app.post('/:id/sessions', { schema: { body: {
