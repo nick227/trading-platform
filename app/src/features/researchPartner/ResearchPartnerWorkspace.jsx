@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   approveMandate, createResearchPartner, createResearchSession, getResearchPartner,
   listResearchPartners, listResearchSessions, runResearchSession,
-  getResearchSession, addResearchFeedback, createFollowUpResearch
+  getResearchSession, addResearchFeedback, createFollowUpResearch, interpretResearchMessage,
+  listConversationDrafts, answerResearchClarification, closeConversationDraft
 } from './researchPartnerApi'
 import MandateDialoguePanel from './MandateDialoguePanel'
 import ThesisHistory from './ThesisHistory'
@@ -12,6 +13,7 @@ import ResearchMonitorPanel from './ResearchMonitorPanel'
 import AgentHeader from '../../ui/agents/AgentHeader'
 import ResearchViewLinks from './ResearchViewLinks'
 import { researchAgentStatus } from '../../ui/agents/agentExperience'
+import { resolveResearchIntent } from './researchIntent'
 import './researchPartnerWorkspace.css'
 
 const message = error => error?.serverMessage || error?.message || 'Request failed'
@@ -100,6 +102,10 @@ export default function ResearchPartnerWorkspace() {
   const [name, setName] = useState('')
   const [objective, setObjective] = useState('')
   const [question, setQuestion] = useState('')
+  const [directionSeed, setDirectionSeed] = useState('')
+  const [interpretWithAI, setInterpretWithAI] = useState(false)
+  const [proposedIntent, setProposedIntent] = useState(null)
+  const [clarificationAnswer, setClarificationAnswer] = useState('')
   const [focus, setFocus] = useState('research')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -111,6 +117,8 @@ export default function ResearchPartnerWorkspace() {
       const full = await getResearchPartner(items[0].id)
       setPartner(full)
       setSessions(await listResearchSessions(full.id))
+      const drafts = await listConversationDrafts(full.id)
+      setProposedIntent(drafts.find(d => d.status === 'pending') || null)
     }
   }, [])
   useEffect(() => { let live = true
@@ -128,7 +136,7 @@ export default function ResearchPartnerWorkspace() {
       const created = await createResearchPartner({ name, objective })
       const full = await getResearchPartner(created.id)
       setPartner(full); setPartners(old => [created, ...old]); setSessions([])
-      setName(''); setObjective(''); setSelected(null); setFocus('research')
+      setName(''); setObjective(''); setSelected(null); setFocus('research'); setDirectionSeed(''); setProposedIntent(null); setClarificationAnswer('')
     })
   }
   const onSelect = async id => {
@@ -136,7 +144,9 @@ export default function ResearchPartnerWorkspace() {
       setPartner(await getResearchPartner(id))
       setSessions(await listResearchSessions(id))
       setSelected(null)
-      setFocus('research')
+      setFocus('research'); setDirectionSeed(''); setClarificationAnswer('')
+      const drafts = await listConversationDrafts(id)
+      setProposedIntent(drafts.find(d => d.status === 'pending') || null)
     })
   }
   const onFeedback = async input => action(async () => {
@@ -154,17 +164,99 @@ export default function ResearchPartnerWorkspace() {
   })
   const onSelectSession = async session => action(async () => {
     setSelected(await getResearchSession(partner.id, session.id))
+    setProposedIntent(null)
     setFocus('research')
   })
 
-  const onResearch = async event => {
-    event.preventDefault()
-    await action(async () => {
-      const created = await createResearchSession(partner.id, question)
+  const executeResearchIntent = async intent => {
+    if (intent.type === 'mandate_proposal') {
+      if (intent.text.length > 700) {
+        setError('Research direction proposals must be 700 characters or fewer.')
+        return false
+      }
+      // Stage the governed dialogue. Approval is a separate user action.
+      setDirectionSeed(intent.text)
+      setQuestion('')
+      setNotice('Review the direction proposal below. Your mandate will not change without approval.')
+      return true
+    }
+    const result = await action(async () => {
+      const followUpEligible = intent.type === 'follow_up' && intent.parentSessionId
+      const created = followUpEligible
+        ? await createFollowUpResearch(partner.id, intent.parentSessionId, intent.text)
+        : await createResearchSession(partner.id, intent.text)
       setQuestion('')
       setSessions(old => [created, ...old])
       setSelected(created)
-      setNotice('Question saved. Run research explicitly when you are ready.')
+      setNotice(followUpEligible
+        ? 'Follow-up saved and linked to the previous investigation. Run it when ready.'
+        : 'Question saved. Run research explicitly when you are ready.')
+      return true
+    })
+    return result === true
+  }
+  const onResearch = async event => {
+    event.preventDefault()
+    if (busy) return
+    const text = question.trim()
+    if (!text) return
+    if (!interpretWithAI) {
+      const result = await executeResearchIntent({ ...resolveResearchIntent(text, selected?.status === 'completed'),
+        parentSessionId: selected?.status === 'completed' ? selected.id : null })
+      if (result) setProposedIntent(null)
+      return
+    }
+    await action(async () => {
+      const draft = await interpretResearchMessage(
+        partner.id, text, selected?.status === 'completed' ? selected.id : null
+      )
+      setProposedIntent(draft)
+      setClarificationAnswer('')
+      if (draft.proposal.type === 'clarify') {
+        setNotice('The Research Partner needs one clarification before saving a request.')
+      } else {
+        setNotice('Review the proposed action. Nothing has been saved or executed.')
+      }
+    })
+  }
+  const onAnswerClarification = async event => {
+    event.preventDefault()
+    if (!proposedIntent || busy || !clarificationAnswer.trim()) return
+    await action(async () => {
+      const next = await answerResearchClarification(
+        partner.id, proposedIntent.id, clarificationAnswer, proposedIntent.revision
+      )
+      setProposedIntent(next)
+      setClarificationAnswer('')
+      setNotice(next.proposal.type === 'clarify'
+        ? 'More information is needed. Start a new interpretation if necessary.'
+        : 'Review the proposed action before confirming.')
+    })
+  }
+  const onConfirmInterpretation = async () => {
+    if (!proposedIntent || proposedIntent.proposal.type === 'clarify' || busy) return
+    // Bind to the persisted source session, not whatever the user happened to select later.
+    const text = proposedIntent.answerText
+      ? proposedIntent.requestText + ' Clarification: ' + proposedIntent.answerText
+      : proposedIntent.requestText
+    const success = await executeResearchIntent({
+      type: proposedIntent.proposal.type, text, parentSessionId: proposedIntent.sessionId
+    })
+    if (!success) return
+    try {
+      await closeConversationDraft(partner.id, proposedIntent.id, proposedIntent.revision, 'confirmed')
+      setProposedIntent(null)
+    } catch (error) {
+      setError('Action saved, but the conversation record could not be closed: ' + message(error))
+      // Prevent duplicate creation from a stale confirmation.
+      setProposedIntent(null)
+    }
+  }
+  const onDismissInterpretation = async () => {
+    if (!proposedIntent || busy) return
+    await action(async () => {
+      await closeConversationDraft(partner.id, proposedIntent.id, proposedIntent.revision, 'dismissed')
+      setProposedIntent(null)
     })
   }
   const onRun = async () => {
@@ -209,12 +301,13 @@ export default function ResearchPartnerWorkspace() {
           <span className="tl-tag">Mandate v{partner.currentMandateVersion}</span>
         </div>
         <p>{partner.mandate?.content?.objective}</p>
-        <details className="rp-direction-disclosure">
+        <details className="rp-direction-disclosure" open={directionSeed ? true : undefined} key={directionSeed || partner.id}>
           <summary>Change research direction</summary>
           <p className="tl-section-note">Research goals are hypotheses, not verified claims. Changes require approval.</p>
-          <MandateDialoguePanel key={partner.id} partner={partner}
+          <MandateDialoguePanel key={directionSeed || partner.id} partner={partner} initialMessage={directionSeed}
             onApproved={async () => {
               setPartner(await getResearchPartner(partner.id))
+              setDirectionSeed('')
               setNotice('Your approved research mandate is saved as a new version.')
             }} />
         </details>
@@ -224,14 +317,45 @@ export default function ResearchPartnerWorkspace() {
           <section className="tl-section">
             <h2 className="tl-section-title">Investigate</h2>
             <form className="rp-form" onSubmit={onResearch}>
-              <label htmlFor="rp-question">What would you like investigated?</label>
-              <textarea id="rp-question" value={question} onChange={e => setQuestion(e.target.value)}
-                rows={3} maxLength={6000} required
-                placeholder="Which companies have the strongest competitive advantages?" />
+              <label htmlFor="rp-question">Ask your Research Partner</label>
+              <textarea id="rp-question" value={question}
+                onChange={e => { setQuestion(e.target.value); setProposedIntent(null) }}
+                rows={3} maxLength={interpretWithAI ? 2000 : 6000} required
+                placeholder="Ask a question, request a follow-up, or change your research direction…" />
+              <label className="rp-ai-optin">
+                <input type="checkbox" checked={interpretWithAI} disabled={busy}
+                  onChange={e => { setInterpretWithAI(e.target.checked); setProposedIntent(null) }} />
+                Use AI to interpret my request (uses configured research AI budget)
+              </label>
               <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>
-                Save research question
+                {interpretWithAI ? 'Interpret request' : 'Continue'}
               </button>
             </form>
+            {proposedIntent && <section className="rp-intent-proposal" aria-label="Proposed research action">
+              <h3>{proposedIntent.proposal.type === 'clarify' ? 'Clarification needed' : 'Review proposed action'}</h3>
+              <p>{proposedIntent.proposal.type === 'clarify'
+                ? proposedIntent.proposal.clarification : proposedIntent.proposal.explanation}</p>
+              <p className="tl-small tl-muted">Original request: {proposedIntent.requestText}</p>
+              {proposedIntent.answerText && <p className="tl-small">Your clarification: {proposedIntent.answerText}</p>}
+              {proposedIntent.proposal.type === 'clarify' && !proposedIntent.answerText && <form className="rp-form"
+                onSubmit={onAnswerClarification}>
+                <label htmlFor="rp-clarification-answer">Your answer</label>
+                <textarea id="rp-clarification-answer" required maxLength={700} rows={2}
+                  value={clarificationAnswer} onChange={e => setClarificationAnswer(e.target.value)} />
+                <button type="submit" className="tl-btn tl-btn--primary" disabled={busy}>Continue interpretation</button>
+              </form>}
+              {proposedIntent.proposal.type !== 'clarify' && <>
+                <p className="tl-small tl-muted">{
+                  proposedIntent.proposal.type === 'mandate_proposal' ? 'Propose research direction' :
+                    proposedIntent.proposal.type === 'follow_up' ? 'Save a linked follow-up' :
+                      'Save a new investigation'
+                } · No automatic model run, mandate approval, or trade.</p>
+                <button type="button" className="tl-btn tl-btn--primary"
+                  disabled={busy} onClick={onConfirmInterpretation}>Confirm proposed action</button>
+              </>}
+              <button type="button" className="tl-btn tl-btn--secondary"
+                disabled={busy} onClick={onDismissInterpretation}>Dismiss proposal</button>
+            </section>}
           </section>
           {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback}
             onFollowUp={onFollowUp} onRun={onRun} busy={busy}/>}

@@ -88,3 +88,21 @@
 .rp-next-actions__description { font-size: .82rem; color: var(--text-muted,#68717e); }
 .rp-next-actions__arrow { position: absolute; top: 16px; right: 16px; }
 @media(max-width:680px){ .rp-next-actions__list { grid-template-columns: 1fr; } }
+
+/* An interpreted request is a proposal, not a chat message or completed action. */
+.rp-intent-proposal {
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border, #bfc4ca);
+  border-radius: 10px;
+}
+.rp-intent-proposal h3,
+.rp-intent-proposal p { margin: 0; }
+.rp-intent-proposal .tl-btn { justify-self: start; min-width: 200px; }
+@media (max-width: 680px) {
+  .rp-intent-proposal { padding: 14px; }
+  .rp-intent-proposal .tl-btn { justify-self: stretch; width: 100%; }
+}
