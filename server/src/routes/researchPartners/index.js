@@ -3,6 +3,7 @@ import { createResearchPartnerRepository } from '../../services/researchPartner/
 import { ResearchPartnerInputError } from '../../services/researchPartner/mandate.js'
 import { createMandateProposalRuntime } from '../../services/researchPartner/mandateProposalRuntime.js'
 import { createResearchSessionService } from '../../services/researchPartner/researchSession.js'
+import { createConversationInterpreter } from '../../services/researchPartner/conversationInterpretation.js'
 import { createMandateDialogueService } from '../../services/researchPartner/mandateDialogue.js'
 import { createResearchThesisService } from '../../services/researchPartner/researchThesis.js'
 import { createResearchStrategyService } from '../../services/researchPartner/paperStrategyService.js'
@@ -13,6 +14,7 @@ import { createPaperForwardService } from '../../services/researchPartner/paperS
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
+const interpreter = createConversationInterpreter()
 const dialogues = createMandateDialogueService()
 const theses = createResearchThesisService()
 const strategies = createResearchStrategyService()
@@ -111,6 +113,26 @@ export default async function researchPartnerRoutes(app) {
   app.get('/:id/mandates', async (request, reply) => {
     try { return { data: await repo.listMandates(owned(request), request.params.id) } }
     catch (e) { return handle(reply, e) }
+  })
+
+  app.post('/:id/conversation/interpret', { schema: { body: {
+    ...bodySchema, required: ['text'],
+    properties: {
+      text: { type: 'string', minLength: 1, maxLength: 2000 },
+      sessionId: { type: 'string', minLength: 1, maxLength: 191 }
+    }
+  } } }, async (request, reply) => {
+    try {
+      const userId = owned(request)
+      await repo.get(userId, request.params.id)
+      const session = request.body.sessionId
+        ? await sessions.get(userId, request.params.id, request.body.sessionId)
+        : null
+      return { data: await interpreter.interpret({
+        userId, partnerId: request.params.id, text: request.body.text,
+        hasCompletedSession: session?.status === 'completed'
+      }) }
+    } catch (e) { return handle(reply, e) }
   })
 
   app.post('/:id/sessions', { schema: { body: {
