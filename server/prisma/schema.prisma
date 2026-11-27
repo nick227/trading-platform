@@ -750,3 +750,58 @@ model AiUsageCall {
   @@index([botId, period])
   @@index([status, createdAt])
 }
+
+// RP-01: user-owned research-only partner (no trading authority).
+
+model ResearchPartner {
+  id                    String   @id @default(cuid()) @db.VarChar(191)
+  userId                String   @db.VarChar(191)
+  name                  String   @db.VarChar(120)
+  status                String   @default("draft") @db.VarChar(16)
+  currentMandateVersion Int      @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  archivedAt            DateTime?
+  mandates              ResearchMandateVersion[]
+  sessions              ResearchSession[]
+  @@index([userId, status, createdAt])
+}
+
+model ResearchMandateVersion {
+  id        String   @id @default(cuid()) @db.VarChar(191)
+  partnerId String   @db.VarChar(191)
+  version   Int
+  content   Json
+  createdBy String   @db.VarChar(191)
+  createdAt DateTime @default(now())
+  partner   ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  @@unique([partnerId, version])
+  @@index([partnerId, createdAt])
+}
+
+model ResearchSession {
+  id             String    @id @default(cuid()) @db.VarChar(191)
+  partnerId      String    @db.VarChar(191)
+  mandateVersion Int
+  question       String    @db.Text
+  status         String    @default("queued") @db.VarChar(20)
+  report         Json?
+  error          String?   @db.VarChar(500)
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  partner        ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  messages       ResearchMessage[]
+  @@index([partnerId, createdAt])
+  @@index([status, createdAt])
+}
+
+model ResearchMessage {
+  id        String   @id @default(cuid()) @db.VarChar(191)
+  sessionId String   @db.VarChar(191)
+  role      String   @db.VarChar(16)
+  content   String   @db.Text
+  sources   Json?
+  createdAt DateTime @default(now())
+  session   ResearchSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  @@index([sessionId, createdAt])
+}
