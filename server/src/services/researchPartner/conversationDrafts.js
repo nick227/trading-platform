@@ -23,6 +23,19 @@ export function createConversationDraftService({
     if (session.status !== 'completed') throw new ResearchPartnerConflictError('Selected investigation must be completed')
     return session
   }
+  async function contextFor(userId, partnerId, partner, session) {
+    const recent = await db.researchSession.findMany({
+      where: { partnerId }, orderBy: { createdAt: 'desc' }, take: 5,
+      select: { question: true, status: true }
+    })
+    return {
+      mandateObjective: partner.mandate?.content?.objective || '',
+      selectedInvestigation: session ? {
+        question: session.question, summary: session.report?.summary || ''
+      } : null,
+      recentInvestigations: recent
+    }
+  }
   return {
     async list(userId, partnerId) {
       await ownedPartner(userId, partnerId)
@@ -35,7 +48,8 @@ export function createConversationDraftService({
       const partner = await ownedPartner(userId, partnerId)
       const session = await completedSession(userId, partnerId, sessionId)
       const result = await interpreter.interpret({
-        userId, partnerId, text, hasCompletedSession: Boolean(session)
+        userId, partnerId, text, hasCompletedSession: Boolean(session),
+        context: await contextFor(userId, partnerId, partner, session)
       })
       return db.researchConversationDraft.create({ data: {
         partnerId, sessionId: session?.id ?? null,
@@ -67,7 +81,8 @@ export function createConversationDraftService({
       ].join('\n')
       if (combined.length > 2000) throw new ResearchPartnerInputError('Clarification context exceeds budget')
       const interpretation = await interpreter.interpret({
-        userId, partnerId, text: combined, hasCompletedSession: Boolean(session)
+        userId, partnerId, text: combined, hasCompletedSession: Boolean(session),
+        context: await contextFor(userId, partnerId, partner, session)
       })
       const changed = await db.researchConversationDraft.updateMany({
         where: { id: draft.id, partnerId, revision: expectedRevision, status: 'pending',
