@@ -158,11 +158,16 @@ export default function ResearchPartnerWorkspace() {
   })
   const onSelectSession = async session => action(async () => {
     setSelected(await getResearchSession(partner.id, session.id))
+    setProposedIntent(null)
     setFocus('research')
   })
 
   const executeResearchIntent = async intent => {
     if (intent.type === 'mandate_proposal') {
+      if (intent.text.length > 700) {
+        setError('Research direction proposals must be 700 characters or fewer.')
+        return
+      }
       // Stage an existing governed dialogue, but do not submit or approve it.
       setDirectionSeed(intent.text)
       setQuestion('')
@@ -268,9 +273,9 @@ export default function ResearchPartnerWorkspace() {
             <h2 className="tl-section-title">Investigate</h2>
             <form className="rp-form" onSubmit={onResearch}>
               <label htmlFor="rp-question">Ask your Research Partner</label>
-              <textarea id="rp-question" value={question} onChange={e => setQuestion(e.target.value)}
+              <textarea id="rp-question" value={question}
+                onChange={e => { setQuestion(e.target.value); setProposedIntent(null) }}
                 rows={3} maxLength={interpretWithAI ? 2000 : 6000} required
-                onInput={() => setProposedIntent(null)}
                 placeholder="Ask a question, request a follow-up, or change your research direction…" />
               <label className="rp-ai-optin">
                 <input type="checkbox" checked={interpretWithAI} disabled={busy}
