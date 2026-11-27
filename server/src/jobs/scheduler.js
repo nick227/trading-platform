@@ -3,6 +3,7 @@ import { runAiStrategyDailyJob } from './aiStrategyDailyJob.js'
 import { runAiStrategyMarketOpenJob } from './aiStrategyMarketOpenJob.js'
 import { runStockTraderDailyJob } from './aiStockTraderDailyJob.js'
 import { runStockTraderMarketOpenJob } from './aiStockTraderMarketOpenJob.js'
+import { runResearchPartnerMonitorJob } from './researchPartnerMonitorJob.js'
 
 const DEFAULT_SYMBOLS = ['SPY']
 
@@ -53,6 +54,9 @@ export async function startSchedulers() {
       startFallbackStockTraderScheduler()
       startFallbackStockTraderMarketOpenScheduler()
     }
+    if (process.env.ENABLE_RESEARCH_PARTNER_MONITORING === 'true') {
+      startFallbackResearchPartnerMonitorScheduler()
+    }
   }
 }
 
@@ -90,6 +94,13 @@ async function startCronSchedulers() {
     }), { timezone: 'America/New_York' })
     cron.schedule('45 16 * * 1-5', () => runStockTraderDailyJob().catch(err => {
       console.error('[scheduler] flagship AI Stock Trader job error:', err?.message ?? err)
+    }), { timezone: 'America/New_York' })
+  }
+
+  // Read-only evidence checks are separately opt-in, never paid LLM calls.
+  if (process.env.ENABLE_RESEARCH_PARTNER_MONITORING === 'true') {
+    cron.schedule('20 17 * * 1-5', () => runResearchPartnerMonitorJob().catch(err => {
+      console.error('[scheduler] Research Partner monitor failed:', err?.message ?? err)
     }), { timezone: 'America/New_York' })
   }
 
@@ -210,4 +221,15 @@ function msUntilNextEasternWeekdayTime(targetHour, targetMinute) {
 function isWeekend(d) {
   const day = d.getDay() // local representation of NY wall-clock
   return day === 0 || day === 6
+}
+
+function startFallbackResearchPartnerMonitorScheduler() {
+  const scheduleNext = () => {
+    setTimeout(async () => {
+      try { await runResearchPartnerMonitorJob() }
+      catch (error) { console.error('[scheduler] research monitoring failed:', error?.message ?? error) }
+      finally { scheduleNext() }
+    }, msUntilNextEasternWeekdayTime(17,20))
+  }
+  scheduleNext()
 }

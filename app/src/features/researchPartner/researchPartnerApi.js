@@ -34,3 +34,10 @@ export const createPaperStrategyFromResearch = (id, payload) => post(part(id) + 
 export const previewPaperStrategyWithAI = (id, instructions) => post(part(id) + '/paper-strategies/proposals', { instructions })
 export const approveResearchPaperStrategy = (id, strategyId, expectedVersion) =>
   post(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/approve', { expectedVersion })
+
+export const listResearchMonitors = id => get(part(id) + '/monitors')
+export const createResearchMonitor = (id, payload) => post(part(id) + '/monitors', payload)
+export const checkResearchMonitor = (id, monitorId) =>
+  post(part(id) + '/monitors/' + encodeURIComponent(monitorId) + '/check')
+export const setResearchMonitorStatus = (id, monitorId, status) =>
+  post(part(id) + '/monitors/' + encodeURIComponent(monitorId) + '/status', { status })
