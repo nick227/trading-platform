@@ -19,6 +19,7 @@ import pageTitleService from '../services/pageTitleService'
 const AssetsIndex = lazy(() => import('../features/AssetsIndex'))
 const StrategiesIndex = lazy(() => import('../features/strategies/StrategiesIndex'))
 const StockTraderDashboard = lazy(() => import('../features/ai/StockTraderDashboard'))
+const ResearchPartnerWorkspace = lazy(() => import('../features/researchPartner/ResearchPartnerWorkspace'))
 const StrategyDetail = lazy(() => import('../features/strategies/StrategyDetail'))
 const Orders = lazy(() => import('../features/Orders'))
 const AdminDashboard = lazy(() => import('../features/admin/AdminDashboard'))
@@ -69,6 +70,7 @@ function AppLayout() {
       '/history': 'Trade History',
       '/profile': 'Account',
       '/research': 'Research',
+      '/research-partners': 'AI Research Partner',
       '/opportunities': 'Opportunities',
       '/ops': 'Operations',
       '/admin': 'Administration',
@@ -104,6 +106,7 @@ export function AppShell() {
         <Route path="/" element={<HomeRoute />} />
         {/* Former Landing dashboard; secondary research surface (see TRADELOOM_CONSUMER_UX_PLAN.md M6). */}
         <Route path="/research" element={<Protected><Landing /></Protected>} />
+        <Route path="/research-partners" element={<Protected><Suspense fallback={<PageSkeleton />}><ResearchPartnerWorkspace /></Suspense></Protected>} />
         <Route path="/portfolio" element={<Navigate to="/#holdings" replace />} />
         <Route
           path="/assets"
