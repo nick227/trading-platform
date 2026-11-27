@@ -765,10 +765,29 @@ model ResearchPartner {
   mandates              ResearchMandateVersion[]
   sessions              ResearchSession[]
   dialogues             ResearchMandateDialogue[]
+  conversationDrafts    ResearchConversationDraft[]
   theses                ResearchThesis[]
   paperStrategies        ResearchPaperStrategy[]
   monitors               ResearchMonitor[]
   @@index([userId, status, createdAt])
+}
+
+/** Bounded interpretation state; no trade, approval, or execution authority. */
+model ResearchConversationDraft {
+  id          String   @id @default(cuid()) @db.VarChar(191)
+  partnerId   String   @db.VarChar(191)
+  sessionId   String?  @db.VarChar(191)
+  mandateVersion Int
+  revision    Int      @default(1)
+  requestText String   @db.Text
+  answerText  String?  @db.Text
+  proposal    Json
+  status      String   @default("pending") @db.VarChar(24)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  partner     ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  @@index([partnerId, updatedAt])
+  @@index([partnerId, status, updatedAt])
 }
 
 model ResearchMandateVersion {
