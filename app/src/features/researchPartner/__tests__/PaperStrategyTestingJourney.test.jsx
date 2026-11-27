@@ -57,6 +57,16 @@ describe('evidence-first paper strategy journey', () => {
     expect(listPaperStrategyBacktests).toHaveBeenCalledWith('p1', 'strategy1')
     expect(getPaperForwardAccount).toHaveBeenCalledWith('p1', 'strategy1')
   })
+  it('does not mistake an API failure for absence of evidence', async () => {
+    listPaperStrategyBacktests.mockRejectedValueOnce(new Error('Research service unavailable'))
+      .mockResolvedValueOnce([])
+    render(<PaperStrategyTestingJourney partnerId="p1" strategy={strategy} onClose={vi.fn()} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Historical evidence status is unknown')
+    expect(screen.queryByText(/No historical test is saved/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Continue to paper simulation' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading tests' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Review testing evidence' })).toBeInTheDocument())
+  })
   it('transitions from an explicit historical run to evidence review', async () => {
     render(<PaperStrategyTestingJourney partnerId="p1" strategy={strategy} onClose={vi.fn()} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Run historical test' }))
