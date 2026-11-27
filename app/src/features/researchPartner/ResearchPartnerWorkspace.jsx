@@ -9,6 +9,8 @@ import MandateDialoguePanel from './MandateDialoguePanel'
 import ThesisHistory from './ThesisHistory'
 import PaperStrategyStudio from './PaperStrategyStudio'
 import ResearchMonitorPanel from './ResearchMonitorPanel'
+import AgentHeader from '../../ui/agents/AgentHeader'
+import { researchAgentStatus } from '../../ui/agents/agentExperience'
 import './researchPartnerWorkspace.css'
 
 const message = error => error?.serverMessage || error?.message || 'Request failed'
@@ -171,9 +173,10 @@ export default function ResearchPartnerWorkspace() {
   }
   return <main className="tl-page rp-page" data-testid="research-partner-workspace">
     <section className="tl-section">
-      <div className="tl-section-head"><h1 className="tl-section-title">AI Research Partner</h1></div>
-      <p className="tl-lead-sentence">Set the questions that matter to you. Investigate companies and ideas while preserving the evidence and conclusions.</p>
-      <p className="tl-section-note">Research only. No trade orders or brokerage connection.</p>
+      <AgentHeader title="AI Research Partner" kind="research"
+        status={researchAgentStatus({partner,selected,busy,error})}
+        description="Set the questions that matter to you. Investigate companies and ideas while preserving the evidence and conclusions."
+        detail="Research only. No trade orders or brokerage connection."/>
     </section>
     {error && <div role="alert" className="tl-notice tl-notice--error">{error}</div>}
     {notice && <p role="status" className="tl-section-note">{notice}</p>}
