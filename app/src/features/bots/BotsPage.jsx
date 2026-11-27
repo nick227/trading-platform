@@ -174,6 +174,7 @@ export default function BotsPage() {
     <main className="tl-page" aria-busy={state.loading}>
       <EmergencyBanner stop={stop} onClear={clear} />
       <PageIdentity title="Bots" description="Create and manage simulated trading bots. Review their rules and recorded activity before making changes." action={<Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot</Link>} />
+      <p className="tl-section-note">Want to investigate an idea first? <Link to="/research-partners">Open your AI Research Partner</Link>.</p>
 
       {state.loading ? (
         <div aria-hidden="true" data-testid="bots-loading">
