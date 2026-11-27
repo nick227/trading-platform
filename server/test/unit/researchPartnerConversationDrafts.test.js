@@ -9,6 +9,9 @@ const initial = {
 }
 function fixture(draft = initial) {
   const db = {
+    researchSession: {
+      findMany: vi.fn().mockResolvedValue([{ question: 'Earlier research', status: 'completed' }])
+    },
     researchConversationDraft: {
       findFirst: vi.fn().mockResolvedValue(draft),
       findMany: vi.fn().mockResolvedValue([draft]),
@@ -31,7 +34,10 @@ describe('persisted Research Partner conversation proposals', () => {
     const { service, db, interpreter } = fixture()
     await service.start('u1', 'p1', { text: 'Research utilities', sessionId: 's1' })
     expect(interpreter.interpret).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'u1', partnerId: 'p1', hasCompletedSession: true
+      userId: 'u1', partnerId: 'p1', hasCompletedSession: true,
+      context: expect.objectContaining({
+        recentInvestigations: [{ question: 'Earlier research', status: 'completed' }]
+      })
     }))
     expect(db.researchConversationDraft.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ mandateVersion: 2, sessionId: 's1', status: 'pending' })
