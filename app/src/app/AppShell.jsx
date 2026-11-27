@@ -60,19 +60,19 @@ function AppLayout() {
 
   useEffect(() => {
     const routeNameMap = {
-      '/': 'Home',
+      '/': 'Portfolio',
       '/portfolio': 'Portfolio',
-      '/assets': 'Assets',
-      '/bots': 'Bots',
+      '/assets': 'Stocks',
+      '/bots': 'My Bots',
       '/bots/new': 'New bot',
-      '/strategies': 'Platform strategies',
+      '/strategies': 'Strategies',
       '/ai-stock-trader': 'AI Stock Trader',
       '/orders': 'Orders',
       '/history': 'Trade History',
       '/profile': 'Account',
       '/research': 'Research',
       '/research-partners': 'AI Research Partner',
-      '/opportunities': 'AI Stock Discovery',
+      '/opportunities': 'Stocks',
       '/ops': 'Operations',
       '/admin': 'Administration',
       '/auth': 'Authentication',
@@ -88,7 +88,8 @@ function AppLayout() {
 
     const pageName = routeNameMap[location.pathname] ||
       (location.pathname.startsWith('/strategies/') ? 'Strategy Evidence' :
-       location.pathname.startsWith('/bots/') ? 'Bot Details' : fallbackPage) || 'Home'
+       location.pathname.startsWith('/assets/') ? 'Stock Overview' :
+       location.pathname.startsWith('/bots/') ? 'Bot Details' : fallbackPage) || 'Portfolio'
     pageTitleService.setTitle(pageName)
   }, [location.pathname])
 

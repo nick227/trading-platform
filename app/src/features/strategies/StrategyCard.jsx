@@ -17,9 +17,12 @@ export function mainEvidenceWindow(strategy) {
 }
 
 /** Semantic card content is static; only its explicit footer action navigates. */
-export default function StrategyCard({ strategy }) {
+export default function StrategyCard({ strategy, symbolContext = null }) {
   const window = mainEvidenceWindow(strategy)
   const summary = strategy.windows?.[window]
+  const detailHref = symbolContext
+    ? `/strategies/${encodeURIComponent(strategy.templateId)}?symbol=${encodeURIComponent(symbolContext)}`
+    : `/strategies/${encodeURIComponent(strategy.templateId)}`
   return (
     <article className="tl-strategy-catalog-card" data-testid="strategy-card">
       <StrategyThumbnail templateId={strategy.templateId} />
@@ -33,7 +36,7 @@ export default function StrategyCard({ strategy }) {
           <StrategyResultSummary summary={summary} window={window} />
         </section>
         <footer className="tl-strategy-catalog-card__footer">
-          <Link className="tl-strategy-catalog-card__action" to={`/strategies/${encodeURIComponent(strategy.templateId)}`}>
+          <Link className="tl-strategy-catalog-card__action" to={detailHref}>
             View strategy <span aria-hidden="true">→</span>
           </Link>
         </footer>

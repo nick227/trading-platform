@@ -38,8 +38,8 @@ function prefetchOrders() {
 }
 
 export function prefetchByPath(path) {
-  if (path === '/assets') return prefetchAssets()
-  if (path === '/portfolio') return prefetchPortfolio()
+  if (path === '/assets' || path === '/opportunities') return prefetchAssets()
+  if (path === '/' || path === '/portfolio') return prefetchPortfolio()
   if (path === '/orders') return prefetchOrders()
   return null
 }

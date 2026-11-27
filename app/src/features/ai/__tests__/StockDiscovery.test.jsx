@@ -84,6 +84,13 @@ describe('Autonomous Stock Discovery UI', () => {
     fireEvent.click(screen.getByTestId('filter-beyond-watchlist'))
     expect(screen.getByTestId('discovery-card-LLY')).toBeInTheDocument()
     expect(screen.queryByTestId('discovery-card-NVDA')).not.toBeInTheDocument()
+
+    // Context-preserving links across Stocks -> Strategies / My Bots / AI Research
+    const actions = screen.getByTestId('discovery-actions-LLY')
+    expect(actions.querySelector('a[href="/assets/LLY?from=stocks"]')).toBeTruthy()
+    expect(actions.querySelector('a[href="/strategies?symbol=LLY"]')).toBeTruthy()
+    expect(actions.querySelector('a[href="/bots/new?ticker=LLY"]')).toBeTruthy()
+    expect(actions.querySelector('a[href="/research-partners?symbol=LLY"]')).toBeTruthy()
   })
 
   it('loads discovery explorer page from /public/ai-stock-trader/discovery', async () => {

@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { money, signedPct, sessionDate, ratioPct, tone } from '../../ui/format'
 
-function SpaLink({ to, className, children }) {
+function SpaLink({ to, className, children, ...rest }) {
   const navigate = useNavigate()
   return (
     <a
@@ -12,26 +12,82 @@ function SpaLink({ to, className, children }) {
         e.preventDefault()
         navigate(to)
       }}
+      {...rest}
     >
       {children}
     </a>
   )
 }
 
-export default function StockDiscoveryPanel({ discovery, compact = false }) {
-  const [selectedSector, setSelectedSector] = useState('all')
-  const [selectedTheme, setSelectedTheme] = useState('all')
-  const [beyondOnly, setBeyondOnly] = useState(false)
+export default function StockDiscoveryPanel({
+  discovery,
+  compact = false,
+  syncUrlState = false,
+  strategyContext = null
+}) {
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  const initialParams = new URLSearchParams(location?.search || '')
+  const [selectedSector, setSelectedSector] = useState(() => initialParams.get('sector') || 'all')
+  const [selectedTheme, setSelectedTheme] = useState(() => initialParams.get('theme') || 'all')
+  const [beyondOnly, setBeyondOnly] = useState(() => initialParams.get('beyond') === '1')
+  const [focusedSymbol, setFocusedSymbol] = useState(
+    () => (initialParams.get('symbol') || initialParams.get('ticker') || '').trim().toUpperCase() || null
+  )
+  const activeStrategy = strategyContext || (initialParams.get('strategy') || initialParams.get('template') || '').trim() || null
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams(location?.search || '')
+    const urlSym = (nextParams.get('symbol') || nextParams.get('ticker') || '').trim().toUpperCase() || null
+    setFocusedSymbol(urlSym)
+  }, [location?.search])
+
+  const updateUrlIfNeeded = (nextSector, nextTheme, nextBeyond, nextSymbol = focusedSymbol) => {
+    if (!syncUrlState) return
+    const qp = new URLSearchParams()
+    if (nextSector && nextSector !== 'all') qp.set('sector', nextSector)
+    if (nextTheme && nextTheme !== 'all') qp.set('theme', nextTheme)
+    if (nextBeyond) qp.set('beyond', '1')
+    if (nextSymbol) qp.set('symbol', nextSymbol)
+    if (activeStrategy) qp.set('strategy', activeStrategy)
+    const qs = qp.toString()
+    navigate(`${location?.pathname || '/opportunities'}${qs ? `?${qs}` : ''}`, { replace: true })
+  }
+
+  const handleSectorChange = (sec) => {
+    setSelectedSector(sec)
+    updateUrlIfNeeded(sec, selectedTheme, beyondOnly)
+  }
+
+  const handleThemeChange = (thm) => {
+    setSelectedTheme(thm)
+    updateUrlIfNeeded(selectedSector, thm, beyondOnly)
+  }
+
+  const handleBeyondChange = (checked) => {
+    setBeyondOnly(checked)
+    updateUrlIfNeeded(selectedSector, selectedTheme, checked)
+  }
+
+  const clearFocusedSymbol = () => {
+    setFocusedSymbol(null)
+    updateUrlIfNeeded(selectedSector, selectedTheme, beyondOnly, null)
+  }
 
   const filtered = useMemo(() => {
     const items = discovery?.discoveries || []
-    return items.filter(item => {
+    const base = items.filter(item => {
       if (selectedSector !== 'all' && item.sector !== selectedSector) return false
       if (selectedTheme !== 'all' && item.theme !== selectedTheme) return false
       if (beyondOnly && !item.beyondWatchlist) return false
       return true
     })
-  }, [discovery, selectedSector, selectedTheme, beyondOnly])
+    if (!focusedSymbol) return base
+    const exact = base.filter(item => item.symbol === focusedSymbol)
+    const others = base.filter(item => item.symbol !== focusedSymbol)
+    return [...exact, ...others]
+  }, [discovery, selectedSector, selectedTheme, beyondOnly, focusedSymbol])
 
   if (!discovery) return null
 
@@ -80,7 +136,7 @@ export default function StockDiscoveryPanel({ discovery, compact = false }) {
             <button
               type="button"
               className={`tl-tag ${selectedSector === 'all' ? 'is-active' : ''}`}
-              onClick={() => setSelectedSector('all')}
+              onClick={() => handleSectorChange('all')}
               aria-pressed={selectedSector === 'all'}
             >
               All sectors ({discovery.discoveries?.length ?? 0})
@@ -90,7 +146,7 @@ export default function StockDiscoveryPanel({ discovery, compact = false }) {
                 key={sec.sector}
                 type="button"
                 className={`tl-tag ${selectedSector === sec.sector ? 'is-active' : ''}`}
-                onClick={() => setSelectedSector(sec.sector)}
+                onClick={() => handleSectorChange(sec.sector)}
                 aria-pressed={selectedSector === sec.sector}
               >
                 {sec.sector} · {sec.breadthPct}% breadth ({sec.leaderSymbol})
@@ -100,12 +156,36 @@ export default function StockDiscoveryPanel({ discovery, compact = false }) {
         </div>
       )}
 
+      {(focusedSymbol || activeStrategy) && (
+        <div className="tl-flow-card" style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }} data-testid="stocks-context-banner">
+          <span className="tl-small">
+            {focusedSymbol && <><strong>Focused stock:</strong> {focusedSymbol}{activeStrategy ? ' · ' : ''}</>}
+            {activeStrategy && <><strong>Strategy context:</strong> {activeStrategy}</>}
+          </span>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {focusedSymbol && (
+              <SpaLink
+                to={`/bots/new?ticker=${encodeURIComponent(focusedSymbol)}${activeStrategy ? `&template=${encodeURIComponent(activeStrategy)}` : ''}`}
+                className="tl-link-btn"
+              >
+                Automate {focusedSymbol} →
+              </SpaLink>
+            )}
+            {focusedSymbol && (
+              <button type="button" className="tl-link-btn" onClick={clearFocusedSymbol}>
+                Clear focus
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', margin: '0.75rem 0' }}>
         <label className="tl-small" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={beyondOnly}
-            onChange={e => setBeyondOnly(e.target.checked)}
+            onChange={e => handleBeyondChange(e.target.checked)}
             data-testid="filter-beyond-watchlist"
           />
           <span>Beyond 10-stock watchlist only</span>
@@ -115,7 +195,7 @@ export default function StockDiscoveryPanel({ discovery, compact = false }) {
           <span>Signal theme:</span>
           <select
             value={selectedTheme}
-            onChange={e => setSelectedTheme(e.target.value)}
+            onChange={e => handleThemeChange(e.target.value)}
             aria-label="Filter by signal theme"
             data-testid="filter-discovery-theme"
           >
@@ -136,7 +216,7 @@ export default function StockDiscoveryPanel({ discovery, compact = false }) {
               <div className="tl-section-head">
                 <div>
                   <h3>
-                    <SpaLink to={`/assets/${encodeURIComponent(item.symbol)}`}>{item.symbol}</SpaLink>
+                    <SpaLink to={`/assets/${encodeURIComponent(item.symbol)}?from=stocks${activeStrategy ? `&strategy=${encodeURIComponent(activeStrategy)}` : ''}`}>{item.symbol}</SpaLink>
                     {' · '}
                     <span>{item.name}</span>
                   </h3>
@@ -208,6 +288,36 @@ export default function StockDiscoveryPanel({ discovery, compact = false }) {
               {item.risksToWatch?.length > 0 && (
                 <p className="tl-small tl-muted">What to verify / risks: {item.risksToWatch.join(' ')}</p>
               )}
+
+              <div
+                style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.6rem', paddingTop: '0.5rem', borderTop: '1px solid var(--tl-border, rgba(0,0,0,0.08))' }}
+                data-testid={`discovery-actions-${item.symbol}`}
+              >
+                <SpaLink
+                  to={`/assets/${encodeURIComponent(item.symbol)}?from=stocks${activeStrategy ? `&strategy=${encodeURIComponent(activeStrategy)}` : ''}`}
+                  className="tl-link-btn"
+                >
+                  View stock →
+                </SpaLink>
+                <SpaLink
+                  to={`/strategies?symbol=${encodeURIComponent(item.symbol)}`}
+                  className="tl-link-btn"
+                >
+                  Strategies for {item.symbol} →
+                </SpaLink>
+                <SpaLink
+                  to={`/bots/new?ticker=${encodeURIComponent(item.symbol)}${activeStrategy ? `&template=${encodeURIComponent(activeStrategy)}` : ''}`}
+                  className="tl-link-btn"
+                >
+                  Automate {item.symbol} →
+                </SpaLink>
+                <SpaLink
+                  to={`/research-partners?symbol=${encodeURIComponent(item.symbol)}`}
+                  className="tl-link-btn"
+                >
+                  AI Research →
+                </SpaLink>
+              </div>
             </article>
           ))}
         </div>

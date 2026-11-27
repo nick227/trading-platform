@@ -174,4 +174,20 @@ describe('corrected catalog presentation', () => {
     expect(catalogResultHeading({status:'not_backtestable',reason:'Forward performance evaluation is not configured for this strategy'})).toBe('Evaluation not configured')
     expect(catalogResultHeading({status:'ok',symbolsTraded:0})).toBe('No trades recorded')
   })
+
+  it('preserves symbol context across StrategiesIndex and StrategyDetail into bot customization', async () => {
+    get.mockResolvedValue([{ templateId: 'tmpl_momentum_buy', name: 'Momentum Buy', description: 'd', asOf: '2026-11-20', windows: { '5Y': strategy.summary['5Y'] } }])
+    const { unmount } = render(<MemoryRouter initialEntries={['/strategies?symbol=NVDA']}><StrategiesIndex /></MemoryRouter>)
+    expect(await screen.findByTestId('strategy-symbol-context')).toHaveTextContent('Exploring strategies for NVDA')
+    const card = await screen.findByTestId('strategy-card')
+    expect(card.querySelectorAll('a')).toHaveLength(1)
+    expect(card.querySelector('a')).toHaveAttribute('href', '/strategies/tmpl_momentum_buy?symbol=NVDA')
+    unmount()
+
+    get.mockResolvedValue(strategy)
+    render(<MemoryRouter initialEntries={['/strategies/tmpl_momentum_buy?symbol=NVDA']}><Routes><Route path="/strategies/:templateId" element={<StrategyDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByTestId('open-in-workshop')).toHaveAttribute('href', '/bots/new?template=tmpl_momentum_buy&ticker=NVDA')
+    expect(screen.getByRole('link', { name: '← Strategies' })).toHaveAttribute('href', '/strategies?symbol=NVDA')
+    expect(screen.getByTestId('strategy-view-stock-link')).toHaveAttribute('href', '/opportunities?symbol=NVDA&strategy=tmpl_momentum_buy')
+  })
 })

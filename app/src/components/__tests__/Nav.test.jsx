@@ -19,12 +19,12 @@ beforeEach(() => {
 })
 
 describe('Nav', () => {
-  it('shows exactly three destinations plus an account link for signed-in users', () => {
+  it('shows the four primary surfaces plus an account link for signed-in users, keeping AI workspaces contextual', () => {
     renderNav()
     const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Strategies', 'Bots'])
+    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'Stocks', 'Strategies', 'My Bots'])
     expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/profile')
-    for (const removed of ['Portfolio', 'Orders', 'Opportunities', 'Templates', 'Profile']) {
+    for (const removed of ['Home', 'Orders', 'Opportunities', 'Templates', 'Profile', 'Research Partner', 'AI Stock Trader']) {
       expect(screen.queryByRole('link', { name: removed })).not.toBeInTheDocument()
     }
   })
@@ -33,7 +33,7 @@ describe('Nav', () => {
     authState.user = { fullName: 'Admin User', role: 'admin' }
     renderNav()
     const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Home', 'Strategies', 'Bots', 'Admin'])
+    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'Stocks', 'Strategies', 'My Bots', 'Admin'])
     expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin')
 
     cleanup()
@@ -42,10 +42,18 @@ describe('Nav', () => {
     expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin')
   })
 
-  it('marks the active section, including nested bot routes and strategy routes', () => {
+  it('marks the active section across Portfolio, Stocks (/opportunities and /assets/*), Strategies, and My Bots', () => {
     renderNav('/bots/bot_1')
-    expect(screen.getByRole('link', { name: 'Bots' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('link', { name: 'My Bots' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Portfolio' })).not.toHaveAttribute('aria-current')
+
+    cleanup()
+    renderNav('/assets/NVDA')
+    expect(screen.getByRole('link', { name: 'Stocks' })).toHaveAttribute('aria-current', 'page')
+
+    cleanup()
+    renderNav('/opportunities')
+    expect(screen.getByRole('link', { name: 'Stocks' })).toHaveAttribute('aria-current', 'page')
 
     cleanup()
     renderNav('/strategies/tmpl_spy_trend_filter')
@@ -63,9 +71,10 @@ describe('Nav', () => {
     expect(screen.getByTestId('mode-badge')).toHaveTextContent('Live account — trading disabled')
   })
 
-  it('shows Strategies, Sign in and no mode badge when signed out', () => {
+  it('shows Stocks, Strategies, Sign in and no mode badge when signed out', () => {
     authState.user = null
     renderNav()
+    expect(screen.getByRole('link', { name: 'Stocks' })).toHaveAttribute('href', '/opportunities')
     expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute('href', '/strategies')
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/auth')
     expect(screen.queryByTestId('mode-badge')).not.toBeInTheDocument()

@@ -47,10 +47,15 @@ export default function StrategyDetail() {
   const { templateId } = useParams()
   const [params] = useSearchParams()
   const versionParam = params.get('version')
+  const symbolParam = (params.get('symbol') || params.get('ticker') || '').trim().toUpperCase() || null
   const [state, setState] = useState({ status: 'loading', s: null })
   const [win, setWin] = useState('5Y')
-  const [sym, setSym] = useState(null)
+  const [sym, setSym] = useState(symbolParam)
   const [aiState, setAiState] = useState({ status: 'idle', decisions: [] })
+
+  useEffect(() => {
+    if (symbolParam) setSym(symbolParam)
+  }, [symbolParam])
 
   useEffect(() => {
     let active = true
@@ -93,14 +98,24 @@ export default function StrategyDetail() {
 
   const isAi = s.tags?.includes('ai') || s.templateId === 'tmpl_ai_catalyst_momentum'
   const windows = strategyWindowOptions(s.standard?.windows ?? ['5Y', '1Y', 'forward'], s.design, { forwardOnly: isAi })
+  const activeTickerForCustomize = symbolParam || null
+  const customizeHref = `/bots/new?template=${encodeURIComponent(s.templateId)}${activeTickerForCustomize ? `&ticker=${encodeURIComponent(activeTickerForCustomize)}` : ''}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`
+  const backToStrategiesHref = symbolParam ? `/strategies?symbol=${encodeURIComponent(symbolParam)}` : '/strategies'
   return (
     <main className="tl-page" data-testid="strategy-detail">
-      <p className="tl-small"><Link to="/strategies">← Strategies</Link></p>
+      <p className="tl-small" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <Link to={backToStrategiesHref}>← Strategies</Link>
+        {chosen?.symbol && (
+          <Link to={`/opportunities?symbol=${encodeURIComponent(chosen.symbol)}&strategy=${encodeURIComponent(s.templateId)}`} data-testid="strategy-view-stock-link">
+            View {chosen.symbol} in Stocks →
+          </Link>
+        )}
+      </p>
       <PageIdentity
         title={strategyDisplayName(s)}
         description={strategyOverview(s)}
         tags={<>{isAi && <span className="tl-tag tl-tag--sim">AI-assisted strategy</span>}<span className="tl-tag">Historical or simulated evidence</span></>}
-        action={s.workshopAvailable === true ? <Link to={`/bots/new?template=${encodeURIComponent(s.templateId)}${win !== '5Y' ? `&window=${encodeURIComponent(win)}` : ''}`} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link> : null}
+        action={s.workshopAvailable === true ? <Link to={customizeHref} className="tl-btn tl-btn--primary" data-testid="open-in-workshop">Customize</Link> : null}
       />
       {!s.version.current && (
         <div className="tl-notice" data-testid="earlier-version">An earlier version of this strategy, kept with its results for the record. <Link to={`/strategies/${encodeURIComponent(s.templateId)}`}>See the current version</Link></div>

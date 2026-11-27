@@ -3,11 +3,13 @@ import { useAuth } from '../app/AuthProvider'
 import { prefetchByPath } from '../app/pagePrefetch'
 import ModeBadge from './ModeBadge'
 
-// Primary destinations: Home, Strategies and Bots. Account lives behind the avatar.
+// Four primary surfaces: Portfolio, Stocks, Strategies, and My Bots.
+// Research Partner and AI Stock Trader are contextual destinations, not primary top-nav items.
 const routes = [
-  { path: '/', label: 'Home', match: (p) => p === '/' || p === '/portfolio' || p === '/history' },
+  { path: '/', label: 'Portfolio', match: (p) => p === '/' || p === '/portfolio' || p === '/history' },
+  { path: '/opportunities', label: 'Stocks', match: (p) => p.startsWith('/opportunities') || p.startsWith('/assets') },
   { path: '/strategies', label: 'Strategies', match: (p) => p.startsWith('/strategies') },
-  { path: '/bots', label: 'Bots', match: (p) => p.startsWith('/bots') },
+  { path: '/bots', label: 'My Bots', match: (p) => p.startsWith('/bots') },
 ]
 
 function Mark() {
@@ -77,6 +79,14 @@ export default function Nav() {
             </>
           ) : (
             <>
+              <Link
+                to="/opportunities"
+                className={`tl-nav-link ${location.pathname.startsWith('/opportunities') || location.pathname.startsWith('/assets') ? 'is-active' : ''}`}
+                aria-current={location.pathname.startsWith('/opportunities') || location.pathname.startsWith('/assets') ? 'page' : undefined}
+                onMouseEnter={() => prefetchByPath('/opportunities')}
+              >
+                Stocks
+              </Link>
               <Link
                 to="/strategies"
                 className={`tl-nav-link ${location.pathname.startsWith('/strategies') ? 'is-active' : ''}`}

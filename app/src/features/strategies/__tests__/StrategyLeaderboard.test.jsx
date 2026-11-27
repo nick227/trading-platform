@@ -81,4 +81,14 @@ describe('StrategyLeaderboard UI', () => {
     fireEvent.click(screen.getByTestId('leaderboard-track-forward'))
     expect(get).toHaveBeenLastCalledWith('/public/strategies/leaderboard?track=forward&category=all&sortBy=risk_adjusted')
   })
+
+  it('preserves symbol context across leaderboard links and customization actions', async () => {
+    get.mockResolvedValue(sampleBoard)
+    render(<StrategyLeaderboard symbolContext="NVDA" />)
+
+    expect(await screen.findByTestId('cross-strategy-leaderboard')).toBeInTheDocument()
+    const actionLink = screen.getByTestId('leaderboard-action-platform:tmpl_momentum_buy')
+    expect(actionLink).toHaveTextContent('Automate NVDA →')
+    expect(actionLink).toHaveAttribute('href', '/bots/new?template=tmpl_momentum_buy&ticker=NVDA')
+  })
 })

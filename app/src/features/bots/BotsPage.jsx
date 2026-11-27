@@ -70,12 +70,14 @@ function Research({ research }) {
   )
 }
 
-function StartingPoint({ f, open, onToggle }) {
+function StartingPoint({ f, open, onToggle, symbolContext = null }) {
   const guards = describeGuards(f, { template: true })
   const r = f.results
   const m = resultsMaturity(r)
   const isAi = f.botType === 'strategy_based' || f.config?.signalSource === 'ai_catalyst_momentum'
   const evidenceWindow = isAi ? 'forward' : '5Y'
+  const customizeHref = `/bots/new?template=${encodeURIComponent(f.id)}${symbolContext ? `&ticker=${encodeURIComponent(symbolContext)}` : ''}`
+  const methodologyHref = `/strategies/${encodeURIComponent(f.id)}${symbolContext ? `?symbol=${encodeURIComponent(symbolContext)}` : ''}`
   return (
     <li id={`featured-${f.id}`} data-testid="featured-bot">
       <button type="button" className="tl-featured-row" aria-expanded={open} onClick={onToggle}>
@@ -103,7 +105,7 @@ function StartingPoint({ f, open, onToggle }) {
             </ul>
                         <div className="tl-detail-actions tl-action-row">
               {f.available
-                ? <Link className="tl-btn tl-btn--secondary" to={`/bots/new?template=${encodeURIComponent(f.id)}`}>Customize</Link>
+                ? <Link className="tl-btn tl-btn--secondary" to={customizeHref}>Customize</Link>
                 : null}
             </div>
           </div>
@@ -115,7 +117,7 @@ function StartingPoint({ f, open, onToggle }) {
               ))}
             </p>
             <p className="tl-small" style={{ margin: '6px 0 18px' }}>
-              <Link to={`/strategies/${encodeURIComponent(f.id)}`}>Results and methodology →</Link>
+              <Link to={methodologyHref}>Results and methodology →</Link>
             </p>
             <h4>Results from simulated bot trades</h4>
             
@@ -151,8 +153,10 @@ function StartingPoint({ f, open, onToggle }) {
 
 export default function BotsPage() {
   const location = useLocation()
+  const searchParams = new URLSearchParams(location.search)
+  const symbolContext = (searchParams.get('symbol') || searchParams.get('ticker') || '').trim().toUpperCase() || null
   const [state, setState] = useState({ loading: true })
-  const [open, setOpen] = useState(() => new URLSearchParams(location.search).get('featured'))
+  const [open, setOpen] = useState(() => searchParams.get('featured') || searchParams.get('strategy') || searchParams.get('template'))
   const { stop, clear } = useEmergencyStop()
   const controls = useBotControls((fn) => setState((s) => ({ ...s, data: { ...s.data, myBots: fn(s.data.myBots) } })))
 
@@ -170,11 +174,15 @@ export default function BotsPage() {
 
   const d = state.data
   const hasBots = d?.myBots?.length > 0
+  const createBotHref = `/bots/new${symbolContext ? `?ticker=${encodeURIComponent(symbolContext)}` : ''}`
+  const researchPartnerHref = `/research-partners${symbolContext ? `?symbol=${encodeURIComponent(symbolContext)}` : ''}`
   return (
     <main className="tl-page" aria-busy={state.loading}>
       <EmergencyBanner stop={stop} onClear={clear} />
-      <PageIdentity title="Bots" description="Create and manage simulated trading bots. Review their rules and recorded activity before making changes." action={<Link to="/bots/new" className="tl-btn tl-btn--primary">Create bot</Link>} />
-      <p className="tl-section-note">Want to investigate an idea first? <Link to="/research-partners">Open your AI Research Partner</Link>.</p>
+      <PageIdentity title="My Bots" description="What automated systems have you configured, and what are they doing? Review their rules, status, and recorded activity." action={<Link to={createBotHref} className="tl-btn tl-btn--primary">Create bot</Link>} />
+      <p className="tl-section-note">
+        Want to investigate an idea first? <Link to={researchPartnerHref}>Open your AI Research Partner</Link> or <Link to="/ai-stock-trader">inspect the Flagship AI Stock Trader</Link>.
+      </p>
 
       {state.loading ? (
         <div aria-hidden="true" data-testid="bots-loading">
@@ -206,7 +214,7 @@ export default function BotsPage() {
                 {d.resultsError && <div className="tl-notice tl-notice--warn" role="status" style={{ marginTop: 16 }}>{d.resultsError}</div>}
                 {d.featured.length === 0 && <ContentState title="No starter strategies available" description="There are no published strategies to customize right now." />}
                 <ul className="tl-list tl-featured">
-                  {d.featured.map((f) => <StartingPoint key={f.id} f={f} open={open === f.id} onToggle={() => setOpen(open === f.id ? null : f.id)} />)}
+                  {d.featured.map((f) => <StartingPoint key={f.id} f={f} open={open === f.id} onToggle={() => setOpen(open === f.id ? null : f.id)} symbolContext={symbolContext} />)}
                 </ul>
               </>
             )}

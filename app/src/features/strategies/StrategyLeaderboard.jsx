@@ -1,24 +1,61 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { loadStrategyLeaderboard } from './strategiesApi'
 import { pct, signedPct, tone } from '../../ui/format'
 
-function LeaderboardLink({ to, children }) {
+function LeaderboardLink({ to, className, children, ...rest }) {
   const navigate = useNavigate()
   return (
     <a
       href={to}
+      className={className}
       onClick={e => {
         e.preventDefault()
         navigate(to)
       }}
+      {...rest}
     >
       {children}
     </a>
   )
 }
 
-export default function StrategyLeaderboard({ initialData = null }) {
+function appendSymbolQuery(href, symbol) {
+  if (!href || !symbol) return href
+  const sep = href.includes('?') ? '&' : '?'
+  return `${href}${sep}symbol=${encodeURIComponent(symbol)}`
+}
+
+function resolveRowAction(row, symbol) {
+  if (row.category === 'rule_based' && row.id?.startsWith('platform:')) {
+    const templateId = row.id.slice('platform:'.length)
+    return {
+      label: symbol ? `Automate ${symbol} →` : 'Customize →',
+      href: `/bots/new?template=${encodeURIComponent(templateId)}${symbol ? `&ticker=${encodeURIComponent(symbol)}` : ''}`
+    }
+  }
+  if (row.category === 'research_partner') {
+    return {
+      label: 'Research Partner →',
+      href: appendSymbolQuery(row.href || '/research-partners', symbol)
+    }
+  }
+  if (row.category === 'flagship_ai') {
+    return {
+      label: 'Inspect AI Trader →',
+      href: row.href || '/ai-stock-trader'
+    }
+  }
+  return {
+    label: 'Inspect →',
+    href: appendSymbolQuery(row.href || '/strategies', symbol)
+  }
+}
+
+export default function StrategyLeaderboard({ initialData = null, symbolContext = null }) {
+  const location = useLocation()
+  const searchParams = new URLSearchParams(location?.search || '')
+  const activeSymbol = symbolContext || (searchParams.get('symbol') || searchParams.get('ticker') || '').trim().toUpperCase() || null
   const [track, setTrack] = useState(initialData?.track || 'overview')
   const [category, setCategory] = useState('all')
   const [sortBy, setSortBy] = useState('risk_adjusted')
@@ -148,14 +185,18 @@ export default function StrategyLeaderboard({ initialData = null }) {
                 <th className="r">Max DD</th>
                 <th className="r">Return / DD</th>
                 <th>Sample size</th>
+                <th>Next step</th>
               </tr>
             </thead>
             <tbody>
-              {board.entries.map(row => (
+              {board.entries.map(row => {
+                const action = resolveRowAction(row, activeSymbol)
+                const detailHref = appendSymbolQuery(row.href, activeSymbol)
+                return (
                 <tr key={row.id} data-testid={`leaderboard-row-${row.id}`}>
                   <td><strong>{row.rank != null ? `#${row.rank}` : '—'}</strong></td>
                   <td>
-                    <LeaderboardLink to={row.href}><strong>{row.name}</strong></LeaderboardLink>
+                    <LeaderboardLink to={detailHref}><strong>{row.name}</strong></LeaderboardLink>
                     {row.statusNote && <div className="tl-small tl-muted">{row.statusNote}</div>}
                   </td>
                   <td><span className="tl-tag">{row.categoryLabel}</span></td>
@@ -180,8 +221,14 @@ export default function StrategyLeaderboard({ initialData = null }) {
                       {row.sampleSize?.symbolsTested ? ` · ${row.sampleSize.symbolsTested} sym` : ''}
                     </div>
                   </td>
+                  <td className="tl-small">
+                    <LeaderboardLink to={action.href} className="tl-link-btn" data-testid={`leaderboard-action-${row.id}`}>
+                      {action.label}
+                    </LeaderboardLink>
+                  </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>

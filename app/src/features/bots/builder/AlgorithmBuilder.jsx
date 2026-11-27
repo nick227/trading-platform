@@ -55,8 +55,8 @@ export default function AlgorithmBuilder() {
   const simulated = isSimulated(brokerStatus)
   // paper_daily: only symbols with a fresh daily close can trade (server-enforced too).
   const tradableSymbols = Array.isArray(brokerStatus?.tradableSymbols) && brokerStatus.tradableSymbols.length ? brokerStatus.tradableSymbols : null
-  const pinnedTicker = params.get('ticker')
-  const templateQuery = params.get('template')
+  const pinnedTicker = params.get('ticker') || params.get('symbol')
+  const templateQuery = params.get('template') || params.get('strategy')
   const windowQuery = params.get('window')
 
   const [loading, setLoading] = useState(true)

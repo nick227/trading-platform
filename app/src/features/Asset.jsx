@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { alphaFetch } from '../api/services/alphaEngineService.js'
 import { get } from '../api/client.js'
 import PriceChart from './orders/components/PriceChart.jsx'
@@ -103,8 +103,14 @@ function Stat({ label, value }) {
 
 export default function Asset() {
   const { ticker } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const symbol = String(ticker ?? '').toUpperCase().trim()
+  const queryParams = new URLSearchParams(location?.search || '')
+  const strategyContext = (queryParams.get('strategy') || queryParams.get('template') || '').trim() || null
+  const stocksBackHref = `/opportunities?symbol=${encodeURIComponent(symbol)}${strategyContext ? `&strategy=${encodeURIComponent(strategyContext)}` : ''}`
+  const templateMetrics = null
+  const templateLoading = false
 
   const [chartRange, setChartRange] = useState('1Y')
   const [watchlist, setWatchlist] = useState(() => loadWatchlist())
@@ -324,7 +330,7 @@ export default function Asset() {
     return (
       <div className="l-page l-container-sm">
         <h1 className="hero">Missing ticker</h1>
-        <Link className="btn btn-sm btn-primary inline-block mt-3" to="/assets">Back to Assets</Link>
+        <Link className="btn btn-sm btn-primary inline-block mt-3" to="/opportunities">Back to Stocks</Link>
       </div>
     )
   }
@@ -351,7 +357,7 @@ export default function Asset() {
         </div>
         <div className="mt-3">
           <button className="btn btn-sm btn-primary" onClick={loadAssetData}>Retry</button>
-          <Link className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} to="/assets">Back</Link>
+          <Link className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} to={stocksBackHref}>Back to Stocks</Link>
         </div>
       </div>
     )
@@ -362,8 +368,8 @@ export default function Asset() {
       <header className="l-row mb-3" style={{ alignItems: 'flex-start', gap: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="mb-1">
-            <Link className="btn btn-xs btn-ghost pressable" to="/assets">
-              &larr; Back to Assets
+            <Link className="btn btn-xs btn-ghost pressable" to={stocksBackHref}>
+              &larr; Back to Stocks
             </Link>
           </div>
           <h1 className="tl-title">{symbol}</h1>
@@ -379,8 +385,26 @@ export default function Asset() {
           </div>
         </div>
 
-        <div className="row mt-2 mr-2">
-          <button className="btn btn-sm btn-primary pressable" onClick={() => navigate(`/orders?ticker=${encodeURIComponent(symbol)}`)}>
+        <div className="row mt-2 mr-2" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <button
+            className="btn btn-sm btn-primary pressable"
+            onClick={() => navigate(`/bots/new?ticker=${encodeURIComponent(symbol)}${strategyContext ? `&template=${encodeURIComponent(strategyContext)}` : ''}`)}
+          >
+            Automate {symbol}
+          </button>
+          <button
+            className="btn btn-sm btn-ghost pressable"
+            onClick={() => navigate(`/strategies?symbol=${encodeURIComponent(symbol)}`)}
+          >
+            Strategies
+          </button>
+          <button
+            className="btn btn-sm btn-ghost pressable"
+            onClick={() => navigate(`/research-partners?symbol=${encodeURIComponent(symbol)}`)}
+          >
+            AI Research
+          </button>
+          <button className="btn btn-sm btn-ghost pressable" onClick={() => navigate(`/orders?ticker=${encodeURIComponent(symbol)}`)}>
             Trade
           </button>
           <button className="btn btn-sm btn-ghost pressable" onClick={toggleWatch}>
@@ -575,9 +599,12 @@ export default function Asset() {
             </div>
           </div>
 
-          <div className="mt-3">
-            <button className="btn btn-sm btn-ghost pressable" onClick={() => navigate('/assets')}>
-              Back to Assets
+          <div className="mt-3" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-sm btn-ghost pressable" onClick={() => navigate(stocksBackHref)}>
+              Back to Stocks
+            </button>
+            <button className="btn btn-sm btn-ghost pressable" onClick={() => navigate(`/strategies?symbol=${encodeURIComponent(symbol)}`)}>
+              Explore Strategies
             </button>
           </div>
         </article>
