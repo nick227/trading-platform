@@ -18,7 +18,7 @@ import './researchPartnerWorkspace.css'
 
 const message = error => error?.serverMessage || error?.message || 'Request failed'
 
-function Report({ session, onFeedback, onFollowUp, onRun, busy }) {
+function Report({ session, onFeedback, onFollowUp, onRun, onCreateStrategy, busy }) {
   const report = session?.report
   const [feedback, setFeedback] = useState('')
   const [category, setCategory] = useState('challenge')
@@ -60,6 +60,12 @@ function Report({ session, onFeedback, onFollowUp, onRun, busy }) {
       {report.uncertainties?.length > 0 && <div><h3>Uncertainties</h3><ul>{report.uncertainties.map((item,i) => <li key={i}>{item}</li>)}</ul></div>}
       {report.followUpQuestions?.length > 0 && <div><h3>Follow-up questions</h3><ul>{report.followUpQuestions.map((item,i) => <li key={i}>{item}</li>)}</ul></div>}
 
+      {report.findings?.length>0&&<div className="rp-research-to-strategy">
+        <h3>Develop a paper strategy from this research</h3>
+        <p className="tl-section-note">Create measurable rules based on these findings. Research claims remain unverified until independently supported; no trades are placed.</p>
+        <button type="button" className="tl-btn tl-btn--primary" disabled={busy}
+          onClick={onCreateStrategy}>Review paper strategy ideas</button>
+      </div>}
       <div className="rp-preview">
         <h3>Review or challenge these findings</h3>
         {session.messages?.filter(m => m.sources?.kind === 'feedback').map(m =>
@@ -358,7 +364,8 @@ export default function ResearchPartnerWorkspace() {
             </section>}
           </section>
           {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback}
-            onFollowUp={onFollowUp} onRun={onRun} busy={busy}/>}
+            onFollowUp={onFollowUp} onRun={onRun}
+            onCreateStrategy={()=>setFocus('strategies')} busy={busy}/>}
           {!selected && <section className="tl-section rp-workspace-empty">
             <h3>Current investigation</h3>
             <p className="tl-section-note">Ask a question or open a previous investigation to review its findings.</p>
