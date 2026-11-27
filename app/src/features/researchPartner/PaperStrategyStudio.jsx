@@ -25,7 +25,10 @@ const base = { name:'My paper strategy', mode:'paper', cadence:'daily',
 export default function PaperStrategyStudio({ partnerId, session }) {
   const [form,setForm]=useState(base)
   const [tickerText,setTickerText]=useState('AAPL')
-  const [instruction,setInstruction]=useState('')
+  const [instruction,setInstruction]=useState(()=>{
+    const finding=session?.status==='completed'&&session?.report?.findings?.[0]
+    return finding ? `Explore paper rules for this research hypothesis: ${finding.claim}`.slice(0,3000) : ''
+  })
   const [proposal,setProposal]=useState(null)
   const [step,setStep]=useState('idea')
   const [strategies,setStrategies]=useState([])
@@ -117,6 +120,8 @@ export default function PaperStrategyStudio({ partnerId, session }) {
     {step==='idea'&&<section className="rp-strategy-stage" aria-label="Describe strategy idea">
       <h3>What is your investment idea?</h3>
       <p className="tl-section-note">The AI can suggest rules using supported indicators. It needs specific stocks and a measurable condition. AI interpretation uses the configured research budget.</p>
+      {session?.status==='completed'&&session.report?.findings?.length>0&&
+        <p className="tl-section-note">From research: {session.question}. The first finding is prefilled as an editable idea; it is not verified trading evidence.</p>}
       <form className="rp-form" onSubmit={previewAI}>
         <label htmlFor="rp-strategy-instructions">Describe the idea and the stocks to evaluate</label>
         <textarea id="rp-strategy-instructions" maxLength={3000} required rows={4}
