@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import PaperStrategyTestingJourney from './PaperStrategyTestingJourney'
+import StrategyResultsEvidence from './StrategyResultsEvidence'
 import { summarizeStrategy } from './strategyRuleSummary'
 import {
   listResearchPaperStrategies, createResearchPaperStrategy, createPaperStrategyFromResearch,
@@ -31,6 +32,7 @@ export default function PaperStrategyStudio({ partnerId, session }) {
   const [proposal,setProposal]=useState(null)
   const [step,setStep]=useState('idea')
   const [testingStrategyId,setTestingStrategyId]=useState(null)
+  const [resultsStrategyId,setResultsStrategyId]=useState(null)
   const [strategies,setStrategies]=useState([])
   const [linkResearch,setLinkResearch]=useState(Boolean(session?.status==='completed'&&session?.report?.findings?.length))
   const [findingIndex,setFindingIndex]=useState('0')
@@ -230,11 +232,18 @@ export default function PaperStrategyStudio({ partnerId, session }) {
           disabled={busy} onClick={()=>approve(item)}>Approve paper definition</button>}
         {item.status==='approved_paper_definition'&&<>
           <p className="tl-section-note">Approved paper definition. Testing and simulation do not authorize live trading.</p>
-          {testingStrategyId===item.id
-            ? <PaperStrategyTestingJourney key={item.id+'-'+item.currentVersion}
-                partnerId={partnerId} strategy={item} onClose={()=>setTestingStrategyId(null)}/>
-            : <button type="button" className="tl-btn tl-btn--primary" disabled={busy}
-                onClick={()=>setTestingStrategyId(item.id)}>Test and simulate this strategy</button>}
+          {testingStrategyId===item.id ? <PaperStrategyTestingJourney
+            key={item.id+'-'+item.currentVersion} partnerId={partnerId}
+            strategy={item} onClose={()=>setTestingStrategyId(null)} /> :
+            resultsStrategyId===item.id ? <StrategyResultsEvidence
+              key={'results-'+item.id+'-'+item.currentVersion}
+              partnerId={partnerId} strategy={item} onClose={()=>setResultsStrategyId(null)}/> :
+            <div className="rp-strategy-review-actions">
+              <button type="button" className="tl-btn tl-btn--primary" disabled={busy}
+                onClick={()=>{setResultsStrategyId(null);setTestingStrategyId(item.id)}}>Test and simulate this strategy</button>
+              <button type="button" className="tl-btn tl-btn--secondary" disabled={busy}
+                onClick={()=>{setTestingStrategyId(null);setResultsStrategyId(item.id)}}>Review evidence and results</button>
+            </div>}
         </>}
       </article>)}
       <button type="button" className="tl-btn tl-btn--secondary" disabled={busy}
