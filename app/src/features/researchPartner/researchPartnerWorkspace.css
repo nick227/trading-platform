@@ -23,3 +23,13 @@
 .rp-form .rp-ai-optin input[type="checkbox"] { width: auto; margin: 0; flex: 0 0 auto; }
 .rp-sources ul { padding-left: 20px; }
 .rp-sources li { margin-bottom: 10px; overflow-wrap: anywhere; }
+
+.rp-dialogue { margin-top: 20px; padding: 20px; border: 1px solid var(--border, #bfc4ca); border-radius: 10px; }
+.rp-dialogue-heading h3 { margin: 0 0 8px; }
+.rp-transcript { display: grid; gap: 12px; margin: 18px 0; }
+.rp-transcript-turn { display: grid; gap: 4px; padding: 12px 14px; background: var(--surface-secondary, rgba(128,128,128,.07)); border-radius: 9px; }
+.rp-clarifications { padding: 14px; border-left: 3px solid currentColor; }
+.rp-draft-summary { border: 1px solid var(--border, #bfc4ca); border-radius: 9px; padding: 14px; }
+.rp-evidence-link { display: inline-block; margin-right: 12px; margin-top: 4px; }
+.rp-sources li { scroll-margin-top: 110px; }
+@media (max-width: 680px) { .rp-dialogue { padding: 14px; } }

@@ -2,14 +2,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   approveMandate, createResearchPartner, createResearchSession, getResearchPartner,
-  listResearchPartners, listResearchSessions, proposeMandate, runResearchSession,
+  listResearchPartners, listResearchSessions, runResearchSession,
   getResearchSession, addResearchFeedback, createFollowUpResearch
 } from './researchPartnerApi'
+import MandateDialoguePanel from './MandateDialoguePanel'
 import './researchPartnerWorkspace.css'
 
 const message = error => error?.serverMessage || error?.message || 'Request failed'
 
-function Report({ session, onFeedback, onFollowUp, busy }) {
+function Report({ session, onFeedback, onFollowUp, onRun, busy }) {
   const report = session?.report
   const [feedback, setFeedback] = useState('')
   const [category, setCategory] = useState('challenge')
@@ -22,6 +23,8 @@ function Report({ session, onFeedback, onFollowUp, busy }) {
       ? 'Research question saved. Model execution is optional and requires operator enablement.'
       : session.status === 'failed' ? 'Research could not be completed. The question remains in history.'
       : 'No research report available yet.'}</p>}
+    {!report && session.status === 'queued' && <button className="tl-btn tl-btn--primary" type="button"
+      disabled={busy} onClick={onRun}>Run research (uses configured AI budget)</button>}
     {report && <>
       <p>{report.summary}</p>
       {report.findings?.length > 0 && <div className="rp-findings">
@@ -29,12 +32,15 @@ function Report({ session, onFeedback, onFollowUp, busy }) {
           <h3>{finding.claim}</h3>
           <p className="tl-small tl-muted">{finding.assessment}</p>
           <p>{finding.reasoning}</p>
-          {finding.evidenceIds?.length > 0 && <p className="tl-small">Source IDs: {finding.evidenceIds.join(', ')}</p>}
+          {finding.evidenceIds?.length > 0 && <p className="tl-small">Evidence: {finding.evidenceIds.map(id =>
+            <a key={id} href={'#rp-source-' + encodeURIComponent(id)} className="rp-evidence-link">
+              {report.evidence?.find(e => e.id === id)?.title || id}
+            </a>)}</p>}
         </article>)}
       </div>}
       {report.evidence?.length > 0 && <div className="rp-sources">
         <h3>Sources consulted</h3>
-        <ul>{report.evidence.map(e => <li key={e.id}>
+        <ul>{report.evidence.map(e => <li key={e.id} id={'rp-source-' + encodeURIComponent(e.id)}>
           {e.url ? <a href={e.url} target="_blank" rel="noopener noreferrer">{e.title || e.source}</a> : (e.title || e.source)}
           <span className="tl-small tl-muted"> · {e.quality} · {e.publishedAt}</span>
         </li>)}</ul>
@@ -87,10 +93,7 @@ export default function ResearchPartnerWorkspace() {
   const [selected, setSelected] = useState(null)
   const [name, setName] = useState('')
   const [objective, setObjective] = useState('')
-  const [instructions, setInstructions] = useState('')
-  const [useAI, setUseAI] = useState(false)
   const [question, setQuestion] = useState('')
-  const [proposal, setProposal] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -118,29 +121,16 @@ export default function ResearchPartnerWorkspace() {
       const created = await createResearchPartner({ name, objective })
       const full = await getResearchPartner(created.id)
       setPartner(full); setPartners(old => [created, ...old]); setSessions([])
-      setName(''); setObjective(''); setSelected(null); setProposal(null)
+      setName(''); setObjective(''); setSelected(null)
     })
   }
   const onSelect = async id => {
     await action(async () => {
       setPartner(await getResearchPartner(id))
       setSessions(await listResearchSessions(id))
-      setSelected(null); setProposal(null)
+      setSelected(null)
     })
   }
-  const onPropose = async event => {
-    event.preventDefault()
-    await action(async () => setProposal(await proposeMandate(partner.id, instructions, useAI)))
-  }
-  const onApprove = async () => {
-    await action(async () => {
-      await approveMandate(partner.id, proposal)
-      setPartner(await getResearchPartner(partner.id))
-      setProposal(null); setInstructions('')
-      setNotice('Research mandate revised. Earlier sessions retain their original mandate version.')
-    })
-  }
-
   const onFeedback = async input => action(async () => {
     await addResearchFeedback(partner.id, selected.id, input)
     setSelected(await getResearchSession(partner.id, selected.id))
@@ -157,6 +147,7 @@ export default function ResearchPartnerWorkspace() {
   const onSelectSession = async session => action(async () => {
     setSelected(await getResearchSession(partner.id, session.id))
   })
+
   const onResearch = async event => {
     event.preventDefault()
     await action(async () => {
@@ -164,15 +155,15 @@ export default function ResearchPartnerWorkspace() {
       setQuestion('')
       setSessions(old => [created, ...old])
       setSelected(created)
-      try {
-        const report = await runResearchSession(partner.id, created.id)
-        const completed = { ...created, status: 'completed', report }
-        setSelected(completed)
-        setSessions(old => old.map(s => s.id === created.id ? completed : s))
-      } catch (e) {
-        setNotice('Research question saved. Model execution may be unavailable until enabled by an operator.')
-        setSessions(await listResearchSessions(partner.id))
-      }
+      setNotice('Question saved. Run research explicitly when you are ready.')
+    })
+  }
+  const onRun = async () => {
+    await action(async () => {
+      const report = await runResearchSession(partner.id, selected.id)
+      const completed = await getResearchSession(partner.id, selected.id)
+      setSelected({ ...completed, report })
+      setSessions(old => old.map(s => s.id === selected.id ? completed : s))
     })
   }
   return <main className="tl-page rp-page" data-testid="research-partner-workspace">
@@ -209,26 +200,12 @@ export default function ResearchPartnerWorkspace() {
         </div>
         <p>{partner.mandate?.content?.objective}</p>
         <p className="tl-section-note">Your ideas are research hypotheses, not verified claims.</p>
-        <details className="rp-disclosure">
-          <summary>Refine research directions</summary>
-          <form className="rp-form" onSubmit={onPropose}>
-            <label htmlFor="rp-directions">Describe what should change</label>
-            <textarea id="rp-directions" value={instructions} onChange={e => setInstructions(e.target.value)}
-              rows={3} maxLength={4000} required />
-            <label className="rp-ai-optin"><input type="checkbox" checked={useAI} onChange={e => setUseAI(e.target.checked)} />
-              Use AI to interpret these instructions (uses a budgeted model call)</label>
-            <button className="tl-btn tl-btn--secondary" type="submit" disabled={busy}>Preview changes</button>
-          </form>
-          {proposal && <div className="rp-preview">
-            <h3>Proposed mandate</h3>
-            <p>{proposal.mandate.objective}</p>
-            <p className="tl-small tl-muted">{proposal.mode === 'manual_preview'
-              ? 'Manual preview: existing preferences are preserved. No model interpretation was performed.'
-              : 'AI-proposed changes; review before saving.'}</p>
-            <p className="tl-small">Horizon: {proposal.mandate.preferences.horizon} · Research depth: {proposal.mandate.preferences.researchDepth}</p>
-            <button className="tl-btn tl-btn--primary" type="button" disabled={busy} onClick={onApprove}>Approve mandate revision</button>
-          </div>}
-        </details>
+        <MandateDialoguePanel key={partner.id} partner={partner}
+          onApproved={async () => {
+            setPartner(await getResearchPartner(partner.id))
+            setNotice('Your approved research mandate is saved as a new version.')
+          }} />
+
       </section>
       <section className="tl-section">
         <h2 className="tl-section-title">Ask a research question</h2>
@@ -236,10 +213,10 @@ export default function ResearchPartnerWorkspace() {
           <label htmlFor="rp-question">What would you like investigated?</label>
           <textarea id="rp-question" value={question} onChange={e => setQuestion(e.target.value)}
             rows={3} maxLength={6000} required placeholder="Which companies have the strongest competitive advantages?" />
-          <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>Save and investigate</button>
+          <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>Save research question</button>
         </form>
       </section>
-      {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback} onFollowUp={onFollowUp} busy={busy} />}
+      {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback} onFollowUp={onFollowUp} onRun={onRun} busy={busy} />}
       <section className="tl-section">
         <h2 className="tl-section-title">Research history</h2>
         {!sessions.length && <p className="tl-section-note">No investigations yet.</p>}
