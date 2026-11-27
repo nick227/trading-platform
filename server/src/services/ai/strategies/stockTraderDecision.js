@@ -12,16 +12,18 @@ export function buildStockTraderPrompts(snapshot, definition = null) {
   if (!market || !portfolio || !risk || !objectives) {
     throw new Error('Required stock trader research context is missing')
   }
+  const mandate = snapshot?.context?.mandate?.data
   const systemPrompt = `You are TradeLoom's AI Stock Trader research analyst.
 Your task is to independently evaluate the supplied candidate stocks and current paper holdings.
 ${definition ? `Research philosophy: ${definition.philosophy}\nReasoning mandate: ${definition.reasoningInstructions}` : ''}
+${mandate ? `User Research Mandate: ${mandate.objective}\nHypotheses to investigate: ${(mandate.hypotheses || []).join('; ')}` : ''}
 You do not have live news, external tools, or access to data beyond this research snapshot.
 Never invent catalysts, quotations, indicators, market prices, or fundamentals.
 You cannot trade directly; recommend BUY, SELL or HOLD only.
-Evaluate every symbol in the supplied shortlist exactly once. HOLD is a valid outcome.
+You may explicitly recommend BUY/SELL for high-conviction opportunities, or HOLD/ABSTAIN. Shortlisted candidates not included in your decisions cleanly default to HOLD (abstain).
 Only BUY stocks with eligible=true and inUniverse=true.
 Only SELL stocks already held in the portfolio.
-Reference supplied numerical evidence. Explain uncertainties and reasons to abstain.
+Reference supplied numerical and qualitative evidence. Explain uncertainties and reasons to abstain.
 Confident language does not establish a calibrated probability of profit.
 Limits: at most two recommended actions, maximum 20% allocation per BUY.
 Return a single JSON object with marketSummary and decisions array.
@@ -51,8 +53,8 @@ export function validateStockTraderDecision(output, snapshot) {
     throw new Error('Invalid AI stock trader response structure')
   }
   const candidates = new Map(market.shortlist.map(row => [row.symbol, row]))
-  if (candidates.size !== market.shortlist.length || output.decisions.length !== candidates.size) {
-    throw new Error('AI decision coverage must match every unique shortlisted symbol')
+  if (candidates.size !== market.shortlist.length) {
+    throw new Error('Shortlist contains duplicate symbols')
   }
   const holdings = new Set((portfolio.positions || []).filter(p => p.quantity > 0).map(p => p.symbol))
   const seen = new Set()
@@ -61,7 +63,8 @@ export function validateStockTraderDecision(output, snapshot) {
   for (const raw of output.decisions) {
     if (!raw || typeof raw !== 'object') throw new Error('Invalid AI decision')
     const symbol = String(raw.symbol || '').toUpperCase()
-    const action = String(raw.action || '').toUpperCase()
+    let action = String(raw.action || '').toUpperCase()
+    if (action === 'ABSTAIN') action = 'HOLD'
     const candidate = candidates.get(symbol)
     if (!candidate || seen.has(symbol)) throw new Error('Duplicate or unsupported AI decision symbol')
     seen.add(symbol)
@@ -70,7 +73,7 @@ export function validateStockTraderDecision(output, snapshot) {
       throw new Error('AI BUY is not eligible for this screened universe')
     }
     if (action === 'SELL' && !holdings.has(symbol)) throw new Error('AI SELL has no holding')
-    const confidence = Number(raw.confidence)
+    const confidence = Number(raw.confidence ?? 0)
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       throw new Error('Invalid AI confidence')
     }
@@ -93,6 +96,24 @@ export function validateStockTraderDecision(output, snapshot) {
       exitRule: action === 'BUY' ? { takeProfitPct, stopLossPct } : null
     })
   }
+
+  // Any shortlisted candidates omitted by the model cleanly default to an explicit HOLD abstention
+  for (const [sym] of candidates) {
+    if (!seen.has(sym)) {
+      decisions.push({
+        symbol: sym,
+        action: 'HOLD',
+        confidence: 0,
+        targetAllocationPct: 0,
+        thesis: 'Abstained: candidate omitted from priority investigation.',
+        evidence: [],
+        risks: [],
+        exitRule: null
+      })
+      seen.add(sym)
+    }
+  }
+
   const actionable = decisions.filter(d => d.action !== 'HOLD')
   if (actionable.length > 2) throw new Error('AI recommended more than two actionable trades')
   if (actionable.some(d => d.action === 'BUY' && (d.confidence < 0.65 || d.targetAllocationPct <= 0))) {

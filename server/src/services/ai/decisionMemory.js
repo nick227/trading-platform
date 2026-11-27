@@ -86,10 +86,20 @@ export async function loadAiDecisionMemory({
     for (const entry of selected) {
       const oldPrice = await quote(entry.symbol, original.asOfSession)
       const currentPrice = await quote(entry.symbol, asOfSession)
+      const priceChangePct = oldPrice != null && currentPrice != null
+        ? round((currentPrice / oldPrice - 1) * 100) : null
+      let thesisAlignment = 'unobserved'
+      if (priceChangePct !== null) {
+        if (entry.action === 'BUY') {
+          thesisAlignment = priceChangePct > 0 ? 'favorable_price_movement' : (priceChangePct < 0 ? 'adverse_price_movement' : 'neutral')
+        } else if (entry.action === 'SELL') {
+          thesisAlignment = priceChangePct < 0 ? 'favorable_price_movement' : (priceChangePct > 0 ? 'adverse_price_movement' : 'neutral')
+        }
+      }
       decisions.push({
         ...entry,
-        observedPriceChangePct: oldPrice != null && currentPrice != null
-          ? round((currentPrice / oldPrice - 1) * 100) : null,
+        observedPriceChangePct: priceChangePct,
+        thesisAlignment,
         observationType: 'subsequent_market_price_change_not_trading_pnl',
         observationStatus: oldPrice != null && currentPrice != null ? 'observed' : 'unavailable'
       })
