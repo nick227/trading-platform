@@ -1,7 +1,10 @@
 /**
- * Explicit operator-only flagship beta controls.
- * From server/: node scripts/flagshipStockTraderControl.mjs
- *   --initialize | --migrate-v2 | --status | --preflight | --smoke-provider | --enable | --disable
+ * Operator CLI for Flagship AI Stock Trader controlled beta lifecycle.
+ *
+ * Usage:
+ *   node scripts/flagshipStockTraderControl.mjs --status | --preflight |
+ *     --initialize | --migrate-v2 | --smoke-provider | --enable | --disable |
+ *     --enable-discovery | --disable-discovery
  *
  * No command enables the bot except --enable after a passing read-only preflight.
  * A real paid provider call occurs ONLY with the explicit --smoke-provider option.
@@ -11,7 +14,11 @@ import { randomUUID } from 'node:crypto'
 import prisma from '../src/loaders/prisma.js'
 import { getProvider } from '../src/services/ai/providers/providerRegistry.js'
 import { createAiUsageGovernor } from '../src/services/ai/aiUsageGovernor.js'
-import { getOrCreatePlatformAiStockTrader, upgradeDisabledPlatformStockTraderToAgent } from '../src/services/ai/aiStockTraderBotService.js'
+import {
+  getOrCreatePlatformAiStockTrader,
+  upgradeDisabledPlatformStockTraderToAgent,
+  setPlatformStockTraderDynamicDiscovery
+} from '../src/services/ai/aiStockTraderBotService.js'
 import { readFlagshipAiBetaReadiness } from '../src/services/ai/flagshipBetaReadiness.js'
 import {
   AI_STOCK_TRADER_PLATFORM_BOT_ID,
@@ -19,7 +26,11 @@ import {
 } from '../src/services/ai/strategies/aiStockTraderStrategy.js'
 
 const command = process.argv[2] || '--status'
-const allowed = ['--initialize', '--migrate-v2', '--enable', '--disable', '--status', '--preflight', '--smoke-provider']
+const allowed = [
+  '--initialize', '--migrate-v2', '--enable', '--disable',
+  '--status', '--preflight', '--smoke-provider',
+  '--enable-discovery', '--disable-discovery'
+]
 if (!allowed.includes(command) || process.argv.length > 3) {
   throw new Error(`Expected exactly one control option: ${allowed.join(', ')}`)
 }
@@ -84,8 +95,15 @@ try {
     const bot = await getBot()
     console.log(JSON.stringify(bot ? {
       botId: bot.id, enabled: bot.enabled, mode: bot.config?.mode,
-      strategyId: bot.templateId, strategyVersion: bot.config?.strategyVersion
+      strategyId: bot.templateId, strategyVersion: bot.config?.strategyVersion,
+      dynamicDiscovery: bot.config?.universe?.dynamicDiscovery ?? { enabled: false, maxPromotions: 5 }
     } : { status: 'not_initialized' }, null, 2))
+  } else if (command === '--enable-discovery') {
+    const result = await setPlatformStockTraderDynamicDiscovery({ enabled: true })
+    console.log(JSON.stringify(result, null, 2))
+  } else if (command === '--disable-discovery') {
+    const result = await setPlatformStockTraderDynamicDiscovery({ enabled: false })
+    console.log(JSON.stringify(result, null, 2))
   } else if (command === '--disable') {
     const bot = await getBot()
     if (bot) await prisma.bot.update({ where: { id: bot.id }, data: { enabled: false } })

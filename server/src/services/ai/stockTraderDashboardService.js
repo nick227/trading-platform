@@ -13,7 +13,8 @@ export async function readPublicStockTraderDashboard({
   prismaClient = prisma,
   engine = engineClient,
   fillLoader = loadBotFills,
-  accountant = calculateFifoAccounting
+  accountant = calculateFifoAccounting,
+  env = process.env
 } = {}) {
   const bot = await prismaClient.bot.findUnique({ where: { id: AI_STOCK_TRADER_PLATFORM_BOT_ID } })
   if (!bot || bot.templateId !== AI_STOCK_TRADER_STRATEGY_ID || bot.deletedAt) {
@@ -70,8 +71,6 @@ export async function readPublicStockTraderDashboard({
       asOfSession: e.metadata.decision.asOfSession,
       marketSummary: e.metadata.decision.marketSummary,
       model: e.metadata.model || null,
-      // Publish high-level research provenance, never raw provider prompts,
-      // full tool outputs, account credentials or untrusted source text.
       investigation: e.metadata.investigation ? {
         focus: String(e.metadata.investigation.plan?.focus || '').slice(0, 300),
         toolsUsed: [...new Set((e.metadata.investigation.toolTrace || [])
@@ -87,12 +86,25 @@ export async function readPublicStockTraderDashboard({
         risks: Array.isArray(d.risks) ? d.risks : []
       }))
     }))
+
+  const dynCfg = bot.config?.universe?.dynamicDiscovery
+  const dynamicDiscoveryEnabled = env?.AI_STOCK_TRADER_DYNAMIC_DISCOVERY === 'true'
+    ? true
+    : env?.AI_STOCK_TRADER_DYNAMIC_DISCOVERY === 'false'
+      ? false
+      : Boolean(dynCfg?.enabled)
+
   return {
     status: bot.enabled ? 'enabled' : 'paused',
     simulated: true,
     name: bot.name,
     botId: bot.id,
     capitalAllocated: capital,
+    universePolicy: {
+      baseSymbolsCount: Array.isArray(bot.config?.universe?.symbols) ? bot.config.universe.symbols.length : 10,
+      dynamicDiscoveryEnabled,
+      maxPromotions: Number(dynCfg?.maxPromotions) || 5
+    },
     research,
     positions,
     performance,

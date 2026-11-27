@@ -67,7 +67,7 @@ export async function getOrCreatePlatformAiStockTrader({
       templateId: AI_STOCK_TRADER_STRATEGY_ID,
       botType: 'strategy_based',
       name: 'AI Stock Trader (Platform Paper)',
-      enabled: false, // No live AI calls or scheduled trading until subsequent MRs.
+      enabled: false,
       config: createAiStockTraderAgentConfig()
     }
   })
@@ -116,4 +116,47 @@ export async function upgradeDisabledPlatformStockTraderToAgent({ prismaClient =
   })
   if (changed.count !== 1) throw new Error('Bot activation changed during explicit migration')
   return { botId: bot.id, upgraded: true, version: config.strategyVersion }
+}
+
+/**
+ * Operator toggle for Flagship Dynamic Universe Expansion.
+ * Preserves immutable v2 strategy identity, risk caps, and base curated symbols,
+ * while toggling promotion of execution-verified beyond-watchlist discoveries.
+ */
+export async function setPlatformStockTraderDynamicDiscovery({
+  enabled,
+  maxPromotions = 5,
+  prismaClient = prisma
+} = {}) {
+  if (typeof enabled !== 'boolean') {
+    throw new TypeError('Dynamic discovery enabled flag must be a boolean')
+  }
+  const bot = await prismaClient.bot.findUnique({
+    where: { id: AI_STOCK_TRADER_PLATFORM_BOT_ID }
+  })
+  if (!bot || bot.deletedAt || bot.templateId !== AI_STOCK_TRADER_STRATEGY_ID ||
+      bot.userId !== AI_STOCK_TRADER_PLATFORM_USER_ID ||
+      bot.portfolioId !== AI_STOCK_TRADER_PLATFORM_PORTFOLIO_ID ||
+      bot.config?.mode !== 'paper' ||
+      bot.config?.strategyVersion !== AI_STOCK_TRADER_AGENT_VERSION) {
+    throw new Error('Initialized v2 platform paper flagship required before toggling dynamic discovery')
+  }
+  const nextConfig = createAiStockTraderAgentConfig({
+    objective: bot.config.objective,
+    universe: {
+      type: bot.config.universe?.type || 'curated',
+      symbols: bot.config.universe?.symbols || AI_STOCK_TRADER_DEFAULTS.universe.symbols,
+      dynamicDiscovery: { enabled, maxPromotions }
+    },
+    research: { cadence: bot.config.research?.cadence || 'daily' }
+  })
+  await prismaClient.bot.update({
+    where: { id: bot.id },
+    data: { config: nextConfig }
+  })
+  return {
+    botId: bot.id,
+    dynamicDiscovery: nextConfig.universe.dynamicDiscovery,
+    baseUniverseSize: nextConfig.universe.symbols.length
+  }
 }

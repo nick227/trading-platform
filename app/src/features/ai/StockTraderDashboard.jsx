@@ -27,7 +27,7 @@ export default function StockTraderDashboard() {
   return <main className="tl-page tl-flow-page" data-testid="flagship-ai-dashboard">
     <section className="tl-section">
       <AgentHeader title="AI Stock Trader" kind="trader"
-        status={traderAgentStatus({requestStatus:state.status,dataStatus:data?.status})}
+        status={traderAgentStatus({ requestStatus: state.status, dataStatus: data?.status })}
         description="Autonomous stock discovery, qualitative AI research and simulated portfolio management."
         detail="Platform-owned paper trading. No customer funds are invested. Historical or simulated results do not guarantee future returns."
         actions={<div className="tl-agent-head__actions">
@@ -42,7 +42,7 @@ export default function StockTraderDashboard() {
             Stock Discovery Explorer →
           </a>
           <button type="button" className="tl-link-btn" onClick={refresh} disabled={state.status === 'loading'}>Refresh</button>
-        </div>}/>
+        </div>} />
     </section>
     {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
     {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
@@ -52,7 +52,19 @@ export default function StockTraderDashboard() {
     </section>}
     {state.status === 'ready' && data?.status !== 'not_initialized' && data && <>
       <section className="tl-section" aria-label="Paper portfolio performance">
-        <div className="tl-section-head"><h2 className="tl-section-title">Paper performance</h2><span className="tl-tag">{data.status === 'enabled' ? 'Beta enabled' : 'Paused'}</span></div>
+        <div className="tl-section-head">
+          <h2 className="tl-section-title">Paper performance</h2>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+            {data.universePolicy && (
+              <span className="tl-tag" data-testid="flagship-universe-policy">
+                {data.universePolicy.dynamicDiscoveryEnabled
+                  ? `Dynamic universe (${data.universePolicy.baseSymbolsCount} core + up to ${data.universePolicy.maxPromotions} promoted)`
+                  : `Curated universe (${data.universePolicy.baseSymbolsCount} core)`}
+              </span>
+            )}
+            <span className="tl-tag">{data.status === 'enabled' ? 'Beta enabled' : 'Paused'}</span>
+          </div>
+        </div>
         <dl className="tl-stats tl-stats--3 tl-stat-grid--flush" data-testid="flagship-performance">
           <Stat label="Allocated paper capital" value={money(data.capitalAllocated)} detail="Simulated" />
           <Stat label="Total P&L" value={signedMoney(data.performance?.totalPnl)} detail={data.performance ? 'From recorded fills and current marks' : 'No verified fills yet'} />
@@ -80,7 +92,7 @@ export default function StockTraderDashboard() {
                 <details key={decision.symbol} className="tl-flow-card">
                   <summary><strong>{decision.symbol}</strong> · <span className={decision.action === 'BUY' ? 'tl-pos' : decision.action === 'SELL' ? 'tl-neg' : 'tl-muted'}>{decision.action}</span> · Model conviction {ratioPct(decision.confidence, 0)}</summary>
                   <p>{decision.thesis}</p>
-                  {decision.evidence?.length > 0 && <ul className="tl-backtest-notes">{decision.evidence.map((e,i) => <li key={i}>{e}</li>)}</ul>}
+                  {decision.evidence?.length > 0 && <ul className="tl-backtest-notes">{decision.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>}
                   {decision.risks?.length > 0 && <p className="tl-small">Risks: {decision.risks.join('; ')}</p>}
                 </details>
               )}</div>

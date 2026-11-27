@@ -22,7 +22,11 @@ export const AI_STOCK_TRADER_DEFAULTS = Object.freeze({
   objective: 'balanced_growth',
   universe: {
     type: 'curated',
-    symbols: [...DEFAULT_TRADABLE_SYMBOLS]
+    symbols: [...DEFAULT_TRADABLE_SYMBOLS],
+    dynamicDiscovery: Object.freeze({
+      enabled: false,
+      maxPromotions: 5
+    })
   },
   research: {
     cadence: 'daily',
@@ -39,9 +43,34 @@ export const AI_STOCK_TRADER_DEFAULTS = Object.freeze({
 
 const TICKER = /^[A-Z][A-Z0-9.]{0,9}$/
 
+function normalizeDynamicDiscovery(raw) {
+  if (raw === undefined) {
+    return {
+      enabled: AI_STOCK_TRADER_DEFAULTS.universe.dynamicDiscovery.enabled,
+      maxPromotions: AI_STOCK_TRADER_DEFAULTS.universe.dynamicDiscovery.maxPromotions
+    }
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Invalid dynamicDiscovery configuration')
+  }
+  for (const k of Object.keys(raw)) {
+    if (!['enabled', 'maxPromotions'].includes(k)) {
+      throw new Error(`Unsupported dynamicDiscovery override: ${k}`)
+    }
+  }
+  const enabled = raw.enabled ?? false
+  if (typeof enabled !== 'boolean') {
+    throw new Error('dynamicDiscovery.enabled must be a boolean')
+  }
+  const maxPromotions = raw.maxPromotions ?? AI_STOCK_TRADER_DEFAULTS.universe.dynamicDiscovery.maxPromotions
+  if (!Number.isInteger(maxPromotions) || maxPromotions < 1 || maxPromotions > 15) {
+    throw new Error('dynamicDiscovery.maxPromotions must be an integer between 1 and 15')
+  }
+  return { enabled, maxPromotions }
+}
+
 /**
  * Reject unsupported configuration instead of silently weakening safety limits.
- * Freeform prompt instructions and user watchlists may be added in later MRs.
  */
 export function createAiStockTraderConfig(overrides = {}) {
   if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) {
@@ -53,7 +82,15 @@ export function createAiStockTraderConfig(overrides = {}) {
   }
 
   const sourceUniverse = overrides.universe ?? AI_STOCK_TRADER_DEFAULTS.universe
-  if (!sourceUniverse || !['curated', 'watchlist'].includes(sourceUniverse.type)) {
+  if (!sourceUniverse || typeof sourceUniverse !== 'object' || Array.isArray(sourceUniverse)) {
+    throw new Error('AI stock trader universe must be curated or watchlist')
+  }
+  for (const k of Object.keys(sourceUniverse)) {
+    if (!['type', 'symbols', 'dynamicDiscovery'].includes(k)) {
+      throw new Error(`Unsupported AI stock trader universe override: ${k}`)
+    }
+  }
+  if (!['curated', 'watchlist'].includes(sourceUniverse.type)) {
     throw new Error('AI stock trader universe must be curated or watchlist')
   }
   if (!Array.isArray(sourceUniverse.symbols) || !sourceUniverse.symbols.length || sourceUniverse.symbols.length > 100) {
@@ -61,6 +98,7 @@ export function createAiStockTraderConfig(overrides = {}) {
   }
   const symbols = [...new Set(sourceUniverse.symbols.map(s => String(s).trim().toUpperCase()))]
   if (symbols.some(s => !TICKER.test(s))) throw new Error('Invalid ticker symbol in AI stock trader universe')
+  const dynamicDiscovery = normalizeDynamicDiscovery(sourceUniverse.dynamicDiscovery)
 
   const research = overrides.research ?? {}
   if (Object.keys(research).some(k => !['cadence'].includes(k))) {
@@ -77,7 +115,7 @@ export function createAiStockTraderConfig(overrides = {}) {
   return {
     ...AI_STOCK_TRADER_DEFAULTS,
     objective,
-    universe: { type: sourceUniverse.type, symbols },
+    universe: { type: sourceUniverse.type, symbols, dynamicDiscovery },
     research: {
       ...AI_STOCK_TRADER_DEFAULTS.research,
       contextModules: [...AI_STOCK_TRADER_DEFAULTS.research.contextModules],

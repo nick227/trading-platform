@@ -224,7 +224,7 @@ function mapEvidenceBySymbol(records = [], candidateSymbols = []) {
         })
       }
     } else if (rec.sourceId === 'news') {
-      const textUpper = `${rec.title} ${ typeof rec.content === 'string' ? rec.content : '' }`.toUpperCase()
+      const textUpper = `${rec.title} ${typeof rec.content === 'string' ? rec.content : ''}`.toUpperCase()
       for (const sym of candidateSymbols) {
         const meta = describeUniverseSymbol(sym)
         const companyToken = meta.name.split(/\s+/)[0]?.toUpperCase()
@@ -264,7 +264,6 @@ export async function discoverAutonomousOpportunities({
 
   let baseSnapshot = useCache ? discoveryCache.get(cacheKey) : null
   if (!baseSnapshot || (Date.now() - baseSnapshot.cachedAt) > DISCOVERY_CACHE_TTL_MS) {
-    // 1. Dynamically discover tradable operating companies from market engine + catalog
     let rawEngineTickers = []
     if (typeof engine?.getTickers === 'function') {
       try {
@@ -276,7 +275,6 @@ export async function discoverAutonomousOpportunities({
     }
     const companySymbols = extractDiscoverableCompanySymbols(rawEngineTickers).slice(0, 250)
 
-    // 2. Compute SPY benchmark regime as-of exact session
     let benchmark = {
       symbol: 'SPY',
       regime: 'unknown',
@@ -310,7 +308,6 @@ export async function discoverAutonomousOpportunities({
       // Keep neutral benchmark fallback
     }
 
-    // 3. Deterministically screen broad company universe across sectors
     const screening = await screenAiStockUniverse({
       engine: barsEngine,
       session: asOfSession,
@@ -319,7 +316,6 @@ export async function discoverAutonomousOpportunities({
       maxConcurrent: 16
     })
 
-    // 4. Enrich all eligible companies with sector metadata & opportunity themes
     const prelimRanked = screening.shortlist
       .filter(item => item.eligible)
       .map(item => {
@@ -341,7 +337,6 @@ export async function discoverAutonomousOpportunities({
         }
       })
 
-    // 5. Sector breadth & leadership aggregation
     const sectorMap = new Map()
     for (const row of prelimRanked) {
       if (!sectorMap.has(row.sector)) {
@@ -380,13 +375,11 @@ export async function discoverAutonomousOpportunities({
       }))
       .sort((a, b) => b.avgScore - a.avgScore || b.eligibleCount - a.eligibleCount)
 
-    // 6. Select sector-diversified shortlist for qualitative evidence & AI cross-referencing
     const diversifiedPool = selectSectorDiversifiedCandidates(prelimRanked, {
       maxCandidates: 30,
       maxPerSectorInitial: 4
     })
 
-    // 7. Fetch point-in-time qualitative evidence (SEC filings + news) for diversified pool
     const activeRegistry = evidenceRegistry || createProductionExternalEvidenceRegistry()
     let evidenceSnapshot = { records: [], unavailable: [] }
     try {
@@ -408,7 +401,6 @@ export async function discoverAutonomousOpportunities({
       diversifiedPool.map(c => c.symbol)
     )
 
-    // 8. Load recent recorded AI decisions for transparent thesis attribution
     const latestAiBySymbol = new Map()
     if (prismaClient?.botEvent?.findMany) {
       try {
@@ -437,13 +429,11 @@ export async function discoverAutonomousOpportunities({
       }
     }
 
-    // 9. Combine deterministic score + transparent qualitative catalyst indicator
     const enrichedPool = diversifiedPool.map(row => {
       const qualitativeItems = evidenceBySymbol.get(row.symbol) || []
       const aiDecision = latestAiBySymbol.get(row.symbol) || null
       const verifiedFilingsCount = qualitativeItems.filter(i => i.sourceId === 'filings').length
       const reportedNewsCount = qualitativeItems.filter(i => i.sourceId === 'news').length
-      // Bounded catalyst bonus: rewards verified point-in-time disclosures without overriding weak technicals
       const qualitativeBonus = round(Math.min(8, verifiedFilingsCount * 2.5 + reportedNewsCount * 1.5), 2)
       const discoveryScore = round(row.quantScore + qualitativeBonus, 2)
       const { reasons, risks } = buildDiscoveryExplanation({
@@ -522,5 +512,90 @@ export async function discoverAutonomousOpportunities({
     sectors: full.sectors,
     themes: full.themes,
     discoveries: filtered.slice(0, safeLimit)
+  }
+}
+
+/**
+ * Resolves beyond-watchlist discovery candidates that are verified tradable in
+ * Alpha Engine's paper_daily execution feed (`engine.getDailyBars` + exact session close).
+ *
+ * Candidates present only in research candles (404 on getDailyBars) are cleanly
+ * deferred until Alpha Engine promotes them into the paper_daily execution feed,
+ * guaranteeing zero unfillable paper orders.
+ */
+export async function resolveTradableDiscoveryPromotions({
+  engine = engineClient,
+  prismaClient = prisma,
+  evidenceRegistry = null,
+  session,
+  baseSymbols = [],
+  heldSymbols = [],
+  maxPromotions = 5
+} = {}) {
+  if (!session || typeof engine?.getDailyBars !== 'function') {
+    return { asOfSession: session || null, promoted: [], deferred: [] }
+  }
+  const cap = Math.min(15, Math.max(1, Number(maxPromotions) || 5))
+  const excludedSet = new Set([
+    ...baseSymbols.map(s => String(s).trim().toUpperCase()),
+    ...heldSymbols.map(s => String(s).trim().toUpperCase())
+  ])
+
+  const scan = await discoverAutonomousOpportunities({
+    engine,
+    prismaClient,
+    evidenceRegistry,
+    session,
+    beyondWatchlistOnly: true,
+    limit: 30
+  })
+
+  const candidates = (scan.discoveries || []).filter(c => !excludedSet.has(c.symbol))
+  const lookbackStart = new Date(Date.parse(session + 'T00:00:00Z') - 150 * DAY_MS).toISOString().slice(0, 10)
+  const promoted = []
+  const deferred = []
+  const sectorCounts = new Map()
+
+  for (const cand of candidates) {
+    if (promoted.length >= cap) break
+    try {
+      // Must verify directly against engine.getDailyBars (paper_daily execution feed),
+      // NOT the getCandles research fallback, so next-open simulated fills are guaranteed.
+      const res = await engine.getDailyBars(cand.symbol, lookbackStart, session)
+      const bars = res?.bars
+      const scored = scoreStockBars(cand.symbol, bars, session)
+      if (!scored.eligible) {
+        deferred.push({ symbol: cand.symbol, sector: cand.sector, reason: scored.reason || 'not_eligible_in_execution_feed' })
+        continue
+      }
+      if (typeof engine.getSessionClose === 'function') {
+        const snap = await engine.getSessionClose(cand.symbol, session).catch(() => null)
+        if (!snap || snap.session !== session || !(Number(snap.close) > 0)) {
+          deferred.push({ symbol: cand.symbol, sector: cand.sector, reason: 'session_close_unavailable' })
+          continue
+        }
+      }
+      const secCount = sectorCounts.get(cand.sector) || 0
+      if (secCount >= 2 && candidates.length > cap) {
+        deferred.push({ symbol: cand.symbol, sector: cand.sector, reason: 'sector_cap_deferred' })
+        continue
+      }
+      sectorCounts.set(cand.sector, secCount + 1)
+      promoted.push({
+        symbol: cand.symbol,
+        name: cand.name,
+        sector: cand.sector,
+        theme: cand.theme,
+        discoveryScore: cand.discoveryScore
+      })
+    } catch {
+      deferred.push({ symbol: cand.symbol, sector: cand.sector, reason: 'not_in_paper_execution_feed' })
+    }
+  }
+
+  return {
+    asOfSession: session,
+    promoted,
+    deferred
   }
 }
