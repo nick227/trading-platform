@@ -6,6 +6,7 @@ import {
   getResearchSession, addResearchFeedback, createFollowUpResearch
 } from './researchPartnerApi'
 import MandateDialoguePanel from './MandateDialoguePanel'
+import ThesisHistory from './ThesisHistory'
 import './researchPartnerWorkspace.css'
 
 const message = error => error?.serverMessage || error?.message || 'Request failed'
@@ -217,6 +218,7 @@ export default function ResearchPartnerWorkspace() {
         </form>
       </section>
       {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback} onFollowUp={onFollowUp} onRun={onRun} busy={busy} />}
+      <ThesisHistory key={partner.id} partnerId={partner.id} session={selected} />
       <section className="tl-section">
         <h2 className="tl-section-title">Research history</h2>
         {!sessions.length && <p className="tl-section-note">No investigations yet.</p>}

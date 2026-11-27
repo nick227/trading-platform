@@ -22,3 +22,8 @@ export const startResearchDialogue = (id, payload) => post(part(id) + '/mandates
 export const getResearchDialogue = (id, dialogueId) => get(part(id) + '/mandates/dialogues/' + encodeURIComponent(dialogueId))
 export const continueResearchDialogue = (id, dialogueId, payload) => post(part(id) + '/mandates/dialogues/' + encodeURIComponent(dialogueId) + '/turns', payload)
 export const approveResearchDialogue = (id, dialogueId, expectedRevision) => post(part(id) + '/mandates/dialogues/' + encodeURIComponent(dialogueId) + '/approve', { expectedRevision })
+
+export const listResearchTheses = id => get(part(id) + '/theses')
+export const createResearchThesis = (id, statement) => post(part(id) + '/theses', { statement })
+export const linkThesisFinding = (id, thesisId, sessionId, findingIndex) =>
+  post(part(id) + '/theses/' + encodeURIComponent(thesisId) + '/assessments', { sessionId, findingIndex })

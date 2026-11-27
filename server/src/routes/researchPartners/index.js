@@ -4,10 +4,12 @@ import { ResearchPartnerInputError } from '../../services/researchPartner/mandat
 import { createMandateProposalRuntime } from '../../services/researchPartner/mandateProposalRuntime.js'
 import { createResearchSessionService } from '../../services/researchPartner/researchSession.js'
 import { createMandateDialogueService } from '../../services/researchPartner/mandateDialogue.js'
+import { createResearchThesisService } from '../../services/researchPartner/researchThesis.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
 const dialogues = createMandateDialogueService()
+const theses = createResearchThesisService()
 const proposalRuntime = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
@@ -136,6 +138,26 @@ export default async function researchPartnerRoutes(app) {
   } } }, async (request, reply) => {
     try { return reply.code(201).send({ data: await sessions.createFollowUp(owned(request), request.params.id,
       request.params.sessionId, request.body.question) }) }
+    catch (e) { return handle(reply, e) }
+  })
+
+  app.post('/:id/theses', { schema: { body: { ...bodySchema, required: ['statement'],
+    properties: { statement: { type: 'string', minLength: 1, maxLength: 600 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await theses.create(owned(request), request.params.id, request.body.statement) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/theses', async (request, reply) => {
+    try { return { data: await theses.list(owned(request), request.params.id) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/theses/:thesisId/assessments', { schema: { body: {
+    ...bodySchema, required: ['sessionId', 'findingIndex'],
+    properties: { sessionId: { type: 'string', minLength: 1, maxLength: 191 },
+      findingIndex: { type: 'integer', minimum: 0, maximum: 11 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await theses.record(owned(request), request.params.id,
+      request.params.thesisId, request.body.sessionId, request.body.findingIndex) }) }
     catch (e) { return handle(reply, e) }
   })
   app.delete('/:id', async (request, reply) => {
