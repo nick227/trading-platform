@@ -4,9 +4,9 @@ import { approveResearchDialogue, continueResearchDialogue, startResearchDialogu
 const errorText = e => e?.serverMessage || e?.message || 'Unable to update mandate'
 
 /** A persistent draft dialog; approval is the only operation that changes the mandate. */
-export default function MandateDialoguePanel({ partner, onApproved }) {
+export default function MandateDialoguePanel({ partner, onApproved, initialMessage = '' }) {
   const [draft, setDraft] = useState(null)
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(initialMessage)
   const [useAI, setUseAI] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
