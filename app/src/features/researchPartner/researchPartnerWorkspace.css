@@ -47,3 +47,11 @@
 .rp-strategy-research input[type="checkbox"] { width: auto; flex: 0 0 auto; }
 .rp-strategy-item { padding: 15px 0; border-top: 1px solid var(--border, #bfc4ca); }
 .rp-strategy-item p { margin: 5px 0 10px; }
+
+.rp-monitor-panel { display: grid; gap: 16px; }
+.rp-monitor-history { display: grid; gap: 16px; }
+.rp-monitor-item { border: 1px solid var(--border, #bfc4ca); border-radius: 10px; padding: 16px; }
+.rp-monitor-item h3 { margin: 0 0 8px; }
+.rp-monitor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rp-monitor-events { margin-top: 12px; }
+.rp-monitor-event { margin-top: 8px; border-top: 1px solid var(--border, #bfc4ca); padding-top: 8px; }
