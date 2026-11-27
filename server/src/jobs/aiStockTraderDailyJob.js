@@ -26,7 +26,8 @@ export async function runStockTraderDailyJob({
   usageGovernor = null,
   pendingProcessor = processPendingAiExecutions,
   fillLoader = loadBotFills,
-  accountant = calculateFifoAccounting
+  accountant = calculateFifoAccounting,
+  externalEvidenceRegistry = null
 } = {}) {
   if (env.ENABLE_FLAGSHIP_STOCK_TRADER !== 'true' || env.ENABLE_AI_PAID_CALLS !== 'true') {
     return { ok: true, skipped: true, reason: 'flagship_not_enabled' }
@@ -70,7 +71,7 @@ export async function runStockTraderDailyJob({
   })
   const governor = usageGovernor || createAiUsageGovernor({ prismaClient, env })
   const research = await runStockTraderResearch({
-    bot, portfolio, screening, portfolioSnapshot, prismaClient, provider, usageGovernor: governor, engine
+    bot, portfolio, screening, portfolioSnapshot, prismaClient, provider, usageGovernor: governor, engine, externalEvidenceRegistry
   })
   if (!research.ok) return { ok: true, skipped: true, reason: research.reason, screening, research, fills }
   const orders = await queueStockTraderPaperOrders({
