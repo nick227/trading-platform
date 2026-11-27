@@ -3,7 +3,8 @@ export const AGENT_STATES = Object.freeze({
   needs_direction: ['Needs direction','Set a research objective to begin.','neutral'],
   ready: ['Ready to investigate','Awaiting a research question.','neutral'],
   question_saved: ['Ready for research','A question was saved; research has not started.','neutral'],
-  investigating: ['Investigating','A research request is in progress.','progress'],
+  investigating: ['Investigating','Research is in progress.','progress'],
+  working: ['Processing request','An action is in progress.','progress'],
   findings_available: ['Findings available','Review the latest completed investigation.','success'],
   needs_attention: ['Needs attention','An action failed or requires review.','warning'],
   loading: ['Loading status','Checking recorded agent activity.','neutral'],
@@ -14,7 +15,7 @@ export const AGENT_STATES = Object.freeze({
 })
 export function researchAgentStatus({partner,selected,busy=false,error=''}={}) {
   if(error)return 'needs_attention'
-  if(busy)return 'investigating'
+  if(busy)return 'working'
   if(!partner)return 'needs_direction'
   if(selected?.status==='failed')return 'needs_attention'
   if(selected?.status==='completed'&&selected.report)return 'findings_available'
