@@ -772,7 +772,7 @@ model ResearchPartner {
   @@index([userId, status, createdAt])
 }
 
-/** Bounded interpretation state; no trade, approval, or execution authority. */
+/// Bounded interpretation state; no trade, approval, or execution authority.
 model ResearchConversationDraft {
   id          String   @id @default(cuid()) @db.VarChar(191)
   partnerId   String   @db.VarChar(191)
