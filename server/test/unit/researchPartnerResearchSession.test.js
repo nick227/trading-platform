@@ -29,7 +29,7 @@ describe('RP-04 research only sessions', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         update: vi.fn().mockResolvedValue({})
       },
-      researchMandateVersion: { findUnique: vi.fn().mockResolvedValue({ content: { objective: 'Robotics' } }) },
+      researchMandateVersion: { findUnique: vi.fn().mockResolvedValue({ content: { objective: 'Robotics', interests: [], watchlist: [], hypotheses: [], preferences: { horizon: 'medium', researchDepth: 'standard' }, exclusions: [] } }) },
       researchMessage: { create: vi.fn() }
     }
     db.$transaction = vi.fn(fn => fn(db))
@@ -42,7 +42,7 @@ describe('RP-04 research only sessions', () => {
       structured: { summary: 'No verified sources provided', findings: [], uncertainties: [], followUpQuestions: [] },
       usage: { prompt_tokens: 30, completion_tokens: 40 }
     }) }
-    const result = await createResearchSessionService({ db, provider, governor }).run('u', 'p', 's')
+    const result = await createResearchSessionService({ db, provider, governor, evidenceCollector: async () => ({ records: [], unavailable: [], asOfSession: '2026-11-26', fingerprint: 'empty-fixture' }) }).run('u', 'p', 's')
     expect(result.limitations).toHaveLength(1)
     expect(db.researchMandateVersion.findUnique).toHaveBeenCalledWith({
       where: { partnerId_version: { partnerId: 'p', version: 2 } }

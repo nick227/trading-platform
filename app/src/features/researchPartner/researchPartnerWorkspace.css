@@ -18,3 +18,8 @@
 .rp-history-item:hover { background: var(--surface-hover, rgba(128,128,128,.08)); }
 .rp-history-item:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 @media (max-width: 680px) { .rp-history-item { flex-direction: column; } .rp-form .tl-btn { width: 100%; } }
+
+.rp-ai-optin { display: flex; align-items: center; gap: 10px; }
+.rp-form .rp-ai-optin input[type="checkbox"] { width: auto; margin: 0; flex: 0 0 auto; }
+.rp-sources ul { padding-left: 20px; }
+.rp-sources li { margin-bottom: 10px; overflow-wrap: anywhere; }
