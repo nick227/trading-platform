@@ -46,7 +46,8 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
     return String(a.id || '').localeCompare(String(b.id || ''))
   })
 
-  const openLotsByTicker = new Map() // ticker -> Array<{ id, remainingQty, price, filledAt }>
+  const openLotsByTicker = new Map() // ticker -> FIFO lots
+  const lotHeads = new Map() // ticker -> first unconsumed lot index
   const perExecutionPnl = new Map()  // executionId -> realizedPnl
   // Closed trades = sells that closed attributable lots; a win realized a positive P/L.
   let closedTrades = 0
@@ -66,6 +67,7 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
 
     if (!openLotsByTicker.has(ticker)) {
       openLotsByTicker.set(ticker, [])
+      lotHeads.set(ticker, 0)
     }
     const lots = openLotsByTicker.get(ticker)
 
@@ -85,8 +87,11 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
       let fillRealizedPnl = 0
       let matchedBuyFees = 0
 
-      while (remainingToSell > 1e-7 && lots.length > 0) {
-        const lot = lots[0]
+      // FIFO head avoids O(n) Array.shift() on every consumed lot.
+      // Periodic compaction bounds retention of closed-lot objects.
+      let head = lotHeads.get(ticker)
+      while (remainingToSell > 1e-7 && head < lots.length) {
+        const lot = lots[head]
         const matchQty = Math.min(remainingToSell, lot.remainingQty)
         const pnlChunk = matchQty * (price - lot.price)
         fillRealizedPnl += pnlChunk
@@ -95,9 +100,15 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
         lot.remainingQty -= matchQty
 
         if (lot.remainingQty <= 1e-7) {
-          lots.shift()
+          head += 1
         }
       }
+      // Amortized compaction: do not keep an unbounded prefix of closed lots.
+      if (head >= 64 && head * 2 >= lots.length) {
+        lots.splice(0, head)
+        head = 0
+      }
+      lotHeads.set(ticker, head)
 
       // Never invent a short: quantity sold beyond attributable lots realizes nothing
       // and is reported so the mismatch is visible.
@@ -126,7 +137,9 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
   let totalUnrealizedPnl = 0
 
   for (const [ticker, lots] of openLotsByTicker.entries()) {
-    const remainingLots = lots.filter(l => l.remainingQty > 1e-7)
+    // Closed FIFO prefix has already been consumed; do not traverse it.
+    const head = lotHeads.get(ticker)
+    const remainingLots = lots.slice(head).filter(l => l.remainingQty > 1e-7)
     if (remainingLots.length === 0) continue
 
     const totalQty = remainingLots.reduce((sum, l) => sum + l.remainingQty, 0)

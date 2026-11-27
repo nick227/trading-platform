@@ -202,3 +202,45 @@ describe('closed-trade win rate (from the same FIFO pass)', () => {
     expect(r.unattributedSellQuantity).toEqual({ AAPL: 5 })
   })
 })
+
+
+describe('FIFO cursor queue regression', () => {
+  it('handles hundreds of consumed lots with stable cost basis and realized profits', () => {
+    const fills = []
+    const start = Date.parse('2026-01-01T00:00:00.000Z')
+    for (let i = 0; i < 256; i++) {
+      fills.push({
+        id: 'buy-' + i, ticker: 'AAPL', direction: 'buy',
+        filledQuantity: 1, filledPrice: 100 + i, fees: 0,
+        filledAt: new Date(start + i * 1000)
+      })
+    }
+    for (let i = 0; i < 200; i++) {
+      fills.push({
+        id: 'sell-' + i, ticker: 'AAPL', direction: 'sell',
+        filledQuantity: 1, filledPrice: 400, fees: 0,
+        filledAt: new Date(start + (256 + i) * 1000)
+      })
+    }
+    const result = calculateFifoAccounting(fills, { currentPrices: { AAPL: 400 } })
+    expect(result.performance.realizedPnl).toBe(40100)
+    expect(result.openPositions.AAPL.quantity).toBe(56)
+    expect(result.openPositions.AAPL.costBasis).toBe(18340)
+    expect(result.openPositions.AAPL.lots[0].id).toBe('buy-200')
+    expect(result.openPositions.AAPL.lots.at(-1).id).toBe('buy-255')
+    expect(result.unattributedSellQuantity).toEqual({})
+    expect(result.perExecutionPnl.get('sell-0')).toBe(300)
+    expect(result.perExecutionPnl.get('sell-199')).toBe(101)
+  })
+
+  it('still attributes sales beyond remaining lots without creating a short position', () => {
+    const fills = [
+      { id:'b1',ticker:'AAPL',direction:'buy',filledQuantity:2,filledPrice:10,filledAt:'2026-01-01' },
+      { id:'s1',ticker:'AAPL',direction:'sell',filledQuantity:3,filledPrice:20,filledAt:'2026-01-02' }
+    ]
+    const result = calculateFifoAccounting(fills)
+    expect(result.performance.realizedPnl).toBe(20)
+    expect(result.unattributedSellQuantity).toEqual({ AAPL: 1 })
+    expect(result.openPositions).toEqual({})
+  })
+})
