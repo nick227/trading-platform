@@ -58,4 +58,52 @@ describe('flagship AI stock screening', () => {
     expect(result.excluded).toEqual(expect.arrayContaining([expect.objectContaining({ symbol: 'NVDA', reason: 'market_data_unavailable' })]))
     expect(result.shortlist.find(row => row.symbol === 'NVDA').held).toBe(true)
   })
+
+  it('caps in-flight market requests and preserves stable output order', async () => {
+    let active = 0
+    let peak = 0
+    const engine = { getDailyBars: vi.fn(async symbol => {
+      active += 1
+      peak = Math.max(peak, active)
+      await new Promise(resolve => setTimeout(resolve, symbol === 'AAPL' ? 5 : 1))
+      active -= 1
+      return { bars: makeBars() }
+    }) }
+    const result = await screenAiStockUniverse({
+      engine, session: '2026-11-25',
+      symbols: ['TSLA','NVDA','MSFT','AAPL'], heldSymbols: ['QQQ'],
+      shortlistLimit: 2, maxConcurrent: 2
+    })
+    expect(peak).toBeLessThanOrEqual(2)
+    expect(peak).toBeGreaterThan(1)
+    expect(result.ranking.map(r => r.symbol)).toEqual(['AAPL','MSFT','NVDA','TSLA'])
+    expect(result.shortlist.map(r => r.symbol)).toEqual(['AAPL','MSFT','QQQ'])
+    expect(engine.getDailyBars).toHaveBeenCalledTimes(5)
+  })
+
+  it('matches exact original 20- and 50-bar aggregates without temporary arrays', () => {
+    const bars = makeBars()
+    const got = scoreStockBars('AAPL', bars, '2026-11-25').indicators
+    const closes = bars.map(b => b[4])
+    const volumes = bars.map(b => b[5])
+    const mean = xs => xs.reduce((sum, v) => sum + v, 0) / xs.length
+    expect(got.sma20).toBe(Number(mean(closes.slice(-20)).toFixed(4)))
+    expect(got.sma50).toBe(Number(mean(closes.slice(-50)).toFixed(4)))
+    expect(got.volumeRatio).toBe(Number((volumes.at(-1) / mean(volumes.slice(-20))).toFixed(4)))
+  })
+
+  it('rejects concurrency settings outside safe bounds', async () => {
+    const input = { engine: { getDailyBars: vi.fn() }, session: '2026-11-25', symbols: ['AAPL'] }
+    await expect(screenAiStockUniverse({ ...input, maxConcurrent: 0 })).rejects.toThrow(/concurrency/)
+    await expect(screenAiStockUniverse({ ...input, maxConcurrent: 33 })).rejects.toThrow(/concurrency/)
+  })
+
+  it('preserves short rolling windows under explicit minimum-history overrides', () => {
+    const bars = makeBars().slice(-30)
+    const actual = scoreStockBars('AAPL', bars, '2026-11-25', { minBars: 25 })
+    const mean = xs => xs.reduce((sum, n) => sum + n, 0) / xs.length
+    const closes = bars.map(b => b[4])
+    expect(actual.indicators.sma50).toBe(Number(mean(closes).toFixed(4)))
+    expect(actual.indicators.sma20).toBe(Number(mean(closes.slice(-20)).toFixed(4)))
+  })
 })
