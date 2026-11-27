@@ -2,8 +2,10 @@
 import { createResearchPartnerRepository } from '../../services/researchPartner/repository.js'
 import { ResearchPartnerInputError } from '../../services/researchPartner/mandate.js'
 import { proposeResearchMandate } from '../../services/researchPartner/mandateProposal.js'
+import { createResearchSessionService } from '../../services/researchPartner/researchSession.js'
 
 const repo = createResearchPartnerRepository()
+const sessions = createResearchSessionService()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
   if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 500) {
@@ -61,6 +63,26 @@ export default async function researchPartnerRoutes(app) {
   })
   app.get('/:id/mandates', async (request, reply) => {
     try { return { data: await repo.listMandates(owned(request), request.params.id) } }
+    catch (e) { return handle(reply, e) }
+  })
+
+  app.post('/:id/sessions', { schema: { body: {
+    ...bodySchema, required: ['question'],
+    properties: { question: { type: 'string', minLength: 1, maxLength: 6000 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await sessions.create(owned(request), request.params.id, request.body.question) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/sessions', async (request, reply) => {
+    try { return { data: await sessions.list(owned(request), request.params.id) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/sessions/:sessionId', async (request, reply) => {
+    try { return { data: await sessions.get(owned(request), request.params.id, request.params.sessionId) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/sessions/:sessionId/run', async (request, reply) => {
+    try { return { data: await sessions.run(owned(request), request.params.id, request.params.sessionId) } }
     catch (e) { return handle(reply, e) }
   })
   app.delete('/:id', async (request, reply) => {
