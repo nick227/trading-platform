@@ -49,7 +49,7 @@ test('strategy cards offer one keyboard-accessible destination',async ({page})=>
 test('catalog API failure preserves an understandable error state',async ({page})=>{
   await page.route('**/api/public/strategies',route=>route.fulfill({status:503,contentType:'application/json',body:'{"error":"unavailable"}'}))
   await page.goto('/strategies')
-  await expect(page.getByRole('alert')).toContainText('The list could not be loaded.')
+  await expect(page.getByRole('alert').filter({hasText:'The list could not be loaded.'})).toHaveCount(1)
   await expect(page.getByTestId('strategy-card')).toHaveCount(0)
 })
 
