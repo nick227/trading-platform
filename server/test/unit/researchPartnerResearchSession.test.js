@@ -29,7 +29,7 @@ describe('RP-04 research only sessions', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         update: vi.fn().mockResolvedValue({})
       },
-      researchMandateVersion: { findUnique: vi.fn().mockResolvedValue({ content: { objective: 'Robotics' } }) },
+      researchMandateVersion: { findUnique: vi.fn().mockResolvedValue({ content: { objective: 'Robotics', interests: [], watchlist: [], hypotheses: [], preferences: { horizon: 'medium', researchDepth: 'standard' }, exclusions: [] } }) },
       researchMessage: { create: vi.fn() }
     }
     db.$transaction = vi.fn(fn => fn(db))

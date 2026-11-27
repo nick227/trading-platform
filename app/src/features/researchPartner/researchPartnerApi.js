@@ -6,7 +6,7 @@ const part = id => base + '/' + encodeURIComponent(id)
 export const listResearchPartners = () => get(base)
 export const createResearchPartner = input => post(base, input)
 export const getResearchPartner = id => get(part(id))
-export const proposeMandate = (id, instructions) => post(part(id) + '/mandates/proposals', { instructions })
+export const proposeMandate = (id, instructions, useAI = false) => post(part(id) + '/mandates/proposals', { instructions, useAI })
 export const approveMandate = (id, proposal) => post(part(id) + '/mandates', {
   expectedVersion: proposal.expectedVersion, mandate: proposal.mandate
 })

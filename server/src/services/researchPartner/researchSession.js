@@ -2,6 +2,7 @@
 import prisma from '../../loaders/prisma.js'
 import { getProvider } from '../ai/providers/providerRegistry.js'
 import { createResearchUsageGovernor } from './usageGovernor.js'
+import { createResearchPartnerEvidenceCollector } from './evidenceBridge.js'
 import { validateResearchQuestion } from './mandate.js'
 import { ResearchPartnerNotFoundError, ResearchPartnerConflictError } from './repository.js'
 
@@ -46,14 +47,18 @@ export function validateResearchReport(input, evidence = []) {
     findings,
     uncertainties: strings(input.uncertainties || [], 12, 300, 'uncertainties'),
     followUpQuestions: strings(input.followUpQuestions || [], 10, 300, 'follow-ups'),
-    evidence: evidence.map(s => ({ id: s.id, source: s.source, publishedAt: s.publishedAt ?? null })),
+    evidence: evidence.map(s => ({
+      id: s.id, source: s.source, title: s.title || null,
+      url: s.url || null, quality: s.quality || 'unverified',
+      publishedAt: s.publishedAt ?? null, availableAt: s.availableAt ?? null
+    })),
     limitations: evidence.length ? [] : ['No independent external evidence was supplied; all findings are preliminary.']
   }
 }
 
 export function createResearchSessionService({
   db = prisma, governor = createResearchUsageGovernor(), provider = null,
-  env = process.env
+  evidenceCollector = createResearchPartnerEvidenceCollector(), env = process.env
 } = {}) {
   async function ownedPartner(userId, partnerId) {
     const partner = await db.researchPartner.findFirst({
@@ -116,7 +121,7 @@ export function createResearchSessionService({
       const messages = await db.researchMessage.findMany({ where: { sessionId }, orderBy: { createdAt: 'asc' } })
       return { ...session, messages }
     },
-    async run(userId, partnerId, sessionId, { evidence = [] } = {}) {
+    async run(userId, partnerId, sessionId) {
       // Explicit paid-call opt-in: disabled by default, before claiming a session.
       if (!governor.enabled()) {
         const err = new Error('Research Partner AI is not enabled')
@@ -134,10 +139,12 @@ export function createResearchSessionService({
           where: { partnerId_version: { partnerId, version: session.mandateVersion } }
         })
         if (!mandate) throw new Error('Pinned research mandate is missing')
-        // This first pass accepts no request-supplied evidence. Future trusted adapter
-        // integration will inject source-backed, as-of-bounded evidence internally.
-
-        const sources = evidence
+        // Only the trusted, code-owned adapter gateway can provide research evidence.
+        // This collector is intentionally inert until live provider fetchers are configured.
+        const evidenceSnapshot = await evidenceCollector({
+          mandate: mandate.content, question: session.question
+        })
+        const sources = evidenceSnapshot.records
         const previous = session.parentSessionId
           ? await db.researchSession.findFirst({
               where: { id: session.parentSessionId, partnerId, status: 'completed' }
@@ -185,7 +192,10 @@ export function createResearchSessionService({
         }
         const report = { ...validateResearchReport(response.structured, sources),
           parentSessionId: previous?.id ?? null,
-          priorResearchIsUnverified: Boolean(previous) }
+          priorResearchIsUnverified: Boolean(previous),
+          evidenceFingerprint: evidenceSnapshot.fingerprint,
+          unavailableSources: evidenceSnapshot.unavailable,
+          evidenceAsOfSession: evidenceSnapshot.asOfSession }
         await db.$transaction(async tx => {
           await tx.researchSession.update({
             where: { id: session.id },

@@ -1,11 +1,12 @@
 
 import { createResearchPartnerRepository } from '../../services/researchPartner/repository.js'
 import { ResearchPartnerInputError } from '../../services/researchPartner/mandate.js'
-import { proposeResearchMandate } from '../../services/researchPartner/mandateProposal.js'
+import { createMandateProposalRuntime } from '../../services/researchPartner/mandateProposalRuntime.js'
 import { createResearchSessionService } from '../../services/researchPartner/researchSession.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
+const proposals = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
   if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 500) {
@@ -50,13 +51,13 @@ export default async function researchPartnerRoutes(app) {
 
   app.post('/:id/mandates/proposals', { schema: { body: {
     ...bodySchema, required: ['instructions'],
-    properties: { instructions: { type: 'string', minLength: 1, maxLength: 4000 } }
+    properties: { instructions: { type: 'string', minLength: 1, maxLength: 4000 }, useAI: { type: 'boolean' } }
   } } }, async (request, reply) => {
     try {
       const partner = await repo.get(owned(request), request.params.id)
-      const proposal = await proposeResearchMandate({
-        instructions: request.body.instructions,
-        currentMandate: partner.mandate.content
+      const proposal = await proposals.propose({
+        userId: owned(request), partner, instructions: request.body.instructions,
+        useAI: request.body.useAI === true
       })
       return { data: { ...proposal, partnerId: partner.id, expectedVersion: partner.currentMandateVersion } }
     } catch (e) { return handle(reply, e) }

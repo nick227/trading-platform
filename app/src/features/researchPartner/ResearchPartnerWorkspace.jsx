@@ -32,7 +32,17 @@ function Report({ session, onFeedback, onFollowUp, busy }) {
           {finding.evidenceIds?.length > 0 && <p className="tl-small">Source IDs: {finding.evidenceIds.join(', ')}</p>}
         </article>)}
       </div>}
-      {report.limitations?.length > 0 && <p className="tl-section-note">{report.limitations.join(' ')}</p>}
+      {report.evidence?.length > 0 && <div className="rp-evidence">
+        <h3>Source material</h3>
+        <ul>{report.evidence.map(e => <li key={e.id}>
+          {e.url ? <a href={e.url} target="_blank" rel="noopener noreferrer">{e.title || e.source}</a> : (e.title || e.source)}
+          <span className="tl-small tl-muted"> · {e.quality} · {e.publishedAt}</span>
+        </li>)}</ul>
+      </div>}
+      {report.unavailableSources?.length > 0 && <p className="tl-section-note">
+        Unavailable research sources: {report.unavailableSources.map(e => e.sourceId).join(', ')}.
+      </p>}
+      {report.limitations?.length > 0 && <p className="tl-section-note">{report.limitations.join(' ')}</p>
       {report.uncertainties?.length > 0 && <div><h3>Uncertainties</h3><ul>{report.uncertainties.map((item,i) => <li key={i}>{item}</li>)}</ul></div>}
       {report.followUpQuestions?.length > 0 && <div><h3>Follow-up questions</h3><ul>{report.followUpQuestions.map((item,i) => <li key={i}>{item}</li>)}</ul></div>}
 
@@ -78,6 +88,7 @@ export default function ResearchPartnerWorkspace() {
   const [name, setName] = useState('')
   const [objective, setObjective] = useState('')
   const [instructions, setInstructions] = useState('')
+  const [useAI, setUseAI] = useState(false)
   const [question, setQuestion] = useState('')
   const [proposal, setProposal] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -119,7 +130,7 @@ export default function ResearchPartnerWorkspace() {
   }
   const onPropose = async event => {
     event.preventDefault()
-    await action(async () => setProposal(await proposeMandate(partner.id, instructions)))
+    await action(async () => setProposal(await proposeMandate(partner.id, instructions, useAI)))
   }
   const onApprove = async () => {
     await action(async () => {
@@ -204,6 +215,8 @@ export default function ResearchPartnerWorkspace() {
             <label htmlFor="rp-directions">Describe what should change</label>
             <textarea id="rp-directions" value={instructions} onChange={e => setInstructions(e.target.value)}
               rows={3} maxLength={4000} required />
+            <label><input type="checkbox" checked={useAI} onChange={e => setUseAI(e.target.checked)} />
+              Use AI to interpret my instructions (requires an enabled, budgeted model)</label>
             <button className="tl-btn tl-btn--secondary" type="submit" disabled={busy}>Preview changes</button>
           </form>
           {proposal && <div className="rp-preview">
