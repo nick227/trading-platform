@@ -1,15 +1,22 @@
 import { money, pct, signedMoney, signedPct, shares, sessionDate, tone } from '../../ui/format'
+import { buildPortfolioIntelNarrative } from '../../ui/narrativeSummaries'
 
 export default function PortfolioIntelligencePanel({ intelligence }) {
   if (!intelligence || intelligence.status === 'not_initialized') return null
 
   const { summary, concentration, holdings = [], allocationProposals = [], marketRegime } = intelligence
+  const narrative = buildPortfolioIntelNarrative(intelligence)
 
   return (
     <section className="tl-section" aria-labelledby="portfolio-intel-heading" data-testid="portfolio-intelligence">
       <div className="tl-section-head">
         <div>
           <h2 id="portfolio-intel-heading" className="tl-section-title">Intelligent portfolio management</h2>
+          {narrative && (
+            <p className="tl-lead-sentence" style={{ margin: '0.3rem 0 0.25rem' }} data-testid="portfolio-intel-narrative">
+              {narrative}
+            </p>
+          )}
           <p className="tl-section-note">
             Evaluates open paper holdings, sector concentration, thesis health, and deterministic risk-bounded allocation adjustments as of {sessionDate(intelligence.asOfSession, { year: true })}.
           </p>
@@ -43,28 +50,33 @@ export default function PortfolioIntelligencePanel({ intelligence }) {
         </div>
       </dl>
 
-      {concentration?.sectorExposure?.length > 0 && (
-        <div className="tl-flow-card" data-testid="portfolio-sector-exposure">
-          <p className="tl-small"><strong>Sector concentration</strong> (HHI {concentration.hhi}):</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.4rem' }}>
-            {concentration.sectorExposure.map(sec => (
-              <span key={sec.sector} className="tl-tag">
-                {sec.sector}: {pct(sec.weightPct)} ({sec.symbols.join(', ')})
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      {(concentration?.sectorExposure?.length > 0 || concentration?.alerts?.length > 0) && (
+        <details className="tl-flow-card" style={{ marginTop: '0.65rem' }}>
+          <summary><strong>Inspect details · Sector concentration &amp; portfolio diagnostics</strong></summary>
+          {concentration?.sectorExposure?.length > 0 && (
+            <div style={{ marginTop: '0.5rem' }} data-testid="portfolio-sector-exposure">
+              <p className="tl-small"><strong>Sector concentration</strong> (HHI {concentration.hhi}):</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.4rem' }}>
+                {concentration.sectorExposure.map(sec => (
+                  <span key={sec.sector} className="tl-tag">
+                    {sec.sector}: {pct(sec.weightPct)} ({sec.symbols.join(', ')})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {concentration?.alerts?.length > 0 && (
-        <div className="tl-flow-card" data-testid="portfolio-concentration-alerts">
-          <p className="tl-small"><strong>Portfolio diagnostics</strong></p>
-          <ul className="tl-backtest-notes">
-            {concentration.alerts.map((alert, idx) => (
-              <li key={idx}>{alert.message}</li>
-            ))}
-          </ul>
-        </div>
+          {concentration?.alerts?.length > 0 && (
+            <div style={{ marginTop: '0.5rem' }} data-testid="portfolio-concentration-alerts">
+              <p className="tl-small"><strong>Portfolio diagnostics</strong></p>
+              <ul className="tl-backtest-notes">
+                {concentration.alerts.map((alert, idx) => (
+                  <li key={idx}>{alert.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </details>
       )}
 
       {holdings.length > 0 && (

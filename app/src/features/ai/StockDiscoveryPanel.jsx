@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { money, signedPct, sessionDate, ratioPct, tone } from '../../ui/format'
+import { buildStocksNarrativeSummary } from '../../ui/narrativeSummaries'
 
 function SpaLink({ to, className, children, ...rest }) {
   const navigate = useNavigate()
@@ -92,12 +93,18 @@ export default function StockDiscoveryPanel({
   if (!discovery) return null
 
   const leadingSector = discovery.sectors?.[0]
+  const stocksNarrative = buildStocksNarrativeSummary(discovery)
 
   return (
     <section className="tl-section" aria-labelledby="ai-discovery-heading" data-testid="ai-stock-discovery">
       <div className="tl-section-head">
         <div>
           <h2 id="ai-discovery-heading" className="tl-section-title">Autonomous stock discovery</h2>
+          {stocksNarrative ? (
+            <p className="tl-lead-sentence" style={{ margin: '0.35rem 0 0.25rem' }} data-testid="stocks-narrative-summary">
+              {stocksNarrative}
+            </p>
+          ) : null}
           <p className="tl-section-note">
             Scans {discovery.universeScanned ?? 0} companies across {discovery.sectorsCount ?? 0} sectors beyond the static 10-ticker watchlist, combining deterministic relative strength with verified SEC filings and market news as of {sessionDate(discovery.asOfSession, { year: true })}.
           </p>
@@ -235,24 +242,18 @@ export default function StockDiscoveryPanel({
               <p className="tl-small">
                 <strong>Last close:</strong> {money(item.indicators?.price)}
                 {' · '}
-                <strong>5d:</strong> <span className={tone(item.indicators?.return5dPct)}>{signedPct(item.indicators?.return5dPct)}</span>
-                {' · '}
-                <strong>20d:</strong> <span className={tone(item.indicators?.return20dPct)}>{signedPct(item.indicators?.return20dPct)}</span>
-                {' · '}
-                <strong>vs SPY (20d):</strong> <span className={tone(item.rs20dPct)}>{signedPct(item.rs20dPct)}</span>
-                {' · '}
-                <strong>Volume:</strong> {item.indicators?.volumeRatio ? `${item.indicators.volumeRatio.toFixed(2)}x` : '—'}
+                <strong>20d return:</strong> <span className={tone(item.indicators?.return20dPct)}>{signedPct(item.indicators?.return20dPct)}</span>
+                {item.latestAiDecision && (
+                  <>
+                    {' · '}
+                    <strong>Flagship AI ({sessionDate(item.latestAiDecision.asOfSession)}):</strong>{' '}
+                    <span className={item.latestAiDecision.action === 'BUY' ? 'tl-pos' : item.latestAiDecision.action === 'SELL' ? 'tl-neg' : 'tl-muted'}>
+                      {item.latestAiDecision.action}
+                    </span>
+                    {item.latestAiDecision.confidence != null && ` (${ratioPct(item.latestAiDecision.confidence, 0)})`}
+                  </>
+                )}
               </p>
-
-              {item.latestAiDecision && (
-                <p className="tl-small">
-                  <strong>Flagship AI stance ({sessionDate(item.latestAiDecision.asOfSession)}):</strong>{' '}
-                  <span className={item.latestAiDecision.action === 'BUY' ? 'tl-pos' : item.latestAiDecision.action === 'SELL' ? 'tl-neg' : 'tl-muted'}>
-                    {item.latestAiDecision.action}
-                  </span>
-                  {item.latestAiDecision.confidence != null && ` · Conviction ${ratioPct(item.latestAiDecision.confidence, 0)}`}
-                </p>
-              )}
 
               {item.whyItMatters?.length > 0 && (
                 <ul className="tl-backtest-notes">
@@ -260,15 +261,19 @@ export default function StockDiscoveryPanel({
                 </ul>
               )}
 
-              {item.qualitativeEvidence?.length > 0 && (
-                <details className="tl-flow-card">
-                  <summary>
-                    <strong>Supporting qualitative evidence ({item.qualitativeEvidence.length})</strong>
-                    {' · '}
-                    {item.evidenceCounts?.filings > 0 ? `${item.evidenceCounts.filings} verified SEC filing(s)` : ''}
-                    {item.evidenceCounts?.filings > 0 && item.evidenceCounts?.news > 0 ? ', ' : ''}
-                    {item.evidenceCounts?.news > 0 ? `${item.evidenceCounts.news} reported news item(s)` : ''}
-                  </summary>
+              <details className="tl-flow-card" data-testid={`discovery-details-${item.symbol}`}>
+                <summary>
+                  <strong>Inspect details</strong>
+                  {item.qualitativeEvidence?.length > 0 ? ` · ${item.qualitativeEvidence.length} verified SEC/news source(s)` : ' · Technical metrics & risks'}
+                </summary>
+                <p className="tl-small" style={{ marginTop: '0.45rem' }}>
+                  <strong>5d:</strong> <span className={tone(item.indicators?.return5dPct)}>{signedPct(item.indicators?.return5dPct)}</span>
+                  {' · '}
+                  <strong>vs SPY (20d):</strong> <span className={tone(item.rs20dPct)}>{signedPct(item.rs20dPct)}</span>
+                  {' · '}
+                  <strong>Volume:</strong> {item.indicators?.volumeRatio ? `${item.indicators.volumeRatio.toFixed(2)}x` : '—'}
+                </p>
+                {item.qualitativeEvidence?.length > 0 && (
                   <ul className="tl-backtest-notes">
                     {item.qualitativeEvidence.map(ev => (
                       <li key={ev.id}>
@@ -282,12 +287,11 @@ export default function StockDiscoveryPanel({
                       </li>
                     ))}
                   </ul>
-                </details>
-              )}
-
-              {item.risksToWatch?.length > 0 && (
-                <p className="tl-small tl-muted">What to verify / risks: {item.risksToWatch.join(' ')}</p>
-              )}
+                )}
+                {item.risksToWatch?.length > 0 && (
+                  <p className="tl-small tl-muted" style={{ marginBottom: 0 }}>What to verify / risks: {item.risksToWatch.join(' ')}</p>
+                )}
+              </details>
 
               <div
                 style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.6rem', paddingTop: '0.5rem', borderTop: '1px solid var(--tl-border, rgba(0,0,0,0.08))' }}

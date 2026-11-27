@@ -7,6 +7,7 @@ import PortfolioIntelligencePanel from './PortfolioIntelligencePanel'
 import PerformanceIntelligencePanel from './PerformanceIntelligencePanel'
 import AgentHeader from '../../ui/agents/AgentHeader'
 import { traderAgentStatus } from '../../ui/agents/agentExperience'
+import { buildFlagshipNarrativeSummary } from '../../ui/narrativeSummaries'
 
 function Stat({ label, value, detail }) {
   return <div className="tl-stat"><dt>{label}</dt><dd>{value}<small>{detail}</small></dd></div>
@@ -65,6 +66,11 @@ export default function StockTraderDashboard() {
             <span className="tl-tag">{data.status === 'enabled' ? 'Beta enabled' : 'Paused'}</span>
           </div>
         </div>
+        {buildFlagshipNarrativeSummary(data) && (
+          <p className="tl-lead-sentence" style={{ margin: '0.35rem 0 0.75rem' }} data-testid="flagship-narrative-summary">
+            {buildFlagshipNarrativeSummary(data)}
+          </p>
+        )}
         <dl className="tl-stats tl-stats--3 tl-stat-grid--flush" data-testid="flagship-performance">
           <Stat label="Allocated paper capital" value={money(data.capitalAllocated)} detail="Simulated" />
           <Stat label="Total P&L" value={signedMoney(data.performance?.totalPnl)} detail={data.performance ? 'From recorded fills and current marks' : 'No verified fills yet'} />
@@ -84,10 +90,10 @@ export default function StockTraderDashboard() {
               <h3>Research · {sessionDate(cycle.asOfSession, { year: true })}</h3>
               <p className="tl-small tl-muted">{cycle.model || 'Model unavailable'} · Generated {dateTime(cycle.createdAt)}</p>
               {cycle.marketSummary && <p>{cycle.marketSummary}</p>}
-              {cycle.investigation && <div className="tl-flow-card" data-testid="flagship-investigation">
-                <p><strong>AI investigation</strong>{cycle.investigation.focus ? ` · ${cycle.investigation.focus}` : ''}</p>
-                <p className="tl-small tl-muted">Read-only tools: {cycle.investigation.toolsUsed?.length ? cycle.investigation.toolsUsed.join(', ').replaceAll('_', ' ') : 'None requested'} · Tool requests: {cycle.investigation.toolCalls} · Model calls: {cycle.investigation.modelCalls} · Earlier research cycles reviewed: {cycle.investigation.priorResearchCycles}</p>
-              </div>}
+              {cycle.investigation && <details className="tl-flow-card" data-testid="flagship-investigation">
+                <summary><strong>Inspect AI investigation details</strong>{cycle.investigation.focus ? ` · ${cycle.investigation.focus}` : ''}</summary>
+                <p className="tl-small tl-muted" style={{ marginTop: '0.4rem' }}>Read-only tools: {cycle.investigation.toolsUsed?.length ? cycle.investigation.toolsUsed.join(', ').replaceAll('_', ' ') : 'None requested'} · Tool requests: {cycle.investigation.toolCalls} · Model calls: {cycle.investigation.modelCalls} · Earlier research cycles reviewed: {cycle.investigation.priorResearchCycles}</p>
+              </details>}
               <div className="tl-ai-decisions">{cycle.decisions.map(decision =>
                 <details key={decision.symbol} className="tl-flow-card">
                   <summary><strong>{decision.symbol}</strong> · <span className={decision.action === 'BUY' ? 'tl-pos' : decision.action === 'SELL' ? 'tl-neg' : 'tl-muted'}>{decision.action}</span> · Model conviction {ratioPct(decision.confidence, 0)}</summary>
@@ -103,24 +109,30 @@ export default function StockTraderDashboard() {
       <section className="tl-section" aria-label="Open paper positions">
         <div className="tl-section-head"><h2 className="tl-section-title">Holdings</h2></div>
         {!data.positions?.length ? <p data-testid="flagship-no-positions">No open paper positions.</p> :
-          <table className="tl-table" data-testid="flagship-holdings"><thead><tr><th>Symbol</th><th className="r">Shares</th><th className="r">Last close</th><th className="r">Market value</th><th className="r">P&L</th></tr></thead>
-            <tbody>{data.positions.map(p => <tr key={p.symbol}>
-              <td className="tl-sym">{p.symbol}</td><td className="r">{shares(p.quantity)}</td>
-              <td className="r">{money(p.lastPrice)}<span className="tl-sub">{sessionDate(p.asOfSession)}</span></td>
-              <td className="r">{money(p.marketValue)}</td><td className={`r ${tone(p.unrealizedPnl)}`}>{signedMoney(p.unrealizedPnl)}</td>
-            </tr>)}</tbody>
-          </table>}
+          <details className="tl-flow-card" open={data.positions.length <= 5}>
+            <summary><strong>Inspect holdings ({data.positions.length})</strong></summary>
+            <table className="tl-table" style={{ marginTop: '0.5rem' }} data-testid="flagship-holdings"><thead><tr><th>Symbol</th><th className="r">Shares</th><th className="r">Last close</th><th className="r">Market value</th><th className="r">P&L</th></tr></thead>
+              <tbody>{data.positions.map(p => <tr key={p.symbol}>
+                <td className="tl-sym">{p.symbol}</td><td className="r">{shares(p.quantity)}</td>
+                <td className="r">{money(p.lastPrice)}<span className="tl-sub">{sessionDate(p.asOfSession)}</span></td>
+                <td className="r">{money(p.marketValue)}</td><td className={`r ${tone(p.unrealizedPnl)}`}>{signedMoney(p.unrealizedPnl)}</td>
+              </tr>)}</tbody>
+            </table>
+          </details>}
       </section>
       <section className="tl-section" aria-label="Recent paper orders">
         <div className="tl-section-head"><h2 className="tl-section-title">Order history</h2></div>
         {!data.orders?.length ? <p data-testid="flagship-no-orders">No simulated orders have been recorded.</p> :
-          <table className="tl-table" data-testid="flagship-orders">
-            <thead><tr><th>Symbol</th><th>Direction</th><th>Status</th><th className="r">Shares</th><th className="r">Fill price</th></tr></thead>
-            <tbody>{data.orders.map(o => <tr key={o.id}>
-              <td className="tl-sym">{o.symbol}</td><td>{o.direction}</td><td>{o.status}</td>
-              <td className="r">{shares(o.filledQuantity ?? o.quantity)}</td><td className="r">{money(o.filledPrice)}</td>
-            </tr>)}</tbody>
-          </table>}
+          <details className="tl-flow-card">
+            <summary><strong>Inspect details · Recorded paper orders ({data.orders.length})</strong></summary>
+            <table className="tl-table" style={{ marginTop: '0.5rem' }} data-testid="flagship-orders">
+              <thead><tr><th>Symbol</th><th>Direction</th><th>Status</th><th className="r">Shares</th><th className="r">Fill price</th></tr></thead>
+              <tbody>{data.orders.map(o => <tr key={o.id}>
+                <td className="tl-sym">{o.symbol}</td><td>{o.direction}</td><td>{o.status}</td>
+                <td className="r">{shares(o.filledQuantity ?? o.quantity)}</td><td className="r">{money(o.filledPrice)}</td>
+              </tr>)}</tbody>
+            </table>
+          </details>}
       </section>
     </>}
   </main>

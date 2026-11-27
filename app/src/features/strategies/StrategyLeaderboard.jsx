@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { loadStrategyLeaderboard } from './strategiesApi'
 import { pct, signedPct, tone } from '../../ui/format'
+import { buildLeaderboardNarrativeSummary } from '../../ui/narrativeSummaries'
 
 function LeaderboardLink({ to, className, children, ...rest }) {
   const navigate = useNavigate()
@@ -81,6 +82,7 @@ export default function StrategyLeaderboard({ initialData = null, symbolContext 
 
   const board = state.board
   const currentTrackMeta = board?.tracks?.find(t => t.id === track)
+  const narrative = buildLeaderboardNarrativeSummary(board)
 
   return (
     <section
@@ -94,9 +96,15 @@ export default function StrategyLeaderboard({ initialData = null, symbolContext 
           <h2 id="cross-strategy-leaderboard-heading" className="tl-section-title" style={{ margin: 0 }}>
             Cross-strategy leaderboard
           </h2>
-          <p className="tl-small tl-muted" style={{ margin: '0.25rem 0 0' }}>
-            Side-by-side comparison of rule-based templates, Research Partner forward strategies, and the Flagship AI Trader on standardized risk-adjusted return, drawdown, and sample size.
-          </p>
+          {narrative ? (
+            <p className="tl-small" style={{ margin: '0.35rem 0 0' }} data-testid="strategies-narrative-summary">
+              {narrative}
+            </p>
+          ) : (
+            <p className="tl-small tl-muted" style={{ margin: '0.25rem 0 0' }}>
+              Side-by-side comparison of rule-based templates, Research Partner forward strategies, and the Flagship AI Trader on standardized risk-adjusted return, drawdown, and sample size.
+            </p>
+          )}
         </div>
         {board?.summary && (
           <span className="tl-tag" data-testid="leaderboard-evaluated-count">
@@ -105,7 +113,17 @@ export default function StrategyLeaderboard({ initialData = null, symbolContext 
         )}
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', margin: '0.85rem 0 0.5rem' }}>
+      {state.status === 'loading' && !board && (
+        <p className="tl-small tl-muted" style={{ marginTop: '0.5rem' }} role="status">Loading standardized strategy comparison…</p>
+      )}
+      {state.status === 'error' && (
+        <p className="tl-small tl-neg" style={{ marginTop: '0.5rem' }} role="alert">Cross-strategy leaderboard is temporarily unavailable.</p>
+      )}
+
+      <details className="tl-flow-card" style={{ marginTop: '0.75rem' }} data-testid="leaderboard-details-disclosure">
+        <summary><strong>Inspect details · Full leaderboard comparison &amp; filters</strong></summary>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', margin: '0.85rem 0 0.5rem' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }} role="group" aria-label="Evaluation horizon">
           {[
             { id: 'overview', label: 'All horizons' },
@@ -239,6 +257,7 @@ export default function StrategyLeaderboard({ initialData = null, symbolContext 
           {board.methodologyNote}
         </p>
       )}
+      </details>
     </section>
   )
 }

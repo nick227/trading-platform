@@ -12,6 +12,7 @@ import HoldingDetail from './HoldingDetail'
 import { loadHome } from './homeApi'
 import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
 import CopilotProposalsInbox from '../ai/CopilotProposalsInbox'
+import { buildPortfolioNarrativeSummary } from '../../ui/narrativeSummaries'
 
 export const fmtMoney = money
 export const fmtSignedMoney = signedMoney
@@ -44,7 +45,7 @@ function ValueHistory({ points, startingCash }) {
   )
 }
 
-function Portfolio({ valuation, history, error }) {
+function Portfolio({ valuation, history, error, narrativeSummary = null }) {
   if (error || !valuation) {
     return (
       <section className="tl-section" aria-labelledby="portfolio-title">
@@ -71,6 +72,11 @@ function Portfolio({ valuation, history, error }) {
     <section className="tl-section" aria-labelledby="portfolio-title">
       <h2 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>{v.simulated ? 'Simulated portfolio' : 'Portfolio'}</h2>
       <div className="tl-hero-value" data-testid="balance-equity">{money(v.equity)}</div>
+      {narrativeSummary && (
+        <p className="tl-lead-sentence" style={{ margin: '0.45rem 0 0.65rem' }} data-testid="portfolio-narrative-summary">
+          {narrativeSummary}
+        </p>
+      )}
       {v.fillCount > 0 && v.totalPnl !== null && (
         <div className="tl-hero-change">
           <span className={tone(v.totalPnl)} data-testid="portfolio-total-pnl">
@@ -278,6 +284,7 @@ export default function HomeDashboard() {
   const location = useLocation()
   const [state, setState] = useState({ loading: true, data: null })
   const [open, setOpen] = useState(null)
+  const [actionableProposalsCount, setActionableProposalsCount] = useState(0)
   const { stop, activate, clear } = useEmergencyStop()
   const { brokerStatus } = useAuth() ?? {}
 
@@ -301,6 +308,13 @@ export default function HomeDashboard() {
 
   const onActivate = async (reason) => { await activate(reason); await refresh() }
   const data = state.data
+  const narrativeSummary = data
+    ? buildPortfolioNarrativeSummary({
+        valuation: data.valuation,
+        bots: data.bots,
+        actionableProposalsCount
+      })
+    : null
 
   return (
     <main className="tl-page tl-workshop-home" aria-busy={state.loading}>
@@ -309,28 +323,32 @@ export default function HomeDashboard() {
         <HomeSkeleton />
       ) : (
         <>
-          <WorkshopOverview bots={data.bots} error={data.botsError} activity={data.activity} brokerStatus={brokerStatus} />
           <div className={`tl-workshop-dashboard${data.bots.length ? '' : ' tl-workshop-dashboard--empty'}`}>
-            <Portfolio valuation={data.valuation} history={data.history} error={data.valuationError} />
-            <CopilotProposalsInbox onResolved={refresh} />
+            <Portfolio
+              valuation={data.valuation}
+              history={data.history}
+              error={data.valuationError}
+              narrativeSummary={narrativeSummary}
+            />
+            <CopilotProposalsInbox onResolved={refresh} onCountChange={setActionableProposalsCount} />
             <PersonalAiTraderCard compact onUpdated={refresh} />
-            {data.bots.length > 0 && (
-              <section className="tl-section" id="activity" aria-labelledby="home-activity-title">
-                <div className="tl-section-head">
-                  <h2 className="tl-section-title" id="home-activity-title">Recent decisions & activity</h2>
-                  <Link className="tl-section-aside" to="/bots#activity">Full history →</Link>
-                </div>
-                {data.activityError ? (
-                  <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{data.activityError}</div>
-                ) : (
-                  <ActivityFeed items={data.activity} limit={3} narrative showLensControl={false} routine="summary"
-                    empty="Nothing yet — your bots’ trades and decisions appear here." />
-                )}
-              </section>
-            )}
           </div>
+          <WorkshopOverview bots={data.bots} error={data.botsError} activity={data.activity} brokerStatus={brokerStatus} />
+          {data.bots.length > 0 && (
+            <section className="tl-section" id="activity" aria-labelledby="home-activity-title">
+              <div className="tl-section-head">
+                <h2 className="tl-section-title" id="home-activity-title">Recent decisions & activity</h2>
+                <Link className="tl-section-aside" to="/bots#activity">Full history →</Link>
+              </div>
+              {data.activityError ? (
+                <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{data.activityError}</div>
+              ) : (
+                <ActivityFeed items={data.activity} limit={3} narrative showLensControl={false} routine="summary"
+                  empty="Nothing yet — your bots’ trades and decisions appear here." />
+              )}
+            </section>
+          )}
           {data.bots.length > 0 && <SafetyBar stop={stop} onActivate={onActivate} fact={concentration(data.valuation)} />}
-          {/* New accounts see their bots first; sections without content stay out of the way. */}
           {data.bots.length === 0 && !data.botsError && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
           {(data.bots.length > 0 || data.botsError) && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
           <Holdings valuation={data.valuation} bots={data.bots} open={open} setOpen={setOpen} busy={controls.busy} onToggleBot={controls.toggle} />

@@ -13,7 +13,7 @@ const STATUS_LABELS = {
   executed: 'Executed (paper fill)'
 }
 
-export default function CopilotProposalsInbox({ onResolved = null }) {
+export default function CopilotProposalsInbox({ onResolved = null, onCountChange = null }) {
   const [state, setState] = useState({ status: 'loading', actionable: [], recentResolved: [] })
   const [busyId, setBusyId] = useState(null)
   const [actionError, setActionError] = useState(null)
@@ -24,8 +24,10 @@ export default function CopilotProposalsInbox({ onResolved = null }) {
         const payload = res?.data ?? res
         if (!payload || !Array.isArray(payload.actionable)) {
           setState({ status: 'unavailable', actionable: [], recentResolved: [] })
+          onCountChange?.(0)
           return
         }
+        onCountChange?.(payload.actionable.length)
         setState({
           status: 'ready',
           actionable: payload.actionable,
@@ -34,8 +36,9 @@ export default function CopilotProposalsInbox({ onResolved = null }) {
       })
       .catch(() => {
         setState({ status: 'unavailable', actionable: [], recentResolved: [] })
+        onCountChange?.(0)
       })
-  }, [])
+  }, [onCountChange])
 
   useEffect(() => { load() }, [load])
 

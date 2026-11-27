@@ -1,16 +1,23 @@
 import { money, pct, signedMoney, signedPct, sessionDate, ratioPct, tone } from '../../ui/format'
+import { buildPerformanceIntelNarrative } from '../../ui/narrativeSummaries'
 
 export default function PerformanceIntelligencePanel({ intelligence }) {
   if (!intelligence || intelligence.status === 'not_initialized') return null
 
   const { comparison, decisionQuality, attribution, diagnostics, statisticalConfidence, window: win } = intelligence
   const awaiting = intelligence.status === 'awaiting_activity'
+  const narrative = buildPerformanceIntelNarrative(intelligence)
 
   return (
     <section className="tl-section" aria-labelledby="perf-intel-heading" data-testid="ai-performance-intelligence">
       <div className="tl-section-head">
         <div>
           <h2 id="perf-intel-heading" className="tl-section-title">AI performance intelligence &amp; attribution</h2>
+          {narrative && (
+            <p className="tl-lead-sentence" style={{ margin: '0.3rem 0 0.25rem' }} data-testid="performance-intel-narrative">
+              {narrative}
+            </p>
+          )}
           <p className="tl-section-note">
             Evaluates whether AI judgment adds measurable value beyond passive market exposure and deterministic screening, net of LLM API spend{win?.firstSession ? ` (${sessionDate(win.firstSession)} → ${sessionDate(win.latestSession, { year: true })})` : ''}.
           </p>
@@ -53,52 +60,56 @@ export default function PerformanceIntelligencePanel({ intelligence }) {
             </div>
           </dl>
 
-          <div className="tl-flow-card" style={{ marginTop: '0.75rem' }} data-testid="perf-decision-quality">
-            <p className="tl-small">
-              <strong>Hypothesis &amp; selectivity scorecard:</strong>{' '}
-              Research cycles: <strong>{decisionQuality?.completedCyclesCount ?? 0}</strong> ({decisionQuality?.qualitativeBackedCyclesCount ?? 0} with SEC/news evidence)
-              {' · '}
-              Thesis hit rate: <strong>{decisionQuality?.thesisHitRatePct != null ? pct(decisionQuality.thesisHitRatePct) : '—'}</strong>
-              {' · '}
-              Closed-trade win rate: <strong>{decisionQuality?.winRatePct != null ? pct(decisionQuality.winRatePct) : '—'}</strong>
-              {' · '}
-              Drawdowns avoided via HOLD/abstain: <strong>{decisionQuality?.selectivity?.avoidedDrawdownCount ?? 0}</strong>
-              {' · '}
-              Protective exits: <strong>{decisionQuality?.protectiveExits?.takeProfitCount ?? 0} TP / {decisionQuality?.protectiveExits?.stopLossCount ?? 0} SL</strong>
-            </p>
-          </div>
+          <details className="tl-flow-card" style={{ marginTop: '0.75rem' }}>
+            <summary><strong>Inspect details · Selectivity scorecard &amp; position attribution</strong></summary>
 
-          {(attribution?.topContributors?.length > 0 || attribution?.topDetractors?.length > 0) && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem', marginTop: '0.75rem' }} data-testid="perf-position-attribution">
-              <div className="tl-card tl-card-shell tl-card-shell--compact">
-                <h3 className="tl-small"><strong>Top contributors</strong></h3>
-                {attribution.topContributors?.length ? (
-                  <ul className="tl-backtest-notes">
-                    {attribution.topContributors.map(c => (
-                      <li key={c.symbol}>
-                        <strong>{c.symbol}</strong> ({c.sector}): <span className="tl-pos">{signedMoney(c.totalPnl)} ({signedPct(c.contributionPctPoints)})</span>
-                        {c.thesis ? ` — ${c.thesis}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p className="tl-small tl-muted">No positive contributors recorded yet.</p>}
-              </div>
-
-              <div className="tl-card tl-card-shell tl-card-shell--compact">
-                <h3 className="tl-small"><strong>Primary detractors</strong></h3>
-                {attribution.topDetractors?.length ? (
-                  <ul className="tl-backtest-notes">
-                    {attribution.topDetractors.map(d => (
-                      <li key={d.symbol}>
-                        <strong>{d.symbol}</strong> ({d.sector}): <span className="tl-neg">{signedMoney(d.totalPnl)} ({signedPct(d.contributionPctPoints)})</span>
-                        {d.thesis ? ` — ${d.thesis}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p className="tl-small tl-muted">No losing positions recorded in window.</p>}
-              </div>
+            <div style={{ marginTop: '0.6rem' }} data-testid="perf-decision-quality">
+              <p className="tl-small">
+                <strong>Hypothesis &amp; selectivity scorecard:</strong>{' '}
+                Research cycles: <strong>{decisionQuality?.completedCyclesCount ?? 0}</strong> ({decisionQuality?.qualitativeBackedCyclesCount ?? 0} with SEC/news evidence)
+                {' · '}
+                Thesis hit rate: <strong>{decisionQuality?.thesisHitRatePct != null ? pct(decisionQuality.thesisHitRatePct) : '—'}</strong>
+                {' · '}
+                Closed-trade win rate: <strong>{decisionQuality?.winRatePct != null ? pct(decisionQuality.winRatePct) : '—'}</strong>
+                {' · '}
+                Drawdowns avoided via HOLD/abstain: <strong>{decisionQuality?.selectivity?.avoidedDrawdownCount ?? 0}</strong>
+                {' · '}
+                Protective exits: <strong>{decisionQuality?.protectiveExits?.takeProfitCount ?? 0} TP / {decisionQuality?.protectiveExits?.stopLossCount ?? 0} SL</strong>
+              </p>
             </div>
-          )}
+
+            {(attribution?.topContributors?.length > 0 || attribution?.topDetractors?.length > 0) && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem', marginTop: '0.75rem' }} data-testid="perf-position-attribution">
+                <div className="tl-card tl-card-shell tl-card-shell--compact">
+                  <h3 className="tl-small"><strong>Top contributors</strong></h3>
+                  {attribution.topContributors?.length ? (
+                    <ul className="tl-backtest-notes">
+                      {attribution.topContributors.map(c => (
+                        <li key={c.symbol}>
+                          <strong>{c.symbol}</strong> ({c.sector}): <span className="tl-pos">{signedMoney(c.totalPnl)} ({signedPct(c.contributionPctPoints)})</span>
+                          {c.thesis ? ` — ${c.thesis}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="tl-small tl-muted">No positive contributors recorded yet.</p>}
+                </div>
+
+                <div className="tl-card tl-card-shell tl-card-shell--compact">
+                  <h3 className="tl-small"><strong>Primary detractors</strong></h3>
+                  {attribution.topDetractors?.length ? (
+                    <ul className="tl-backtest-notes">
+                      {attribution.topDetractors.map(d => (
+                        <li key={d.symbol}>
+                          <strong>{d.symbol}</strong> ({d.sector}): <span className="tl-neg">{signedMoney(d.totalPnl)} ({signedPct(d.contributionPctPoints)})</span>
+                          {d.thesis ? ` — ${d.thesis}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="tl-small tl-muted">No losing positions recorded in window.</p>}
+                </div>
+              </div>
+            )}
+          </details>
 
           {attribution?.recentHypotheses?.length > 0 && (
             <details className="tl-flow-card" style={{ marginTop: '0.75rem' }} data-testid="perf-hypothesis-ledger">

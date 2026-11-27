@@ -14,6 +14,7 @@ import { loadBotsPage } from './botsApi'
 import CompareBots from './compare/CompareBots'
 import { summaryLine } from '../strategies/strategiesApi'
 import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
+import { buildBotsNarrativeSummary } from '../../ui/narrativeSummaries'
 
 // Below these, results are an anecdote, not evidence.
 export const MIN_CLOSED_TRADES = 5
@@ -197,10 +198,20 @@ export default function BotsPage() {
               <div className="tl-section-head">
                 <h2 className="tl-section-title" id="my-bots-title">My bots<span className="tl-count">{d.myBots.length}</span></h2>
               </div>
+              {!d.myBotsError && hasBots && (
+                <p className="tl-lead-sentence" style={{ margin: '0.25rem 0 0.75rem' }} data-testid="bots-narrative-summary">
+                  {buildBotsNarrativeSummary(d.myBots)}
+                </p>
+              )}
               {d.myBotsError
                 ? <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.myBotsError}</div>
                 : <ul className="tl-list tl-machine-list">{d.myBots.map((b) => <BotRow key={b.id} bot={b} busy={Boolean(controls.busy[b.id])} error={controls.errors[b.id]} onToggle={controls.toggle} from="bots" />)}</ul>}
-              {!d.myBotsError && d.myBots.length > 1 && <div style={{ marginTop: 18 }}><CompareBots /></div>}
+              {!d.myBotsError && d.myBots.length > 1 && (
+                <details className="tl-flow-card" style={{ marginTop: 18 }} data-testid="bots-compare-disclosure">
+                  <summary><strong>Inspect details · Side-by-side bot comparison</strong></summary>
+                  <div style={{ marginTop: 12 }}><CompareBots /></div>
+                </details>
+              )}
             </section>
           )}
 
