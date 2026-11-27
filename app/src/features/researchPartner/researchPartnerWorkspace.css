@@ -106,3 +106,34 @@
   .rp-intent-proposal { padding: 14px; }
   .rp-intent-proposal .tl-btn { justify-self: stretch; width: 100%; }
 }
+
+/* UX-04: one active strategy subject and a stable primary action per step. */
+.rp-strategy-journey-head { display: grid; gap: 12px; }
+.rp-strategy-journey-head h2,
+.rp-strategy-journey-head p { margin: 0; }
+.rp-strategy-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px; list-style: none; padding: 0; margin: 8px 0; }
+.rp-strategy-steps li { padding: 12px; min-width: 0; border-radius: 8px;
+  border: 1px solid var(--border, #bfc4ca); font-size: .9rem; font-weight: 500; }
+.rp-strategy-steps .is-current { border-color: currentColor; font-weight: 700; }
+.rp-strategy-stage { display: grid; align-content: start; gap: 16px; }
+.rp-strategy-stage > h3,
+.rp-strategy-stage > p { margin: 0; }
+.rp-strategy-stage > .tl-btn { justify-self: start; min-width: 200px; }
+.rp-rule-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 18px; row-gap: 10px; padding: 18px; border-radius: 10px;
+  background: var(--surface-secondary, rgba(128,128,128,.07)); }
+.rp-rule-summary p { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.rp-strategy-advanced { padding: 12px 0; }
+.rp-strategy-advanced summary,
+.rp-strategy-disclosure summary { cursor: pointer; font-weight: 600; }
+.rp-strategy-disclosure { margin-top: 12px; border-top: 1px solid var(--border, #bfc4ca); padding-top: 14px; }
+.rp-strategy-stage .rp-strategy-item { display: grid; gap: 10px; }
+.rp-strategy-stage .rp-strategy-item p { margin: 0; }
+.rp-strategy-stage .rp-strategy-item > .tl-btn { justify-self: start; }
+@media(max-width:680px) {
+  .rp-rule-summary { grid-template-columns: 1fr; padding: 14px; }
+  .rp-strategy-steps li { padding: 10px 6px; text-align: center; font-size: .8rem; }
+  .rp-strategy-stage > .tl-btn, .rp-strategy-stage .rp-strategy-item > .tl-btn {
+    justify-self: stretch; width: 100%; }
+}
