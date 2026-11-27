@@ -29,7 +29,7 @@ export default function PaperStrategyStudio({ partnerId, session }) {
   const [proposal,setProposal]=useState(null)
   const [step,setStep]=useState('idea')
   const [strategies,setStrategies]=useState([])
-  const [linkResearch,setLinkResearch]=useState(false)
+  const [linkResearch,setLinkResearch]=useState(Boolean(session?.status==='completed'&&session?.report?.findings?.length))
   const [findingIndex,setFindingIndex]=useState('0')
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
@@ -174,6 +174,7 @@ export default function PaperStrategyStudio({ partnerId, session }) {
           </div>
         </details>
         {session?.status==='completed'&&session.report?.findings?.length>0&&<div className="rp-strategy-research">
+          <p className="tl-section-note">Selected research: {session.question}. The original findings and source references will be linked when you save.</p>
           <label><input type="checkbox" checked={linkResearch} onChange={e=>setLinkResearch(e.target.checked)}/>
             Link this strategy to the selected research finding</label>
           {linkResearch&&<select aria-label="Research finding" value={findingIndex} onChange={e=>setFindingIndex(e.target.value)}>
