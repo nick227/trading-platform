@@ -27,3 +27,10 @@ export const listResearchTheses = id => get(part(id) + '/theses')
 export const createResearchThesis = (id, statement) => post(part(id) + '/theses', { statement })
 export const linkThesisFinding = (id, thesisId, sessionId, findingIndex) =>
   post(part(id) + '/theses/' + encodeURIComponent(thesisId) + '/assessments', { sessionId, findingIndex })
+
+export const listResearchPaperStrategies = id => get(part(id) + '/paper-strategies')
+export const createResearchPaperStrategy = (id, definition) => post(part(id) + '/paper-strategies', { definition })
+export const createPaperStrategyFromResearch = (id, payload) => post(part(id) + '/paper-strategies/from-research', payload)
+export const previewPaperStrategyWithAI = (id, instructions) => post(part(id) + '/paper-strategies/proposals', { instructions })
+export const approveResearchPaperStrategy = (id, strategyId, expectedVersion) =>
+  post(part(id) + '/paper-strategies/' + encodeURIComponent(strategyId) + '/approve', { expectedVersion })
