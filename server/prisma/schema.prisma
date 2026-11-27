@@ -867,6 +867,7 @@ model ResearchPaperStrategy {
   partner ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   versions ResearchPaperStrategyVersion[]
   backtests ResearchPaperBacktest[]
+  paperActivation ResearchPaperActivation?
   @@index([partnerId, createdAt])
 }
 model ResearchPaperStrategyVersion {
@@ -922,4 +923,28 @@ model ResearchPaperBacktest {
   createdAt     DateTime @default(now())
   strategy      ResearchPaperStrategy @relation(fields: [strategyId], references: [id], onDelete: Restrict)
   @@index([strategyId, createdAt])
+}
+
+model ResearchPaperActivation {
+  id          String @id @default(cuid()) @db.VarChar(191)
+  strategyId  String @unique @db.VarChar(191)
+  version     Int
+  status      String @default("active") @db.VarChar(16)
+  revision    Int @default(0)
+  lastSession String? @db.VarChar(10)
+  state       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  strategy    ResearchPaperStrategy @relation(fields:[strategyId],references:[id],onDelete:Restrict)
+  cycles      ResearchPaperCycle[]
+}
+
+model ResearchPaperCycle {
+  id           String @id @default(cuid()) @db.VarChar(191)
+  activationId String @db.VarChar(191)
+  session      String @db.VarChar(10)
+  result       Json
+  createdAt    DateTime @default(now())
+  activation   ResearchPaperActivation @relation(fields:[activationId],references:[id],onDelete:Restrict)
+  @@unique([activationId,session])
 }
