@@ -766,6 +766,7 @@ model ResearchPartner {
   sessions              ResearchSession[]
   dialogues             ResearchMandateDialogue[]
   theses                ResearchThesis[]
+  paperStrategies        ResearchPaperStrategy[]
   @@index([userId, status, createdAt])
 }
 
@@ -851,4 +852,29 @@ model ResearchThesisAssessment {
   @@unique([thesisId, sessionId])
   @@index([sessionId])
   @@index([thesisId, recordedAt])
+}
+
+model ResearchPaperStrategy {
+  id             String   @id @default(cuid()) @db.VarChar(191)
+  partnerId      String   @db.VarChar(191)
+  name           String   @db.VarChar(120)
+  status         String   @default("draft") @db.VarChar(32)
+  currentVersion Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  partner ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  versions ResearchPaperStrategyVersion[]
+  @@index([partnerId, createdAt])
+}
+model ResearchPaperStrategyVersion {
+  id          String   @id @default(cuid()) @db.VarChar(191)
+  strategyId  String   @db.VarChar(191)
+  version     Int
+  definition  Json
+  provenance  Json?
+  createdAt   DateTime @default(now())
+
+  strategy ResearchPaperStrategy @relation(fields: [strategyId], references: [id], onDelete: Restrict)
+  @@unique([strategyId, version])
 }
