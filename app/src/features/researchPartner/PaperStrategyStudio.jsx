@@ -28,7 +28,6 @@ export default function PaperStrategyStudio({ partnerId, session }) {
   const [instruction,setInstruction]=useState('')
   const [proposal,setProposal]=useState(null)
   const [step,setStep]=useState('idea')
-  const [savedId,setSavedId]=useState(null)
   const [strategies,setStrategies]=useState([])
   const [linkResearch,setLinkResearch]=useState(false)
   const [findingIndex,setFindingIndex]=useState('0')
@@ -44,7 +43,7 @@ export default function PaperStrategyStudio({ partnerId, session }) {
   },[partnerId])
   const set=(field,value)=>setForm(prev=>({...prev,[field]:value}))
   const setRisk=(field,value)=>setForm(prev=>({...prev,risk:{...prev.risk,[field]:value}}))
-  const setEntry=(field,value)=>setForm(prev=>({...prev,entryRules:[{...prev.entryRules[0],[field]:value}]}))
+  const setEntry=(field,value)=>setForm(prev=>({...prev,entryRules:prev.entryRules.map((rule,i)=>i===0?{...rule,[field]:value}:rule)}))
   const useSpec=spec=>{
     setForm(spec)
     setTickerText(spec.universe.symbols.join(', '))
@@ -78,7 +77,6 @@ export default function PaperStrategyStudio({ partnerId, session }) {
         })
       }else await createResearchPaperStrategy(partnerId,definition)
       await load()
-      setSavedId((await listResearchPaperStrategies(partnerId))[0]?.id || null)
       setStep('saved')
       setNotice('Paper strategy draft saved. It cannot place orders.')
     })
@@ -92,7 +90,6 @@ export default function PaperStrategyStudio({ partnerId, session }) {
     })
   }
   const readable=summarizeStrategy(current())
-  const saved=strategies.find(item=>item.id===savedId)
   return <section className="tl-section rp-strategy-studio" aria-label="Paper strategy studio">
     <header className="rp-strategy-journey-head">
       <h2 className="tl-section-title">Create a paper strategy</h2>
@@ -152,6 +149,7 @@ export default function PaperStrategyStudio({ partnerId, session }) {
           <option value="daily">Each trading day</option><option value="weekly">Weekly</option>
         </select>
         <div className="rp-strategy-rule">
+          {form.entryRules.length>1&&<p className="tl-section-note">This editor changes the first entry condition. {form.entryRules.length-1} additional condition(s) remain in the proposal and are included when you save.</p>}
           <label htmlFor="rp-strategy-field">Entry signal</label>
           <select id="rp-strategy-field" value={form.entryRules[0].field} onChange={e=>setEntry('field',e.target.value)}>
             {FIELDS.map(([key,label])=><option key={key} value={key}>{label}</option>)}
