@@ -137,3 +137,12 @@
   .rp-strategy-stage > .tl-btn, .rp-strategy-stage .rp-strategy-item > .tl-btn {
     justify-self: stretch; width: 100%; }
 }
+
+.rp-research-to-strategy { display: grid; gap: 10px; border: 1px solid var(--border, #bfc4ca);
+  border-radius: 10px; padding: 18px; margin-top: 18px; }
+.rp-research-to-strategy h3, .rp-research-to-strategy p { margin: 0; }
+.rp-research-to-strategy .tl-btn { justify-self: start; min-width: 200px; }
+@media(max-width:680px) {
+  .rp-research-to-strategy { padding: 14px; }
+  .rp-research-to-strategy .tl-btn { justify-self: stretch; width: 100%; }
+}
