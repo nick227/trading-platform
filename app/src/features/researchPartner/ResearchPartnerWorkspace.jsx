@@ -12,6 +12,7 @@ import ResearchMonitorPanel from './ResearchMonitorPanel'
 import AgentHeader from '../../ui/agents/AgentHeader'
 import ResearchViewLinks from './ResearchViewLinks'
 import { researchAgentStatus } from '../../ui/agents/agentExperience'
+import { resolveResearchIntent } from './researchIntent'
 import './researchPartnerWorkspace.css'
 
 const message = error => error?.serverMessage || error?.message || 'Request failed'
@@ -100,6 +101,7 @@ export default function ResearchPartnerWorkspace() {
   const [name, setName] = useState('')
   const [objective, setObjective] = useState('')
   const [question, setQuestion] = useState('')
+  const [directionSeed, setDirectionSeed] = useState('')
   const [focus, setFocus] = useState('research')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -128,7 +130,7 @@ export default function ResearchPartnerWorkspace() {
       const created = await createResearchPartner({ name, objective })
       const full = await getResearchPartner(created.id)
       setPartner(full); setPartners(old => [created, ...old]); setSessions([])
-      setName(''); setObjective(''); setSelected(null); setFocus('research')
+      setName(''); setObjective(''); setSelected(null); setFocus('research'); setDirectionSeed('')
     })
   }
   const onSelect = async id => {
@@ -136,7 +138,7 @@ export default function ResearchPartnerWorkspace() {
       setPartner(await getResearchPartner(id))
       setSessions(await listResearchSessions(id))
       setSelected(null)
-      setFocus('research')
+      setFocus('research'); setDirectionSeed('')
     })
   }
   const onFeedback = async input => action(async () => {
@@ -159,12 +161,26 @@ export default function ResearchPartnerWorkspace() {
 
   const onResearch = async event => {
     event.preventDefault()
+    if (busy) return
+    const intent = resolveResearchIntent(question, Boolean(selected))
+    if (intent.type === 'empty') return
+    if (intent.type === 'mandate_proposal') {
+      // Prepare the existing governed dialogue; never approve a mandate from the composer.
+      setDirectionSeed(intent.text)
+      setQuestion('')
+      setNotice('Review the proposed direction below. Your mandate will not change without approval.')
+      return
+    }
     await action(async () => {
-      const created = await createResearchSession(partner.id, question)
+      const created = intent.type === 'follow_up'
+        ? await createFollowUpResearch(partner.id, selected.id, intent.text)
+        : await createResearchSession(partner.id, intent.text)
       setQuestion('')
       setSessions(old => [created, ...old])
       setSelected(created)
-      setNotice('Question saved. Run research explicitly when you are ready.')
+      setNotice(intent.type === 'follow_up'
+        ? 'Follow-up saved and linked to the previous investigation. Run it when ready.'
+        : 'Question saved. Run research explicitly when you are ready.')
     })
   }
   const onRun = async () => {
@@ -209,12 +225,13 @@ export default function ResearchPartnerWorkspace() {
           <span className="tl-tag">Mandate v{partner.currentMandateVersion}</span>
         </div>
         <p>{partner.mandate?.content?.objective}</p>
-        <details className="rp-direction-disclosure">
+        <details className="rp-direction-disclosure" open={directionSeed ? true : undefined} key={directionSeed || partner.id}>
           <summary>Change research direction</summary>
           <p className="tl-section-note">Research goals are hypotheses, not verified claims. Changes require approval.</p>
-          <MandateDialoguePanel key={partner.id} partner={partner}
+          <MandateDialoguePanel key={directionSeed || partner.id} partner={partner} initialMessage={directionSeed}
             onApproved={async () => {
               setPartner(await getResearchPartner(partner.id))
+              setDirectionSeed('')
               setNotice('Your approved research mandate is saved as a new version.')
             }} />
         </details>
@@ -224,12 +241,12 @@ export default function ResearchPartnerWorkspace() {
           <section className="tl-section">
             <h2 className="tl-section-title">Investigate</h2>
             <form className="rp-form" onSubmit={onResearch}>
-              <label htmlFor="rp-question">What would you like investigated?</label>
+              <label htmlFor="rp-question">Ask your Research Partner</label>
               <textarea id="rp-question" value={question} onChange={e => setQuestion(e.target.value)}
                 rows={3} maxLength={6000} required
-                placeholder="Which companies have the strongest competitive advantages?" />
+                placeholder="Ask a question, request a follow-up, or change your research direction…" />
               <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>
-                Save research question
+                Continue
               </button>
             </form>
           </section>
