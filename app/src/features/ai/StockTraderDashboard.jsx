@@ -5,6 +5,8 @@ import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } fro
 import StockDiscoveryPanel from './StockDiscoveryPanel'
 import PortfolioIntelligencePanel from './PortfolioIntelligencePanel'
 import PerformanceIntelligencePanel from './PerformanceIntelligencePanel'
+import AgentHeader from '../../ui/agents/AgentHeader'
+import { traderAgentStatus } from '../../ui/agents/agentExperience'
 
 function Stat({ label, value, detail }) {
   return <div className="tl-stat"><dt>{label}</dt><dd>{value}<small>{detail}</small></dd></div>
@@ -24,9 +26,11 @@ export default function StockTraderDashboard() {
   const data = state.data
   return <main className="tl-page tl-flow-page" data-testid="flagship-ai-dashboard">
     <section className="tl-section">
-      <div className="tl-section-head">
-        <h1 className="tl-section-title">AI Stock Trader</h1>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+      <AgentHeader title="AI Stock Trader" kind="trader"
+        status={traderAgentStatus({requestStatus:state.status,dataStatus:data?.status})}
+        description="Autonomous stock discovery, qualitative AI research and simulated portfolio management."
+        detail="Platform-owned paper trading. No customer funds are invested. Historical or simulated results do not guarantee future returns."
+        actions={<div className="tl-agent-head__actions">
           <a
             href="/opportunities"
             className="tl-link-btn"
@@ -38,10 +42,7 @@ export default function StockTraderDashboard() {
             Stock Discovery Explorer →
           </a>
           <button type="button" className="tl-link-btn" onClick={refresh} disabled={state.status === 'loading'}>Refresh</button>
-        </div>
-      </div>
-      <p className="tl-lead-sentence">Autonomous stock discovery, qualitative AI research and simulated portfolio management.</p>
-      <p className="tl-section-note">Platform-owned paper trading. No customer funds are invested. Historical or simulated results do not guarantee future returns.</p>
+        </div>}/>
     </section>
     {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
     {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
