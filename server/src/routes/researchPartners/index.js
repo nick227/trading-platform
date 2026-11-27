@@ -85,6 +85,24 @@ export default async function researchPartnerRoutes(app) {
     try { return { data: await sessions.run(owned(request), request.params.id, request.params.sessionId) } }
     catch (e) { return handle(reply, e) }
   })
+
+  app.post('/:id/sessions/:sessionId/feedback', { schema: { body: {
+    ...bodySchema, required: ['text', 'category'],
+    properties: { text: { type: 'string', minLength: 1, maxLength: 2000 },
+      category: { type: 'string', enum: ['challenge', 'clarification', 'correction', 'additional_evidence'] } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await sessions.addFeedback(owned(request), request.params.id,
+      request.params.sessionId, request.body) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/sessions/:sessionId/follow-ups', { schema: { body: {
+    ...bodySchema, required: ['question'],
+    properties: { question: { type: 'string', minLength: 1, maxLength: 6000 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await sessions.createFollowUp(owned(request), request.params.id,
+      request.params.sessionId, request.body.question) }) }
+    catch (e) { return handle(reply, e) }
+  })
   app.delete('/:id', async (request, reply) => {
     try { await repo.archive(owned(request), request.params.id); return reply.code(204).send() }
     catch (e) { return handle(reply, e) }
