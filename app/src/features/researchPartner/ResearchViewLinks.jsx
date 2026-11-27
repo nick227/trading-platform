@@ -3,6 +3,7 @@ export const RESEARCH_VIEWS = Object.freeze([
   { id: 'strategies', title: 'Strategies', description: 'Create, test, and review paper strategies' },
   { id: 'monitoring', title: 'Monitoring', description: 'Review new company evidence' },
   { id: 'theses', title: 'Hypotheses', description: 'Track conclusions over time' },
+  { id: 'activity', title: 'Activity', description: 'See recorded research and paper actions' },
   { id: 'history', title: 'History', description: 'Return to previous investigations' }
 ])
 
