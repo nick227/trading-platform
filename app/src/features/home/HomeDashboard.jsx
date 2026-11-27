@@ -12,7 +12,7 @@ import HoldingDetail from './HoldingDetail'
 import { loadHome } from './homeApi'
 import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
 import CopilotProposalsInbox from '../ai/CopilotProposalsInbox'
-import { buildPortfolioNarrativeSummary } from '../../ui/narrativeSummaries'
+import { buildPortfolioNarrativeSummary, buildSinceLastCheckedBriefing } from '../../ui/narrativeSummaries'
 
 export const fmtMoney = money
 export const fmtSignedMoney = signedMoney
@@ -45,7 +45,7 @@ function ValueHistory({ points, startingCash }) {
   )
 }
 
-function Portfolio({ valuation, history, error, narrativeSummary = null }) {
+function Portfolio({ valuation, history, error, narrativeSummary = null, sinceLastChecked = null }) {
   if (error || !valuation) {
     return (
       <section className="tl-section" aria-labelledby="portfolio-title">
@@ -73,8 +73,13 @@ function Portfolio({ valuation, history, error, narrativeSummary = null }) {
       <h2 className="tl-hero-label" id="portfolio-title" style={{ margin: 0 }}>{v.simulated ? 'Simulated portfolio' : 'Portfolio'}</h2>
       <div className="tl-hero-value" data-testid="balance-equity">{money(v.equity)}</div>
       {narrativeSummary && (
-        <p className="tl-lead-sentence" style={{ margin: '0.45rem 0 0.65rem' }} data-testid="portfolio-narrative-summary">
+        <p className="tl-lead-sentence" style={{ margin: '0.45rem 0 0.35rem' }} data-testid="portfolio-narrative-summary">
           {narrativeSummary}
+        </p>
+      )}
+      {sinceLastChecked && (
+        <p className="tl-small tl-muted" style={{ margin: '0 0 0.65rem' }} data-testid="portfolio-since-last-checked">
+          {sinceLastChecked}
         </p>
       )}
       {v.fillCount > 0 && v.totalPnl !== null && (
@@ -285,13 +290,29 @@ export default function HomeDashboard() {
   const [state, setState] = useState({ loading: true, data: null })
   const [open, setOpen] = useState(null)
   const [actionableProposalsCount, setActionableProposalsCount] = useState(0)
+  const [previousCheckIn, setPreviousCheckIn] = useState(null)
   const { stop, activate, clear } = useEmergencyStop()
-  const { brokerStatus } = useAuth() ?? {}
+  const { user, brokerStatus } = useAuth() ?? {}
 
   const refresh = useCallback(async () => {
     const data = await loadHome()
     setState({ loading: false, data })
-  }, [])
+    try {
+      const storageKey = `tl_portfolio_checkin_v1_${user?.id || user?.email || 'anon'}`
+      const rawPrev = window.localStorage?.getItem(storageKey)
+      if (rawPrev) setPreviousCheckIn(JSON.parse(rawPrev))
+      if (data?.valuation?.equity != null) {
+        window.localStorage?.setItem(
+          storageKey,
+          JSON.stringify({
+            equity: data.valuation.equity,
+            fillCount: data.valuation.fillCount ?? 0,
+            at: new Date().toISOString()
+          })
+        )
+      }
+    } catch { /* localStorage optional */ }
+  }, [user?.id, user?.email])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -315,6 +336,7 @@ export default function HomeDashboard() {
         actionableProposalsCount
       })
     : null
+  const sinceLastChecked = data ? buildSinceLastCheckedBriefing(data.valuation, previousCheckIn) : null
 
   return (
     <main className="tl-page tl-workshop-home" aria-busy={state.loading}>
@@ -329,6 +351,7 @@ export default function HomeDashboard() {
               history={data.history}
               error={data.valuationError}
               narrativeSummary={narrativeSummary}
+              sinceLastChecked={sinceLastChecked}
             />
             <CopilotProposalsInbox onResolved={refresh} onCountChange={setActionableProposalsCount} />
             <PersonalAiTraderCard compact onUpdated={refresh} />

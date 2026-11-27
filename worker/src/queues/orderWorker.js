@@ -9,6 +9,24 @@ import { BROKER_OPEN_STATUSES, PENDING_BROKER_STATUSES, REFUSED_STATUS, TERMINAL
 import { log } from '../logger.js'
 import metricsService from '../../../server/src/services/metricsService.js'
 import { calculateFillPnl } from '../../../server/src/services/botAccountingService.js'
+import { simulationConfig } from '../../../server/src/services/simulationService.js'
+
+/**
+ * AI paper executions (Personal AI Trader, Copilot proposals, Flagship AI Trader)
+ * execute strictly via SimulatedBroker (`processPendingAiExecutions`) and must
+ * NEVER be claimed or submitted to external brokerage APIs by `orderWorker`.
+ */
+export function isSimulatedOnlyAiExecution(execution) {
+  if (!execution) return false
+  const id = String(execution.id ?? '')
+  const botId = String(execution.botId ?? '')
+  return (
+    id.startsWith('exec_cprop_') ||
+    id.startsWith('exec_stock_') ||
+    botId.startsWith('bot_personal_ai_') ||
+    botId === 'bot_platform_ai_stock_trader_v1'
+  )
+}
 
 /**
  * Order lifecycle (paper broker).
@@ -85,10 +103,12 @@ export async function runOnce() {
 // ─── Claims (atomic: conditional updateMany; count 0 = another worker won) ────
 
 export async function claimNextExecution() {
-  const job = await prisma.execution.findFirst({
+  const candidates = await prisma.execution.findMany({
     where: { status: 'queued', lockedAt: null },
-    orderBy: { createdAt: 'asc' }
+    orderBy: { createdAt: 'asc' },
+    take: 50
   })
+  const job = candidates.find((row) => !isSimulatedOnlyAiExecution(row)) ?? null
   if (!job) return null
   const claimed = await prisma.execution.updateMany({
     where: { id: job.id, status: 'queued', lockedAt: null },
@@ -150,6 +170,25 @@ export async function processExecution(execution) {
   await recordExecutionAudit({ executionId: execution.id, userId: execution.userId, workerId: WORKER_ID, eventType: 'claimed', detail: `Execution claimed by ${WORKER_ID}`, metadata: { attempts: execution.attempts ?? 0 } })
 
   try {
+    // Hard safety fence: Personal AI & Copilot executions are strictly simulated; never contact live/external brokers.
+    if (isSimulatedOnlyAiExecution(execution)) {
+      await refuse(execution, 'simulated_only_ai_execution', {
+        detail: 'Personal AI and Copilot executions run strictly in simulation and never submit to external brokerages.'
+      })
+      return
+    }
+    if (!simulationConfig().enabled && execution.portfolioId && typeof prisma?.portfolio?.findUnique === 'function') {
+      const targetPortfolio = await prisma.portfolio.findUnique({
+        where: { id: execution.portfolioId }
+      }).catch(() => null)
+      if (targetPortfolio?.accountKind === 'default_simulated_paper') {
+        await refuse(execution, 'simulated_portfolio_live_broker_forbidden', {
+          detail: 'Simulated paper portfolio executions cannot be submitted to external brokerages.'
+        })
+        return
+      }
+    }
+
     // Anything that may already be at the broker is reconciled, never resubmitted blindly.
     if (execution.brokerOrderId || execution.submittedAt || execution.submitAttemptedAt) {
       await reconcileExecution(execution)

@@ -55,19 +55,25 @@ export default async function authRoutes(fastify, opts = {}) {
 
     const provisionDefaultPaper = async (dbClient, userId) => {
       if (typeof dbClient?.portfolio?.upsert !== 'function') return null
-      return dbClient.portfolio.upsert({
-        where: { defaultPaperUserId: userId },
-        update: {},
+      const portfolioId = defaultPaperPortfolioIdForUser(userId)
+      const createdPortfolio = await dbClient.portfolio.upsert({
+        where: { id: portfolioId },
+        update: { accountKind: DEFAULT_PAPER_ACCOUNT_KIND },
         create: {
-          id: defaultPaperPortfolioIdForUser(userId),
+          id: portfolioId,
           userId,
-          defaultPaperUserId: userId,
           accountKind: DEFAULT_PAPER_ACCOUNT_KIND,
           name: 'Simulated Paper Portfolio',
           cashBalance: DEFAULT_PAPER_STARTING_CASH,
           totalValue: DEFAULT_PAPER_STARTING_CASH
         }
       })
+      if (typeof dbClient?.defaultPaperPortfolio?.create === 'function') {
+        await dbClient.defaultPaperPortfolio.create({
+          data: { userId, portfolioId: createdPortfolio.id }
+        })
+      }
+      return createdPortfolio
     }
 
     const { user, portfolio } = typeof prisma.$transaction === 'function'

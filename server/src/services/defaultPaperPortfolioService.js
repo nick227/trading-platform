@@ -3,10 +3,11 @@
  *
  * Guarantees every registered user receives exactly one $10,000 simulated paper
  * portfolio without requiring external brokerage credentials, enforced at the
- * MySQL level via `Portfolio.defaultPaperUserId @unique`.
+ * MySQL level via `DefaultPaperPortfolio` (`userId` PRIMARY KEY + `portfolioId` UNIQUE).
  *
- * External Alpaca brokerage accounts and custom portfolios remain strictly
- * separated (`accountKind !== 'default_simulated_paper'`).
+ * Uses an additive 1:1 join table rather than adding a UNIQUE index onto the
+ * existing non-empty `Portfolio` table so Railway's `prisma db push --skip-generate`
+ * (without `--accept-data-loss`) deploys cleanly with zero data-loss warnings.
  */
 import prisma from '../loaders/prisma.js'
 
@@ -21,8 +22,8 @@ export function defaultPaperPortfolioIdForUser(userId) {
 }
 
 /**
- * Idempotently provisions or returns the user's unique default simulated paper portfolio.
- * Safe under concurrent calls (handles MySQL P2002 unique race by reading the winner).
+ * Provisions or returns the user's unique default simulated paper portfolio inside a DB transaction.
+ * Safe under concurrent calls (catches MySQL P2002 primary/unique key race and reads the winner).
  */
 export async function ensureDefaultPaperPortfolio(
   userId,
@@ -32,25 +33,56 @@ export async function ensureDefaultPaperPortfolio(
   if (!uid) throw new Error('userId is required to provision default paper portfolio')
   const id = defaultPaperPortfolioIdForUser(uid)
 
-  try {
-    return await prismaClient.portfolio.upsert({
-      where: { defaultPaperUserId: uid },
-      update: {},
+  const readExisting = async (db) => {
+    if (typeof db?.defaultPaperPortfolio?.findUnique === 'function') {
+      const link = await db.defaultPaperPortfolio.findUnique({
+        where: { userId: uid },
+        include: { portfolio: true }
+      })
+      if (link?.portfolio) return link.portfolio
+    }
+    return null
+  }
+
+  const existing = await readExisting(prismaClient)
+  if (existing) return existing
+
+  const createInClient = async (db) => {
+    const portfolio = await db.portfolio.upsert({
+      where: { id },
+      update: { accountKind: DEFAULT_PAPER_ACCOUNT_KIND },
       create: {
         id,
         userId: uid,
-        defaultPaperUserId: uid,
         accountKind: DEFAULT_PAPER_ACCOUNT_KIND,
         name: 'Simulated Paper Portfolio',
         cashBalance: startingCash,
         totalValue: startingCash
       }
     })
+    if (typeof db?.defaultPaperPortfolio?.create === 'function') {
+      await db.defaultPaperPortfolio.create({
+        data: {
+          userId: uid,
+          portfolioId: portfolio.id
+        }
+      })
+    }
+    return portfolio
+  }
+
+  try {
+    if (typeof prismaClient?.$transaction === 'function') {
+      return await prismaClient.$transaction(async (tx) => {
+        const current = await readExisting(tx)
+        if (current) return current
+        return createInClient(tx)
+      })
+    }
+    return await createInClient(prismaClient)
   } catch (err) {
     if (err?.code === 'P2002') {
-      const winner = await prismaClient.portfolio.findUnique({
-        where: { defaultPaperUserId: uid }
-      })
+      const winner = await readExisting(prismaClient)
       if (winner) return winner
     }
     throw err
@@ -62,11 +94,21 @@ export async function ensureDefaultPaperPortfolio(
  */
 export async function findDefaultPaperPortfolio(userId, { prismaClient = prisma } = {}) {
   const uid = String(userId ?? '').trim()
-  if (!uid || typeof prismaClient?.portfolio?.findUnique !== 'function') return null
+  if (!uid) return null
   try {
-    return await prismaClient.portfolio.findUnique({
-      where: { defaultPaperUserId: uid }
-    })
+    if (typeof prismaClient?.defaultPaperPortfolio?.findUnique === 'function') {
+      const link = await prismaClient.defaultPaperPortfolio.findUnique({
+        where: { userId: uid },
+        include: { portfolio: true }
+      })
+      if (link?.portfolio) return link.portfolio
+    }
+    if (typeof prismaClient?.portfolio?.findFirst === 'function') {
+      return await prismaClient.portfolio.findFirst({
+        where: { userId: uid, accountKind: DEFAULT_PAPER_ACCOUNT_KIND }
+      })
+    }
+    return null
   } catch {
     return null
   }

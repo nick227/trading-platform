@@ -18,6 +18,7 @@ describe('MR 3 — Exchange-Calendar Copilot Proposals & Deterministic Lifecycle
       await prisma.copilotProposal.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.execution.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.bot.deleteMany({ where: { userId: uid } }).catch(() => {})
+      await prisma.defaultPaperPortfolio.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.portfolio.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.subscription.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.user.deleteMany({ where: { id: uid } }).catch(() => {})

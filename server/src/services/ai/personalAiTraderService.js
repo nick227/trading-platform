@@ -17,6 +17,15 @@ import {
 } from './strategies/aiStockTraderStrategy.js'
 import { createPersonalAiUsageGovernor } from './aiUsageGovernor.js'
 import { STOCK_TRADER_ACTIVE_ORDER_STATUSES } from './stockTraderAccounting.js'
+import { engineClient } from '../../clients/engine.js'
+import { getExpectedCompletedExchangeSession, isExchangeTradingDay } from '../../utils/marketCalendar.js'
+import { screenAiStockUniverse } from './stockScreener.js'
+import { loadStockTraderPaperPortfolio } from './stockTraderPortfolio.js'
+import { runStockTraderResearch } from './stockTraderResearchService.js'
+import { queueStockTraderPaperOrders } from './stockTraderExecutionService.js'
+import { processPendingAiExecutions } from './aiBotService.js'
+import { calculateFifoAccounting, loadBotFills } from '../botAccountingService.js'
+import { createCopilotProposal, reconcileDueCopilotProposals } from './copilotProposalService.js'
 
 export const PERSONAL_TRADER_RISK_PROFILES = Object.freeze({
   conservative: Object.freeze({
@@ -453,4 +462,222 @@ export async function configurePersonalAiTrader(
 
 export function buildPersonalUsageGovernorForUser(userId, options = {}) {
   return createPersonalAiUsageGovernor({ userId, ...options })
+}
+
+/**
+ * Settles queued simulated paper orders for a user's Personal AI Trader strictly
+ * via `SimulatedBroker` (`processPendingAiExecutions`) and syncs CopilotProposal
+ * statuses (`executed`), never contacting any external brokerage API.
+ */
+export async function settlePersonalAiTraderPaperOrders(
+  userId,
+  {
+    currentSession = null,
+    now = () => new Date(),
+    prismaClient = prisma,
+    engine = engineClient,
+    priceResolver = null
+  } = {}
+) {
+  const uid = String(userId ?? '').trim()
+  if (!uid) throw new PersonalTraderConfigError('User authentication required')
+
+  const botId = personalAiBotIdForUser(uid)
+  const bot = await prismaClient.bot.findUnique({ where: { id: botId } })
+  if (!bot || bot.deletedAt || bot.config?.mode !== 'paper') {
+    return { ok: true, skipped: true, reason: 'personal_paper_bot_not_active', filledCount: 0 }
+  }
+
+  const effectiveNow = typeof now === 'function' ? now() : now
+  const session = currentSession || getExpectedCompletedExchangeSession(effectiveNow)
+  await reconcileDueCopilotProposals({
+    userId: uid,
+    prismaClient,
+    now: () => effectiveNow,
+    priceResolver
+  })
+
+  const fillResult = await processPendingAiExecutions(bot.id, {
+    currentSession: session,
+    prismaClient,
+    engine
+  })
+
+  // Sync any newly filled executions back onto their originating CopilotProposal rows
+  await reconcileDueCopilotProposals({
+    userId: uid,
+    prismaClient,
+    now: () => effectiveNow,
+    priceResolver
+  })
+
+  return {
+    ok: true,
+    session,
+    botId: bot.id,
+    filledCount: fillResult.filledExecutions?.length || 0,
+    filledExecutions: fillResult.filledExecutions || [],
+    failedExecutions: fillResult.failedExecutions || []
+  }
+}
+
+/**
+ * Runs one governed daily simulated cycle for a user's Personal AI Trader:
+ * - Strictly simulated (`bot.config.mode === 'paper'` & `default_simulated_paper` portfolio).
+ * - Enforces per-user monthly budget (`AI_USER_TRADER_MONTHLY_BUDGET_CENTS`) + `ENABLE_USER_AI_TRADERS=true`.
+ * - Routes actionable decisions to `CopilotProposal` (`paper_veto_1s` / `require_approval`)
+ *   or deterministic simulated paper orders (`autopilot`).
+ */
+export async function runPersonalAiTraderCycle(
+  userId,
+  {
+    env = process.env,
+    now = new Date(),
+    session = null,
+    prismaClient = prisma,
+    engine = engineClient,
+    provider = null,
+    usageGovernor = null,
+    externalEvidenceRegistry = null,
+    riskEvaluator = undefined
+  } = {}
+) {
+  const uid = String(userId ?? '').trim()
+  if (!uid) throw new PersonalTraderConfigError('User authentication required')
+
+  if (env.ENABLE_USER_AI_TRADERS !== 'true' || env.ENABLE_AI_PAID_CALLS !== 'true') {
+    return { ok: true, skipped: true, reason: 'personal_ai_spending_not_enabled' }
+  }
+
+  const paperPortfolio = await ensureDefaultPaperPortfolio(uid, { prismaClient })
+  if (paperPortfolio.accountKind !== 'default_simulated_paper') {
+    throw new Error('Personal AI Trader must bind strictly to the user default simulated paper portfolio')
+  }
+
+  const bot = await prismaClient.bot.findUnique({ where: { id: personalAiBotIdForUser(uid) } })
+  if (!bot || bot.deletedAt || !bot.enabled || bot.config?.mode !== 'paper' || bot.portfolioId !== paperPortfolio.id) {
+    return { ok: true, skipped: true, reason: 'personal_paper_bot_disabled' }
+  }
+
+  const expected = getExpectedCompletedExchangeSession(now)
+  const asOfSession = session || expected
+  if (!isExchangeTradingDay(asOfSession)) {
+    return { ok: true, skipped: true, reason: 'not_exchange_trading_day', asOfSession }
+  }
+
+  const settlement = await settlePersonalAiTraderPaperOrders(uid, {
+    currentSession: asOfSession,
+    now: () => now,
+    prismaClient,
+    engine
+  })
+
+  const existingFills = await loadBotFills(bot.id, { prismaClient })
+  const accounting = calculateFifoAccounting(existingFills)
+  const positions = accounting?.openPositions || accounting?.positions || {}
+  const heldSymbols = Object.entries(positions)
+    .filter(([, p]) => Number(p.quantity) > 0)
+    .map(([sym]) => sym)
+
+  const screening = await screenAiStockUniverse({
+    engine,
+    session: asOfSession,
+    symbols: bot.config.universe.symbols,
+    heldSymbols,
+    shortlistLimit: 12
+  })
+  if (!screening.eligibleCount && !heldSymbols.length) {
+    return { ok: true, skipped: true, reason: 'no_eligible_candidates', asOfSession, settlement }
+  }
+
+  const portfolioSnapshot = await loadStockTraderPaperPortfolio({
+    bot,
+    screening,
+    prismaClient,
+    fillLoader: async () => existingFills,
+    accountant: calculateFifoAccounting
+  })
+
+  const governor = usageGovernor || createPersonalAiUsageGovernor({
+    userId: uid,
+    prismaClient,
+    env,
+    now: () => now
+  })
+
+  const research = await runStockTraderResearch({
+    bot,
+    portfolio: paperPortfolio,
+    screening,
+    portfolioSnapshot,
+    prismaClient,
+    provider,
+    usageGovernor: governor,
+    engine,
+    externalEvidenceRegistry
+  })
+  if (!research.ok) {
+    return { ok: true, skipped: true, reason: research.reason, asOfSession, settlement }
+  }
+
+  const approvalMode = bot.config?.personalMandate?.approvalMode || 'paper_veto_1s'
+  const maxOrders = Math.min(2, Number(bot.config?.execution?.maxOrdersPerCycle) || 2)
+  const shortlistMap = new Map(screening.shortlist.map((r) => [r.symbol, r]))
+
+  if (approvalMode === 'autopilot') {
+    const orders = await queueStockTraderPaperOrders({
+      bot,
+      portfolio: paperPortfolio,
+      research,
+      screening,
+      portfolioSnapshot,
+      prismaClient,
+      ...(riskEvaluator ? { riskEvaluator } : {})
+    })
+    return {
+      ok: true,
+      asOfSession,
+      botId: bot.id,
+      approvalMode,
+      proposals: [],
+      orders,
+      settlement
+    }
+  }
+
+  const proposals = []
+  const rejectedProposals = []
+  for (const intent of research.decision.actionable.slice(0, maxOrders)) {
+    const candidate = shortlistMap.get(intent.symbol)
+    const price = Number(candidate?.indicators?.price)
+    if (!Number.isFinite(price) || price <= 0) {
+      rejectedProposals.push({ symbol: intent.symbol, reason: 'missing_market_price' })
+      continue
+    }
+    try {
+      const created = await createCopilotProposal({
+        userId: uid,
+        bot,
+        portfolio: paperPortfolio,
+        signalSession: asOfSession,
+        intent,
+        referencePrice: price,
+        approvalMode,
+        prismaClient
+      })
+      proposals.push(created)
+    } catch (err) {
+      rejectedProposals.push({ symbol: intent.symbol, reason: err.code || err.message })
+    }
+  }
+
+  return {
+    ok: true,
+    asOfSession,
+    botId: bot.id,
+    approvalMode,
+    proposals,
+    rejectedProposals,
+    settlement
+  }
 }

@@ -44,6 +44,7 @@ describe('MR 2 — Default Simulated Paper Portfolio & Personal AI Trader', () =
       await prisma.aiUsageBucket.deleteMany({ where: { id: { startsWith: `user_trader:${uid}:` } } }).catch(() => {})
       await prisma.execution.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.bot.deleteMany({ where: { userId: uid } }).catch(() => {})
+      await prisma.defaultPaperPortfolio.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.portfolio.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.brokerAccount.deleteMany({ where: { userId: uid } }).catch(() => {})
       await prisma.subscription.deleteMany({ where: { userId: uid } }).catch(() => {})
@@ -75,20 +76,26 @@ describe('MR 2 — Default Simulated Paper Portfolio & Personal AI Trader', () =
     )
     expect(new Set(concurrentResults.map((p) => p.id)).size).toBe(1)
 
-    // Database-level uniqueness must reject a second default paper portfolio for the same user
+    // Database-level uniqueness must reject a second default paper portfolio link for the same user
+    const extraPortfolio = await prisma.portfolio.create({
+      data: {
+        id: `prt_dup_${Date.now()}`,
+        userId: regBody.id,
+        accountKind: DEFAULT_PAPER_ACCOUNT_KIND,
+        name: 'Duplicate Default Paper',
+        cashBalance: 10000,
+        totalValue: 10000
+      }
+    })
     await expect(
-      prisma.portfolio.create({
+      prisma.defaultPaperPortfolio.create({
         data: {
-          id: `prt_dup_${Date.now()}`,
           userId: regBody.id,
-          defaultPaperUserId: regBody.id,
-          accountKind: DEFAULT_PAPER_ACCOUNT_KIND,
-          name: 'Duplicate Default Paper',
-          cashBalance: 10000,
-          totalValue: 10000
+          portfolioId: extraPortfolio.id
         }
       })
     ).rejects.toMatchObject({ code: 'P2002' })
+    await prisma.portfolio.delete({ where: { id: extraPortfolio.id } })
 
     // Sign in and verify functional simulated portfolio endpoints without Alpaca credentials
     const loginRes = await app.inject({

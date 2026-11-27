@@ -6,6 +6,7 @@ import {
   buildPerformanceIntelNarrative,
   buildPortfolioIntelNarrative,
   buildPortfolioNarrativeSummary,
+  buildSinceLastCheckedBriefing,
   buildStocksNarrativeSummary
 } from '../narrativeSummaries'
 
@@ -91,5 +92,12 @@ describe('deterministic narrative summaries (zero LLM calls)', () => {
         comparison: { modelCostUsd: 0.0825, aiNetReturnPct: 3.44, excessVsSpyPctPoints: 2.24, excessVsDeterministicPctPoints: 1.34 }
       })
     ).toContain('ahead of SPY buy-and-hold')
+
+    expect(
+      buildSinceLastCheckedBriefing(
+        { source: 'simulated_paper', equity: 10060, fillCount: 1 },
+        { equity: 10000, fillCount: 0 }
+      )
+    ).toBe('Portfolio value moved +$60.00 since your last visit with 1 new simulated fill recorded.')
   })
 })

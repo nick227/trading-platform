@@ -95,25 +95,34 @@ model Prediction {
 }
 
 model Portfolio {
-  id                 String      @id @db.VarChar(191)
-  userId             String      // Using STUB_USER_ID for now
-  name               String
-  accountKind        String      @default("custom") @db.VarChar(32)
-  defaultPaperUserId String?     @unique @db.VarChar(191)
-  cashBalance        Decimal     @default(0) @db.Decimal(12, 2)
-  totalValue         Decimal     @default(0) @db.Decimal(12, 2)
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  id          String      @id @db.VarChar(191)
+  userId      String      // Using STUB_USER_ID for now
+  name        String
+  accountKind String      @default("custom") @db.VarChar(32)
+  cashBalance Decimal     @default(0) @db.Decimal(12, 2)
+  totalValue  Decimal     @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
-  executions Execution[]
-  bots       Bot[]
-  equityPeak EquityPeak?
+  executions       Execution[]
+  bots             Bot[]
+  equityPeak       EquityPeak?
+  defaultPaperLink DefaultPaperPortfolio?
 
   @@index([createdAt])
   @@index([userId])
   @@index([userId, accountKind])
   @@index([updatedAt])
   @@index([totalValue])
+}
+
+model DefaultPaperPortfolio {
+  userId      String    @id @db.VarChar(191)
+  portfolioId String    @unique @db.VarChar(191)
+  createdAt   DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Restrict)
 }
 
 model BotTemplate {
@@ -319,15 +328,16 @@ model BrokerSyncCheckpoint {
 }
 
 model User {
-  id           String        @id @default(cuid()) @db.VarChar(191)
-  email        String        @unique
-  passwordHash String
-  fullName     String
-  role         String        @default("user") // user | operator | admin
-  status       String        @default("active") // active | suspended
-  riskSettings Json?         // User-specific risk limits and preferences
-  createdAt    DateTime      @default(now())
-  subscription Subscription?
+  id                    String                 @id @default(cuid()) @db.VarChar(191)
+  email                 String                 @unique
+  passwordHash          String
+  fullName              String
+  role                  String                 @default("user") // user | operator | admin
+  status                String                 @default("active") // active | suspended
+  riskSettings          Json?                  // User-specific risk limits and preferences
+  createdAt             DateTime               @default(now())
+  subscription          Subscription?
+  defaultPaperPortfolio DefaultPaperPortfolio?
 }
 
 // Immutable audit log of administrative actions and operational mutations

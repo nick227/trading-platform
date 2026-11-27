@@ -58,6 +58,34 @@ export function buildPortfolioNarrativeSummary({
 }
 
 /**
+ * Deterministic "Since you last checked" portfolio delta briefing (zero LLM calls).
+ * Returns null if there is no prior check-in or no meaningful change to report.
+ */
+export function buildSinceLastCheckedBriefing(valuation, previousCheckIn = null) {
+  if (!valuation || valuation.source === 'none' || valuation.equity == null || !previousCheckIn) {
+    return null
+  }
+  const prevEquity = Number(previousCheckIn.equity)
+  const prevFills = Number(previousCheckIn.fillCount ?? 0)
+  if (!Number.isFinite(prevEquity)) return null
+
+  const deltaEquity = Math.round((valuation.equity - prevEquity) * 100) / 100
+  const newFills = Math.max(0, (valuation.fillCount ?? 0) - prevFills)
+  if (Math.abs(deltaEquity) < 0.01 && newFills === 0) return null
+
+  const parts = []
+  if (Math.abs(deltaEquity) >= 0.01) {
+    parts.push(`Portfolio value moved ${signedMoney(deltaEquity)} since your last visit`)
+  } else {
+    parts.push('Portfolio value is unchanged since your last visit')
+  }
+  if (newFills > 0) {
+    parts.push(`with ${plural(newFills, 'new simulated fill')} recorded`)
+  }
+  return `${parts.join(' ')}.`
+}
+
+/**
  * Primary Surface 2 — Stocks (`/opportunities`)
  * Answers: "What investment opportunities are available?"
  */

@@ -7,7 +7,9 @@ import { evaluateAiPerformanceIntelligence } from '../services/ai/aiPerformanceI
 import {
   PersonalTraderConfigError,
   configurePersonalAiTrader,
-  getPersonalAiTraderState
+  getPersonalAiTraderState,
+  runPersonalAiTraderCycle,
+  settlePersonalAiTraderPaperOrders
 } from '../services/ai/personalAiTraderService.js'
 import {
   CopilotProposalError,
@@ -58,6 +60,37 @@ export default async function aiStrategyRoutes(app) {
       return reply.code(500).send({
         success: false,
         error: { code: 'PERSONAL_TRADER_SAVE_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // POST /api/ai/personal-trader/run-cycle — Governed simulated daily cycle for authenticated user
+  app.post('/personal-trader/run-cycle', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      const data = await runPersonalAiTraderCycle(request.user.id, {
+        session: request.body?.session ?? null
+      })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      const status = err instanceof PersonalTraderConfigError ? 400 : 500
+      return reply.code(status).send({
+        success: false,
+        error: { code: err.code || 'PERSONAL_TRADER_CYCLE_ERROR', message: err.message }
+      })
+    }
+  })
+
+  // POST /api/ai/personal-trader/settle-paper — Settles due simulated paper fills for authenticated user
+  app.post('/personal-trader/settle-paper', { preHandler: [authenticate] }, async (request, reply) => {
+    try {
+      const data = await settlePersonalAiTraderPaperOrders(request.user.id, {
+        currentSession: request.body?.session ?? null
+      })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      return reply.code(500).send({
+        success: false,
+        error: { code: 'PERSONAL_TRADER_SETTLE_ERROR', message: err.message }
       })
     }
   })
