@@ -10,6 +10,7 @@ import ThesisHistory from './ThesisHistory'
 import PaperStrategyStudio from './PaperStrategyStudio'
 import ResearchMonitorPanel from './ResearchMonitorPanel'
 import AgentHeader from '../../ui/agents/AgentHeader'
+import ResearchViewLinks from './ResearchViewLinks'
 import { researchAgentStatus } from '../../ui/agents/agentExperience'
 import './researchPartnerWorkspace.css'
 
@@ -99,6 +100,7 @@ export default function ResearchPartnerWorkspace() {
   const [name, setName] = useState('')
   const [objective, setObjective] = useState('')
   const [question, setQuestion] = useState('')
+  const [focus, setFocus] = useState('research')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -126,7 +128,7 @@ export default function ResearchPartnerWorkspace() {
       const created = await createResearchPartner({ name, objective })
       const full = await getResearchPartner(created.id)
       setPartner(full); setPartners(old => [created, ...old]); setSessions([])
-      setName(''); setObjective(''); setSelected(null)
+      setName(''); setObjective(''); setSelected(null); setFocus('research')
     })
   }
   const onSelect = async id => {
@@ -134,6 +136,7 @@ export default function ResearchPartnerWorkspace() {
       setPartner(await getResearchPartner(id))
       setSessions(await listResearchSessions(id))
       setSelected(null)
+      setFocus('research')
     })
   }
   const onFeedback = async input => action(async () => {
@@ -151,6 +154,7 @@ export default function ResearchPartnerWorkspace() {
   })
   const onSelectSession = async session => action(async () => {
     setSelected(await getResearchSession(partner.id, session.id))
+    setFocus('research')
   })
 
   const onResearch = async event => {
@@ -199,42 +203,61 @@ export default function ResearchPartnerWorkspace() {
       </form>
     </section>}
     {partner && <>
-      <section className="tl-section">
+      <section className="tl-section rp-context">
         <div className="tl-section-head">
           <h2 className="tl-section-title">{partner.name}</h2>
           <span className="tl-tag">Mandate v{partner.currentMandateVersion}</span>
         </div>
         <p>{partner.mandate?.content?.objective}</p>
-        <p className="tl-section-note">Your ideas are research hypotheses, not verified claims.</p>
-        <MandateDialoguePanel key={partner.id} partner={partner}
-          onApproved={async () => {
-            setPartner(await getResearchPartner(partner.id))
-            setNotice('Your approved research mandate is saved as a new version.')
-          }} />
-
+        <details className="rp-direction-disclosure">
+          <summary>Change research direction</summary>
+          <p className="tl-section-note">Research goals are hypotheses, not verified claims. Changes require approval.</p>
+          <MandateDialoguePanel key={partner.id} partner={partner}
+            onApproved={async () => {
+              setPartner(await getResearchPartner(partner.id))
+              setNotice('Your approved research mandate is saved as a new version.')
+            }} />
+        </details>
       </section>
-      <section className="tl-section">
-        <h2 className="tl-section-title">Ask a research question</h2>
-        <form className="rp-form" onSubmit={onResearch}>
-          <label htmlFor="rp-question">What would you like investigated?</label>
-          <textarea id="rp-question" value={question} onChange={e => setQuestion(e.target.value)}
-            rows={3} maxLength={6000} required placeholder="Which companies have the strongest competitive advantages?" />
-          <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>Save research question</button>
-        </form>
-      </section>
-      {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback} onFollowUp={onFollowUp} onRun={onRun} busy={busy} />}
-      <ResearchMonitorPanel key={'monitor-'+partner.id} partnerId={partner.id}
-        watchlist={partner.mandate?.content?.watchlist || []} />
-      <PaperStrategyStudio key={'studio-'+partner.id} partnerId={partner.id} session={selected} />
-      <ThesisHistory key={partner.id} partnerId={partner.id} session={selected} />
-      <section className="tl-section">
-        <h2 className="tl-section-title">Research history</h2>
-        {!sessions.length && <p className="tl-section-note">No investigations yet.</p>}
-        <div className="rp-history">{sessions.map(s => <button className="rp-history-item"
-          key={s.id} onClick={() => onSelectSession(s)} type="button">
-          <span>{s.question}</span><span className="tl-small tl-muted">{s.status} · Mandate v{s.mandateVersion}</span>
-        </button>)}</div>
-      </section>
+      <div className="rp-focused-workspace" key={partner.id}>
+        {focus === 'research' && <>
+          <section className="tl-section">
+            <h2 className="tl-section-title">Investigate</h2>
+            <form className="rp-form" onSubmit={onResearch}>
+              <label htmlFor="rp-question">What would you like investigated?</label>
+              <textarea id="rp-question" value={question} onChange={e => setQuestion(e.target.value)}
+                rows={3} maxLength={6000} required
+                placeholder="Which companies have the strongest competitive advantages?" />
+              <button className="tl-btn tl-btn--primary" type="submit" disabled={busy}>
+                Save research question
+              </button>
+            </form>
+          </section>
+          {selected && <Report key={selected.id} session={selected} onFeedback={onFeedback}
+            onFollowUp={onFollowUp} onRun={onRun} busy={busy}/>}
+          {!selected && <section className="tl-section rp-workspace-empty">
+            <h3>Current investigation</h3>
+            <p className="tl-section-note">Ask a question or open a previous investigation to review its findings.</p>
+            {!!sessions.length && <button type="button" className="tl-btn tl-btn--secondary"
+              onClick={() => setFocus('history')}>Open research history</button>}
+          </section>}
+        </>}
+        {focus === 'strategies' && <PaperStrategyStudio key={'studio-'+partner.id}
+          partnerId={partner.id} session={selected}/>}
+        {focus === 'monitoring' && <ResearchMonitorPanel key={'monitor-'+partner.id}
+          partnerId={partner.id} watchlist={partner.mandate?.content?.watchlist || []}/>}
+        {focus === 'theses' && <ThesisHistory key={partner.id} partnerId={partner.id} session={selected}/>}
+        {focus === 'history' && <section className="tl-section" aria-label="Research history">
+          <h2 className="tl-section-title">Research history</h2>
+          {!sessions.length && <p className="tl-section-note">No investigations yet.</p>}
+          <div className="rp-history">{sessions.map(s => <button className="rp-history-item"
+            key={s.id} onClick={() => onSelectSession(s)} type="button">
+            <span>{s.question}</span>
+            <span className="tl-small tl-muted">{s.status} · Mandate v{s.mandateVersion}</span>
+          </button>)}</div>
+        </section>}
+      </div>
+      <ResearchViewLinks current={focus} onSelect={setFocus}/>
     </>}
   </main>
 }
