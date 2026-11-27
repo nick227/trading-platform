@@ -1,6 +1,7 @@
 
 import { createResearchPartnerRepository } from '../../services/researchPartner/repository.js'
 import { ResearchPartnerInputError } from '../../services/researchPartner/mandate.js'
+import { proposeResearchMandate } from '../../services/researchPartner/mandateProposal.js'
 
 const repo = createResearchPartnerRepository()
 const bodySchema = { type: 'object', additionalProperties: false }
@@ -42,6 +43,20 @@ export default async function researchPartnerRoutes(app) {
     try {
       return reply.code(201).send({ data: await repo.reviseMandate(owned(request), request.params.id,
         request.body.expectedVersion, request.body.mandate) })
+    } catch (e) { return handle(reply, e) }
+  })
+
+  app.post('/:id/mandates/proposals', { schema: { body: {
+    ...bodySchema, required: ['instructions'],
+    properties: { instructions: { type: 'string', minLength: 1, maxLength: 4000 } }
+  } } }, async (request, reply) => {
+    try {
+      const partner = await repo.get(owned(request), request.params.id)
+      const proposal = await proposeResearchMandate({
+        instructions: request.body.instructions,
+        currentMandate: partner.mandate.content
+      })
+      return { data: { ...proposal, partnerId: partner.id, expectedVersion: partner.currentMandateVersion } }
     } catch (e) { return handle(reply, e) }
   })
   app.get('/:id/mandates', async (request, reply) => {
