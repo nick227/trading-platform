@@ -209,11 +209,29 @@ function simulateArm(arm, dataset) {
   const variance = returns.length > 1 ? returns.reduce((sum, r) => sum + (r - mean)**2, 0) / (returns.length - 1) : 0
   const volatility = Math.sqrt(variance) * Math.sqrt(252) * 100
   const avgExposure = curve.reduce((sum, r) => sum + r.exposurePct, 0) / curve.length
+
+  // Provider / Model Usage Cost Accounting
+  const signalCostsCents = arm.signals.reduce((sum, s) => sum + (Number(s.modelCostCents) || 0), 0)
+  const armCostCents = Number(arm.totalModelCostCents) || signalCostsCents
+  const totalModelCost = round(armCostCents / 100)
+  const netEquityAfterModelCost = round(finalEquity - totalModelCost)
+  const netReturnAfterModelCostPct = pct(netEquityAfterModelCost / initialCapital - 1)
+
+  // Reasoning & Evidence Quality Metrics (Separated from Trading Performance)
+  const aiSignals = arm.signals.filter(s => arm.type === 'ai')
+  const evidenceSupportedCount = aiSignals.filter(s => Array.isArray(s.evidence) && s.evidence.length > 0).length
+  const unsupportedCount = aiSignals.length - evidenceSupportedCount
+  const totalEvidenceItems = aiSignals.reduce((sum, s) => sum + (Array.isArray(s.evidence) ? s.evidence.length : 0), 0)
+  const explanationDepthScore = aiSignals.length > 0 ? round(totalEvidenceItems / aiSignals.length) : 0
+
   return {
     id: arm.id, type: arm.type,
     result: {
       initialCapital, finalEquity,
       totalReturnPct: pct(finalEquity / initialCapital - 1),
+      netEquityAfterModelCost,
+      netReturnAfterModelCostPct,
+      totalModelCost,
       maxDrawdownPct: round(maxDrawdownPct),
       annualizedVolatilityPct: round(volatility),
       annualizedSharpeZeroRf: returns.length >= 20 && variance > 0
@@ -227,6 +245,12 @@ function simulateArm(arm, dataset) {
       closedLots, winRatePct: closedLots > 0 ? pct(winningLots / closedLots) : null,
       pendingSignals: activePending.length
     },
+    reasoningFidelity: arm.type === 'ai' ? {
+      evidenceSupportedDecisionsCount: evidenceSupportedCount,
+      unsupportedDecisionsCount: unsupportedCount,
+      explanationDepthScore,
+      fidelityNotice: 'Better natural language explanations or higher evidence citations do not demonstrate superior investment performance. Financial returns and reasoning fidelity are measured independently.'
+    } : null,
     fills, curve
   }
 }
@@ -343,4 +367,70 @@ export function buildRecordedAiEvaluationArm({ id, botId, events, sessions }) {
     }
   }
   return { id, type: 'ai', signals }
+}
+
+/**
+ * Comprehensive 4-arm evidence-based evaluation comparing:
+ * 1. Passive Benchmark (SPY buy-and-hold)
+ * 2. Deterministic Technical Screener
+ * 3. AI Technical-Only (No qualitative news or SEC filings)
+ * 4. AI Qualitative (With qualitative news + SEC filings)
+ */
+export function runEvidenceBasedEvaluation({
+  sessions,
+  passiveArm = null,
+  deterministicArm,
+  aiTechnicalOnlyArm,
+  aiQualitativeArm,
+  initialCapital = 10000,
+  feePerOrder = 0,
+  slippageBps = 0,
+  datasetLabel = 'unverified_fixture'
+}) {
+  const passive = passiveArm || makePassiveBenchmark(sessions)
+  const arms = [passive, deterministicArm, aiTechnicalOnlyArm, aiQualitativeArm].filter(Boolean)
+  const baseEvaluation = runAiBotEvaluation({
+    sessions, arms, initialCapital, feePerOrder, slippageBps, datasetLabel
+  })
+
+  const passiveResult = baseEvaluation.evaluatedArms.find(a => a.type === 'passive') || null
+  const screenerResult = baseEvaluation.evaluatedArms.find(a => a.id === deterministicArm?.id || a.type === 'deterministic') || null
+  const technicalOnlyResult = baseEvaluation.evaluatedArms.find(a => a.id === aiTechnicalOnlyArm?.id) || null
+  const qualitativeResult = baseEvaluation.evaluatedArms.find(a => a.id === aiQualitativeArm?.id) || null
+
+  const screenerReturn = screenerResult?.result?.totalReturnPct ?? 0
+  const technicalReturn = technicalOnlyResult?.result?.totalReturnPct ?? 0
+  const qualitativeReturn = qualitativeResult?.result?.totalReturnPct ?? 0
+
+  const alphaAttribution = {
+    qualitativeVsScreenerAlphaPctPoints: qualitativeResult && screenerResult
+      ? round(qualitativeReturn - screenerReturn) : null,
+    qualitativeVsTechnicalOnlyAlphaPctPoints: qualitativeResult && technicalOnlyResult
+      ? round(qualitativeReturn - technicalReturn) : null,
+    technicalOnlyVsScreenerAlphaPctPoints: technicalOnlyResult && screenerResult
+      ? round(technicalReturn - screenerReturn) : null,
+    qualitativeCostAdjustedReturnPct: qualitativeResult?.result?.netReturnAfterModelCostPct ?? null,
+    totalModelExpenses: round((qualitativeResult?.result?.totalModelCost || 0) + (technicalOnlyResult?.result?.totalModelCost || 0))
+  }
+
+  const statisticalConfidence = {
+    sessionsCount: sessions.length,
+    meetsStatisticalThreshold: sessions.length >= 60 && (qualitativeResult?.result?.closedLots || 0) >= 10,
+    warning: sessions.length < 60 || (qualitativeResult?.result?.closedLots || 0) < 10
+      ? 'Sample size is insufficient (N < 60 completed sessions or < 10 closed lots) to establish statistical significance (p < 0.05). Findings are descriptive simulation, not predictive validation.'
+      : null
+  }
+
+  return {
+    ...baseEvaluation,
+    evaluationType: 'multi_arm_evidence_evaluation',
+    alphaAttribution,
+    statisticalConfidence,
+    armsMatrix: {
+      passive: passiveResult?.result || null,
+      deterministicScreener: screenerResult?.result || null,
+      aiTechnicalOnly: technicalOnlyResult?.result || null,
+      aiQualitative: qualitativeResult?.result || null
+    }
+  }
 }
