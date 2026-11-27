@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import PaperStrategyBacktestPanel from './PaperStrategyBacktestPanel'
-import PaperForwardPanel from './PaperForwardPanel'
+import PaperStrategyTestingJourney from './PaperStrategyTestingJourney'
 import { summarizeStrategy } from './strategyRuleSummary'
 import {
   listResearchPaperStrategies, createResearchPaperStrategy, createPaperStrategyFromResearch,
@@ -31,6 +30,7 @@ export default function PaperStrategyStudio({ partnerId, session }) {
   })
   const [proposal,setProposal]=useState(null)
   const [step,setStep]=useState('idea')
+  const [testingStrategyId,setTestingStrategyId]=useState(null)
   const [strategies,setStrategies]=useState([])
   const [linkResearch,setLinkResearch]=useState(Boolean(session?.status==='completed'&&session?.report?.findings?.length))
   const [findingIndex,setFindingIndex]=useState('0')
@@ -228,15 +228,14 @@ export default function PaperStrategyStudio({ partnerId, session }) {
           <p className="tl-small">Linked to investigation {item.versions[0].provenance.sessionId}</p>}
         {item.status==='draft'&&<button type="button" className="tl-btn tl-btn--primary"
           disabled={busy} onClick={()=>approve(item)}>Approve paper definition</button>}
-        {item.status==='approved_paper_definition'&&<p className="tl-section-note">Approved definition. Historical testing and forward paper simulation are separate, optional actions.</p>}
-        {item.status==='approved_paper_definition'&&<details className="rp-strategy-disclosure">
-          <summary>Historical tests</summary>
-          <PaperStrategyBacktestPanel partnerId={partnerId} strategy={item}/>
-        </details>}
-        {item.status==='approved_paper_definition'&&<details className="rp-strategy-disclosure">
-          <summary>Forward paper simulation</summary>
-          <PaperForwardPanel partnerId={partnerId} strategy={item}/>
-        </details>}
+        {item.status==='approved_paper_definition'&&<>
+          <p className="tl-section-note">Approved paper definition. Testing and simulation do not authorize live trading.</p>
+          {testingStrategyId===item.id
+            ? <PaperStrategyTestingJourney key={item.id+'-'+item.currentVersion}
+                partnerId={partnerId} strategy={item} onClose={()=>setTestingStrategyId(null)}/>
+            : <button type="button" className="tl-btn tl-btn--primary" disabled={busy}
+                onClick={()=>setTestingStrategyId(item.id)}>Test and simulate this strategy</button>}
+        </>}
       </article>)}
       <button type="button" className="tl-btn tl-btn--secondary" disabled={busy}
         onClick={()=>setStep('idea')}>Create another strategy</button>
