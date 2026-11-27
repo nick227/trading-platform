@@ -7,6 +7,7 @@ import { createMandateDialogueService } from '../../services/researchPartner/man
 import { createResearchThesisService } from '../../services/researchPartner/researchThesis.js'
 import { createResearchStrategyService } from '../../services/researchPartner/paperStrategyService.js'
 import { createPaperStrategyProposalRuntime } from '../../services/researchPartner/paperStrategyProposalRuntime.js'
+import { createResearchMonitorService } from '../../services/researchPartner/researchMonitor.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
@@ -14,6 +15,7 @@ const dialogues = createMandateDialogueService()
 const theses = createResearchThesisService()
 const strategies = createResearchStrategyService()
 const paperProposals = createPaperStrategyProposalRuntime()
+const monitors = createResearchMonitorService()
 const proposalRuntime = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
@@ -146,6 +148,30 @@ export default async function researchPartnerRoutes(app) {
   })
 
 
+
+  app.post('/:id/monitors', { schema: { body: {
+    ...bodySchema, required:['name','symbols'],
+    properties: { name:{type:'string',minLength:1,maxLength:120},
+      symbols:{type:'array',minItems:1,maxItems:20,items:{type:'string'}},
+      cadence:{type:'string',enum:['daily','weekly']} }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data:await monitors.create(owned(request),request.params.id,request.body) }) }
+    catch(e){return handle(reply,e)}
+  })
+  app.get('/:id/monitors', async(request,reply)=>{
+    try{return {data:await monitors.list(owned(request),request.params.id)}}
+    catch(e){return handle(reply,e)}
+  })
+  app.post('/:id/monitors/:monitorId/check', async(request,reply)=>{
+    try{return {data:await monitors.check(owned(request),request.params.id,request.params.monitorId)}}
+    catch(e){return handle(reply,e)}
+  })
+  app.post('/:id/monitors/:monitorId/status', { schema: {body:{
+    ...bodySchema, required:['status'],properties:{status:{type:'string',enum:['active','paused']}}
+  }}}, async(request,reply)=>{
+    try{return {data:await monitors.setStatus(owned(request),request.params.id,request.params.monitorId,request.body.status)}}
+    catch(e){return handle(reply,e)}
+  })
 
   app.post('/:id/paper-strategies/proposals', { schema: { body: {
     ...bodySchema, required: ['instructions'],
