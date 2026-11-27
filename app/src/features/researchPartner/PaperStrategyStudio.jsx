@@ -43,7 +43,18 @@ export default function PaperStrategyStudio({ partnerId, session }) {
   },[partnerId])
   const set=(field,value)=>setForm(prev=>({...prev,[field]:value}))
   const setRisk=(field,value)=>setForm(prev=>({...prev,risk:{...prev.risk,[field]:value}}))
-  const setEntry=(field,value)=>setForm(prev=>({...prev,entryRules:prev.entryRules.map((rule,i)=>i===0?{...rule,[field]:value}:rule)}))
+  const setRule=(group,index,field,value)=>setForm(prev=>({
+    ...prev,[group]:prev[group].map((rule,i)=>i===index?{...rule,[field]:value}:rule)
+  }))
+  const addRule=group=>setForm(prev=>({
+    ...prev,[group]:prev[group].length>=8?prev[group]:[
+      ...prev[group],{field:'return20dPct',operator:'gte',value:5}
+    ]
+  }))
+  const removeRule=(group,index)=>setForm(prev=>({
+    ...prev,[group]:prev[group].length===(group==='entryRules'?1:0)
+      ?prev[group]:prev[group].filter((_,i)=>i!==index)
+  }))
   const useSpec=spec=>{
     setForm(spec)
     setTickerText(spec.universe.symbols.join(', '))
@@ -148,20 +159,35 @@ export default function PaperStrategyStudio({ partnerId, session }) {
         <select id="rp-strategy-cadence" value={form.cadence} onChange={e=>set('cadence',e.target.value)}>
           <option value="daily">Each trading day</option><option value="weekly">Weekly</option>
         </select>
-        <div className="rp-strategy-rule">
-          {form.entryRules.length>1&&<p className="tl-section-note">This editor changes the first entry condition. {form.entryRules.length-1} additional condition(s) remain in the proposal and are included when you save.</p>}
-          <label htmlFor="rp-strategy-field">Entry signal</label>
-          <select id="rp-strategy-field" value={form.entryRules[0].field} onChange={e=>setEntry('field',e.target.value)}>
-            {FIELDS.map(([key,label])=><option key={key} value={key}>{label}</option>)}
-          </select>
-          <label htmlFor="rp-strategy-operator">Entry condition</label>
-          <select id="rp-strategy-operator" value={form.entryRules[0].operator} onChange={e=>setEntry('operator',e.target.value)}>
-            <option value="gte">At least</option><option value="lte">At most</option>
-          </select>
-          <label htmlFor="rp-strategy-threshold">Threshold</label>
-          <input id="rp-strategy-threshold" type="number" step="any" required
-            value={form.entryRules[0].value} onChange={e=>setEntry('value',Number(e.target.value))}/>
-        </div>
+        {[
+          ['entryRules','When to consider entering'],
+          ['exitRules','When to consider exiting']
+        ].map(([group,label])=><fieldset className="rp-strategy-rule-group" key={group}>
+          <legend>{label}</legend>
+          <p className="tl-small tl-muted">{group==='entryRules'
+            ? 'All entry conditions must match for a simulated purchase.'
+            : 'Optional exit conditions. All specified conditions must match.'}</p>
+          {form[group].map((rule,index)=><div className="rp-strategy-rule" key={index}>
+            <label htmlFor={`rp-${group}-field-${index}`}>Signal {index+1}</label>
+            <select id={`rp-${group}-field-${index}`} value={rule.field}
+              onChange={e=>setRule(group,index,'field',e.target.value)}>
+              {FIELDS.map(([key,title])=><option value={key} key={key}>{title}</option>)}
+            </select>
+            <label htmlFor={`rp-${group}-operator-${index}`}>Condition</label>
+            <select id={`rp-${group}-operator-${index}`} value={rule.operator}
+              onChange={e=>setRule(group,index,'operator',e.target.value)}>
+              <option value="gte">At least</option><option value="lte">At most</option>
+            </select>
+            <label htmlFor={`rp-${group}-threshold-${index}`}>Threshold</label>
+            <input id={`rp-${group}-threshold-${index}`} type="number" step="any" required
+              value={rule.value} onChange={e=>setRule(group,index,'value',Number(e.target.value))}/>
+            {(group==='exitRules'||form.entryRules.length>1)&&
+              <button type="button" className="tl-btn tl-btn--secondary" disabled={busy}
+                onClick={()=>removeRule(group,index)}>Remove condition {index+1}</button>}
+          </div>)}
+          {form[group].length<8&&<button type="button" className="tl-btn tl-btn--secondary"
+            disabled={busy} onClick={()=>addRule(group)}>Add {group==='entryRules'?'entry':'exit'} condition</button>}
+        </fieldset>)}
         <details className="rp-strategy-advanced">
           <summary>Risk limits and additional settings</summary>
           <div className="rp-form">
