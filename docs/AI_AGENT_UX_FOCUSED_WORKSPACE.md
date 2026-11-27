@@ -1,0 +1,3 @@
+# UX MR 2 — Focused Research Partner workspace
+
+Research, monitoring, strategy building, hypotheses and history now occupy one focused area at a time rather than stacking as competing forms. A contextual Continue with collection links to other subjects, with no persistent tabs. The original research, monitoring, thesis and strategy components retain their independent service contracts. A research-direction editor remains available as an optional disclosure. User state persists when changing focus; selecting a historical investigation returns to research. Conversation intent dispatch is reserved for MR 3.
