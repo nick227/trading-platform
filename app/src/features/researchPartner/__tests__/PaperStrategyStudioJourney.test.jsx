@@ -53,6 +53,35 @@ describe('guided paper strategy creation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve paper definition' }))
     await waitFor(() => expect(approveResearchPaperStrategy).toHaveBeenCalledWith('p1', 'strategy1', 1))
   })
+  it('retains and allows refinement of every AI-proposed condition', async () => {
+    previewPaperStrategyWithAI.mockResolvedValue({ definition: {
+      ...validSpec,
+      entryRules: [
+        { field: 'return20dPct', operator: 'gte', value: 5 },
+        { field: 'volumeRatio', operator: 'gte', value: 1.5 }
+      ],
+      exitRules: [{ field: 'return5dPct', operator: 'lte', value: -3 }]
+    } })
+    render(<PaperStrategyStudio partnerId="p1" session={null} />)
+    fireEvent.change(screen.getByLabelText('Describe the idea and the stocks to evaluate'), {
+      target: { value: 'AAPL multi-indicator momentum' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest paper rules with AI' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Review these rules' }))
+    expect(screen.getByText(/Trading volume compared with normal at least 1.5/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Threshold', { selector: '#rp-entryRules-threshold-1' }), {
+      target: { value: '2' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save paper strategy draft' }))
+    await waitFor(() => expect(createResearchPaperStrategy).toHaveBeenCalledWith('p1',
+      expect.objectContaining({
+        entryRules: [
+          { field: 'return20dPct', operator: 'gte', value: 5 },
+          { field: 'volumeRatio', operator: 'gte', value: 2 }
+        ],
+        exitRules: [{ field: 'return5dPct', operator: 'lte', value: -3 }]
+      })))
+  })
   it('requires users to accept and edit a model-generated preview', async () => {
     previewPaperStrategyWithAI.mockResolvedValue({ definition: validSpec })
     render(<PaperStrategyStudio partnerId="p1" session={null} />)
