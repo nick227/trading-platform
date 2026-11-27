@@ -10,6 +10,11 @@ export const proposeMandate = (id, instructions, useAI = false) => post(part(id)
 export const approveMandate = (id, proposal) => post(part(id) + '/mandates', {
   expectedVersion: proposal.expectedVersion, mandate: proposal.mandate
 })
+export const listConversationDrafts = id => get(part(id) + '/conversation')
+export const answerResearchClarification = (id, draftId, text, expectedRevision) =>
+  post(part(id) + '/conversation/' + encodeURIComponent(draftId) + '/answer', { text, expectedRevision })
+export const closeConversationDraft = (id, draftId, expectedRevision, status) =>
+  post(part(id) + '/conversation/' + encodeURIComponent(draftId) + '/close', { expectedRevision, status })
 export const interpretResearchMessage = (id, text, sessionId) => post(part(id) + '/conversation/interpret', { text, ...(sessionId ? { sessionId } : {}) })
 export const listResearchSessions = id => get(part(id) + '/sessions')
 export const createResearchSession = (id, question) => post(part(id) + '/sessions', { question })
