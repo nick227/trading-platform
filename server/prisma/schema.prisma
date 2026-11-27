@@ -866,6 +866,7 @@ model ResearchPaperStrategy {
 
   partner ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   versions ResearchPaperStrategyVersion[]
+  backtests ResearchPaperBacktest[]
   @@index([partnerId, createdAt])
 }
 model ResearchPaperStrategyVersion {
@@ -909,4 +910,16 @@ model ResearchMonitorEvent {
 
   monitor ResearchMonitor @relation(fields:[monitorId], references:[id], onDelete:Restrict)
   @@index([monitorId, createdAt])
+}
+
+model ResearchPaperBacktest {
+  id            String @id @default(cuid()) @db.VarChar(191)
+  strategyId    String @db.VarChar(191)
+  version       Int
+  startSession  String @db.VarChar(10)
+  endSession    String @db.VarChar(10)
+  result        Json
+  createdAt     DateTime @default(now())
+  strategy      ResearchPaperStrategy @relation(fields: [strategyId], references: [id], onDelete: Restrict)
+  @@index([strategyId, createdAt])
 }

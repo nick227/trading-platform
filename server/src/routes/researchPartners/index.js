@@ -8,6 +8,7 @@ import { createResearchThesisService } from '../../services/researchPartner/rese
 import { createResearchStrategyService } from '../../services/researchPartner/paperStrategyService.js'
 import { createPaperStrategyProposalRuntime } from '../../services/researchPartner/paperStrategyProposalRuntime.js'
 import { createResearchMonitorService } from '../../services/researchPartner/researchMonitor.js'
+import { createResearchBacktestService } from '../../services/researchPartner/paperStrategyBacktestService.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
@@ -16,6 +17,7 @@ const theses = createResearchThesisService()
 const strategies = createResearchStrategyService()
 const paperProposals = createPaperStrategyProposalRuntime()
 const monitors = createResearchMonitorService()
+const backtests = createResearchBacktestService()
 const proposalRuntime = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
@@ -225,6 +227,70 @@ export default async function researchPartnerRoutes(app) {
     try { return { data: await strategies.approve(owned(request), request.params.id,
       request.params.strategyId, request.body.expectedVersion) } }
     catch (e) { return handle(reply, e) }
+  })
+
+
+  app.post('/:id/paper-strategies/:strategyId/backtests', { schema: { body: {
+    ...bodySchema, required:['expectedVersion','startSession','endSession'],
+    properties:{expectedVersion:{type:'integer',minimum:1},
+      startSession:{type:'string',pattern:'^\\d{4}-\\d{2}-\\d{2} { schema: { body: { ...bodySchema, required: ['statement'],
+    properties: { statement: { type: 'string', minLength: 1, maxLength: 600 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await theses.create(owned(request), request.params.id, request.body.statement) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/theses', async (request, reply) => {
+    try { return { data: await theses.list(owned(request), request.params.id) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/theses/:thesisId/assessments', { schema: { body: {
+    ...bodySchema, required: ['sessionId', 'findingIndex'],
+    properties: { sessionId: { type: 'string', minLength: 1, maxLength: 191 },
+      findingIndex: { type: 'integer', minimum: 0, maximum: 11 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await theses.record(owned(request), request.params.id,
+      request.params.thesisId, request.body.sessionId, request.body.findingIndex) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.delete('/:id', async (request, reply) => {
+    try { await repo.archive(owned(request), request.params.id); return reply.code(204).send() }
+    catch (e) { return handle(reply, e) }
+  })
+}
+},
+      endSession:{type:'string',pattern:'^\\d{4}-\\d{2}-\\d{2} { schema: { body: { ...bodySchema, required: ['statement'],
+    properties: { statement: { type: 'string', minLength: 1, maxLength: 600 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await theses.create(owned(request), request.params.id, request.body.statement) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/theses', async (request, reply) => {
+    try { return { data: await theses.list(owned(request), request.params.id) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/theses/:thesisId/assessments', { schema: { body: {
+    ...bodySchema, required: ['sessionId', 'findingIndex'],
+    properties: { sessionId: { type: 'string', minLength: 1, maxLength: 191 },
+      findingIndex: { type: 'integer', minimum: 0, maximum: 11 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await theses.record(owned(request), request.params.id,
+      request.params.thesisId, request.body.sessionId, request.body.findingIndex) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.delete('/:id', async (request, reply) => {
+    try { await repo.archive(owned(request), request.params.id); return reply.code(204).send() }
+    catch (e) { return handle(reply, e) }
+  })
+}
+}}
+  } } },async(request,reply)=>{
+    try{return reply.code(201).send({data:await backtests.run(owned(request),request.params.id,
+      request.params.strategyId,request.body)})}
+    catch(e){return handle(reply,e)}
+  })
+  app.get('/:id/paper-strategies/:strategyId/backtests',async(request,reply)=>{
+    try{return {data:await backtests.list(owned(request),request.params.id,request.params.strategyId)}}
+    catch(e){return handle(reply,e)}
   })
 
   app.post('/:id/theses', { schema: { body: { ...bodySchema, required: ['statement'],
