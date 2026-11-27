@@ -6,12 +6,14 @@ import { createResearchSessionService } from '../../services/researchPartner/res
 import { createMandateDialogueService } from '../../services/researchPartner/mandateDialogue.js'
 import { createResearchThesisService } from '../../services/researchPartner/researchThesis.js'
 import { createResearchStrategyService } from '../../services/researchPartner/paperStrategyService.js'
+import { createPaperStrategyProposalRuntime } from '../../services/researchPartner/paperStrategyProposalRuntime.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
 const dialogues = createMandateDialogueService()
 const theses = createResearchThesisService()
 const strategies = createResearchStrategyService()
+const paperProposals = createPaperStrategyProposalRuntime()
 const proposalRuntime = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
@@ -143,6 +145,19 @@ export default async function researchPartnerRoutes(app) {
     catch (e) { return handle(reply, e) }
   })
 
+
+
+  app.post('/:id/paper-strategies/proposals', { schema: { body: {
+    ...bodySchema, required: ['instructions'],
+    properties: { instructions: { type: 'string', minLength: 1, maxLength: 3000 } }
+  } } }, async (request, reply) => {
+    try {
+      const partner = await repo.get(owned(request), request.params.id)
+      return { data: await paperProposals.propose({
+        userId: owned(request), partner, instructions: request.body.instructions
+      }) }
+    } catch (e) { return handle(reply, e) }
+  })
 
   app.post('/:id/paper-strategies/from-research', { schema: { body: {
     ...bodySchema, required: ['sessionId','findingIndex','definition'],
