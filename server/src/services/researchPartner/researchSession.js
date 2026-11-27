@@ -3,6 +3,7 @@ import prisma from '../../loaders/prisma.js'
 import { getProvider } from '../ai/providers/providerRegistry.js'
 import { createResearchUsageGovernor } from './usageGovernor.js'
 import { createResearchPartnerEvidenceCollector } from './evidenceBridge.js'
+import { planResearchInvestigation } from './researchPlanner.js'
 import { validateResearchQuestion } from './mandate.js'
 import { ResearchPartnerNotFoundError, ResearchPartnerConflictError } from './repository.js'
 
@@ -141,7 +142,16 @@ export function createResearchSessionService({
         if (!mandate) throw new Error('Pinned research mandate is missing')
         // Only the code-owned evidence collector can provide source material.
         // Registry validates provenance and point-in-time availability.
-        const evidenceSnapshot = await evidenceCollector({ mandate: mandate.content, question: session.question })
+        const model = env.RESEARCH_PARTNER_MODEL || 'gpt-4o-mini'
+        const plan = env.ENABLE_RESEARCH_PARTNER_PLANNING === 'true'
+          ? await planResearchInvestigation({
+              userId, partnerId, sessionId: session.id, question: session.question,
+              mandate: mandate.content, governor, provider, model
+            })
+          : null
+        const evidenceSnapshot = await evidenceCollector({
+          mandate: mandate.content, question: session.question, plan
+        })
         const sources = evidenceSnapshot.records
         const previous = session.parentSessionId
           ? await db.researchSession.findFirst({
@@ -153,7 +163,6 @@ export function createResearchSessionService({
           where: { sessionId: previous.id, role: 'user' },
           orderBy: { createdAt: 'asc' }, take: 20
         }) : []
-        const model = env.RESEARCH_PARTNER_MODEL || 'gpt-4o-mini'
         const reservation = await governor.reserve({
           userId, partnerId, jobKey: 'rp_session:' + session.id, model
         })
@@ -175,6 +184,7 @@ export function createResearchSessionService({
               mandate: mandate.content,
               researchQuestion: session.question,
               evidence: sources,
+              investigationPlan: plan,
               priorResearch: previous ? {
                 question: previous.question, summary: previous.report?.summary,
                 findings: previous.report?.findings, mandateVersion: previous.mandateVersion
@@ -194,7 +204,8 @@ export function createResearchSessionService({
           priorResearchIsUnverified: Boolean(previous),
           evidenceAsOfSession: evidenceSnapshot.asOfSession,
           evidenceFingerprint: evidenceSnapshot.fingerprint,
-          unavailableSources: evidenceSnapshot.unavailable }
+          unavailableSources: evidenceSnapshot.unavailable,
+          investigationPlan: plan }
         await db.$transaction(async tx => {
           await tx.researchSession.update({
             where: { id: session.id },

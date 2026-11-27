@@ -3,9 +3,13 @@ import { createResearchPartnerRepository } from '../../services/researchPartner/
 import { ResearchPartnerInputError } from '../../services/researchPartner/mandate.js'
 import { createMandateProposalRuntime } from '../../services/researchPartner/mandateProposalRuntime.js'
 import { createResearchSessionService } from '../../services/researchPartner/researchSession.js'
+import { createMandateDialogueService } from '../../services/researchPartner/mandateDialogue.js'
+import { createResearchThesisService } from '../../services/researchPartner/researchThesis.js'
 
 const repo = createResearchPartnerRepository()
 const sessions = createResearchSessionService()
+const dialogues = createMandateDialogueService()
+const theses = createResearchThesisService()
 const proposalRuntime = createMandateProposalRuntime()
 const bodySchema = { type: 'object', additionalProperties: false }
 function handle(reply, error) {
@@ -62,6 +66,38 @@ export default async function researchPartnerRoutes(app) {
       return { data: { ...proposal, partnerId: partner.id, expectedVersion: partner.currentMandateVersion } }
     } catch (e) { return handle(reply, e) }
   })
+
+  app.post('/:id/mandates/dialogues', { schema: { body: { ...bodySchema,
+    required: ['message'], properties: {
+      message: { type: 'string', minLength: 1, maxLength: 700 },
+      useAI: { type: 'boolean' }
+    }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await dialogues.start(owned(request), request.params.id,
+      request.body.message, request.body.useAI === true) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/mandates/dialogues/:dialogueId', async (request, reply) => {
+    try { return { data: await dialogues.get(owned(request), request.params.id, request.params.dialogueId) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/mandates/dialogues/:dialogueId/turns', { schema: { body: { ...bodySchema,
+    required: ['text', 'expectedRevision'], properties: {
+      text: { type: 'string', minLength: 1, maxLength: 700 },
+      expectedRevision: { type: 'integer', minimum: 1 }, useAI: { type: 'boolean' }
+    }
+  } } }, async (request, reply) => {
+    try { return { data: await dialogues.addTurn(owned(request), request.params.id,
+      request.params.dialogueId, request.body) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/mandates/dialogues/:dialogueId/approve', { schema: { body: { ...bodySchema,
+    required: ['expectedRevision'], properties: { expectedRevision: { type: 'integer', minimum: 1 } }
+  } } }, async (request, reply) => {
+    try { return { data: await dialogues.approve(owned(request), request.params.id,
+      request.params.dialogueId, request.body.expectedRevision) } }
+    catch (e) { return handle(reply, e) }
+  })
   app.get('/:id/mandates', async (request, reply) => {
     try { return { data: await repo.listMandates(owned(request), request.params.id) } }
     catch (e) { return handle(reply, e) }
@@ -102,6 +138,26 @@ export default async function researchPartnerRoutes(app) {
   } } }, async (request, reply) => {
     try { return reply.code(201).send({ data: await sessions.createFollowUp(owned(request), request.params.id,
       request.params.sessionId, request.body.question) }) }
+    catch (e) { return handle(reply, e) }
+  })
+
+  app.post('/:id/theses', { schema: { body: { ...bodySchema, required: ['statement'],
+    properties: { statement: { type: 'string', minLength: 1, maxLength: 600 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await theses.create(owned(request), request.params.id, request.body.statement) }) }
+    catch (e) { return handle(reply, e) }
+  })
+  app.get('/:id/theses', async (request, reply) => {
+    try { return { data: await theses.list(owned(request), request.params.id) } }
+    catch (e) { return handle(reply, e) }
+  })
+  app.post('/:id/theses/:thesisId/assessments', { schema: { body: {
+    ...bodySchema, required: ['sessionId', 'findingIndex'],
+    properties: { sessionId: { type: 'string', minLength: 1, maxLength: 191 },
+      findingIndex: { type: 'integer', minimum: 0, maximum: 11 } }
+  } } }, async (request, reply) => {
+    try { return reply.code(201).send({ data: await theses.record(owned(request), request.params.id,
+      request.params.thesisId, request.body.sessionId, request.body.findingIndex) }) }
     catch (e) { return handle(reply, e) }
   })
   app.delete('/:id', async (request, reply) => {

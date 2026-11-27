@@ -764,6 +764,8 @@ model ResearchPartner {
   archivedAt            DateTime?
   mandates              ResearchMandateVersion[]
   sessions              ResearchSession[]
+  dialogues             ResearchMandateDialogue[]
+  theses                ResearchThesis[]
   @@index([userId, status, createdAt])
 }
 
@@ -792,6 +794,7 @@ model ResearchSession {
   completedAt    DateTime?
   partner        ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   messages       ResearchMessage[]
+  thesisAssessments ResearchThesisAssessment[]
   @@index([partnerId, createdAt])
   @@index([parentSessionId])
   @@index([status, createdAt])
@@ -806,4 +809,46 @@ model ResearchMessage {
   createdAt DateTime @default(now())
   session   ResearchSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   @@index([sessionId, createdAt])
+}
+
+model ResearchMandateDialogue {
+  id          String   @id @default(cuid()) @db.VarChar(191)
+  partnerId   String   @db.VarChar(191)
+  baseVersion Int
+  revision    Int      @default(0)
+  status      String   @default("draft") @db.VarChar(24)
+  transcript  Json
+  proposal    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  partner ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  @@index([partnerId, updatedAt])
+}
+
+model ResearchThesis {
+  id        String   @id @default(cuid()) @db.VarChar(191)
+  partnerId String   @db.VarChar(191)
+  statement String  @db.VarChar(600)
+  createdAt DateTime @default(now())
+
+  partner ResearchPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  assessments ResearchThesisAssessment[]
+  @@index([partnerId, createdAt])
+}
+
+model ResearchThesisAssessment {
+  id         String   @id @default(cuid()) @db.VarChar(191)
+  thesisId   String   @db.VarChar(191)
+  sessionId  String   @db.VarChar(191)
+  claim      String   @db.VarChar(500)
+  assessment String   @db.VarChar(24)
+  evidenceIds Json
+  recordedAt DateTime @default(now())
+
+  thesis ResearchThesis @relation(fields: [thesisId], references: [id], onDelete: Restrict)
+  session ResearchSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  @@unique([thesisId, sessionId])
+  @@index([sessionId])
+  @@index([thesisId, recordedAt])
 }
