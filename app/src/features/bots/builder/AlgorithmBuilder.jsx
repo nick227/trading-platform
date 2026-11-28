@@ -11,6 +11,7 @@ import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { money, sessionDate } from '../../../ui/format'
 import AlgorithmStep from './AlgorithmStep'
 import SymbolContext from './SymbolContext'
+import StockSelector from './StockSelector'
 import BacktestPanel from './BacktestPanel'
 import TemplateBaseline, { behaviourKey } from './TemplateBaseline'
 import AlgorithmIdentity, { algorithmIdentity } from '../../../ui/AlgorithmIdentity'
@@ -436,6 +437,18 @@ export default function AlgorithmBuilder() {
                   />
                 )}
               </Field>
+              <StockSelector
+                selected={parseSymbols(draft.symbolsText)}
+                supported={tradableSymbols}
+                onSelect={symbol => {
+                  setServerFieldErrors(errors => ({ ...errors, symbols: null }))
+                  setDraft(current => {
+                    const symbols = parseSymbols(current.symbolsText)
+                    return symbols.includes(symbol) ? current
+                      : { ...current, symbolsText: [...symbols, symbol].join(', ') }
+                  })
+                }}
+              />
               <SymbolContext
                 selected={parseSymbols(draft.symbolsText)}
                 supported={tradableSymbols}
