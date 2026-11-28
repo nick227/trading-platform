@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get } from '../../api/client'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import PersonalAiTraderCard from './PersonalAiTraderCard'
 import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } from '../../ui/format'
@@ -48,7 +47,7 @@ export default function StockTraderDashboard() {
         : user ? <PersonalAiTraderCard />
         : <div className="tl-flow-card">
           <p>Sign in to configure your personal AI Trader. The public performance record on this page is not your account history.</p>
-          <Link className="tl-btn tl-btn--primary" to="/auth">Sign in to get started</Link>
+          <a className="tl-btn tl-btn--primary" href="/auth">Sign in to get started</a>
         </div>}
     </section>
     {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
