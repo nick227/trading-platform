@@ -185,9 +185,10 @@ export async function generateStrategyEvidence({ prismaClient = prisma, engine =
     }
     if (!version.backtestable) {
       if (template.id === 'tmpl_ai_catalyst_momentum' || template.botType === 'strategy_based') {
+        // Platform results come only from the platform-owned bot, never a customer's.
         const bot = await prismaClient.bot.findFirst({
           where: { templateId: template.id, userId: 'usr_platform_canonical', deletedAt: null }
-        }) || await prismaClient.bot.findFirst({ where: { templateId: template.id, deletedAt: null } })
+        })
         let forwardStats = null
         if (bot) {
           try {

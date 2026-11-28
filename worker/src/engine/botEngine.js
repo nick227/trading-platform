@@ -214,8 +214,10 @@ export function stopBotEngine() {
 
 export async function reloadBots() {
   try {
+    // Only rule-based bots run on price ticks; strategy-based (AI) bots run on their own
+    // post-close schedulers, and logging a skip for them on every tick flooded BotEvent.
     const bots = await prisma.bot.findMany({
-      where: { enabled: true, deletedAt: null },
+      where: { enabled: true, deletedAt: null, botType: 'rule_based' },
       include: { rules: { where: { enabled: true } } }
     })
 

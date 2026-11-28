@@ -15,7 +15,7 @@ import { LiveExecutionDisabledError } from '../../../server/src/execution/provid
 import { finalizeReservationForExecution } from '../../../server/src/policy/centralPolicyEngine.js'
 
 /**
- * AI paper executions (Personal AI Trader, Copilot proposals, Flagship AI Trader)
+ * AI paper executions (Personal AI Trader, Copilot proposals, Flagship AI Trader, AI Momentum)
  * execute strictly via SimulatedBroker (`processPendingAiExecutions`) and must
  * NEVER be claimed or submitted to external brokerage APIs by `orderWorker`.
  */
@@ -26,6 +26,9 @@ export function isSimulatedOnlyAiExecution(execution) {
   return (
     id.startsWith('exec_cprop_') ||
     id.startsWith('exec_stock_') ||
+    // AI Momentum platform bot: next-session orders settled by the AI daily job, never at queue time.
+    id.startsWith('exec_ai_') ||
+    botId === 'bot_canonical_ai_catalyst_momentum' ||
     botId.startsWith('bot_personal_ai_') ||
     botId === 'bot_platform_ai_stock_trader_v1'
   )

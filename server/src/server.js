@@ -4,12 +4,20 @@ import registerRoutes from './loaders/routes.js'
 import prisma from './loaders/prisma.js'
 import { startSchedulers } from './jobs/scheduler.js'
 import { warmCache } from './clients/engine.js'
+import { ensurePlatformFleet } from './services/platformFleetService.js'
 
 async function start() {
   const app = await createApp()
 
   await registerRoutes(app)
   await startSchedulers()
+
+  // TradeLoom's own paper bots (one per rule-based strategy). Opt-in per environment.
+  if (process.env.ENABLE_PLATFORM_FLEET === 'true') {
+    ensurePlatformFleet()
+      .then((r) => console.log('[platform_fleet]', JSON.stringify(r.map(({ templateId, status }) => ({ templateId, status })))))
+      .catch((err) => console.error('[platform_fleet] provisioning failed:', err?.message ?? err))
+  }
 
   const signals = ['SIGINT', 'SIGTERM']
   signals.forEach(signal => {

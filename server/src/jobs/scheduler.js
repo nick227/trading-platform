@@ -6,6 +6,8 @@ import { runStockTraderMarketOpenJob } from './aiStockTraderMarketOpenJob.js'
 import { runResearchPartnerMonitorJob } from './researchPartnerMonitorJob.js'
 
 const DEFAULT_SYMBOLS = ['SPY']
+// [hour, minute] America/New_York. After Alpha Engine's ~22:00 UTC daily-bar refresh in both EST and EDT.
+export const AI_POST_CLOSE_TIMES = [[18, 30], [20, 30]]
 
 // Backfill reconciler function
 async function runBackfillReconciler() {
@@ -80,19 +82,22 @@ async function startCronSchedulers() {
     timezone: 'America/New_York'
   })
 
-  // Once daily at 4:30 PM ET, Mon–Fri (Autonomous AI Post-Close Cycle).
-  cron.schedule('30 16 * * 1-5', () => runAiStrategyDailyJob().catch((err) => {
-    console.error('[scheduler] autonomous AI strategy job error:', err?.message ?? err)
-  }), {
-    timezone: 'America/New_York'
-  })
+  // Autonomous AI post-close cycle. Alpha Engine publishes the day's bars ~22:00 UTC
+  // (5–6 PM ET), so run after that, with a later retry; the job is idempotent per session.
+  for (const [hour, minute] of AI_POST_CLOSE_TIMES) {
+    cron.schedule(`${minute} ${hour} * * 1-5`, () => runAiStrategyDailyJob().catch((err) => {
+      console.error('[scheduler] autonomous AI strategy job error:', err?.message ?? err)
+    }), {
+      timezone: 'America/New_York'
+    })
+  }
 
   // Flagship is explicitly opt-in, independent of the legacy momentum schedule.
   if (process.env.ENABLE_FLAGSHIP_STOCK_TRADER === 'true') {
     cron.schedule('50 9 * * 1-5', () => runStockTraderMarketOpenJob().catch(err => {
       console.error('[scheduler] flagship paper market-open job error:', err?.message ?? err)
     }), { timezone: 'America/New_York' })
-    cron.schedule('45 16 * * 1-5', () => runStockTraderDailyJob().catch(err => {
+    cron.schedule('45 18 * * 1-5', () => runStockTraderDailyJob().catch(err => {
       console.error('[scheduler] flagship AI Stock Trader job error:', err?.message ?? err)
     }), { timezone: 'America/New_York' })
   }
@@ -125,7 +130,7 @@ async function startCronSchedulers() {
 
   console.log('[scheduler] autonomous AI market-open cron scheduled (9:45 AM ET, Mon–Fri)')
   console.log('[scheduler] regime snapshot cron scheduled (4:15 PM ET, Mon–Fri)')
-  console.log('[scheduler] autonomous AI strategy cron scheduled (4:30 PM ET, Mon–Fri)')
+  console.log('[scheduler] autonomous AI strategy cron scheduled (6:30 PM + 8:30 PM ET, Mon–Fri)')
   console.log('[scheduler] backfill reconciler cron scheduled (2:00 AM ET, daily)')
   return true
 }
@@ -149,21 +154,22 @@ function startFallbackMarketOpenScheduler() {
 }
 
 function startFallbackAiStrategyScheduler() {
-  const scheduleNext = () => {
-    const delayMs = msUntilNextEasternWeekdayTime(16, 30)
-    setTimeout(async () => {
-      try {
-        await runAiStrategyDailyJob()
-      } catch (err) {
-        console.error('[scheduler] fallback autonomous AI strategy unexpected error:', err?.message ?? err)
-      } finally {
-        scheduleNext()
-      }
-    }, delayMs)
+  for (const [hour, minute] of AI_POST_CLOSE_TIMES) {
+    const scheduleNext = () => {
+      const delayMs = msUntilNextEasternWeekdayTime(hour, minute)
+      setTimeout(async () => {
+        try {
+          await runAiStrategyDailyJob()
+        } catch (err) {
+          console.error('[scheduler] fallback autonomous AI strategy unexpected error:', err?.message ?? err)
+        } finally {
+          scheduleNext()
+        }
+      }, delayMs)
+    }
+    scheduleNext()
   }
-
-  scheduleNext()
-  console.log('[scheduler] fallback autonomous AI scheduler armed (4:30 PM ET, Mon–Fri)')
+  console.log('[scheduler] fallback autonomous AI scheduler armed (6:30 PM + 8:30 PM ET, Mon–Fri)')
 }
 
 function startFallbackStockTraderMarketOpenScheduler() {
@@ -179,7 +185,7 @@ function startFallbackStockTraderMarketOpenScheduler() {
 
 function startFallbackStockTraderScheduler() {
   const scheduleNext = () => {
-    const delayMs = msUntilNextEasternWeekdayTime(16, 45)
+    const delayMs = msUntilNextEasternWeekdayTime(18, 45)
     setTimeout(async () => {
       try {
         await runStockTraderDailyJob()

@@ -6,6 +6,7 @@
  * Guarded by requireAdmin (for read/monitoring) and requireRole(['admin']) (for mutations).
  */
 import { requireAdmin, requireRole } from '../middleware/requireAdmin.js'
+import { getPlatformFleetHealth } from '../services/platformFleetService.js'
 import {
   getAdminOverview,
   getAdminActivity,
@@ -393,6 +394,16 @@ export default async function adminRoutes(app) {
         success: false,
         error: { code: 'CLEANUP_ERROR', message: err.message }
       })
+    }
+  })
+
+  // GET /api/admin/platform-fleet — Health of TradeLoom's own paper bots
+  app.get('/platform-fleet', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      return reply.send({ success: true, data: await getPlatformFleetHealth() })
+    } catch (err) {
+      app.log.error(err, 'Failed to read platform fleet health')
+      return reply.code(500).send({ success: false, error: { code: 'ADMIN_PLATFORM_FLEET_ERROR', message: err.message } })
     }
   })
 
