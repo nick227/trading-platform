@@ -42,12 +42,12 @@ export default function StockTraderDashboard() {
     <section className="tl-section" id="personal-ai-trader" aria-label="Your Personal AI Trader">
       <div className="tl-section-head"><div>
         <h2 className="tl-section-title">Your AI Trader</h2>
-        <p className="tl-section-note">Set up a personal simulated trading bot with your own sector preferences, risk limits and approval settings. Its account is separate from the platform demonstration above.</p>
+        <p className="tl-section-note">Set up a personal simulated trading bot with your own sector preferences, risk limits and approval settings. Its account is separate from the platform demonstration on this page.</p>
       </div></div>
       {sessionLoading ? <p role="status">Checking your account…</p>
         : user ? <PersonalAiTraderCard />
         : <div className="tl-flow-card">
-          <p>Sign in to configure your personal AI Trader. The public performance record above is not your account history.</p>
+          <p>Sign in to configure your personal AI Trader. The public performance record on this page is not your account history.</p>
           <Link className="tl-btn tl-btn--primary" to="/auth">Sign in to get started</Link>
         </div>}
     </section>
