@@ -104,6 +104,20 @@ async function startCronSchedulers() {
     }), { timezone: 'America/New_York' })
   }
 
+  // Opt-in scheduled brokerage reconciliation & drift quarantine sweeps (pre-open & post-close)
+  if (process.env.ENABLE_BROKER_RECONCILIATION_CRON === 'true') {
+    const runFleetSync = async () => {
+      const { reconcileBrokerFleet } = await import('../services/brokerReconciliationService.js')
+      await reconcileBrokerFleet()
+    }
+    cron.schedule('20 9 * * 1-5', () => runFleetSync().catch(err => {
+      console.error('[scheduler] pre-open broker reconciliation failed:', err?.message ?? err)
+    }), { timezone: 'America/New_York' })
+    cron.schedule('10 16 * * 1-5', () => runFleetSync().catch(err => {
+      console.error('[scheduler] post-close broker reconciliation failed:', err?.message ?? err)
+    }), { timezone: 'America/New_York' })
+  }
+
   // Once daily at 2:00 AM ET, every day.
   cron.schedule('0 2 * * *', () => runBackfillReconciler(), {
     timezone: 'America/New_York'

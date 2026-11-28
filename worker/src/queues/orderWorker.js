@@ -105,6 +105,8 @@ export async function runOnce() {
 
 // ─── Claims (atomic: conditional updateMany; count 0 = another worker won) ────
 
+const TERMINAL_EXECUTION_STATUSES = ['filled', 'cancelled', 'refused', 'failed']
+
 export async function claimNextExecution() {
   const candidates = await prisma.execution.findMany({
     where: { status: 'queued', lockedAt: null },
@@ -115,7 +117,13 @@ export async function claimNextExecution() {
   if (!job) return null
   const claimed = await prisma.execution.updateMany({
     where: { id: job.id, status: 'queued', lockedAt: null },
-    data: { status: 'processing', lockedAt: orderWorkerConfig.now(), lockedBy: WORKER_ID, attempts: { increment: 1 } }
+    data: {
+      status: 'processing',
+      lockedAt: orderWorkerConfig.now(),
+      lockedBy: WORKER_ID,
+      attempts: { increment: 1 },
+      version: { increment: 1 }
+    }
   })
   return claimed.count === 0 ? null : prisma.execution.findUnique({ where: { id: job.id } })
 }
@@ -135,17 +143,37 @@ export async function claimNextReconciliation() {
   if (!job) return null
   const claimed = await prisma.execution.updateMany({
     where: { id: job.id, status: job.status, lockedAt: null },
-    data: { lockedAt: now, lockedBy: WORKER_ID, lastBrokerSyncAt: now }
+    data: {
+      lockedAt: now,
+      lockedBy: WORKER_ID,
+      lastBrokerSyncAt: now,
+      version: { increment: 1 }
+    }
   })
   return claimed.count === 0 ? null : prisma.execution.findUnique({ where: { id: job.id } })
 }
 
-// ─── Fenced state transitions (state change + audit in one transaction) ───────
+// ─── Fenced state transitions (monotonic version CAS + terminal immutability + audit in one tx) ───
 
 async function transition(execution, data, audit = null) {
+  const expectedVersion = typeof execution.version === 'number' ? execution.version : undefined
   await prisma.$transaction(async (tx) => {
-    const res = await tx.execution.updateMany({ where: { id: execution.id, lockedBy: WORKER_ID }, data })
+    const res = await tx.execution.updateMany({
+      where: {
+        id: execution.id,
+        lockedBy: WORKER_ID,
+        status: { notIn: TERMINAL_EXECUTION_STATUSES },
+        ...(expectedVersion !== undefined ? { version: expectedVersion } : {})
+      },
+      data: {
+        ...data,
+        version: { increment: 1 }
+      }
+    })
     if (res.count === 0) throw new LeaseLostError(execution.id)
+    if (expectedVersion !== undefined) {
+      execution.version = expectedVersion + 1
+    }
     if (audit) {
       await tx.executionAudit.create({
         data: {
@@ -248,10 +276,12 @@ export async function processExecution(execution) {
       return
     }
 
-    // Durable marker BEFORE the broker call: from here on the outcome may be unknown.
+    // Durable marker + deterministic clientOrderId BEFORE the broker call: from here on the outcome may be unknown.
     const attemptedAt = orderWorkerConfig.now()
-    await transition(execution, { submitAttemptedAt: attemptedAt }, auditFor('submit_attempted', 'Submitting order to broker', {
-      ticker: execution.ticker, direction: execution.direction, quantity: execution.quantity, clientOrderId: execution.clientOrderId
+    const clientOrderId = execution.clientOrderId || `tp_${execution.id}`
+    execution.clientOrderId = clientOrderId
+    await transition(execution, { submitAttemptedAt: attemptedAt, clientOrderId }, auditFor('submit_attempted', 'Submitting order to broker', {
+      ticker: execution.ticker, direction: execution.direction, quantity: execution.quantity, clientOrderId
     }))
 
     let order
@@ -413,8 +443,8 @@ export async function recoverStuckJobs() {
           : 'queued'
     await prisma.$transaction(async (tx) => {
       const res = await tx.execution.updateMany({
-        where: { id: row.id, lockedBy: row.lockedBy, lockedAt: { lt: stuckBefore } },
-        data: { status: next, lockedAt: null, lockedBy: null }
+        where: { id: row.id, lockedBy: row.lockedBy, lockedAt: { lt: stuckBefore }, status: { notIn: TERMINAL_EXECUTION_STATUSES } },
+        data: { status: next, lockedAt: null, lockedBy: null, version: { increment: 1 } }
       })
       if (res.count === 0) return
       recovered += 1

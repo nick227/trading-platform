@@ -132,7 +132,7 @@ export async function ensureExternalBrokeragePortfolio(
     where: {
       userId: uid,
       accountKind: BROKERAGE_ACCOUNT_KIND,
-      status: 'active'
+      status: { in: ['active', 'quarantined_drift'] }
     },
     orderBy: { createdAt: 'asc' }
   })

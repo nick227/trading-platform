@@ -7,6 +7,7 @@ import {
   computeNetPositionMapFromExecutions,
   syncExternalUnmanagedPositions
 } from './portfolioAccountingService.js'
+import { PORTFOLIO_STATUSES } from './accountDomainService.js'
 
 const OVERLAP_MS = 5 * 60 * 1000
 const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
@@ -354,6 +355,23 @@ export async function reconcileBrokerActivity(userId) {
         localExecutions: localExecs,
         prismaClient: prisma
       }).catch(() => {})
+    }
+
+    // Automated Drift Quarantine (P5):
+    // When unexplained brokerage position drift is detected, quarantine the brokerage portfolio
+    // so CentralPolicyEngine & ExecutionGateway halt new automated orders until reconciled clean.
+    if (typeof prisma.portfolio?.updateMany === 'function') {
+      if (!drift.inSync && drift.mismatchCount > 0) {
+        await prisma.portfolio.updateMany({
+          where: { id: portfolioId, userId, status: PORTFOLIO_STATUSES.ACTIVE },
+          data: { status: PORTFOLIO_STATUSES.QUARANTINED_DRIFT }
+        }).catch(() => {})
+      } else if (drift.inSync) {
+        await prisma.portfolio.updateMany({
+          where: { id: portfolioId, userId, status: PORTFOLIO_STATUSES.QUARANTINED_DRIFT },
+          data: { status: PORTFOLIO_STATUSES.ACTIVE }
+        }).catch(() => {})
+      }
     }
 
     const saved = await prisma.brokerSyncCheckpoint.upsert({

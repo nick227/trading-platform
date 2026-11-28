@@ -247,6 +247,7 @@ model Execution {
   lockedAt      DateTime? // = processingStartedAt: when worker claimed this row
   lockedBy      String?   // worker instance ID
   attempts      Int       @default(0)
+  version       Int       @default(0) // Monotonic optimistic concurrency version (P5)
   clientOrderId String?   @unique
   activeIntentKey String? @unique
   // Broker fields
