@@ -1,4 +1,6 @@
 const validDate = value => {
+  if (typeof value !== 'string' && !(value instanceof Date)) return null
+  if (!value) return null
   const date = new Date(value)
   return Number.isFinite(date.getTime()) ? date.toISOString() : null
 }
