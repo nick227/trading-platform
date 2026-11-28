@@ -369,11 +369,6 @@ export default function SimpleCreateBot() {
               <option value="extended">Include extended hours</option>
             </Select>}
           </Field>}
-          {draft.triggerType === 'alpha_research' && draft.research?.requireEdge && <div className="tl-simple-builder__fixed">
-            <span>Research validation</span>
-            <strong>Must beat baseline in out-of-sample testing</strong>
-            <small>Required by the trading engine</small>
-          </div>}
           {(template.rules || []).filter(rule => rule.type === 'time_window' && rule.enabled !== false).map((rule, index) =>
             <div className="tl-simple-builder__fixed" key={rule.id || index}>
               <span>Trading schedule</span>
@@ -383,9 +378,6 @@ export default function SimpleCreateBot() {
         </div>
       </section>
 
-      <p className="tl-simple-builder__compact tl-simple-builder__review-line" data-testid="builder-summary">
-        {draft.symbolsText || 'No stock selected'} · {amount(draft.capital)} allocated
-      </p>
       {mode === 'paper' && !simulated && <label className="tl-simple-builder__confirm">
         <input type="checkbox" checked={draft.confirmed} onChange={e => change('confirmed', e.target.checked)} />
         I understand this bot will place orders automatically in my paper account.
