@@ -13,7 +13,6 @@ import { listJoin, money, plural, ratioPct, sessionDate, signedMoney } from '../
 import { loadBotsPage } from './botsApi'
 import CompareBots from './compare/CompareBots'
 import { summaryLine } from '../strategies/strategiesApi'
-import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
 import { buildBotsNarrativeSummary } from '../../ui/narrativeSummaries'
 
 // Below these, results are an anecdote, not evidence.
@@ -192,7 +191,13 @@ export default function BotsPage() {
           <Link to="/strategies" className="tl-btn tl-btn--secondary">Browse strategies</Link>
         </div>
       </div>
-      <PersonalAiTraderCard />
+      <section className="tl-section" aria-label="Personal AI trading">
+        <div className="tl-section-head"><div>
+          <h2 className="tl-section-title">Prefer automatic stock selection?</h2>
+          <p className="tl-section-note">Configure your Personal AI Trader and its paper-trading approvals in AI Trader.</p>
+        </div>
+        <Link to="/ai-stock-trader#personal-ai-trader" className="tl-btn tl-btn--secondary">Configure AI Trader</Link></div>
+      </section>
 
       {state.loading ? (
         <div aria-hidden="true" data-testid="bots-loading">
