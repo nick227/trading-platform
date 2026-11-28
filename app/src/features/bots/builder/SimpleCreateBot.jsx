@@ -5,7 +5,7 @@ import { useAuth } from '../../../app/AuthProvider'
 import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
 import { Field, Input, Select } from '../../../components/ui/Field'
 import { buildBotFromDraft, createBotConfiguration, formatDesiredRules, initCreateDraft, mapServerValidationError, validateBuilderDraft } from './builderModel'
-import { loadWizardData, parseSymbols } from './builderData'
+import { loadWizardData } from './builderData'
 import { strategyPresentation } from '../strategyPresentation'
 import './simple-create-bot.css'
 
@@ -150,7 +150,6 @@ export default function SimpleCreateBot() {
   const hasResearch = draft.triggerType === 'alpha_research'
   const modeBlocked = mode !== 'paper'
   const blocked = modeBlocked || !data.portfolioId || noUniverse
-  const presentation = strategyPresentation(template)
   const settings = []
   if (hasPrice) settings.push({
     field: 'triggerPrice', label: 'Trigger price ($)', value: draft.trigger?.price,
