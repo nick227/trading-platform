@@ -222,7 +222,7 @@ describe('Minimal Create Bot — /bots/new', () => {
     await screen.findByLabelText('Bot name')
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(await screen.findByTestId('submit-error')).toHaveTextContent('Simulated capital exceeds maximum.')
-    expect(screen.getByText('Simulated capital exceeds maximum.')).toBeInTheDocument()
+    expect(screen.getAllByText('Simulated capital exceeds maximum.')).toHaveLength(2)
   })
 })
 
