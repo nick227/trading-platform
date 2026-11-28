@@ -134,6 +134,9 @@ describe('HomeDashboard', () => {
       .toEqual(['AAPL▾','MSFT▾','NVDA▾'])
     fireEvent.click(screen.getByRole('button',{name:'Sort by Investment'}))
     expect(screen.getAllByTestId('holding-row').map(r=>within(r).getByRole('button').textContent))
+      .toEqual(['NVDA▾','MSFT▾','AAPL▾'])
+    fireEvent.click(screen.getByRole('button',{name:'Sort by Investment'}))
+    expect(screen.getAllByTestId('holding-row').map(r=>within(r).getByRole('button').textContent))
       .toEqual(['AAPL▾','MSFT▾','NVDA▾'])
   })
 
