@@ -5,9 +5,12 @@ const finite = value => typeof value === 'number' && Number.isFinite(value)
 const closeMap = bars => new Map((Array.isArray(bars) ? bars : [])
   .filter(b => Array.isArray(b) && isSession(b[0]) && finite(Number(b[4])) && Number(b[4]) > 0)
   .map(b => [b[0], Number(b[4])]))
-const fillDate = fill => isSession(fill.simSession) ? fill.simSession
-  : typeof fill.filledAt === 'string' || fill.filledAt instanceof Date
-    ? new Date(fill.filledAt).toISOString().slice(0,10) : null
+const fillDate = fill => {
+  if (isSession(fill?.simSession)) return fill.simSession
+  if (!fill?.filledAt) return null
+  const date = new Date(fill.filledAt)
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0,10) : null
+}
 
 /**
  * Replays ONLY recorded fills against actual closes for each completed session.
