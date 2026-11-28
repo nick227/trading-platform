@@ -28,6 +28,13 @@ describe('recorded daily paper equity',()=>{
     expect(history.points).toHaveLength(1)
     expect(history.omittedSessions).toBe(1)
   })
+  it('ignores invalid fill dates instead of assigning them to a market session',()=>{
+    const result=buildPaperEquityHistory({allocatedCapital:10000,
+      fills:[{id:'bad',ticker:'AAPL',direction:'buy',filledQuantity:1,filledPrice:100,filledAt:'invalid'}],
+      spyBars:bars([['2026-11-23',500]]),
+      barsBySymbol:new Map([['AAPL',bars([['2026-11-23',110]])]])})
+    expect(result.points).toEqual([{t:'2026-11-23',v:10000,spy:10000}])
+  })
   it('does not fabricate a history without validated capital',()=>{
     expect(buildPaperEquityHistory({allocatedCapital:null}).points).toEqual([])
     expect(buildPaperEquityHistory({allocatedCapital:0}).points).toEqual([])
