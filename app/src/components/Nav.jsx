@@ -3,12 +3,10 @@ import { useAuth } from '../app/AuthProvider'
 import { prefetchByPath } from '../app/pagePrefetch'
 import ModeBadge from './ModeBadge'
 
-// Preserve Strategies as its own catalog; AI Trader presents autonomous trading evidence.
+// Authenticated navigation focuses on account workspaces. Discovery pages stay public by URL.
 const routes = [
   { path: '/portfolio', label: 'Portfolio', match: p => p === '/' || p === '/portfolio' },
-  { path: '/strategies', label: 'Strategies', match: p => p.startsWith('/strategies') },
-  { path: '/bots', label: 'My Bots', match: p => p.startsWith('/bots') },
-  { path: '/ai-stock-trader', label: 'AI Trader', match: p => p.startsWith('/ai-stock-trader') }
+  { path: '/bots', label: 'My Bots', match: p => p.startsWith('/bots') }
 ]
 
 function Mark() {
@@ -28,7 +26,7 @@ function initials(user) {
 }
 
 export default function Nav() {
-  const { user, brokerStatus, brokerStatusLoading, brokerStatusError } = useAuth()
+  const { user, sessionLoading, brokerStatus, brokerStatusLoading, brokerStatusError } = useAuth()
   const location = useLocation()
 
   return (
@@ -42,7 +40,7 @@ export default function Nav() {
           {user && <ModeBadge brokerStatus={brokerStatus} loading={brokerStatusLoading} error={brokerStatusError} />}
         </div>
         <div className="tl-nav-right">
-          {user ? (
+          {sessionLoading ? null : user ? (
             <>
               {routes.map((route) => {
                 const active = route.match(location.pathname)
