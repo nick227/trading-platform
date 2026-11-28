@@ -14,6 +14,7 @@ import { loadBotsPage } from './botsApi'
 import CompareBots from './compare/CompareBots'
 import { summaryLine } from '../strategies/strategiesApi'
 import { strategyPresentation } from './strategyPresentation'
+import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
 import './bots-cards.css'
 
 // Below these, results are an anecdote, not evidence.
@@ -158,6 +159,8 @@ export default function BotsPage() {
   const symbolContext = (searchParams.get('symbol') || searchParams.get('ticker') || '').trim().toUpperCase() || null
   const [state, setState] = useState({ loading: true })
   const [open, setOpen] = useState(() => searchParams.get('featured') || searchParams.get('strategy') || searchParams.get('template'))
+  const [personalOpen, setPersonalOpen] = useState(false)
+  const [personalStatus, setPersonalStatus] = useState(null)
   const { stop, clear } = useEmergencyStop()
   const controls = useBotControls((fn) => setState((s) => ({ ...s, data: { ...s.data, myBots: fn(s.data.myBots) } })))
 
@@ -220,6 +223,25 @@ export default function BotsPage() {
                 {d.featured.length === 0 && <ContentState title="No starter strategies available" description="There are no published strategies to customize right now." />}
                 <ul className="tl-strategy-grid">
                   {d.featured.map((f) => <StartingPoint key={f.id} f={f} open={open === f.id} onToggle={() => setOpen(open === f.id ? null : f.id)} symbolContext={symbolContext} />)}
+                  <li className="tl-strategy-card" data-testid="personal-ai-strategy">
+                    <button type="button" className="tl-strategy-card__trigger" aria-expanded={personalOpen} onClick={() => setPersonalOpen(value => !value)}>
+                      <span className="tl-strategy-card__icon is-ai" aria-hidden="true">✦</span>
+                      <span className="tl-strategy-card__copy">
+                        <span className="tl-strategy-card__title">Personal AI Stock Trader</span>
+                        <span className="tl-strategy-card__description">Researches stocks based on your preferred sectors, risk settings, and trade approval preferences.</span>
+                      </span>
+                      <span className="tl-strategy-card__meta">
+                        <span className="tl-strategy-card__type">AI-powered</span>
+                        {personalStatus?.status === 'unavailable' && <span className="tl-strategy-card__unavailable">Currently unavailable</span>}
+                        <span className="tl-strategy-card__more">{personalOpen ? 'Hide details' : 'View details'} <Chevron open={personalOpen} /></span>
+                      </span>
+                    </button>
+                    {personalOpen && <div className="tl-strategy-card__details">
+                      <PersonalAiTraderCard onStatusChange={setPersonalStatus} />
+                      {personalStatus?.status === 'unavailable' &&
+                        <p className="tl-small tl-muted">Personal AI Trader settings are temporarily unavailable.</p>}
+                    </div>}
+                  </li>
                 </ul>
               </>
             )}
