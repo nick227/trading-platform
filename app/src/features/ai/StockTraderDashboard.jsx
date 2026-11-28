@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { get } from '../../api/client'
 import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } from '../../ui/format'
-import StockDiscoveryPanel from './StockDiscoveryPanel'
+import TraderCandidateEvidence from './TraderCandidateEvidence'
 import PortfolioIntelligencePanel from './PortfolioIntelligencePanel'
 import PerformanceIntelligencePanel from './PerformanceIntelligencePanel'
 import AgentHeader from '../../ui/agents/AgentHeader'
@@ -14,7 +13,6 @@ function Stat({ label, value, detail }) {
 }
 
 export default function StockTraderDashboard() {
-  const navigate = useNavigate()
   const [state, setState] = useState({ status: 'loading', data: null })
   const refresh = useCallback(() => {
     setState(s => ({ ...s, status: 'loading' }))
@@ -31,19 +29,8 @@ export default function StockTraderDashboard() {
         status={traderAgentStatus({ requestStatus: state.status, dataStatus: data?.status })}
         description="Autonomous stock discovery, qualitative AI research and simulated portfolio management."
         detail="Platform-owned paper trading. No customer funds are invested. Historical or simulated results do not guarantee future returns."
-        actions={<div className="tl-agent-head__actions">
-          <a
-            href="/opportunities"
-            className="tl-link-btn"
-            onClick={e => {
-              e.preventDefault()
-              navigate('/opportunities')
-            }}
-          >
-            Stock Discovery Explorer →
-          </a>
-          <button type="button" className="tl-link-btn" onClick={refresh} disabled={state.status === 'loading'}>Refresh</button>
-        </div>} />
+        actions={<button type="button" className="tl-link-btn" onClick={refresh}
+          disabled={state.status === 'loading'}>Refresh</button>} />
     </section>
     {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
     {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
@@ -81,7 +68,7 @@ export default function StockTraderDashboard() {
       </section>
       {data.performanceIntelligence && <PerformanceIntelligencePanel intelligence={data.performanceIntelligence} />}
       {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
-      {data.discovery && <StockDiscoveryPanel discovery={data.discovery} compact />}
+      {data.discovery && <TraderCandidateEvidence discovery={data.discovery} research={data.research} />}
       <section className="tl-section" aria-labelledby="flagship-research-heading">
         <div className="tl-section-head"><h2 id="flagship-research-heading" className="tl-section-title">AI research and decisions</h2></div>
         {!data.research?.length ? <p data-testid="flagship-no-research">No completed AI research cycle has been recorded.</p> :
