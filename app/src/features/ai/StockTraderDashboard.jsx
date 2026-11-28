@@ -4,6 +4,7 @@ import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } fro
 import TraderCandidateEvidence from './TraderCandidateEvidence'
 import TraderStoryOverview from './TraderStoryOverview'
 import TraderEquityHistory from './TraderEquityHistory'
+import TraderDecisionJournal from './TraderDecisionJournal'
 import PortfolioIntelligencePanel from './PortfolioIntelligencePanel'
 import PerformanceIntelligencePanel from './PerformanceIntelligencePanel'
 import AgentHeader from '../../ui/agents/AgentHeader'
@@ -72,8 +73,12 @@ export default function StockTraderDashboard() {
       <TraderEquityHistory intelligence={data.performanceIntelligence} initialCapital={data.capitalAllocated} />
       {data.performanceIntelligence && <PerformanceIntelligencePanel intelligence={data.performanceIntelligence} />}
       {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
+      <TraderDecisionJournal research={data.research} orders={data.orders}
+        intelligence={data.performanceIntelligence}/>
       {data.discovery && <TraderCandidateEvidence discovery={data.discovery} research={data.research} />}
-      <section className="tl-section" id="ai-trader-decisions" aria-labelledby="flagship-research-heading">
+      <details className="tl-section tl-trader-technical">
+        <summary>Full technical research records</summary>
+        <section className="tl-section" aria-labelledby="flagship-research-heading">
         <div className="tl-section-head"><h2 id="flagship-research-heading" className="tl-section-title">AI research and decisions</h2></div>
         {!data.research?.length ? <p data-testid="flagship-no-research">No completed AI research cycle has been recorded.</p> :
           <div className="tl-ai-feed">{data.research.map(cycle =>
@@ -97,6 +102,7 @@ export default function StockTraderDashboard() {
           )}</div>}
         <p className="tl-section-note">Model conviction is not a calibrated probability of profit. Research proposals are not execution confirmations.</p>
       </section>
+      </details>
       <section className="tl-section" aria-label="Open paper positions">
         <div className="tl-section-head"><h2 className="tl-section-title">Holdings</h2></div>
         {!data.positions?.length ? <p data-testid="flagship-no-positions">No open paper positions.</p> :
