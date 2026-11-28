@@ -185,7 +185,7 @@ export default function BotsPage() {
       <EmergencyBanner stop={stop} onClear={clear} />
       <div className="tl-bots-page__header">
         <h1>My Bots</h1>
-        <Link to={createBotHref} className="tl-btn tl-btn--primary">Create bot</Link>
+        <Link to={createBotHref} className="tl-btn tl-btn--primary">Add bot</Link>
       </div>
       {state.loading ? (
         <div aria-hidden="true" data-testid="bots-loading">
