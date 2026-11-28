@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { get } from '../../api/client'
 import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } from '../../ui/format'
 import TraderCandidateEvidence from './TraderCandidateEvidence'
+import TraderStoryOverview from './TraderStoryOverview'
 import PortfolioIntelligencePanel from './PortfolioIntelligencePanel'
 import PerformanceIntelligencePanel from './PerformanceIntelligencePanel'
 import AgentHeader from '../../ui/agents/AgentHeader'
@@ -39,7 +40,8 @@ export default function StockTraderDashboard() {
       <p>There are no verified paper-trading results or AI research decisions to publish yet.</p>
     </section>}
     {state.status === 'ready' && data?.status !== 'not_initialized' && data && <>
-      <section className="tl-section" aria-label="Paper portfolio performance">
+      <TraderStoryOverview data={data} />
+      <section className="tl-section" id="ai-trader-history" aria-label="Paper portfolio performance">
         <div className="tl-section-head">
           <h2 className="tl-section-title">Paper performance</h2>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -69,7 +71,7 @@ export default function StockTraderDashboard() {
       {data.performanceIntelligence && <PerformanceIntelligencePanel intelligence={data.performanceIntelligence} />}
       {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
       {data.discovery && <TraderCandidateEvidence discovery={data.discovery} research={data.research} />}
-      <section className="tl-section" aria-labelledby="flagship-research-heading">
+      <section className="tl-section" id="ai-trader-decisions" aria-labelledby="flagship-research-heading">
         <div className="tl-section-head"><h2 id="flagship-research-heading" className="tl-section-title">AI research and decisions</h2></div>
         {!data.research?.length ? <p data-testid="flagship-no-research">No completed AI research cycle has been recorded.</p> :
           <div className="tl-ai-feed">{data.research.map(cycle =>
