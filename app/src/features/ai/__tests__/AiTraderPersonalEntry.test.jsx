@@ -19,7 +19,7 @@ describe('authenticated AI Trader experience',()=>{
     expect(screen.queryByTestId('personal-config')).not.toBeInTheDocument()
     expect(get).not.toHaveBeenCalledWith('/ai/personal-trader')
   })
-  it('loads the user's actual bot status and shows personal controls when selected',async()=>{
+  it("loads the user\'s actual bot status and shows personal controls when selected",async()=>{
     authState.user={id:'u'}
     get.mockImplementation(async path=>path==='/ai/personal-trader'
       ? {configured:true,bot:{enabled:true},lifecycle:{state:'awaiting_next_close_research'}}
