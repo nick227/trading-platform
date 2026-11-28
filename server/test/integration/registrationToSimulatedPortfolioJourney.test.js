@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import jwt from '@fastify/jwt'
@@ -52,6 +53,8 @@ describe('Complete Registration-to-Simulated-Portfolio Journey (MR 1–4 E2E)', 
   let createdUserId = null
 
   beforeAll(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-27T15:00:00.000Z'))
     app = Fastify()
     await app.register(cookie)
     await app.register(jwt, {
@@ -81,11 +84,12 @@ describe('Complete Registration-to-Simulated-Portfolio Journey (MR 1–4 E2E)', 
       await prisma.user.deleteMany({ where: { id: createdUserId } }).catch(() => {})
     }
     await app?.close()
+    vi.useRealTimers()
   })
 
   it('validates registration -> $10k paper portfolio -> structured AI setup -> exchange-calendar Copilot review -> simulated fill -> narrative briefing', async () => {
     // 1. Register a brand-new user without any external brokerage credentials
-    const email = `e2e_journey_${Date.now()}@example.test`
+    const email = `e2e_journey_${randomUUID()}@example.test`
     const registerRes = await app.inject({
       method: 'POST',
       url: '/api/auth/register',
@@ -240,6 +244,7 @@ describe('Complete Registration-to-Simulated-Portfolio Journey (MR 1–4 E2E)', 
     expect(claimedByLiveWorker?.id).not.toBe(approvedData.execution.id)
 
     // 5. Settle simulated fill on Black Friday session 2026-11-27 (@ open $142 x 10 = $1,420)
+    vi.setSystemTime(new Date('2026-11-27T18:30:00.000Z'))
     const settleRes = await settlePersonalAiTraderPaperOrders(createdUserId, {
       currentSession: '2026-11-27',
       now: () => new Date('2026-11-27T18:30:00.000Z'),
