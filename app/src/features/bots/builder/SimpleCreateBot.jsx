@@ -4,7 +4,6 @@ import { post } from '../../../api/client'
 import { useAuth } from '../../../app/AuthProvider'
 import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
 import { Field, Input, Select } from '../../../components/ui/Field'
-import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { buildBotFromDraft, createBotConfiguration, formatDesiredRules, initCreateDraft, mapServerValidationError, validateBuilderDraft } from './builderModel'
 import { loadWizardData, parseSymbols } from './builderData'
 import { strategyPresentation } from '../strategyPresentation'
@@ -13,17 +12,24 @@ import './simple-create-bot.css'
 const amount = value => '$' + Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const numeric = value => String(value ?? '').replace(/[^0-9.]/g, '')
 
-/** Only a genuine template stock universe or an account-provided universe can be selected. */
+/** Account supported tickers take precedence; fall back to the template's actual universe. */
+export function supportedStocks(template, eligibleSymbols) {
+  const fromAccount = Array.isArray(eligibleSymbols) ? eligibleSymbols : []
+  const fromTemplate = Array.isArray(template?.config?.tickers) ? template.config.tickers : []
+  return [...new Set((fromAccount.length ? fromAccount : fromTemplate)
+    .map(ticker => String(ticker).toUpperCase().trim()).filter(Boolean))].sort()
+}
+
 export function initializeTemplateDraft(template, data, eligibleSymbols, requestedTicker) {
-  const tickers = Array.isArray(template.config?.tickers) ? template.config.tickers.map(s => String(s).toUpperCase()) : []
-  const eligible = Array.isArray(eligibleSymbols) ? eligibleSymbols.map(s => String(s).toUpperCase()) : []
-  const selected = requestedTicker && tickers.includes(requestedTicker.toUpperCase())
-    ? requestedTicker.toUpperCase() : tickers.length ? null
-      : requestedTicker && eligible.includes(requestedTicker.toUpperCase()) ? requestedTicker.toUpperCase()
-        : eligible.length === 1 ? eligible[0] : null
-  const draft = initCreateDraft(template, data, selected)
-  // Templates with a predefined universe are not silently transformed by the account UI.
-  if (!tickers.length && !selected) draft.symbolsText = ''
+  const choices = supportedStocks(template, eligibleSymbols)
+  const preferred = String(requestedTicker || '').toUpperCase()
+  const defaultTicker = Array.isArray(template.config?.tickers)
+    ? template.config.tickers.map(s => String(s).toUpperCase()).find(ticker => choices.includes(ticker))
+    : null
+  const selected = choices.includes(preferred) ? preferred : defaultTicker || choices[0] || ''
+  const draft = initCreateDraft(template, data, selected || null)
+  draft.symbolsText = selected
+  draft.name = selected ? `${template.name} · ${selected}` : template.name
   return draft
 }
 
@@ -71,7 +77,7 @@ export default function SimpleCreateBot() {
     return () => { live = false }
   }, []) // Do not discard a user's edits on account-provider re-renders.
 
-  const preview = useMemo(() => draft && template ? buildBotFromDraft(draft, template) : null, [draft, template])
+  const stockOptions = useMemo(() => supportedStocks(template, brokerStatus?.tradableSymbols), [template, brokerStatus?.tradableSymbols])
   const errors = useMemo(() => draft ? validateBuilderDraft(draft, {
     buyingPower: data?.buyingPower ?? null,
     tradableSymbols: eligibleSymbols.length ? eligibleSymbols : null,
@@ -84,6 +90,10 @@ export default function SimpleCreateBot() {
   const changeNested = (key, subKey, value, errorKey = key) => {
     setServerErrors(old => ({ ...old, [errorKey]: null }))
     setDraft(old => ({ ...old, [key]: { ...old[key], [subKey]: value } }))
+  }
+  const chooseStock = ticker => {
+    setServerErrors(old => ({ ...old, symbols: null, name: null }))
+    setDraft(old => ({ ...old, symbolsText: ticker, name: `${template.name} · ${ticker}` }))
   }
   const switchTemplate = id => {
     const next = data.templates.find(item => item.id === id && item.available)
@@ -135,8 +145,7 @@ export default function SimpleCreateBot() {
   if (loadError) return <main className="tl-page tl-simple-builder"><Link to="/bots" className="tl-back">← My Bots</Link><div role="alert">{loadError}</div></main>
   if (!data || !draft || !template) return <main className="tl-page tl-simple-builder" role="status">Loading strategies…</main>
 
-  const presets = Array.isArray(template.config?.tickers) ? template.config.tickers : []
-  const noUniverse = !presets.length && !eligibleSymbols.length
+  const noUniverse = !stockOptions.length
   const hasPrice = draft.triggerType === 'price_threshold'
   const hasResearch = draft.triggerType === 'alpha_research'
   const modeBlocked = mode !== 'paper'
@@ -145,7 +154,7 @@ export default function SimpleCreateBot() {
   const settings = []
   if (hasPrice) settings.push({
     field: 'triggerPrice', label: 'Trigger price ($)', value: draft.trigger?.price,
-    help: 'The stock price that activates this template’s ' + (draft.trigger.operator === 'below' ? 'below-price' : 'above-price') + ' condition.',
+    help: null,
     update: value => changeNested('trigger', 'price', value, 'triggerPrice'),
   })
   if (hasResearch) {
@@ -166,7 +175,7 @@ export default function SimpleCreateBot() {
   })
   if (draft.priceChange?.on) settings.push({
     field: 'priceChange', label: 'Required ' + (draft.priceChange.operator === 'below' ? 'price decline' : 'price increase') + ' (%)',
-    value: draft.priceChange.pct, help: 'Measured over ' + draft.priceChange.sessions + ' trading sessions.',
+    value: draft.priceChange.pct,
     update: value => changeNested('priceChange', 'pct', value),
   })
   if (draft.exit?.stopLoss?.on) settings.push({
@@ -176,7 +185,7 @@ export default function SimpleCreateBot() {
   })
   if (draft.exit?.reversal?.on) settings.push({
     field: 'exitReversal', label: 'Sell after a price reversal (%)',
-    value: draft.exit.reversal.pct, help: 'Measured over ' + draft.exit.reversal.sessions + ' sessions.',
+    value: draft.exit.reversal.pct,
     update: value => setDraft(old => ({ ...old, exit: { ...old.exit, reversal: { ...old.exit.reversal, pct: value } } })),
   })
   if (draft.dailyLoss?.on) settings.push({
@@ -209,25 +218,17 @@ export default function SimpleCreateBot() {
             </option>)}
           </Select>}
         </Field>
-        <p className="tl-simple-builder__help">{presentation.description}</p>
-        <div className="tl-simple-builder__facts">
-          <div><strong>Stocks</strong>
-            {presets.length > 0 ? <p data-testid="strategy-stocks">{parseSymbols(draft.symbolsText).join(', ')}</p> :
-              eligibleSymbols.length > 0 ? <div data-error-field="symbols"><Field label="Choose a supported stock" error={fieldError('symbols')}>
-                {({ id }) => <Select id={id} value={draft.symbolsText}
-                  onChange={e => change('symbolsText', e.target.value)}>
-                  <option value="">Select a stock</option>
-                  {eligibleSymbols.map(s => <option key={s} value={s}>{s}</option>)}
-                </Select>}</Field></div> :
-                <p role="alert">This strategy has no defined stocks and the account has no supported stock list.</p>}
-          </div>
-          <div><strong>Trading condition</strong><p>{
-            hasPrice ? 'Trade when a stock price moves ' + (draft.trigger.operator === 'below' ? 'below' : 'above') + ' the specified dollar price.' :
-            hasResearch ? 'Trade using qualifying Alpha Engine research.' :
-            draft.triggerType === 'trend_filter' ? 'Trade when the strategy’s market trend condition is met.' :
-            'Use the strategy’s recurring trading schedule.'
-          }</p></div>
+        <div data-error-field="symbols">
+          <Field label="Target stock" error={fieldError('symbols')}>
+            {({ id }) => <Select id={id} data-testid="target-stock-select"
+              value={draft.symbolsText} onChange={e => chooseStock(e.target.value)}
+              disabled={noUniverse}>
+              {noUniverse && <option value="">No supported stocks available</option>}
+              {stockOptions.map(ticker => <option key={ticker} value={ticker}>{ticker}</option>)}
+            </Select>}
+          </Field>
         </div>
+        {noUniverse && <p role="alert" className="tl-field-error">No supported stocks are available for this account.</p>}
       </section>
 
       <section className="tl-simple-builder__section" aria-labelledby="allocation-heading">
@@ -240,37 +241,32 @@ export default function SimpleCreateBot() {
                 inputMode="decimal" onChange={e => onCapitalChange(e.target.value)} />}
           </Field>
         </div>
-        <p className="tl-simple-builder__help">Each order is capped at {amount(draft.maxPerOrder)} by this strategy's existing safeguards. Increasing your allocation does not increase this per-order cap.</p>
+        <p className="tl-simple-builder__compact">Per-order limit: {amount(draft.maxPerOrder)}</p>
         {fieldError('maxPerOrder') && <p role="alert" className="tl-field-error">{fieldError('maxPerOrder')}</p>}
       </section>
 
       <section className="tl-simple-builder__section" aria-labelledby="settings-heading">
         <div className="tl-simple-builder__section-head">
-          <div><h2 id="settings-heading">Strategy settings</h2><p>These are the strategy’s current trigger values. You can adjust supported values before adding your bot.</p></div>
+          <h2 id="settings-heading">Strategy settings</h2>
         </div>
-        {hasPrice && <p className="tl-simple-builder__help">The default condition is <strong>{draft.trigger.operator === 'below' ? 'below' : 'above'}</strong> the target price.</p>}
+
         {settings.length ? <div className="tl-simple-builder__settings">
           {settings.map(s => <NumberSetting key={s.field} field={s.field} label={s.label} value={s.value}
             error={fieldError(s.field === 'exitReversal' ? 'exit' : s.field)} help={s.help} onChange={s.update} />)}
-        </div> : <p className="tl-simple-builder__help">This strategy has no adjustable trigger values. Its existing trading conditions will be used.</p>}
-        {hasResearch && <p className="tl-simple-builder__help">Research must pass the independent evidence requirement. This protection cannot be disabled.</p>}
-        <div className="tl-simple-builder__limits">
-          <h3>Other conditions and protections</h3>
-          <ul>{describeGuards(preview).map(text => <li key={text}>{text}</li>)}</ul>
-        </div>
+        </div> : <p className="tl-simple-builder__compact">Uses the template's preset trading conditions.</p>}
+        {hasResearch && <p className="tl-simple-builder__compact">Independent research evidence is required.</p>}
+
       </section>
 
-      <section className="tl-simple-builder__section tl-simple-builder__review" aria-labelledby="review-heading">
-        <h2 id="review-heading">Review</h2>
-        <p data-testid="builder-summary">{describeAction(preview)}</p>
-        <p className="tl-simple-builder__help">{amount(draft.capital)} allocated · maximum {amount(draft.maxPerOrder)} per order</p>
-      </section>
+      <p className="tl-simple-builder__compact tl-simple-builder__review-line" data-testid="builder-summary">
+        {draft.symbolsText || 'No stock selected'} · {amount(draft.capital)} allocated
+      </p>
       {mode === 'paper' && !simulated && <label className="tl-simple-builder__confirm">
         <input type="checkbox" checked={draft.confirmed} onChange={e => change('confirmed', e.target.checked)} />
         I understand this bot will place orders automatically in my paper account.
       </label>}
-      <p className="tl-simple-builder__account">Account: {mode === 'paper' ? 'Paper trading' :
-        mode === 'live-disabled' ? 'Live trading unavailable' : 'Not verified'}</p>
+      <p className="tl-simple-builder__account">{mode === 'paper' ? 'Paper trading account' :
+        mode === 'live-disabled' ? 'Real-money activation unavailable' : 'Account not verified'}</p>
       {submitError && <div role="alert" className="tl-notice tl-notice--error" data-testid="submit-error">{submitError}</div>}
       <footer className="tl-simple-builder__actions">
         <Link to="/bots" className="tl-btn tl-btn--secondary">Cancel</Link>
