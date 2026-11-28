@@ -280,6 +280,21 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     expect(screen.getByText(/Maximum for one trade: \$500/)).toBeInTheDocument()
   })
 
+  it('shows account buying power and simulation mode alongside the prefilled allocation', async () => {
+    mockApi({ account: { buying_power: 7500 } })
+    renderBuilder()
+    expect(await screen.findByTestId('available-funds')).toHaveTextContent('Available to trade: $7,500')
+    expect(screen.getByTestId('available-funds')).toHaveTextContent('Simulation funds')
+    expect(screen.getByTestId('mode-badge')).toHaveAttribute('aria-label', expect.stringContaining('Simulated'))
+  })
+
+  it('does not invent available funds when account balance is missing', async () => {
+    mockApi({ account: {} })
+    renderBuilder()
+    expect(await screen.findByTestId('available-funds')).toHaveTextContent('Available funds could not be verified.')
+    expect(screen.getByTestId('available-funds')).not.toHaveTextContent('$0')
+  })
+
   it('prefills the existing zero-price Momentum Buy trigger from a real market quote while preserving its evidence-backed rules', async () => {
     const momentum = {
       id: 'tmpl_momentum_buy', name: 'Momentum Buy', botType: 'rule_based',
