@@ -4,7 +4,7 @@ import { moneyWhole } from '../../ui/format'
 
 const DEFAULT_SECTORS = ['Technology', 'Healthcare', 'Financials']
 
-export default function PersonalAiTraderCard({ compact = false, onUpdated = null }) {
+export default function PersonalAiTraderCard({ compact = false, onUpdated = null, onStatusChange = null }) {
   const [state, setState] = useState({ status: 'loading', data: null, error: null })
   const [editing, setEditing] = useState(false)
   const [riskProfile, setRiskProfile] = useState('balanced')
@@ -30,15 +30,18 @@ export default function PersonalAiTraderCard({ compact = false, onUpdated = null
         const payload = res?.data ?? res
         if (!payload || !payload.lifecycle) {
           setState({ status: 'unavailable', data: null, error: null })
+          onStatusChange?.({ status: 'unavailable' })
           return
         }
         syncDraftFromData(payload)
         setState({ status: 'ready', data: payload, error: null })
+        onStatusChange?.({ status: 'ready', configured: Boolean(payload.configured), enabled: payload.bot?.enabled === true })
       })
       .catch(() => {
         setState({ status: 'unavailable', data: null, error: null })
+        onStatusChange?.({ status: 'unavailable' })
       })
-  }, [syncDraftFromData])
+  }, [syncDraftFromData, onStatusChange])
 
   useEffect(() => { load() }, [load])
 
@@ -73,6 +76,7 @@ export default function PersonalAiTraderCard({ compact = false, onUpdated = null
       const payload = res?.data ?? res
       syncDraftFromData(payload)
       setState({ status: 'ready', data: payload, error: null })
+      onStatusChange?.({ status: 'ready', configured: Boolean(payload.configured), enabled: payload.bot?.enabled === true })
       setEditing(false)
       onUpdated?.(payload)
     } catch (err) {
