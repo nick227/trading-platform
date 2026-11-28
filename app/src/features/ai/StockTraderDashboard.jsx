@@ -33,11 +33,19 @@ export default function StockTraderDashboard() {
     <section className="tl-section">
       <AgentHeader title="AI Stock Trader" kind="trader"
         status={traderAgentStatus({ requestStatus: state.status, dataStatus: data?.status })}
-        description="Autonomous stock discovery, qualitative AI research and simulated portfolio management."
-        detail="Platform-owned paper trading. No customer funds are invested. Historical or simulated results do not guarantee future returns."
+        description="Follow the AI’s recorded stock decisions and paper-trading performance."
+        detail="Public simulated trading record. Your Personal AI Trader is a separate account; simulated results do not predict future returns."
         actions={<button type="button" className="tl-link-btn" onClick={refresh}
           disabled={state.status === 'loading'}>Refresh</button>} />
     </section>
+    {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
+    {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
+    {state.status === 'ready' && data?.status === 'not_initialized' && <section className="tl-section" data-testid="flagship-uninitialized">
+      <h2 className="tl-section-title">Awaiting beta initialization</h2>
+      <p>There are no verified paper-trading results or AI research decisions to publish yet.</p>
+    </section>}
+    {state.status === 'ready' && data?.status !== 'not_initialized' && data && <>
+      <TraderStoryOverview data={data} />
     <section className="tl-section" id="personal-ai-trader" aria-label="Your Personal AI Trader">
       <div className="tl-section-head"><div>
         <h2 className="tl-section-title">Your AI Trader</h2>
@@ -50,14 +58,9 @@ export default function StockTraderDashboard() {
           <a className="tl-btn tl-btn--primary" href="/auth">Sign in to get started</a>
         </div>}
     </section>
-    {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
-    {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
-    {state.status === 'ready' && data?.status === 'not_initialized' && <section className="tl-section" data-testid="flagship-uninitialized">
-      <h2 className="tl-section-title">Awaiting beta initialization</h2>
-      <p>There are no verified paper-trading results or AI research decisions to publish yet.</p>
-    </section>}
-    {state.status === 'ready' && data?.status !== 'not_initialized' && data && <>
-      <TraderStoryOverview data={data} />
+
+      <details className="tl-section tl-trader-technical tl-trader-breakdown" aria-label="Additional paper performance detail">
+        <summary>Show detailed paper performance figures</summary>
       <section className="tl-section" id="ai-trader-history" aria-label="Paper portfolio performance">
         <div className="tl-section-head">
           <h2 className="tl-section-title">Paper performance</h2>
@@ -85,12 +88,15 @@ export default function StockTraderDashboard() {
         {data.performance?.totalPnl === null || !data.performance ? <p className="tl-section-note">Portfolio return is not yet available from verified fill and price data.</p> : null}
         {data.performance?.totalEquity != null && <p className="tl-section-note">Estimated paper equity: <strong>{money(data.performance.totalEquity)}</strong></p>}
       </section>
+      </details>
       <TraderEquityHistory intelligence={data.performanceIntelligence} initialCapital={data.capitalAllocated} />
-      {data.performanceIntelligence && <PerformanceIntelligencePanel intelligence={data.performanceIntelligence} />}
-      {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
       <TraderDecisionJournal research={data.research} orders={data.orders}
         intelligence={data.performanceIntelligence}/>
       {data.discovery && <TraderCandidateEvidence discovery={data.discovery} research={data.research} />}
+      <details className="tl-section tl-trader-technical tl-trader-analysis"><summary>Additional performance and portfolio analysis</summary>
+      {data.performanceIntelligence && <PerformanceIntelligencePanel intelligence={data.performanceIntelligence} />}
+      {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
+      </details>
       <details className="tl-section tl-trader-technical">
         <summary>Full technical research records</summary>
         <section className="tl-section" aria-labelledby="flagship-research-heading">
