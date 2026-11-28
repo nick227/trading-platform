@@ -3,11 +3,10 @@ import { useAuth } from '../app/AuthProvider'
 import { prefetchByPath } from '../app/pagePrefetch'
 import ModeBadge from './ModeBadge'
 
-// Four product workflows; stock lookup is contextual to automation.
+// Three product destinations. Strategy catalog is part of bot creation.
 const routes = [
   { path: '/portfolio', label: 'Portfolio', match: p => p === '/' || p === '/portfolio' },
   { path: '/bots', label: 'My Bots', match: p => p.startsWith('/bots') },
-  { path: '/strategies', label: 'Strategies', match: p => p.startsWith('/strategies') },
   { path: '/ai-stock-trader', label: 'AI Trader', match: p => p.startsWith('/ai-stock-trader') }
 ]
 
@@ -78,14 +77,6 @@ export default function Nav() {
             </>
           ) : (
             <>
-              <Link
-                to="/strategies"
-                className={`tl-nav-link ${location.pathname.startsWith('/strategies') ? 'is-active' : ''}`}
-                aria-current={location.pathname.startsWith('/strategies') ? 'page' : undefined}
-                onMouseEnter={() => prefetchByPath('/strategies')}
-              >
-                Strategies
-              </Link>
               <Link to="/ai-stock-trader" className="tl-nav-link">AI Trader</Link>
               <Link to="/auth" className="tl-nav-link">Sign in</Link>
             </>
