@@ -363,7 +363,7 @@ export default function SimpleCreateBot() {
       <footer className="tl-simple-builder__actions">
         <Link to="/bots" className="tl-btn tl-btn--secondary">Cancel</Link>
         <button type="submit" className="tl-btn tl-btn--primary" data-testid="submit-builder-btn"
-          disabled={saving || blocked || (hasPrice && !validPrice(draft.trigger?.price)) || (mode === 'paper' && !simulated && !draft.confirmed)}>
+          disabled={saving || blocked || (marketLinkedPrice && hasPrice && !validPrice(draft.trigger?.price)) || (mode === 'paper' && !simulated && !draft.confirmed)}>
           {saving ? 'Adding…' : 'Add bot'}
         </button>
       </footer>
