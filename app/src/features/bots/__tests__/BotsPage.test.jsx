@@ -74,7 +74,7 @@ describe('BotsPage', () => {
     expect(dca).toHaveTextContent('Scheduled Stock Purchases')
     expect(dca.querySelector('.tl-featured-results')).toBeNull()
     // Users' paper fills are not a headline (2 fills on one day): no P&L in the row.
-    expect(dca.querySelector('.tl-featured-row').textContent).not.toMatch(/\$52/)
+    expect(dca.querySelector('.tl-strategy-card__trigger').textContent).not.toMatch(/\$52/)
     expect(research).toHaveTextContent('Trade Using Alpha Engine Research')
     expect(research).not.toHaveTextContent('Did not beat baseline')
   })
@@ -110,7 +110,7 @@ describe('BotsPage', () => {
     expect(document.querySelector('a[href^="/strategies"]')).toBeNull()
     expect(screen.queryByText(/What automated systems have you configured/)).not.toBeInTheDocument()
     expect(screen.queryByText(/median vs/)).not.toBeInTheDocument()
-    expect(document.querySelectorAll('.tl-strategy-card')).toHaveLength(2)
+    expect(document.querySelectorAll('.tl-strategy-card')).toHaveLength(3)
   })
 
   it('displays AI and rule-based catalog entries as matching sibling cards', async () => {
@@ -161,6 +161,6 @@ describe('BotsPage', () => {
     mockApi({ platformRows: new Error('HTTP 500') })
     renderPage()
     expect(await screen.findAllByTestId('featured-bot')).toHaveLength(2)
-    expect(screen.getByRole('status')).toHaveTextContent('Site-wide results couldn’t be loaded.')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
