@@ -145,20 +145,19 @@ export default function SimpleCreateBot() {
     chooseStock(fallback.symbolsText)
   }
   const onCapitalChange = value => {
-    const originalLimit = Number(template.config?.maxOrderNotional ?? draft.maxPerOrder)
-    setServerErrors(old => ({ ...old, capital: null, maxPerOrder: null }))
-    setDraft(old => ({
-      ...old,
-      capital: numeric(value),
-      // Keep the template's per-order cap; never silently increase risk as allocation grows.
-      maxPerOrder: String(Math.min(Number.isFinite(originalLimit) && originalLimit > 0 ? originalLimit : Number(old.maxPerOrder), Number(value) || 0)),
-    }))
+    setServerErrors(old => ({ ...old, capital: null }))
+    setDraft(old => ({ ...old, capital: numeric(value) }))
   }
 
   const resetEmptyAmount = () => {
     if (draft.capital !== '') return
     const fallback = initializeTemplateDraft(template, data, brokerStatus?.tradableSymbols, draft.symbolsText)
     onCapitalChange(fallback.capital)
+  }
+  const resetEmptyTradeLimit = () => {
+    if (draft.maxPerOrder !== '') return
+    const fallback = initializeTemplateDraft(template, data, brokerStatus?.tradableSymbols, draft.symbolsText)
+    change('maxPerOrder', String(Math.min(Number(fallback.maxPerOrder), Number(draft.capital) || Number(fallback.capital))))
   }
   const resetEmptySetting = (setting) => {
     if (setting.value !== '' && setting.value !== undefined && setting.value !== null) return
@@ -320,24 +319,31 @@ export default function SimpleCreateBot() {
       </section>
 
       <section className="tl-simple-builder__section" aria-labelledby="allocation-heading">
-        <h2 id="allocation-heading">Investment allocation</h2>
+        <h2 id="allocation-heading">Bot budget</h2>
         <p className="tl-simple-builder__balance" data-testid="available-funds" role="status">
           {Number.isFinite(data.buyingPower) && data.buyingPower >= 0
             ? <>Available to trade: <strong>{amount(data.buyingPower)}</strong></>
             : 'Available funds could not be verified.'}
           {' · '}{simulated ? 'Simulation funds' : mode === 'paper' ? 'Paper trading funds' : mode === 'live-disabled' ? 'Real account · trading disabled' : 'Account status not verified'}
         </p>
-        <div className="tl-simple-builder__amount" data-error-field="capital">
-          <Field label="Amount to allocate ($)" error={fieldError('capital')}
-            help="The amount of your account's available funds assigned to this bot. It can place multiple trades within this budget.">
-            {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
-              <Input id={id} value={draft.capital} aria-invalid={invalid} aria-describedby={describedby}
-                inputMode="decimal" onChange={e => onCapitalChange(e.target.value)}
-                onBlur={resetEmptyAmount} />}
-          </Field>
+        <div className="tl-simple-builder__settings">
+          <div data-error-field="capital">
+            <Field label="Bot budget ($)" error={fieldError('capital')}>
+              {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
+                <Input id={id} value={draft.capital} aria-invalid={invalid} aria-describedby={describedby}
+                  inputMode="decimal" onChange={e => onCapitalChange(e.target.value)}
+                  onBlur={resetEmptyAmount} />}
+            </Field>
+          </div>
+          <div data-error-field="maxPerOrder">
+            <Field label="Maximum per trade ($)" error={fieldError('maxPerOrder')}>
+              {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
+                <Input id={id} value={draft.maxPerOrder} aria-invalid={invalid} aria-describedby={describedby}
+                  inputMode="decimal" onChange={e => change('maxPerOrder', numeric(e.target.value))}
+                  onBlur={resetEmptyTradeLimit} />}
+            </Field>
+          </div>
         </div>
-        <p className="tl-simple-builder__compact">Maximum for one trade: {amount(draft.maxPerOrder)}</p>
-        {fieldError('maxPerOrder') && <p role="alert" className="tl-field-error">{fieldError('maxPerOrder')}</p>}
       </section>
 
       <section className="tl-simple-builder__section" aria-labelledby="conditions-heading">
