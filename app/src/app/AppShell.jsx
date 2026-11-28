@@ -6,6 +6,7 @@ import HomeDashboard from '../features/home/HomeDashboard'
 import Welcome from '../features/home/Welcome'
 import AlgorithmBuilder from '../features/bots/builder/AlgorithmBuilder'
 import Asset from '../features/Asset'
+import LegacyStocksRedirect from './LegacyStocksRedirect'
 import BotsPage from '../features/bots/BotsPage'
 import BotDashboard from '../features/bots/detail/BotDashboard'
 import OrderConfirm from '../features/OrderConfirm'
@@ -16,11 +17,9 @@ import AdminRoute from '../features/admin/AdminRoute'
 import { useAuth } from './AuthProvider'
 import pageTitleService from '../services/pageTitleService'
 
-const AssetsIndex = lazy(() => import('../features/AssetsIndex'))
 const PortfolioPage = lazy(() => import('../features/home/PortfolioPage'))
 const StrategiesIndex = lazy(() => import('../features/strategies/StrategiesIndex'))
 const StockTraderDashboard = lazy(() => import('../features/ai/StockTraderDashboard'))
-const StockDiscoveryPage = lazy(() => import('../features/ai/StockDiscoveryPage'))
 const ResearchPartnerWorkspace = lazy(() => import('../features/researchPartner/ResearchPartnerWorkspace'))
 const StrategyDetail = lazy(() => import('../features/strategies/StrategyDetail'))
 const Orders = lazy(() => import('../features/Orders'))
@@ -110,18 +109,9 @@ export function AppShell() {
         {/* Former Landing dashboard; secondary research surface (see TRADELOOM_CONSUMER_UX_PLAN.md M6). */}
         <Route path="/research" element={<Protected><Landing /></Protected>} />
         <Route path="/research-partners" element={<Protected><Suspense fallback={<PageSkeleton />}><ResearchPartnerWorkspace /></Suspense></Protected>} />
-        <Route path="/opportunities" element={<Suspense fallback={<PageSkeleton />}><StockDiscoveryPage /></Suspense>} />
+        <Route path="/opportunities" element={<LegacyStocksRedirect />} />
         <Route path="/portfolio" element={<Protected><Suspense fallback={<PageSkeleton />}><PortfolioPage /></Suspense></Protected>} />
-        <Route
-          path="/assets"
-          element={
-            <Protected>
-              <Suspense fallback={<PageSkeleton />}>
-                <AssetsIndex />
-              </Suspense>
-            </Protected>
-          }
-        />
+        <Route path="/assets" element={<LegacyStocksRedirect />} />
         <Route path="/assets/:ticker" element={<Protected><Asset /></Protected>} />
         <Route path="/bots" element={<Protected><BotsPage /></Protected>} />
         {/* Canonical Algorithm Builder for creation and editing */}
