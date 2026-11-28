@@ -47,11 +47,11 @@ export function buildPortfolioNarrativeSummary({
   } else if (actionableProposalsCount > 0) {
     attentionSentence = `${plural(actionableProposalsCount, 'simulated trade proposal')} ${actionableProposalsCount === 1 ? 'needs' : 'need'} your review before the NYSE deadline.`
   } else if (errorCount > 0) {
-    attentionSentence = `${plural(errorCount, 'bot')} stopped on an error and should be checked below.`
+    attentionSentence = `${plural(errorCount, 'bot')} stopped.`
   } else if (runningCount > 0) {
-    attentionSentence = `Nothing needs urgent action — ${plural(runningCount, 'automated bot')} ${runningCount === 1 ? 'is' : 'are'} running normally.`
+    attentionSentence = `${plural(runningCount, 'automated bot')} ${runningCount === 1 ? 'is' : 'are'} running normally.`
   } else {
-    attentionSentence = 'Nothing needs urgent action right now.'
+    attentionSentence = ''
   }
 
   return `${perfSentence} ${attentionSentence}`
