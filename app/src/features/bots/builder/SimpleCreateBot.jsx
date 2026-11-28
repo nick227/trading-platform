@@ -4,6 +4,7 @@ import { post } from '../../../api/client'
 import { useAuth } from '../../../app/AuthProvider'
 import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
 import { Field, Input, Select } from '../../../components/ui/Field'
+import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { buildBotFromDraft, createBotConfiguration, formatDesiredRules, initCreateDraft, mapServerValidationError, validateBuilderDraft } from './builderModel'
 import { loadWizardData } from './builderData'
 import { strategyPresentation } from '../strategyPresentation'
@@ -33,13 +34,13 @@ export function initializeTemplateDraft(template, data, eligibleSymbols, request
   return draft
 }
 
-function NumberSetting({ label, value, error, onChange, help, field }) {
+function NumberSetting({ label, value, error, onChange, onBlur, help, field }) {
   return <div data-error-field={field}>
     <Field label={label} error={error || null} help={help}>
       {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
         <Input id={id} inputMode="decimal" value={String(value ?? '')}
           aria-invalid={invalid} aria-describedby={describedby}
-          onChange={e => onChange(numeric(e.target.value))} />}
+          onChange={e => onChange(numeric(e.target.value))} onBlur={onBlur} />}
     </Field>
   </div>
 }
@@ -78,6 +79,9 @@ export default function SimpleCreateBot() {
   }, []) // Do not discard a user's edits on account-provider re-renders.
 
   const stockOptions = useMemo(() => supportedStocks(template, brokerStatus?.tradableSymbols), [template, brokerStatus?.tradableSymbols])
+  const preview = useMemo(() => draft && template ? buildBotFromDraft(draft, template) : null, [draft, template])
+  const conditions = useMemo(() => preview ? describeGuards(preview).filter(condition =>
+    !condition.includes('simulated capital') && !condition.includes('per order')) : [], [preview])
   const errors = useMemo(() => draft ? validateBuilderDraft(draft, {
     buyingPower: data?.buyingPower ?? null,
     tradableSymbols: eligibleSymbols.length ? eligibleSymbols : null,
@@ -105,6 +109,11 @@ export default function SimpleCreateBot() {
     setServerErrors({})
     setSubmitError(null)
   }
+  const resetEmptyStock = () => {
+    if (draft.symbolsText.trim()) return
+    const fallback = initializeTemplateDraft(template, data, brokerStatus?.tradableSymbols, null)
+    chooseStock(fallback.symbolsText)
+  }
   const onCapitalChange = value => {
     const originalLimit = Number(template.config?.maxOrderNotional ?? draft.maxPerOrder)
     setServerErrors(old => ({ ...old, capital: null, maxPerOrder: null }))
@@ -114,6 +123,30 @@ export default function SimpleCreateBot() {
       // Keep the template's per-order cap; never silently increase risk as allocation grows.
       maxPerOrder: String(Math.min(Number.isFinite(originalLimit) && originalLimit > 0 ? originalLimit : Number(old.maxPerOrder), Number(value) || 0)),
     }))
+  }
+
+  const resetEmptyAmount = () => {
+    if (draft.capital !== '') return
+    const fallback = initializeTemplateDraft(template, data, brokerStatus?.tradableSymbols, draft.symbolsText)
+    onCapitalChange(fallback.capital)
+  }
+  const resetEmptySetting = (setting) => {
+    if (setting.value !== '' && setting.value !== undefined && setting.value !== null) return
+    const fallback = initializeTemplateDraft(template, data, brokerStatus?.tradableSymbols, draft.symbolsText)
+    const defaults = {
+      triggerPrice: fallback.trigger?.price,
+      minScore: fallback.research?.minScore,
+      maxAgeHours: fallback.research?.maxAgeHours,
+      maxDriftPct: fallback.research?.maxDriftPct,
+      relVolume: fallback.relVolume?.minRatio,
+      priceChange: fallback.priceChange?.pct,
+      exit: fallback.exit?.stopLoss?.pct,
+      exitReversal: fallback.exit?.reversal?.pct,
+      dailyLoss: fallback.dailyLoss?.maxLoss,
+      positionLimit: fallback.positionLimit?.maxShares,
+    }
+    const defaultValue = defaults[setting.field]
+    if (defaultValue !== '' && defaultValue !== undefined && defaultValue !== null) setting.update(String(defaultValue))
   }
 
   const handleSubmit = async event => {
@@ -228,7 +261,8 @@ export default function SimpleCreateBot() {
                   </Select>
                 : <Input id={id} data-testid="target-stock-input" value={draft.symbolsText}
                     autoComplete="off" spellCheck={false} aria-invalid={invalid} aria-describedby={describedby}
-                    onChange={e => chooseStock(e.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ''))} />
+                    onChange={e => chooseStock(e.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ''))}
+                    onBlur={resetEmptyStock} />
             }
           </Field>
         </div>
@@ -238,13 +272,14 @@ export default function SimpleCreateBot() {
         <h2 id="allocation-heading">Investment allocation</h2>
         <div className="tl-simple-builder__amount" data-error-field="capital">
           <Field label="Amount to allocate ($)" error={fieldError('capital')}
-            help="The total capital this bot may use across its investments.">
+            help="Your budget for this bot. It can place multiple trades without exceeding this allocation.">
             {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
               <Input id={id} value={draft.capital} aria-invalid={invalid} aria-describedby={describedby}
-                inputMode="decimal" onChange={e => onCapitalChange(e.target.value)} />}
+                inputMode="decimal" onChange={e => onCapitalChange(e.target.value)}
+                onBlur={resetEmptyAmount} />}
           </Field>
         </div>
-        <p className="tl-simple-builder__compact">Per-order limit: {amount(draft.maxPerOrder)}</p>
+        <p className="tl-simple-builder__compact">Maximum for one trade: {amount(draft.maxPerOrder)}</p>
         {fieldError('maxPerOrder') && <p role="alert" className="tl-field-error">{fieldError('maxPerOrder')}</p>}
       </section>
 
@@ -253,11 +288,22 @@ export default function SimpleCreateBot() {
           <h2 id="settings-heading">Strategy settings</h2>
         </div>
 
-        {settings.length ? <div className="tl-simple-builder__settings">
-          {settings.map(s => <NumberSetting key={s.field} field={s.field} label={s.label} value={s.value}
-            error={fieldError(s.field === 'exitReversal' ? 'exit' : s.field)} help={s.help} onChange={s.update} />)}
-        </div> : <p className="tl-simple-builder__compact">Uses the template's preset trading conditions.</p>}
-        {hasResearch && <p className="tl-simple-builder__compact">Independent research evidence is required.</p>}
+        <div className="tl-simple-builder__behavior" data-testid="strategy-behavior">
+          <h3>When it trades</h3>
+          <p data-testid="strategy-action">{describeAction(preview)}</p>
+          {conditions.length > 0 && <ul data-testid="strategy-conditions">
+            {conditions.map(condition => <li key={condition}>{condition}</li>)}
+          </ul>}
+        </div>
+        {settings.length > 0 && <>
+          <h3 className="tl-simple-builder__settings-heading">Settings you can change</h3>
+          <div className="tl-simple-builder__settings">
+            {settings.map(setting => <NumberSetting key={setting.field} field={setting.field}
+              label={setting.label} value={setting.value} onBlur={() => resetEmptySetting(setting)}
+              error={fieldError(setting.field === 'exitReversal' ? 'exit' : setting.field)}
+              help={setting.help} onChange={setting.update} />)}
+          </div>
+        </>}
 
       </section>
 
