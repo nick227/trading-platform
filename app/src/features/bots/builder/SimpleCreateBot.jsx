@@ -4,7 +4,6 @@ import { get, post } from '../../../api/client'
 import { useAuth } from '../../../app/AuthProvider'
 import ModeBadge, { getTradingMode, isSimulated } from '../../../components/ModeBadge'
 import { Field, Input, Select } from '../../../components/ui/Field'
-import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { buildBotFromDraft, createBotConfiguration, formatDesiredRules, initCreateDraft, mapServerValidationError, validateBuilderDraft } from './builderModel'
 import { loadWizardData } from './builderData'
 import { strategyPresentation } from '../strategyPresentation'
@@ -109,9 +108,6 @@ export default function SimpleCreateBot() {
     }, 120)
     return () => { active = false; clearTimeout(timeout) }
   }, [template?.id, draft?.symbolsText, marketLinkedPrice])
-  const preview = useMemo(() => draft && template ? buildBotFromDraft(draft, template) : null, [draft, template])
-  const conditions = useMemo(() => preview ? describeGuards(preview).filter(condition =>
-    !condition.includes('simulated capital') && !condition.includes('per order')) : [], [preview])
   const errors = useMemo(() => draft ? validateBuilderDraft(draft, {
     buyingPower: data?.buyingPower ?? null,
     tradableSymbols: eligibleSymbols.length ? eligibleSymbols : null,
@@ -178,6 +174,8 @@ export default function SimpleCreateBot() {
       exitReversal: fallback.exit?.reversal?.pct,
       dailyLoss: fallback.dailyLoss?.maxLoss,
       positionLimit: fallback.positionLimit?.maxShares,
+      cooldown: fallback.cooldown?.hours,
+      trendBars: fallback.trend?.confirmationBars,
     }
     const defaultValue = setting.field === 'triggerPrice' && marketLinkedPrice && quoteDefault.ticker === draft.symbolsText && quoteDefault.status === 'ready'
       ? quoteDefault.price : defaults[setting.field]
@@ -190,7 +188,7 @@ export default function SimpleCreateBot() {
     setSubmitError(null)
     if (Object.keys(errors).length) {
       const first = ['symbols','triggerPrice','minScore','maxAgeHours','maxDriftPct','capital','maxPerOrder',
-        'relVolume','priceChange','exit','dailyLoss','positionLimit','cooldown','name'].find(key => errors[key])
+        'relVolume','priceChange','exit','dailyLoss','positionLimit','cooldown','trendSymbol','trendBars','name'].find(key => errors[key])
       formRef.current?.querySelector('[data-error-field="' + first + '"] input, [data-error-field="' + first + '"] select')?.focus()
       return
     }
@@ -219,6 +217,10 @@ export default function SimpleCreateBot() {
   const modeBlocked = mode !== 'paper'
   const blocked = modeBlocked || !data.portfolioId
   const settings = []
+  if (draft.triggerType === 'trend_filter') settings.push({
+    field: 'trendBars', label: 'Trend confirmation periods', value: draft.trend?.confirmationBars,
+    update: value => changeNested('trend', 'confirmationBars', value, 'trendBars'),
+  })
   if (hasPrice) settings.push({
     field: 'triggerPrice', label: 'Trigger price ($)', value: draft.trigger?.price,
     help: marketLinkedPrice
@@ -269,6 +271,10 @@ export default function SimpleCreateBot() {
   if (draft.positionLimit?.on) settings.push({
     field: 'positionLimit', label: 'Maximum shares per stock',
     value: draft.positionLimit.maxShares, update: value => changeNested('positionLimit', 'maxShares', value),
+  })
+  if (draft.cooldown?.on) settings.push({
+    field: 'cooldown', label: 'Minimum hours between trades', value: draft.cooldown.hours,
+    update: value => changeNested('cooldown', 'hours', value),
   })
 
   return <main className="tl-page tl-simple-builder" data-testid="algorithm-builder">
@@ -334,29 +340,41 @@ export default function SimpleCreateBot() {
         {fieldError('maxPerOrder') && <p role="alert" className="tl-field-error">{fieldError('maxPerOrder')}</p>}
       </section>
 
-      <section className="tl-simple-builder__section" aria-labelledby="settings-heading">
-        <div className="tl-simple-builder__section-head">
-          <h2 id="settings-heading">Strategy settings</h2>
+      <section className="tl-simple-builder__section" aria-labelledby="conditions-heading">
+        <h2 id="conditions-heading">Trading conditions</h2>
+        <div className="tl-simple-builder__settings" data-testid="trading-condition-fields">
+          {draft.triggerType === 'trend_filter' && <div data-error-field="trendSymbol">
+            <Field label="Market trend to follow" error={fieldError('trendSymbol')}>
+              {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
+                <Input id={id} value={draft.trend?.symbol || ''} aria-invalid={invalid}
+                  aria-describedby={describedby}
+                  onChange={e => changeNested('trend', 'symbol', e.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ''), 'trendSymbol')} />}
+            </Field>
+          </div>}
+          {settings.map(setting => <NumberSetting key={setting.field} field={setting.field}
+            label={setting.label} value={setting.value} onBlur={() => resetEmptySetting(setting)}
+            placeholder={setting.placeholder}
+            error={fieldError(setting.field === 'exitReversal' ? 'exit' : setting.field)}
+            help={setting.help} onChange={setting.update} />)}
+          {draft.marketHours?.on && <Field label="Trading hours">
+            {({ id }) => <Select id={id} value={draft.marketHours.extended ? 'extended' : 'regular'}
+              onChange={e => changeNested('marketHours', 'extended', e.target.value === 'extended')}>
+              <option value="regular">Regular market hours</option>
+              <option value="extended">Include extended hours</option>
+            </Select>}
+          </Field>}
+          {draft.triggerType === 'alpha_research' && draft.research?.requireEdge && <div className="tl-simple-builder__fixed">
+            <span>Research validation</span>
+            <strong>Must beat baseline in out-of-sample testing</strong>
+            <small>Required by the trading engine</small>
+          </div>}
+          {(template.rules || []).filter(rule => rule.type === 'time_window' && rule.enabled !== false).map((rule, index) =>
+            <div className="tl-simple-builder__fixed" key={rule.id || index}>
+              <span>Trading schedule</span>
+              <strong>{rule.name || 'Template trading window'}</strong>
+              <small>Defined by this strategy</small>
+            </div>)}
         </div>
-
-        <div className="tl-simple-builder__behavior" data-testid="strategy-behavior">
-          <h3>When it trades</h3>
-          <p data-testid="strategy-action">{describeAction(preview)}</p>
-          {conditions.length > 0 && <ul data-testid="strategy-conditions">
-            {conditions.map(condition => <li key={condition}>{condition}</li>)}
-          </ul>}
-        </div>
-        {settings.length > 0 && <>
-          <h3 className="tl-simple-builder__settings-heading">Settings you can change</h3>
-          <div className="tl-simple-builder__settings">
-            {settings.map(setting => <NumberSetting key={setting.field} field={setting.field}
-              label={setting.label} value={setting.value} onBlur={() => resetEmptySetting(setting)}
-              placeholder={setting.placeholder}
-              error={fieldError(setting.field === 'exitReversal' ? 'exit' : setting.field)}
-              help={setting.help} onChange={setting.update} />)}
-          </div>
-        </>}
-
       </section>
 
       <p className="tl-simple-builder__compact tl-simple-builder__review-line" data-testid="builder-summary">
