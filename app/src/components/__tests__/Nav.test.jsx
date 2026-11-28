@@ -22,9 +22,9 @@ describe('Nav', () => {
   it('shows the four primary surfaces plus an account link for signed-in users, keeping AI workspaces contextual', () => {
     renderNav()
     const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'My Bots', 'Strategies', 'AI Trader'])
+    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'My Bots', 'AI Trader'])
     expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/profile')
-    for (const removed of ['Home', 'Orders', 'Opportunities', 'Templates', 'Profile', 'Research Partner', 'Stocks']) {
+    for (const removed of ['Home', 'Orders', 'Opportunities', 'Templates', 'Profile', 'Research Partner', 'Stocks', 'Strategies']) {
       expect(screen.queryByRole('link', { name: removed })).not.toBeInTheDocument()
     }
   })
@@ -33,7 +33,7 @@ describe('Nav', () => {
     authState.user = { fullName: 'Admin User', role: 'admin' }
     renderNav()
     const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'My Bots', 'Strategies', 'AI Trader', 'Admin'])
+    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'My Bots', 'AI Trader', 'Admin'])
     expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin')
 
     cleanup()
@@ -53,7 +53,7 @@ describe('Nav', () => {
     expect(screen.getByRole('link', { name: 'AI Trader' })).toHaveAttribute('aria-current', 'page')
     cleanup()
     renderNav('/strategies/tmpl_spy_trend_filter')
-    expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'My Bots' })).not.toHaveAttribute('aria-current', 'page')
     cleanup()
     renderNav('/opportunities')
     expect(screen.queryByRole('link', { name: 'Stocks' })).not.toBeInTheDocument()
@@ -70,11 +70,10 @@ describe('Nav', () => {
     expect(screen.getByTestId('mode-badge')).toHaveTextContent('Live account — trading disabled')
   })
 
-  it('shows Strategies, AI Trader, Sign in and no mode badge when signed out', () => {
+  it('shows AI Trader, Sign in and no mode badge when signed out', () => {
     authState.user = null
     renderNav()
     expect(screen.getByRole('link', { name: 'AI Trader' })).toHaveAttribute('href', '/ai-stock-trader')
-    expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute('href', '/strategies')
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/auth')
     expect(screen.queryByTestId('mode-badge')).not.toBeInTheDocument()
   })
