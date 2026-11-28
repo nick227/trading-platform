@@ -185,6 +185,13 @@ export default function BotsPage() {
       <p className="tl-section-note">
         Want to investigate an idea first? <Link to={researchPartnerHref}>Open your AI Research Partner</Link> or <Link to="/ai-stock-trader">inspect the Flagship AI Stock Trader</Link>.
       </p>
+      <div className="tl-section" aria-label="Choose a trading approach">
+        <div className="tl-section-head">
+          <div><h2 className="tl-section-title">Choose how your bot trades</h2>
+          <p className="tl-section-note">Start with a tested strategy, or create a bot with your own rules.</p></div>
+          <Link to="/strategies" className="tl-btn tl-btn--secondary">Browse strategies</Link>
+        </div>
+      </div>
       <PersonalAiTraderCard />
 
       {state.loading ? (
