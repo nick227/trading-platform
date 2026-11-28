@@ -5,6 +5,7 @@ import { portfolioRiskHistory, portfolioRiskSnapshot } from '../accountSnapshot.
 import prisma from '../../db/prisma.js'
 import { calculateFifoAccounting } from '../../../../server/src/services/botAccountingService.js'
 import { loadPortfolioFills } from '../../../../server/src/services/portfolioValuationService.js'
+import { getNetExternalCashFlowsSince } from '../../../../server/src/services/portfolioAccountingService.js'
 import { drawdownStress, scoreDrawdown, scoreDailyLoss, scoreLosingStreak, scoreVolatility, stressInputs } from '../riskCore.js'
 
 export class DrawdownStressService {
@@ -28,9 +29,15 @@ export class DrawdownStressService {
     const snap = await portfolioRiskSnapshot(portfolioId)
     const history = await portfolioRiskHistory(snap)
     const row = await prisma.equityPeak.findUnique({ where: { portfolioId } })
-    const recorded = Number(row?.peakEquity) || 0
-    const peak = Math.max(recorded, history.peak ?? 0, snap.equity)
-    if (peak > recorded + 0.005) {
+    const rawRecorded = Number(row?.peakEquity) || 0
+    // Adjust recorded peak by external deposits/withdrawals since peakDate so ACH withdrawals
+    // never produce phantom drawdowns and deposits never mask real trading drawdowns.
+    const netCashFlowSincePeak = row?.peakDate
+      ? await getNetExternalCashFlowsSince(portfolioId, row.peakDate, { prismaClient: prisma })
+      : 0
+    const adjustedRecorded = Math.max(0, rawRecorded + netCashFlowSincePeak)
+    const peak = Math.max(adjustedRecorded, history.peak ?? 0, snap.equity)
+    if (Math.abs(peak - rawRecorded) > 0.005) {
       await prisma.equityPeak.upsert({
         where: { portfolioId },
         create: { portfolioId, peakEquity: peak.toFixed(2), peakDate: new Date(now) },

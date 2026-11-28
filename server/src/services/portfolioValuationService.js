@@ -20,6 +20,13 @@ import {
   ensureDefaultPaperPortfolio,
   findDefaultPaperPortfolio
 } from './defaultPaperPortfolioService.js'
+import {
+  divMicros,
+  microsTo4Decimals,
+  microsToDollars,
+  mulMicros,
+  toMicros
+} from '../domain/money.js'
 
 const round2 = (n) => Number(n.toFixed(2))
 
@@ -111,17 +118,38 @@ export function openQuantityByBot(fills) {
  * Pure valuation from fills + marks. `startingCash` null (broker mode) means cash and
  * equity come from the broker instead (`brokerCash`, `brokerEquity`).
  */
-export function buildValuation({ fills, marks = { prices: {}, sessions: {} }, startingCash = null, brokerCash = null, source, session = null }) {
-  const accounting = calculateFifoAccounting(fills, { currentPrices: marks.prices })
+export function buildValuation({ fills, externalUnmanagedLots = [], marks = { prices: {}, sessions: {} }, startingCash = null, brokerCash = null, source, session = null }) {
+  const syntheticExternalBuys = (externalUnmanagedLots ?? [])
+    .filter((l) => BigInt(l.remainingQtyMicros ?? 0) > 0n)
+    .map((l) => ({
+      id: `extlot_${l.id}`,
+      ticker: l.symbol,
+      direction: 'buy',
+      filledQuantity: microsTo4Decimals(l.remainingQtyMicros),
+      filledPrice: microsTo4Decimals(l.unitCostMicros),
+      fees: 0,
+      commission: 0,
+      origin: 'external',
+      filledAt: l.openedAt
+    }))
+
+  const combinedFills = syntheticExternalBuys.length ? [...syntheticExternalBuys, ...fills] : fills
+  const accounting = calculateFifoAccounting(combinedFills, { currentPrices: marks.prices })
   const botHoldings = openQuantityByBot(fills)
 
   let cash = null
   if (startingCash !== null) {
-    let c = startingCash
-    for (const f of fills) c -= signedQty(f) * Number(f.filledPrice) + (Number(f.fees) || 0) + (Number(f.commission) || 0)
-    cash = round2(c)
+    let cashMicros = toMicros(startingCash)
+    for (const f of fills) {
+      const qtyMicros = toMicros(f.filledQuantity)
+      const pxMicros = toMicros(f.filledPrice)
+      const feeMicros = toMicros(f.fees ?? 0) + toMicros(f.commission ?? 0)
+      const grossMicros = mulMicros(qtyMicros, pxMicros)
+      cashMicros -= (String(f.direction).toLowerCase() === 'sell' ? -grossMicros : grossMicros) + feeMicros
+    }
+    cash = microsToDollars(cashMicros)
   } else if (brokerCash !== null && Number.isFinite(Number(brokerCash))) {
-    cash = round2(Number(brokerCash))
+    cash = microsToDollars(toMicros(brokerCash))
   }
 
   const lastFillSession = {}
@@ -200,9 +228,17 @@ export async function valuePortfolio(userId, { prismaClient = prisma, config = s
   const broker = fetchBrokerAccount ? await fetchBrokerAccount(userId) : null
   if (broker) {
     const fills = await loadPortfolioFills(userId, { prismaClient, config })
-    const tickers = [...new Set(fills.map((f) => String(f.ticker).toUpperCase()))]
+    const externalLots = typeof prismaClient?.positionLot?.findMany === 'function'
+      ? await prismaClient.positionLot.findMany({
+          where: { userId: String(userId), ownerType: 'external_unmanaged', status: 'open' }
+        }).catch(() => [])
+      : []
+    const tickers = [...new Set([
+      ...fills.map((f) => String(f.ticker).toUpperCase()),
+      ...externalLots.map((l) => String(l.symbol).toUpperCase())
+    ])]
     const marks = await loadPriceMarks(tickers, { engine })
-    const v = buildValuation({ fills, marks, brokerCash: broker.cash, source: 'broker' })
+    const v = buildValuation({ fills, externalUnmanagedLots: externalLots, marks, brokerCash: broker.cash, source: 'broker' })
     const brokerEquity = Number(broker.equity)
     return { ...v, equity: Number.isFinite(brokerEquity) ? round2(brokerEquity) : v.equity }
   }
@@ -303,8 +339,32 @@ async function loadCloses(tickers, range, engine) {
   return closesByTicker
 }
 
-export async function valueHistory(userId, { prismaClient = prisma, config = simulationConfig(), engine = engineClient, range = '3M' } = {}) {
+export async function valueHistory(userId, { prismaClient = prisma, config = simulationConfig(), engine = engineClient, range = '3M', portfolioId = null } = {}) {
   if (!config.enabled) {
+    // Serve authoritative persisted PortfolioDailySnapshot rows when recorded for this user/portfolio
+    if (typeof prismaClient?.portfolioDailySnapshot?.findMany === 'function') {
+      const snaps = await prismaClient.portfolioDailySnapshot.findMany({
+        where: {
+          userId: String(userId),
+          ...(portfolioId ? { portfolioId: String(portfolioId) } : {})
+        },
+        orderBy: { sessionDate: 'asc' }
+      }).catch(() => [])
+      if (snaps.length > 0) {
+        return {
+          source: 'portfolio_snapshots',
+          priceSource: 'Authoritative PortfolioDailySnapshot ledger',
+          points: snaps.map((s) => ({
+            date: s.sessionDate,
+            value: Number(s.equityDecimal),
+            cash: Number(s.cashDecimal),
+            netCashFlow: Number(s.netExternalCashFlowDecimal ?? 0),
+            fills: 0
+          }))
+        }
+      }
+    }
+
     const hasExternalBrokerRow = typeof prismaClient?.brokerAccount?.findUnique === 'function'
       ? Boolean(await prismaClient.brokerAccount.findUnique({ where: { userId: String(userId) } }).catch(() => null))
       : false

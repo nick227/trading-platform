@@ -3,6 +3,7 @@
 
 import alphaEngineService from '../services/alphaEngineService.js'
 import executionsService from '../services/executionsService.js'
+import { calculateFifoAccounting } from '../services/botAccountingService.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
@@ -68,31 +69,20 @@ async function getUserOwnershipData(ticker, userId = 'default') {
   }
 
   const tickerExecutions = executions.data
-  let currentShares = 0
-  let totalCost = 0
-  let realizedPnL = 0
+  const upperTicker = String(ticker ?? '').toUpperCase()
+  const accounting = calculateFifoAccounting(tickerExecutions)
+  const openPos = accounting.openPositions?.[upperTicker] ?? null
+
   let totalBuys = 0
   let totalSells = 0
-
   for (const exec of tickerExecutions) {
-    if (exec.direction === 'buy') {
-      currentShares += exec.quantity
-      totalCost += exec.quantity * exec.price
-      totalBuys += 1
-      continue
-    }
-
-    if (exec.direction === 'sell') {
-      const sharesSold = Math.min(exec.quantity, currentShares)
-      const avgCostPerShare = currentShares > 0 ? totalCost / currentShares : 0
-      realizedPnL += sharesSold * (exec.price - avgCostPerShare)
-      currentShares -= sharesSold
-      totalCost -= sharesSold * avgCostPerShare
-      totalSells += 1
-    }
+    if (exec.direction === 'buy') totalBuys += 1
+    else if (exec.direction === 'sell') totalSells += 1
   }
 
-  const avgCost = currentShares > 0 ? totalCost / currentShares : 0
+  const currentShares = openPos?.quantity ?? 0
+  const avgCost = openPos?.avgPrice ?? 0
+  const realizedPnL = accounting.performance?.realizedPnl ?? 0
   // ISO strings are lexicographically sortable — no Date allocation needed
   const lastTrade = tickerExecutions.reduce((latest, exec) =>
     (!latest || exec.createdAt > latest.createdAt) ? exec : latest, null)

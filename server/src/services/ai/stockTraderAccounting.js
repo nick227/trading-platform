@@ -3,8 +3,9 @@
  * All cash movements come from persisted fills, never inferred from unrealized P&L.
  */
 import { calculateFifoAccounting, isBrokerFill } from '../botAccountingService.js'
+import { microsToDollars, mulMicros, toMicros } from '../../domain/money.js'
 
-const money = value => Math.round((value + Number.EPSILON) * 100) / 100
+const money = value => microsToDollars(toMicros(value))
 const validNumber = value => value !== null && value !== undefined && Number.isFinite(Number(value))
 
 export const STOCK_TRADER_ACTIVE_ORDER_STATUSES = Object.freeze([
@@ -23,8 +24,8 @@ export function reconcileStockTraderFills({
     throw new Error('A complete paper fill ledger, capital, and as-of session are required')
   }
   const capital = Number(allocatedCapital)
-  let cash = capital
-  let totalFees = 0
+  let cashMicros = toMicros(capital)
+  let totalFeesMicros = 0n
 
   for (const fill of fills) {
     if (!isBrokerFill(fill) ||
@@ -32,15 +33,17 @@ export function reconcileStockTraderFills({
         !validNumber(fill.fees ?? 0) || !validNumber(fill.commission ?? 0)) {
       throw new Error('Invalid or future-dated paper fill')
     }
-    const qty = Number(fill.filledQuantity)
-    const price = Number(fill.filledPrice)
-    const fees = Number(fill.fees ?? 0) + Number(fill.commission ?? 0)
-    if (fees < 0) throw new Error('Negative paper fees are invalid')
-    const notional = qty * price
-    cash += String(fill.direction).toLowerCase() === 'sell' ? notional : -notional
-    cash -= fees
-    totalFees += fees
+    const qtyMicros = toMicros(fill.filledQuantity)
+    const priceMicros = toMicros(fill.filledPrice)
+    const feesMicros = toMicros(fill.fees ?? 0) + toMicros(fill.commission ?? 0)
+    if (feesMicros < 0n) throw new Error('Negative paper fees are invalid')
+    const notionalMicros = mulMicros(qtyMicros, priceMicros)
+    cashMicros += String(fill.direction).toLowerCase() === 'sell' ? notionalMicros : -notionalMicros
+    cashMicros -= feesMicros
+    totalFeesMicros += feesMicros
   }
+  const cash = microsToDollars(cashMicros)
+  const totalFees = microsToDollars(totalFeesMicros)
 
   const accounting = accountant(fills)
   if (!accounting || typeof accounting !== 'object') throw new Error('FIFO paper accounting unavailable')

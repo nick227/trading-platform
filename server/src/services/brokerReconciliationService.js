@@ -3,6 +3,10 @@ import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { getUserAlpacaCredentialsOrThrow } from './alpacaClockService.js'
 import { simulationConfig } from './simulationService.js'
 import { ensureExternalBrokeragePortfolio } from './defaultPaperPortfolioService.js'
+import {
+  computeNetPositionMapFromExecutions,
+  syncExternalUnmanagedPositions
+} from './portfolioAccountingService.js'
 
 const OVERLAP_MS = 5 * 60 * 1000
 const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
@@ -131,21 +135,13 @@ async function upsertOrderAsExecution({ userId, portfolioId, order }) {
 }
 
 function buildLocalPositionMap(executions) {
-  const map = new Map()
-  for (const execution of executions) {
-    const status = String(execution?.status ?? '')
-    if (status !== 'filled' && status !== 'partially_filled') continue
-
-    const ticker = String(execution?.ticker ?? '').toUpperCase()
-    if (!ticker) continue
-
-    const qtyValue = Number(execution?.filledQuantity ?? execution?.quantity ?? 0)
-    if (!Number.isFinite(qtyValue) || qtyValue <= 0) continue
-
-    const signed = execution.direction === 'sell' ? -qtyValue : qtyValue
-    map.set(ticker, (map.get(ticker) ?? 0) + signed)
-  }
-  return map
+  return computeNetPositionMapFromExecutions(
+    (executions ?? []).map((e) => ({
+      ...e,
+      filledQuantity: e.filledQuantity ?? e.quantity,
+      filledPrice: e.filledPrice ?? e.price ?? 1
+    }))
+  )
 }
 
 function buildBrokerPositionMap(positions) {
@@ -346,6 +342,19 @@ export async function reconcileBrokerActivity(userId) {
     }
 
     const drift = await detectPositionDrift(userId)
+    if (typeof prisma.positionLot?.upsert === 'function') {
+      const [brokerPositions, localExecs] = await Promise.all([
+        fetchAlpacaPositions(creds).catch(() => []),
+        prisma.execution.findMany({ where: { userId, portfolioId } }).catch(() => [])
+      ])
+      await syncExternalUnmanagedPositions({
+        portfolioId,
+        userId,
+        brokerPositions,
+        localExecutions: localExecs,
+        prismaClient: prisma
+      }).catch(() => {})
+    }
 
     const saved = await prisma.brokerSyncCheckpoint.upsert({
       where: { userId },

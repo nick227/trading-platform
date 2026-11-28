@@ -98,6 +98,8 @@ const DEFAULTS = {
 const UNIQUE = {
   execution: ['clientOrderId', 'activeIntentKey', 'brokerOrderId'],
   backtestRun: ['activeKey'],
+  portfolioCashEntry: ['externalActivityId'],
+  positionLot: ['openExecutionId', 'externalPositionKey'],
   strategyEvidence: [],
 }
 

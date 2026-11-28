@@ -1,4 +1,11 @@
 import prisma from '../loaders/prisma.js'
+import {
+  divMicros,
+  microsTo4Decimals,
+  microsToDollars,
+  mulMicros,
+  toMicros
+} from '../domain/money.js'
 
 /**
  * Pure FIFO accounting engine for trade executions.
@@ -46,24 +53,24 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
     return String(a.id || '').localeCompare(String(b.id || ''))
   })
 
-  const openLotsByTicker = new Map() // ticker -> FIFO lots
+  const openLotsByTicker = new Map() // ticker -> FIFO lots (exact BigInt micro-units)
   const lotHeads = new Map() // ticker -> first unconsumed lot index
   const perExecutionPnl = new Map()  // executionId -> realizedPnl
   // Closed trades = sells that closed attributable lots; a win realized a positive P/L.
   let closedTrades = 0
   let winningTrades = 0
-  let realizedPnlTotal = 0
-  let realizedNetTotal = 0
-  let totalFees = 0
-  const unattributedSellQty = {}
+  let realizedPnlMicrosTotal = 0n
+  let realizedNetMicrosTotal = 0n
+  let totalFeesMicros = 0n
+  const unattributedSellQtyMicros = {}
 
   for (const exec of sorted) {
     const ticker = String(exec.ticker).toUpperCase()
     const dir = String(exec.direction).toLowerCase()
-    const qty = Number(exec.filledQuantity)
-    const price = Number(exec.filledPrice)
-    const fee = Number(exec.fees ?? 0) + Number(exec.commission ?? 0)
-    totalFees += fee
+    const qtyMicros = toMicros(exec.filledQuantity)
+    const priceMicros = toMicros(exec.filledPrice)
+    const feeMicros = toMicros(exec.fees ?? 0) + toMicros(exec.commission ?? 0)
+    totalFeesMicros += feeMicros
 
     if (!openLotsByTicker.has(ticker)) {
       openLotsByTicker.set(ticker, [])
@@ -74,89 +81,84 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
     if (dir === 'buy') {
       lots.push({
         id: exec.id,
-        remainingQty: qty,
-        price,
-        feePerShare: fee / qty,
+        remainingQtyMicros: qtyMicros,
+        priceMicros,
+        feePerShareMicros: qtyMicros > 0n ? divMicros(feeMicros, qtyMicros) : 0n,
         filledAt: exec.filledAt || exec.createdAt
       })
       if (exec.id) {
         perExecutionPnl.set(exec.id, 0)
       }
     } else if (dir === 'sell') {
-      let remainingToSell = qty
-      let fillRealizedPnl = 0
-      let matchedBuyFees = 0
+      let remainingToSellMicros = qtyMicros
+      let fillRealizedPnlMicros = 0n
+      let matchedBuyFeesMicros = 0n
 
-      // FIFO head avoids O(n) Array.shift() on every consumed lot.
-      // Periodic compaction bounds retention of closed-lot objects.
       let head = lotHeads.get(ticker)
-      while (remainingToSell > 1e-7 && head < lots.length) {
+      while (remainingToSellMicros > 0n && head < lots.length) {
         const lot = lots[head]
-        const matchQty = Math.min(remainingToSell, lot.remainingQty)
-        const pnlChunk = matchQty * (price - lot.price)
-        fillRealizedPnl += pnlChunk
-        matchedBuyFees += matchQty * (lot.feePerShare || 0)
-        remainingToSell -= matchQty
-        lot.remainingQty -= matchQty
+        const matchQtyMicros = remainingToSellMicros < lot.remainingQtyMicros
+          ? remainingToSellMicros
+          : lot.remainingQtyMicros
+        const pnlChunkMicros = mulMicros(matchQtyMicros, priceMicros - lot.priceMicros)
+        fillRealizedPnlMicros += pnlChunkMicros
+        matchedBuyFeesMicros += mulMicros(matchQtyMicros, lot.feePerShareMicros || 0n)
+        remainingToSellMicros -= matchQtyMicros
+        lot.remainingQtyMicros -= matchQtyMicros
 
-        if (lot.remainingQty <= 1e-7) {
+        if (lot.remainingQtyMicros <= 0n) {
           head += 1
         }
       }
-      // Amortized compaction: do not keep an unbounded prefix of closed lots.
       if (head >= 64 && head * 2 >= lots.length) {
         lots.splice(0, head)
         head = 0
       }
       lotHeads.set(ticker, head)
 
-      // Never invent a short: quantity sold beyond attributable lots realizes nothing
-      // and is reported so the mismatch is visible.
-      if (remainingToSell > 1e-7) {
-        unattributedSellQty[ticker] = (unattributedSellQty[ticker] ?? 0) + remainingToSell
+      if (remainingToSellMicros > 0n) {
+        unattributedSellQtyMicros[ticker] = (unattributedSellQtyMicros[ticker] ?? 0n) + remainingToSellMicros
       }
 
-      if (qty - remainingToSell > 1e-7) {
+      if (qtyMicros - remainingToSellMicros > 0n) {
         closedTrades += 1
-        if (fillRealizedPnl > 1e-9) winningTrades += 1
+        if (fillRealizedPnlMicros > 0n) winningTrades += 1
       }
 
-      realizedPnlTotal += fillRealizedPnl
-      // Net of the sell's own fees and the buy fees of the shares it closed.
-      realizedNetTotal += fillRealizedPnl - matchedBuyFees - fee
+      realizedPnlMicrosTotal += fillRealizedPnlMicros
+      realizedNetMicrosTotal += fillRealizedPnlMicros - matchedBuyFeesMicros - feeMicros
       if (exec.id) {
-        perExecutionPnl.set(exec.id, Number(fillRealizedPnl.toFixed(2)))
+        perExecutionPnl.set(exec.id, microsToDollars(fillRealizedPnlMicros))
       }
     }
   }
 
-  // Calculate open positions and capital in use
+  // Calculate open positions and capital in use using exact BigInt micro-units
   const openPositions = {}
-  let totalCapitalInUse = 0
+  let totalCapitalInUseMicros = 0n
   let allValuationsAvailable = true
-  let totalUnrealizedPnl = 0
+  let totalUnrealizedPnlMicros = 0n
 
   for (const [ticker, lots] of openLotsByTicker.entries()) {
-    // Closed FIFO prefix has already been consumed; do not traverse it.
     const head = lotHeads.get(ticker)
-    const remainingLots = lots.slice(head).filter(l => l.remainingQty > 1e-7)
+    const remainingLots = lots.slice(head).filter(l => l.remainingQtyMicros > 0n)
     if (remainingLots.length === 0) continue
 
-    const totalQty = remainingLots.reduce((sum, l) => sum + l.remainingQty, 0)
-    const totalCost = remainingLots.reduce((sum, l) => sum + (l.remainingQty * l.price), 0)
-    const avgPrice = totalQty > 0 ? totalCost / totalQty : 0
+    const totalQtyMicros = remainingLots.reduce((sum, l) => sum + l.remainingQtyMicros, 0n)
+    const totalCostMicros = remainingLots.reduce((sum, l) => sum + mulMicros(l.remainingQtyMicros, l.priceMicros), 0n)
+    const avgPriceMicros = totalQtyMicros > 0n ? divMicros(totalCostMicros, totalQtyMicros) : 0n
 
-    totalCapitalInUse += totalCost
+    totalCapitalInUseMicros += totalCostMicros
 
     const pos = {
       ticker,
-      quantity: Number(totalQty.toFixed(4)),
-      costBasis: Number(totalCost.toFixed(2)),
-      avgPrice: Number(avgPrice.toFixed(4)),
+      quantity: microsTo4Decimals(totalQtyMicros),
+      costBasis: microsToDollars(totalCostMicros),
+      avgPrice: microsTo4Decimals(avgPriceMicros),
       lots: remainingLots.map(l => ({
         id: l.id,
-        remainingQty: Number(l.remainingQty.toFixed(4)),
-        price: l.price,
+        remainingQty: microsTo4Decimals(l.remainingQtyMicros),
+        price: microsTo4Decimals(l.priceMicros),
         filledAt: l.filledAt
       }))
     }
@@ -164,10 +166,11 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
     const currentPriceRaw = currentPrices?.[ticker]
     const currentPrice = currentPriceRaw !== undefined && currentPriceRaw !== null ? Number(currentPriceRaw) : null
     if (currentPrice !== null && Number.isFinite(currentPrice) && currentPrice > 0) {
-      const unrealized = totalQty * (currentPrice - avgPrice)
-      totalUnrealizedPnl += unrealized
+      const currentPriceMicros = toMicros(currentPrice)
+      const unrealizedMicros = mulMicros(totalQtyMicros, currentPriceMicros) - totalCostMicros
+      totalUnrealizedPnlMicros += unrealizedMicros
       pos.currentPrice = currentPrice
-      pos.unrealizedPnl = Number(unrealized.toFixed(2))
+      pos.unrealizedPnl = microsToDollars(unrealizedMicros)
     } else {
       allValuationsAvailable = false
       pos.currentPrice = null
@@ -183,20 +186,20 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
 
   if (!hasOpenPositions) {
     unrealizedPnl = 0
-    totalPnl = Number(realizedPnlTotal.toFixed(2))
+    totalPnl = microsToDollars(realizedPnlMicrosTotal)
   } else if (allValuationsAvailable) {
-    unrealizedPnl = Number(totalUnrealizedPnl.toFixed(2))
-    totalPnl = Number((realizedPnlTotal + unrealizedPnl).toFixed(2))
+    unrealizedPnl = microsToDollars(totalUnrealizedPnlMicros)
+    totalPnl = microsToDollars(realizedPnlMicrosTotal + totalUnrealizedPnlMicros)
   } else {
     unrealizedPnl = null
     totalPnl = null
   }
 
   const performance = {
-    realizedPnl: Number(realizedPnlTotal.toFixed(2)),
+    realizedPnl: microsToDollars(realizedPnlMicrosTotal),
     unrealizedPnl,
     totalPnl,
-    fees: Number(totalFees.toFixed(2)),
+    fees: microsToDollars(totalFeesMicros),
     closedTrades,
     winningTrades,
     winRate: closedTrades > 0 ? Number((winningTrades / closedTrades).toFixed(4)) : null,
@@ -206,14 +209,13 @@ export function calculateFifoAccounting(executions, { currentPrices = {} } = {})
   return {
     hasFills: true,
     performance,
-    capitalInUse: Number(totalCapitalInUse.toFixed(2)),
+    capitalInUse: microsToDollars(totalCapitalInUseMicros),
     openPositions,
     perExecutionPnl,
     fillCount: sorted.length,
-    // Realized P/L after the fees of the sells and of the buy lots they closed.
-    realizedPnlNetOfFees: Number(realizedNetTotal.toFixed(2)),
+    realizedPnlNetOfFees: microsToDollars(realizedNetMicrosTotal),
     unattributedSellQuantity: Object.fromEntries(
-      Object.entries(unattributedSellQty).map(([t, q]) => [t, Number(q.toFixed(4))])
+      Object.entries(unattributedSellQtyMicros).map(([t, q]) => [t, microsTo4Decimals(q)])
     )
   }
 }

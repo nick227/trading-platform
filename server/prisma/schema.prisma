@@ -1043,3 +1043,63 @@ model CopilotProposal {
   @@index([userId, status, deadlineAt])
   @@index([portfolioId, status])
 }
+
+model PortfolioCashEntry {
+  id                 String   @id @db.VarChar(191)
+  portfolioId        String   @db.VarChar(191)
+  userId             String   @db.VarChar(191)
+  entryType          String   @db.VarChar(32) // initial_funding | fill_debit | fill_credit | fee | external_deposit | external_withdrawal | dividend | adjustment
+  amountMicros       BigInt
+  amountDecimal      Decimal  @db.Decimal(16, 4)
+  executionId        String?  @db.VarChar(191)
+  externalActivityId String?  @unique @db.VarChar(191)
+  effectiveAt        DateTime
+  metadata           Json?
+  createdAt          DateTime @default(now())
+
+  @@index([portfolioId, effectiveAt])
+  @@index([userId, effectiveAt])
+  @@index([executionId])
+}
+
+model PositionLot {
+  id                  String   @id @db.VarChar(191)
+  portfolioId         String   @db.VarChar(191)
+  userId              String   @db.VarChar(191)
+  symbol              String   @db.VarChar(24)
+  ownerType           String   @db.VarChar(32) // bot | manual_platform | external_unmanaged
+  ownerId             String   @db.VarChar(191)
+  openExecutionId     String?  @unique @db.VarChar(191)
+  externalPositionKey String?  @unique @db.VarChar(191)
+  openedAt            DateTime
+  initialQtyMicros    BigInt
+  remainingQtyMicros  BigInt
+  unitCostMicros      BigInt
+  feesMicros          BigInt   @default(0)
+  status              String   @default("open") @db.VarChar(16) // open | closed
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([portfolioId, symbol, status])
+  @@index([portfolioId, ownerType, ownerId, status])
+  @@index([userId, status])
+}
+
+model PortfolioDailySnapshot {
+  id                         String   @id @db.VarChar(191)
+  portfolioId                String   @db.VarChar(191)
+  userId                     String   @db.VarChar(191)
+  sessionDate                String   @db.VarChar(10)
+  cashDecimal                Decimal  @db.Decimal(16, 2)
+  marketValueDecimal         Decimal  @db.Decimal(16, 2)
+  equityDecimal              Decimal  @db.Decimal(16, 2)
+  netExternalCashFlowDecimal Decimal  @default(0) @db.Decimal(16, 2)
+  realizedPnlDecimal         Decimal  @default(0) @db.Decimal(16, 2)
+  unrealizedPnlDecimal       Decimal  @default(0) @db.Decimal(16, 2)
+  priceProvenance            Json?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@unique([portfolioId, sessionDate])
+  @@index([userId, sessionDate])
+}

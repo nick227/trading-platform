@@ -12,6 +12,7 @@
  */
 import prisma from '../loaders/prisma.js'
 import { engineClient } from '../clients/engine.js'
+import { divMicros, microsTo4Decimals, microsToDollars, mulMicros, toMicros } from '../domain/money.js'
 
 export const SIM_ORDER_PREFIX = 'simreplay_'
 export const SIM_DAILY_ORDER_PREFIX = 'simdaily_'
@@ -96,29 +97,35 @@ export async function simulatedAccount(userId, { prismaClient = prisma, config =
     where: { userId, filledQuantity: { gt: 0 } },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
   })
-  let cash = config.startingCash ?? 0
+  let cashMicros = toMicros(config.startingCash ?? 0)
   const positions = new Map()
   for (const e of fills) {
     if (!isSimulatedOrderId(e.brokerOrderId)) continue
-    const qty = Number(e.filledQuantity) || 0
-    const px = Number(e.filledPrice) || 0
-    const fees = Number(e.fees) || 0
-    const signed = String(e.direction).toLowerCase() === 'sell' ? -qty : qty
-    cash -= signed * px + fees
-    const p = positions.get(e.ticker) ?? { qty: 0, cost: 0 }
-    p.qty += signed
-    p.cost += signed * px
+    const qtyMicros = toMicros(e.filledQuantity ?? 0)
+    const pxMicros = toMicros(e.filledPrice ?? 0)
+    const feesMicros = toMicros(e.fees ?? 0) + toMicros(e.commission ?? 0)
+    const grossMicros = mulMicros(qtyMicros, pxMicros)
+    const isSell = String(e.direction).toLowerCase() === 'sell'
+    cashMicros -= (isSell ? -grossMicros : grossMicros) + feesMicros
+    const p = positions.get(e.ticker) ?? { qtyMicros: 0n, costMicros: 0n }
+    p.qtyMicros += isSell ? -qtyMicros : qtyMicros
+    p.costMicros += isSell ? -grossMicros : grossMicros
     positions.set(e.ticker, p)
   }
-  const open = [...positions.entries()].filter(([, p]) => Math.abs(p.qty) > 1e-9)
-  const marketValue = open.reduce((s, [, p]) => s + p.cost, 0) // valued at fill cost in replay
+  const open = [...positions.entries()].filter(([, p]) => p.qtyMicros > 0n || p.qtyMicros < 0n)
+  const marketValueMicros = open.reduce((s, [, p]) => s + p.costMicros, 0n)
+  const cashDollars = microsToDollars(cashMicros)
   return {
     simulated: true,
     mode: config.mode,
     session: config.session,
-    cash: Number(cash.toFixed(2)),
-    buying_power: Number(Math.max(0, cash).toFixed(2)),
-    equity: Number((cash + marketValue).toFixed(2)),
-    positions: open.map(([symbol, p]) => ({ symbol, qty: String(p.qty), avg_entry_price: p.qty ? Number((p.cost / p.qty).toFixed(4)) : 0 }))
+    cash: cashDollars,
+    buying_power: Math.max(0, cashDollars),
+    equity: microsToDollars(cashMicros + marketValueMicros),
+    positions: open.map(([symbol, p]) => ({
+      symbol,
+      qty: String(microsTo4Decimals(p.qtyMicros)),
+      avg_entry_price: p.qtyMicros !== 0n ? microsTo4Decimals(divMicros(p.costMicros, p.qtyMicros)) : 0
+    }))
   }
 }
