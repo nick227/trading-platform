@@ -3,6 +3,7 @@ import { get } from '../../api/client'
 import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } from '../../ui/format'
 import TraderCandidateEvidence from './TraderCandidateEvidence'
 import TraderStoryOverview from './TraderStoryOverview'
+import TraderEquityHistory from './TraderEquityHistory'
 import PortfolioIntelligencePanel from './PortfolioIntelligencePanel'
 import PerformanceIntelligencePanel from './PerformanceIntelligencePanel'
 import AgentHeader from '../../ui/agents/AgentHeader'
@@ -68,6 +69,7 @@ export default function StockTraderDashboard() {
         {data.performance?.totalPnl === null || !data.performance ? <p className="tl-section-note">Portfolio return is not yet available from verified fill and price data.</p> : null}
         {data.performance?.totalEquity != null && <p className="tl-section-note">Estimated paper equity: <strong>{money(data.performance.totalEquity)}</strong></p>}
       </section>
+      <TraderEquityHistory intelligence={data.performanceIntelligence} initialCapital={data.capitalAllocated} />
       {data.performanceIntelligence && <PerformanceIntelligencePanel intelligence={data.performanceIntelligence} />}
       {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
       {data.discovery && <TraderCandidateEvidence discovery={data.discovery} research={data.research} />}
