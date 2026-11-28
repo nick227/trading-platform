@@ -37,6 +37,10 @@ describe('AI Catalyst & Momentum Strategy Integration', () => {
     expect(nextTradingSession('2026-11-20')).toBe('2026-11-23')
     // Monday rolls to Tuesday
     expect(nextTradingSession('2026-11-23')).toBe('2026-11-24')
+    // Thanksgiving is closed: Wednesday rolls to Friday
+    expect(nextTradingSession('2026-11-25')).toBe('2026-11-27')
+    // Christmas Friday: Thursday rolls to Monday
+    expect(nextTradingSession('2026-12-24')).toBe('2026-12-28')
   })
 
   it('validates and sanitizes AI decision schema enforcing universe and rules', () => {

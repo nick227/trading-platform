@@ -12,17 +12,26 @@ import { readEmergencyStop } from '../emergencyStopService.js'
 import { claimQueuedAiPaperExecution, completeClaimedAiPaperExecution, quarantineClaimedAiPaperExecution } from './paperExecutionClaims.js'
 import { settleScheduledSimulatedExecution } from '../../execution/executionGateway.js'
 import { nextStockTraderSession } from './stockTraderTradingSession.js'
+import { isExchangeTradingDay } from '../../utils/marketCalendar.js'
 
 export const PLATFORM_USER_ID = 'usr_platform_canonical'
 export const PLATFORM_PORTFOLIO_ID = 'port_platform_canonical'
 export const PLATFORM_BOT_ID = 'bot_canonical_ai_catalyst_momentum'
 
+/**
+ * Next exchange session after `sessionStr`, skipping weekends and NYSE holidays
+ * (an order queued for a closed day would never get a session price).
+ */
 export function nextTradingSession(sessionStr) {
-  const d = new Date(`${sessionStr}T00:00:00Z`)
-  const day = d.getUTCDay() // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
-  const addDays = day === 5 ? 3 : day === 6 ? 2 : 1
-  d.setUTCDate(d.getUTCDate() + addDays)
-  return d.toISOString().slice(0, 10)
+  const baseline = Date.parse(`${sessionStr}T12:00:00Z`)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(sessionStr)) || Number.isNaN(baseline)) {
+    throw new Error(`Invalid session: ${sessionStr}`)
+  }
+  for (let days = 1; days <= 15; days++) {
+    const next = new Date(baseline + days * 86_400_000).toISOString().slice(0, 10)
+    if (isExchangeTradingDay(next)) return next
+  }
+  throw new Error('Next exchange trading session could not be determined')
 }
 
 /**
