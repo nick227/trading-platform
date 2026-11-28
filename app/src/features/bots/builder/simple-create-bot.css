@@ -63,3 +63,9 @@
 .tl-simple-builder__heading .mode-badge { margin-left: auto; flex-shrink: 0; }
 .tl-simple-builder__balance { margin: 0; color: var(--tl-ink-2); font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .tl-simple-builder__balance strong { color: var(--tl-ink); font-weight: 680; }
+
+/* Unified trading configuration: same visual hierarchy as the other form fields. */
+.tl-simple-builder__fixed { display: grid; align-content: start; gap: 5px; min-width: 0; padding: 10px 0; }
+.tl-simple-builder__fixed span { color: var(--tl-ink-2); font-size: 13px; font-weight: 600; }
+.tl-simple-builder__fixed strong { color: var(--tl-ink); font-size: 14px; font-weight: 600; line-height: 1.4; }
+.tl-simple-builder__fixed small { color: var(--tl-muted); font-size: 12px; }

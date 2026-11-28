@@ -136,6 +136,7 @@ export function initCreateDraft(template, data = {}, pinnedTicker = null) {
       maxLoss: String(loss?.config?.maxLoss ?? 500),
       maxDailyLossPct: loss?.config?.maxDailyLossPct ?? null,
     },
+    trend: { symbol: String(trendRule?.config?.symbol ?? 'SPY'), confirmationBars: String(trendRule?.config?.confirmationBars ?? 2) },
     fixed: rules.filter((x) => x.type === 'trend_filter' || x.type === 'time_window'),
   }
 }
@@ -323,6 +324,12 @@ export function validateBuilderDraft(draft, { buyingPower = null, tradableSymbol
   }
 
   // Limits
+  if (draft.triggerType === 'trend_filter') {
+    if (!SYMBOL_RE.test(String(draft.trend?.symbol ?? '').toUpperCase())) errors.trendSymbol = 'Enter a valid market ticker.'
+    const bars = toNumberOrNull(draft.trend?.confirmationBars)
+    if (bars === null || !Number.isInteger(bars) || bars < 1 || bars > 20) errors.trendBars = 'Use 1–20 confirmation periods.'
+  }
+
   if (draft.cooldown.on) {
     const cd = toNumberOrNull(draft.cooldown.hours)
     if (cd === null || cd <= 0) errors.cooldown = 'Enter more than 0 hours.'
@@ -435,8 +442,15 @@ export function applyDraftToRule(prev, draft) {
         enabled: triggerChanged ? isTrigger : (prev.enabled ?? true),
       }
     }
-    case 'trend_filter':
-      return { config: c, enabled: triggerChanged ? draft.triggerType === 'trend_filter' : (prev.enabled ?? true) }
+    case 'trend_filter': {
+      const symbol = String(draft.trend?.symbol ?? c.symbol ?? 'SPY').trim().toUpperCase()
+      const bars = toNumberOrNull(draft.trend?.confirmationBars)
+      const changed = symbol !== String(c.symbol ?? 'SPY') || (bars !== null && bars !== Number(c.confirmationBars ?? 2))
+      return {
+        config: changed ? { ...c, symbol, confirmationBars: bars ?? Number(c.confirmationBars ?? 2) } : c,
+        enabled: triggerChanged ? draft.triggerType === 'trend_filter' : (prev.enabled ?? true),
+      }
+    }
     case 'market_hours': {
       const ext0 = Boolean(c.allowPremarket || c.allowAfterHours)
       const ext = Boolean(draft.marketHours?.extended)
@@ -546,7 +560,7 @@ export function formatDesiredRules(draft, originalRules = []) {
     rules.push({
       name: 'Trend Filter',
       type: 'trend_filter',
-      config: { symbol: 'SPY' },
+      config: { symbol: draft.trend?.symbol || 'SPY', confirmationBars: Number(draft.trend?.confirmationBars ?? 2) },
       enabled: true,
     })
     seenTypes.add('trend_filter')
