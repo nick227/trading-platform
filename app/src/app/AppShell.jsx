@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import Nav from '../components/Nav'
 import Landing from '../features/Landing'
-import HomeDashboard from '../features/home/HomeDashboard'
 import Welcome from '../features/home/Welcome'
 import AlgorithmBuilder from '../features/bots/builder/AlgorithmBuilder'
 import Asset from '../features/Asset'
@@ -41,11 +40,11 @@ function BotHistoryRedirect() {
   return <Navigate to={`/bots/${encodeURIComponent(botId)}`} replace />
 }
 
-/** "/" — bots-first Home for signed-in users, a short welcome otherwise. */
+/** "/" — public welcome or the canonical portfolio for signed-in users. */
 function HomeRoute() {
   const { user, sessionLoading } = useAuth()
   if (sessionLoading) return <PageSkeleton />
-  return user ? <HomeDashboard /> : <Welcome />
+  return user ? <Navigate to="/portfolio" replace /> : <Welcome />
 }
 
 /** Redirects unauthenticated users to /auth while session resolves. */
