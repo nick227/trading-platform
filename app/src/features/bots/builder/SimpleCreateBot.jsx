@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { post } from '../../../api/client'
+import { get, post } from '../../../api/client'
 import { useAuth } from '../../../app/AuthProvider'
 import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
 import { Field, Input, Select } from '../../../components/ui/Field'
@@ -12,6 +12,8 @@ import './simple-create-bot.css'
 
 const amount = value => '$' + Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const numeric = value => String(value ?? '').replace(/[^0-9.]/g, '')
+const needsMarketPrice = template => (template?.rules ?? []).some(rule => rule.type === 'price_threshold' && rule.enabled !== false && !(Number(rule.config?.price) > 0))
+const validPrice = value => Number.isFinite(Number(value)) && Number(value) > 0
 
 /** Account supported tickers take precedence; fall back to the template's actual universe. */
 export function supportedStocks(template, eligibleSymbols) {
@@ -34,11 +36,11 @@ export function initializeTemplateDraft(template, data, eligibleSymbols, request
   return draft
 }
 
-function NumberSetting({ label, value, error, onChange, onBlur, help, field }) {
+function NumberSetting({ label, value, error, onChange, onBlur, help, placeholder, field }) {
   return <div data-error-field={field}>
     <Field label={label} error={error || null} help={help}>
       {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
-        <Input id={id} inputMode="decimal" value={String(value ?? '')}
+        <Input id={id} inputMode="decimal" value={String(value ?? '')} placeholder={placeholder}
           aria-invalid={invalid} aria-describedby={describedby}
           onChange={e => onChange(numeric(e.target.value))} onBlur={onBlur} />}
     </Field>
@@ -62,6 +64,7 @@ export default function SimpleCreateBot() {
   const [saving, setSaving] = useState(false)
   const [serverErrors, setServerErrors] = useState({})
   const [submitError, setSubmitError] = useState(null)
+  const [quoteDefault, setQuoteDefault] = useState({ status: 'idle', ticker: '', price: null, updatedAt: null })
   const formRef = useRef(null)
 
   useEffect(() => {
@@ -79,6 +82,33 @@ export default function SimpleCreateBot() {
   }, []) // Do not discard a user's edits on account-provider re-renders.
 
   const stockOptions = useMemo(() => supportedStocks(template, brokerStatus?.tradableSymbols), [template, brokerStatus?.tradableSymbols])
+  const marketLinkedPrice = needsMarketPrice(template)
+  useEffect(() => {
+    const ticker = draft?.symbolsText?.trim()?.toUpperCase()
+    if (!template || !marketLinkedPrice || !ticker) {
+      setQuoteDefault({ status: 'idle', ticker: '', price: null, updatedAt: null })
+      return undefined
+    }
+    let active = true
+    setQuoteDefault({ status: 'loading', ticker, price: null, updatedAt: null })
+    // Delayed when typing a ticker to avoid one market request per keystroke.
+    const timeout = setTimeout(() => {
+      get('/market/quote/' + encodeURIComponent(ticker)).then(quote => {
+        if (!active) return
+        const price = Number(quote?.price)
+        if (!validPrice(price)) throw new Error('Price is unavailable')
+        // 2–4 decimal places support ordinary stocks and small-price equities.
+        const formatted = String(Number(price.toFixed(price < 1 ? 4 : 2)))
+        setQuoteDefault({ status: 'ready', ticker, price: formatted, updatedAt: quote?.updatedAt ?? null })
+        setDraft(current => current?.templateId === template.id && current.symbolsText === ticker && !validPrice(current.trigger?.price)
+          ? { ...current, trigger: { ...current.trigger, price: formatted } }
+          : current)
+      }).catch(() => {
+        if (active) setQuoteDefault({ status: 'unavailable', ticker, price: null, updatedAt: null })
+      })
+    }, 120)
+    return () => { active = false; clearTimeout(timeout) }
+  }, [template?.id, draft?.symbolsText, marketLinkedPrice])
   const preview = useMemo(() => draft && template ? buildBotFromDraft(draft, template) : null, [draft, template])
   const conditions = useMemo(() => preview ? describeGuards(preview).filter(condition =>
     !condition.includes('simulated capital') && !condition.includes('per order')) : [], [preview])
@@ -96,8 +126,12 @@ export default function SimpleCreateBot() {
     setDraft(old => ({ ...old, [key]: { ...old[key], [subKey]: value } }))
   }
   const chooseStock = ticker => {
-    setServerErrors(old => ({ ...old, symbols: null, name: null }))
-    setDraft(old => ({ ...old, symbolsText: ticker, name: `${template.name} · ${ticker}` }))
+    setServerErrors(old => ({ ...old, symbols: null, name: null, triggerPrice: null }))
+    setDraft(old => ({
+      ...old, symbolsText: ticker, name: `${template.name} · ${ticker}`,
+      // A previous stock's absolute trigger must never carry over to a new stock.
+      ...(needsMarketPrice(template) ? { trigger: { ...old.trigger, price: '' } } : {}),
+    }))
   }
   const switchTemplate = id => {
     const next = data.templates.find(item => item.id === id && item.available)
@@ -145,7 +179,8 @@ export default function SimpleCreateBot() {
       dailyLoss: fallback.dailyLoss?.maxLoss,
       positionLimit: fallback.positionLimit?.maxShares,
     }
-    const defaultValue = defaults[setting.field]
+    const defaultValue = setting.field === 'triggerPrice' && marketLinkedPrice && quoteDefault.ticker === draft.symbolsText && quoteDefault.status === 'ready'
+      ? quoteDefault.price : defaults[setting.field]
     if (defaultValue !== '' && defaultValue !== undefined && defaultValue !== null) setting.update(String(defaultValue))
   }
 
@@ -186,7 +221,14 @@ export default function SimpleCreateBot() {
   const settings = []
   if (hasPrice) settings.push({
     field: 'triggerPrice', label: 'Trigger price ($)', value: draft.trigger?.price,
-    help: null,
+    help: marketLinkedPrice
+      ? quoteDefault.status === 'ready' && quoteDefault.ticker === draft.symbolsText
+        ? 'From latest available market price' + (quoteDefault.updatedAt ? ' · ' + new Date(quoteDefault.updatedAt).toLocaleDateString() : '')
+        : quoteDefault.status === 'unavailable'
+          ? 'Stock price unavailable. Enter a trigger price.'
+          : 'Getting the latest available stock price…'
+      : null,
+    placeholder: marketLinkedPrice && quoteDefault.status === 'loading' ? 'Loading stock price…' : 'Enter a price',
     update: value => changeNested('trigger', 'price', value, 'triggerPrice'),
   })
   if (hasResearch) {
@@ -300,6 +342,7 @@ export default function SimpleCreateBot() {
           <div className="tl-simple-builder__settings">
             {settings.map(setting => <NumberSetting key={setting.field} field={setting.field}
               label={setting.label} value={setting.value} onBlur={() => resetEmptySetting(setting)}
+              placeholder={setting.placeholder}
               error={fieldError(setting.field === 'exitReversal' ? 'exit' : setting.field)}
               help={setting.help} onChange={setting.update} />)}
           </div>
@@ -320,7 +363,7 @@ export default function SimpleCreateBot() {
       <footer className="tl-simple-builder__actions">
         <Link to="/bots" className="tl-btn tl-btn--secondary">Cancel</Link>
         <button type="submit" className="tl-btn tl-btn--primary" data-testid="submit-builder-btn"
-          disabled={saving || blocked || (mode === 'paper' && !simulated && !draft.confirmed)}>
+          disabled={saving || blocked || (marketLinkedPrice && hasPrice && !validPrice(draft.trigger?.price)) || (mode === 'paper' && !simulated && !draft.confirmed)}>
           {saving ? 'Adding…' : 'Add bot'}
         </button>
       </footer>
