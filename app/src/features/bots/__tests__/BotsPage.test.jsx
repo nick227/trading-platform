@@ -34,6 +34,7 @@ function mockApi({ bots = [], platformRows = platform, catalogData = catalog, ev
     if (path === '/bots/catalog') return catalogData
     if (path === '/strategies/platform') { if (platformRows instanceof Error) throw platformRows; return platformRows }
     if (path === '/bots') return bots
+    if (path === '/ai/personal-trader') return { lifecycle: { badge: 'Ready', headline: 'Configured', whatHappensNext: 'The next paper session.' }, configured: true, bot: { enabled: true, personalMandate: { riskProfile: 'balanced', sectors: ['Technology'], approvalMode: 'paper_veto_1s' } }, portfolio: { startingCash: 10000 }, options: { riskProfiles: [], sectors: [], approvalModes: [] } }
     if (path === '/executions') return []
     if (/^\/bots\/[^/]+\/events$/.test(path)) return params.type ? [] : []
     throw new Error(`unexpected GET ${path}`)
@@ -58,34 +59,35 @@ describe('BotsPage', () => {
     })
     renderPage()
     const [card] = await screen.findAllByTestId('featured-bot')
-    expect(within(card).getByTestId('featured-evidence')).toHaveTextContent('Awaiting new sessionsSimulated results since publication')
-    expect(within(card).getByTestId('featured-evidence')).not.toHaveTextContent('Backtest')
-    fireEvent.click(within(card).getByRole('button', { name: /AI Momentum/ }))
+    expect(card).toHaveTextContent('AI Research-Based Stock Trading')
+    expect(card.querySelector('.tl-featured-results')).toBeNull()
+    fireEvent.click(within(card).getByRole('button', { name: /AI Research-Based Stock Trading/ }))
     expect(within(card).queryByRole('link', { name: 'Customize' })).not.toBeInTheDocument()
-    expect(within(card).getByText('Workshop unavailable')).toBeInTheDocument()
+    expect(within(card).getByText('Not available to configure')).toBeInTheDocument()
   })
 
-  it('leads each starting point with its standardized platform backtest, including non-results', async () => {
+  it('presents descriptive card titles without unexplained backtest percentage headlines', async () => {
     mockApi()
     renderPage()
     const [dca, research] = await screen.findAllByTestId('featured-bot')
     expect(dca).toHaveTextContent('Buys a stock you choose on a fixed schedule — once every day, whatever the price.')
-    expect(within(dca).getByTestId('featured-evidence')).toHaveTextContent('+31.20% median vs +88.50% buy & holdHistorical test · 5 years · 10 symbols')
+    expect(dca).toHaveTextContent('Scheduled Stock Purchases')
+    expect(dca.querySelector('.tl-featured-results')).toBeNull()
     // Users' paper fills are not a headline (2 fills on one day): no P&L in the row.
-    expect(dca.querySelector('.tl-featured-row').textContent).not.toMatch(/\$52/)
-    expect(within(research).getByTestId('featured-evidence')).toHaveTextContent('Not backtestable')
-    expect(research).toHaveTextContent('Did not beat baseline')
+    expect(dca.querySelector('.tl-strategy-card__trigger').textContent).not.toMatch(/\$52/)
+    expect(research).toHaveTextContent('Trade Using Alpha Engine Research')
+    expect(research).not.toHaveTextContent('Did not beat baseline')
   })
 
   it('expands a starting point: its conditions, a sample-size caveat, and one way to use it', async () => {
     mockApi()
     renderPage()
     const [dca] = await screen.findAllByTestId('featured-bot')
-    fireEvent.click(within(dca).getByRole('button', { name: /DCA Accumulator/ }))
+    fireEvent.click(within(dca).getByRole('button', { name: /Scheduled Stock Purchases/ }))
     expect(within(dca).getByText('At most one trade per symbol per day')).toBeInTheDocument()
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Historical test · last year: −2.10% median vs +4.00% buy & hold')
     expect(within(dca).getByTestId('featured-evidence-detail')).toHaveTextContent('Simulated results since publication: Awaiting new sessions')
-    expect(within(dca).getByRole('link', { name: /Results and methodology/ })).toHaveAttribute('href', '/strategies/tmpl_dca')
+    expect(within(dca).queryByRole('link', { name: /Results and methodology/ })).not.toBeInTheDocument()
     expect(within(dca).getByTestId('featured-results')).toHaveTextContent('Too early to judge. 2 simulated fills from 1 bot on Nov 19, 0 closed trades (−$52.12 at the Nov 20 close). At least 5 closed trades across 5 sessions required.')
     expect(within(dca).getByRole('link', { name: 'Customize' })).toHaveAttribute('href', '/bots/new?template=tmpl_dca')
   })
@@ -98,6 +100,41 @@ describe('BotsPage', () => {
     expect(research).toHaveTextContent('Did not beat baseline')
     expect(research).toHaveTextContent('Historical replay research, separate from the results above.')
     expect(research).toHaveTextContent('Research is an input you can test, not a recommendation.')
+  })
+
+  it('removes confusing discovery links and generic promotional content', async () => {
+    mockApi()
+    renderPage()
+    await screen.findAllByTestId('featured-bot')
+    expect(document.querySelector('a[href^="/ai-stock-trader"]')).toBeNull()
+    expect(document.querySelector('a[href^="/strategies"]')).toBeNull()
+    expect(screen.queryByText(/What automated systems have you configured/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/median vs/)).not.toBeInTheDocument()
+    expect(document.querySelectorAll('.tl-strategy-card')).toHaveLength(3)
+  })
+
+  it('displays AI and rule-based catalog entries as matching sibling cards', async () => {
+    const ai = { id: 'tmpl_ai_catalyst_momentum', name: 'AI Momentum & Technical Breakout', botType: 'strategy_based', config: { signalSource: 'ai_catalyst_momentum' }, rules: [] }
+    mockApi({ catalogData: { ruleBased: catalog.ruleBased, strategyBased: [ai] }, platformRows: [] })
+    renderPage()
+    const cards = await screen.findAllByTestId('featured-bot')
+    expect(cards).toHaveLength(3)
+    expect(cards.every(card => card.classList.contains('tl-strategy-card'))).toBe(true)
+    expect(within(cards[2]).getByText('AI-powered')).toBeInTheDocument()
+    expect(within(cards[2]).queryByRole('link', { name: 'Customize' })).not.toBeInTheDocument()
+  })
+
+  it('offers a personal AI trading card with real in-place controls and no AI Trader route link', async () => {
+    mockApi()
+    renderPage()
+    const personal = await screen.findByTestId('personal-ai-strategy')
+    expect(personal).toHaveTextContent('Personal AI Stock Trader')
+    expect(personal).toHaveTextContent('AI-powered')
+    expect(within(personal).queryByTestId('personal-ai-trader-card')).not.toBeInTheDocument()
+    fireEvent.click(within(personal).getByRole('button', { name: /Personal AI Stock Trader/ }))
+    expect(await within(personal).findByTestId('personal-ai-trader-card')).toBeInTheDocument()
+    expect(within(personal).getByTestId('personal-trader-edit-btn')).toBeInTheDocument()
+    expect(document.querySelector('a[href^="/ai-stock-trader"]')).toBeNull()
   })
 
   it('has exactly one Create action, and hides My bots and Activity for a new account', async () => {
@@ -124,6 +161,6 @@ describe('BotsPage', () => {
     mockApi({ platformRows: new Error('HTTP 500') })
     renderPage()
     expect(await screen.findAllByTestId('featured-bot')).toHaveLength(2)
-    expect(screen.getByRole('status')).toHaveTextContent('Site-wide results couldn’t be loaded.')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })

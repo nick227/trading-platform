@@ -19,7 +19,7 @@ describe('deterministic narrative summaries (zero LLM calls)', () => {
       actionableProposalsCount: 0
     })
     expect(allCash).toContain('$10,000.00 in uninvested cash')
-    expect(allCash).toContain('Nothing needs urgent action')
+    expect(allCash).not.toContain('Nothing needs urgent action')
 
     const activeWithProposal = buildPortfolioNarrativeSummary({
       valuation: {

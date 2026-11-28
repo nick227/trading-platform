@@ -13,7 +13,9 @@ import { listJoin, money, plural, ratioPct, sessionDate, signedMoney } from '../
 import { loadBotsPage } from './botsApi'
 import CompareBots from './compare/CompareBots'
 import { summaryLine } from '../strategies/strategiesApi'
-import { buildBotsNarrativeSummary } from '../../ui/narrativeSummaries'
+import { strategyPresentation } from './strategyPresentation'
+import PersonalAiTraderCard from '../ai/PersonalAiTraderCard'
+import './bots-cards.css'
 
 // Below these, results are an anecdote, not evidence.
 export const MIN_CLOSED_TRADES = 5
@@ -73,31 +75,30 @@ function Research({ research }) {
 
 function StartingPoint({ f, open, onToggle, symbolContext = null }) {
   const guards = describeGuards(f, { template: true })
+  const presentation = strategyPresentation(f)
   const r = f.results
   const m = resultsMaturity(r)
   const isAi = f.botType === 'strategy_based' || f.config?.signalSource === 'ai_catalyst_momentum'
   const evidenceWindow = isAi ? 'forward' : '5Y'
   const customizeHref = `/bots/new?template=${encodeURIComponent(f.id)}${symbolContext ? `&ticker=${encodeURIComponent(symbolContext)}` : ''}`
-  const methodologyHref = `/strategies/${encodeURIComponent(f.id)}${symbolContext ? `?symbol=${encodeURIComponent(symbolContext)}` : ''}`
   return (
-    <li id={`featured-${f.id}`} data-testid="featured-bot">
-      <button type="button" className="tl-featured-row" aria-expanded={open} onClick={onToggle}>
-        <span>
-          <span className="tl-featured-name"><AlgorithmIdentity bot={f} compact /><span>{f.name}</span><Chevron open={open} /></span>
-          <span className="tl-featured-sentence" style={{ display: 'block' }}>{describeAction(f, { template: true })}</span>
-          <span className="tl-tags">
-            <span className="tl-tag">{behaviorTag(f)}</span>
-            {f.research?.edgeOverBaseline === false && <span className="tl-tag tl-tag--warn">Did not beat baseline</span>}
-            {!f.available && <span className="tl-tag tl-tag--warn">{isAi ? 'Workshop unavailable' : 'Not available yet'}</span>}
-          </span>
+    <li id={`featured-${f.id}`} className="tl-strategy-card" data-testid="featured-bot">
+      <button type="button" className="tl-strategy-card__trigger" aria-expanded={open} onClick={onToggle}>
+        <span className={`tl-strategy-card__icon ${presentation.isAi ? 'is-ai' : ''}`} aria-hidden="true">
+          {presentation.isAi ? '✦' : '↗'}
         </span>
-        <span className="tl-featured-results" data-testid="featured-evidence">
-          <b>{summaryLine(f.evidence?.windows?.[evidenceWindow])}</b>
-          {isAi ? evidenceLabel('forward') : f.evidence?.windows?.['5Y']?.status === 'ok' ? `Historical test · 5 years · ${f.evidence.windows['5Y'].symbolsTested} symbols` : 'Historical test'}
+        <span className="tl-strategy-card__copy">
+          <span className="tl-strategy-card__title">{presentation.name}</span>
+          <span className="tl-strategy-card__description">{presentation.description}</span>
+        </span>
+        <span className="tl-strategy-card__meta">
+          <span className="tl-strategy-card__type">{presentation.isAi ? 'AI-powered' : 'Rule-based'}</span>
+          {!f.available && <span className="tl-strategy-card__unavailable">Not available to configure</span>}
+          <span className="tl-strategy-card__more">{open ? 'Hide details' : 'View details'} <Chevron open={open} /></span>
         </span>
       </button>
       {open && (
-        <div className="tl-featured-body">
+        <div className="tl-featured-body tl-strategy-card__details">
           <div>
             <h4>When it trades</h4>
             <ul className="tl-rule-list">
@@ -118,7 +119,7 @@ function StartingPoint({ f, open, onToggle, symbolContext = null }) {
               ))}
             </p>
             <p className="tl-small" style={{ margin: '6px 0 18px' }}>
-              <Link to={methodologyHref}>Results and methodology →</Link>
+              Detailed historical research is available separately from bot configuration.
             </p>
             <h4>Results from simulated bot trades</h4>
             
@@ -158,6 +159,8 @@ export default function BotsPage() {
   const symbolContext = (searchParams.get('symbol') || searchParams.get('ticker') || '').trim().toUpperCase() || null
   const [state, setState] = useState({ loading: true })
   const [open, setOpen] = useState(() => searchParams.get('featured') || searchParams.get('strategy') || searchParams.get('template'))
+  const [personalOpen, setPersonalOpen] = useState(false)
+  const [personalStatus, setPersonalStatus] = useState(null)
   const { stop, clear } = useEmergencyStop()
   const controls = useBotControls((fn) => setState((s) => ({ ...s, data: { ...s.data, myBots: fn(s.data.myBots) } })))
 
@@ -176,29 +179,14 @@ export default function BotsPage() {
   const d = state.data
   const hasBots = d?.myBots?.length > 0
   const createBotHref = `/bots/new${symbolContext ? `?ticker=${encodeURIComponent(symbolContext)}` : ''}`
-  const researchPartnerHref = `/research-partners${symbolContext ? `?symbol=${encodeURIComponent(symbolContext)}` : ''}`
-  return (
-    <main className="tl-page" aria-busy={state.loading}>
-      <EmergencyBanner stop={stop} onClear={clear} />
-      <PageIdentity title="My Bots" description="What automated systems have you configured, and what are they doing? Review their rules, status, and recorded activity." action={<Link to={createBotHref} className="tl-btn tl-btn--primary">Create bot</Link>} />
-      <p className="tl-section-note">
-        Want to investigate an idea first? <Link to={researchPartnerHref}>Open your AI Research Partner</Link> or <Link to="/ai-stock-trader">inspect the Flagship AI Stock Trader</Link>.
-      </p>
-      <div className="tl-section" aria-label="Choose a trading approach">
-        <div className="tl-section-head">
-          <div><h2 className="tl-section-title">Choose how your bot trades</h2>
-          <p className="tl-section-note">Start with a tested strategy, or create a bot with your own rules.</p></div>
-          <Link to="/strategies" className="tl-btn tl-btn--secondary">Browse strategies</Link>
-        </div>
-      </div>
-      <section className="tl-section" aria-label="Personal AI trading">
-        <div className="tl-section-head"><div>
-          <h2 className="tl-section-title">Prefer automatic stock selection?</h2>
-          <p className="tl-section-note">Configure your Personal AI Trader and its paper-trading approvals in AI Trader.</p>
-        </div>
-        <Link to="/ai-stock-trader#personal-ai-trader" className="tl-btn tl-btn--secondary">Configure AI Trader</Link></div>
-      </section>
 
+  return (
+    <main className="tl-page tl-bots-page" aria-busy={state.loading}>
+      <EmergencyBanner stop={stop} onClear={clear} />
+      <div className="tl-bots-page__header">
+        <h1>My Bots</h1>
+        <Link to={createBotHref} className="tl-btn tl-btn--primary">Create bot</Link>
+      </div>
       {state.loading ? (
         <div aria-hidden="true" data-testid="bots-loading">
           {[0, 1, 2, 3].map((i) => <span key={i} className="tl-skel" style={{ height: 72, marginTop: i ? 12 : 0 }} />)}
@@ -206,15 +194,10 @@ export default function BotsPage() {
       ) : (
         <>
           {(hasBots || d.myBotsError) && (
-            <section className="tl-section" id="mine" aria-labelledby="my-bots-title">
+            <section className="tl-bots-page__section" id="mine" aria-labelledby="my-bots-title">
               <div className="tl-section-head">
                 <h2 className="tl-section-title" id="my-bots-title">My bots<span className="tl-count">{d.myBots.length}</span></h2>
               </div>
-              {!d.myBotsError && hasBots && (
-                <p className="tl-lead-sentence" style={{ margin: '0.25rem 0 0.75rem' }} data-testid="bots-narrative-summary">
-                  {buildBotsNarrativeSummary(d.myBots)}
-                </p>
-              )}
               {d.myBotsError
                 ? <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.myBotsError}</div>
                 : <ul className="tl-list tl-machine-list">{d.myBots.map((b) => <BotRow key={b.id} bot={b} busy={Boolean(controls.busy[b.id])} error={controls.errors[b.id]} onToggle={controls.toggle} from="bots" />)}</ul>}
@@ -227,26 +210,45 @@ export default function BotsPage() {
             </section>
           )}
 
-          <section className="tl-section" aria-labelledby="featured-title">
+          <section className="tl-bots-page__section" aria-labelledby="featured-title">
             <div className="tl-section-head">
-              <h2 className="tl-section-title" id="featured-title">Choose a strategy to customize</h2>
+              <h2 className="tl-section-title" id="featured-title">Available strategies</h2>
               
             </div>
             {d.featuredError ? (
               <div className="tl-notice tl-notice--error" role="alert" style={{ marginTop: 16 }}>{d.featuredError}</div>
             ) : (
               <>
-                {d.resultsError && <div className="tl-notice tl-notice--warn" role="status" style={{ marginTop: 16 }}>{d.resultsError}</div>}
+
                 {d.featured.length === 0 && <ContentState title="No starter strategies available" description="There are no published strategies to customize right now." />}
-                <ul className="tl-list tl-featured">
+                <ul className="tl-strategy-grid">
                   {d.featured.map((f) => <StartingPoint key={f.id} f={f} open={open === f.id} onToggle={() => setOpen(open === f.id ? null : f.id)} symbolContext={symbolContext} />)}
+                  <li className="tl-strategy-card" data-testid="personal-ai-strategy">
+                    <button type="button" className="tl-strategy-card__trigger" aria-expanded={personalOpen} onClick={() => setPersonalOpen(value => !value)}>
+                      <span className="tl-strategy-card__icon is-ai" aria-hidden="true">✦</span>
+                      <span className="tl-strategy-card__copy">
+                        <span className="tl-strategy-card__title">Personal AI Stock Trader</span>
+                        <span className="tl-strategy-card__description">Researches stocks based on your preferred sectors, risk settings, and trade approval preferences.</span>
+                      </span>
+                      <span className="tl-strategy-card__meta">
+                        <span className="tl-strategy-card__type">AI-powered</span>
+                        {personalStatus?.status === 'unavailable' && <span className="tl-strategy-card__unavailable">Currently unavailable</span>}
+                        <span className="tl-strategy-card__more">{personalOpen ? 'Hide details' : 'View details'} <Chevron open={personalOpen} /></span>
+                      </span>
+                    </button>
+                    {personalOpen && <div className="tl-strategy-card__details">
+                      <PersonalAiTraderCard onStatusChange={setPersonalStatus} />
+                      {personalStatus?.status === 'unavailable' &&
+                        <p className="tl-small tl-muted">Personal AI Trader settings are temporarily unavailable.</p>}
+                    </div>}
+                  </li>
                 </ul>
               </>
             )}
           </section>
 
           {hasBots && (
-            <section className="tl-section" id="activity" aria-labelledby="activity-title">
+            <section className="tl-bots-page__section" id="activity" aria-labelledby="activity-title">
               <div className="tl-section-head">
                 <h2 className="tl-section-title" id="activity-title">Activity</h2>
               </div>
