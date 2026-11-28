@@ -69,7 +69,8 @@ export async function completeClaimedAiPaperExecution({
           fillQty: fill.quantity,
           pnl: fill.pnl,
           isReplay: fill.isReplay,
-          brokerOrderId: fill.brokerOrderId
+          brokerOrderId: fill.brokerOrderId,
+          ...(fill.marketObservation ? { marketObservation: fill.marketObservation } : {})
         }
       }
     })

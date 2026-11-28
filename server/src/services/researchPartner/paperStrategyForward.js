@@ -25,7 +25,10 @@ export function newPaperForwardState(capital=10000) {
     equityCurve:[],peakEquity:capital,maxDrawdownPct:0}
 }
 
-export async function stepResearchPaperForward({definition,state,asOfSession,engine}) {
+export async function stepResearchPaperForward({definition,state,asOfSession,engine,portfolioId,prismaClient,brokerClient}) {
+  if(portfolioId!==undefined||prismaClient!==undefined||brokerClient!==undefined) {
+    throw new ResearchPartnerInputError('Research environments are strictly isolated from operational accounts and execution tables')
+  }
   const spec=validatePaperStrategy(definition)
   if(!state||!Number.isFinite(state.initialCapital)||!Array.isArray(state.fills)||
      !Array.isArray(state.pending)||!Array.isArray(state.equityCurve)||

@@ -10,6 +10,7 @@ import { SimulatedBroker } from '../../../../worker/src/broker/simulatedBroker.j
 import { evaluateRiskCaps } from '../../../../worker/src/risk/riskCaps.js'
 import { readEmergencyStop } from '../emergencyStopService.js'
 import { claimQueuedAiPaperExecution, completeClaimedAiPaperExecution, quarantineClaimedAiPaperExecution } from './paperExecutionClaims.js'
+import { settleScheduledSimulatedExecution } from '../../execution/executionGateway.js'
 import { nextStockTraderSession } from './stockTraderTradingSession.js'
 
 export const PLATFORM_USER_ID = 'usr_platform_canonical'
@@ -754,94 +755,25 @@ export async function processPendingAiExecutions(botId, {
   const failedExecutions = []
   const exitExecutions = []
 
-  // 1. A database CAS claim ensures one worker owns each queued paper fill.
-  // Failed/unknown submissions are quarantined, never blindly resubmitted.
+  // 1. Delegate scheduled session execution to the consolidated ExecutionGateway + InternalSimulatorProvider.
   for (const exec of pending) {
-    const session = exec.simSession || currentSession
-    if (!session || (currentSession && session > currentSession)) continue
-
-    const mode = exec.sourceType === 'AI_REPLAY' ? 'historical_replay' : 'paper_daily'
-    const workerToken = `ai_paper_${randomUUID()}`
-    let claimed = false
-    try {
-      const audit = await prismaClient.executionAudit.findFirst({
-        where: { executionId: exec.id, eventType: 'execution_created' }
-      })
-      const declaredModel = audit?.metadata?.entryType || audit?.metadata?.executionModel
-      // Legacy AI strategy explicitly calls its close-price model 'next_close'.
-      // Preserve that contract while enforcing the flagship's strict next_open model.
-      const executionModel = declaredModel === 'next_close' ? 'daily_close' : declaredModel || 'next_open'
-      if (!['next_open', 'daily_close'].includes(executionModel)) {
-        throw new Error('Unsupported simulated fill model')
-      }
-
-      // Only claim an order when the exact session's required price exists.
-      // Missing market data can be retried later without creating a false fill.
-      const priceSnapshot = await engine.getSessionClose(exec.ticker, session)
-      const referencePrice = Number(executionModel === 'next_open' ? priceSnapshot?.open : priceSnapshot?.close)
-      if (priceSnapshot?.session !== session || !Number.isFinite(referencePrice) || referencePrice <= 0) {
-        failedExecutions.push({ id: exec.id, error: 'required_session_price_unavailable' })
-        continue
-      }
-
-      claimed = await claimQueuedAiPaperExecution({
-        prismaClient, executionId: exec.id, workerToken
-      })
-      if (!claimed) continue // Another worker owns or has already completed it.
-
-      const broker = new SimulatedBroker(exec.userId, {
-        config: { enabled: true, mode, executionModel },
-        prismaClient,
-        sessionClose: (ticker, s) => engine.getSessionClose(ticker, s),
-        resolveSession: () => session
-      })
-
-      const filledOrder = await broker.submitOrder({
-        ticker: exec.ticker,
-        side: exec.direction,
-        qty: exec.quantity,
-        clientOrderId: exec.clientOrderId
-      })
-      const price = Number(filledOrder.filledAvgPrice)
-      const quantity = Number(filledOrder.filledQty)
-      if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error('Simulator returned an invalid paper fill')
-      }
-
-      const pnl = String(exec.direction).toLowerCase() === 'sell'
-        ? await calculateFillPnl({ execution: exec, fillPrice: price, fillQty: quantity, prismaClient })
-        : 0
-      const fill = {
-        brokerOrderId: filledOrder.alpacaOrderId,
-        price, quantity, pnl,
-        filledAt: filledOrder.filledAt || new Date(),
-        session, priceModel: executionModel,
-        isReplay: mode === 'historical_replay',
-        auditId: `aud_${randomUUID()}`
-      }
-      await completeClaimedAiPaperExecution({
-        prismaClient, execution: exec, workerToken, fill
-      })
-      filledExecutions.push({
+    const outcome = await settleScheduledSimulatedExecution(exec, {
+      currentSession,
+      prismaClient,
+      engine,
+      workerId: 'ai_daily_job'
+    })
+    if (outcome.status === 'filled' && outcome.filledExecution) {
+      filledExecutions.push(outcome.filledExecution)
+    } else if (outcome.status === 'failed_precheck') {
+      failedExecutions.push({ id: exec.id, error: outcome.error })
+    } else if (outcome.status === 'error') {
+      console.error('[processPendingAiExecutions] paper fill error:', outcome.error)
+      failedExecutions.push({
         id: exec.id,
-        ticker: exec.ticker,
-        direction: exec.direction,
-        quantity, fillPrice: price,
-        session, pnl,
-        brokerOrderId: fill.brokerOrderId,
-        isReplay: fill.isReplay
+        error: outcome.error,
+        needsReconciliation: outcome.needsReconciliation
       })
-    } catch (error) {
-      // An uncertain submit or an aborted DB commit cannot cause a second fill.
-      if (claimed) {
-        await quarantineClaimedAiPaperExecution({
-          prismaClient, executionId: exec.id, workerToken
-        }).catch(quarantineError => {
-          console.error('[processPendingAiExecutions] failed to quarantine uncertain fill:', quarantineError)
-        })
-      }
-      console.error('[processPendingAiExecutions] paper fill error:', error.message)
-      failedExecutions.push({ id: exec.id, error: error.message, needsReconciliation: claimed })
     }
   }
 

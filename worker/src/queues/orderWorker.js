@@ -10,6 +10,8 @@ import { log } from '../logger.js'
 import metricsService from '../../../server/src/services/metricsService.js'
 import { calculateFillPnl } from '../../../server/src/services/botAccountingService.js'
 import { simulationConfig } from '../../../server/src/services/simulationService.js'
+import { resolveExecutionProviderForPortfolio } from '../../../server/src/execution/providerRegistry.js'
+import { LiveExecutionDisabledError } from '../../../server/src/execution/providers/ExecutionProvider.js'
 
 /**
  * AI paper executions (Personal AI Trader, Copilot proposals, Flagship AI Trader)
@@ -170,34 +172,47 @@ export async function processExecution(execution) {
   await recordExecutionAudit({ executionId: execution.id, userId: execution.userId, workerId: WORKER_ID, eventType: 'claimed', detail: `Execution claimed by ${WORKER_ID}`, metadata: { attempts: execution.attempts ?? 0 } })
 
   try {
-    // Hard safety fence: Personal AI & Copilot executions are strictly simulated; never contact live/external brokers.
+    // Hard safety fence: scheduled AI next-open orders settle via ExecutionGateway's session runner, never intraday REST.
     if (isSimulatedOnlyAiExecution(execution)) {
       await refuse(execution, 'simulated_only_ai_execution', {
-        detail: 'Personal AI and Copilot executions run strictly in simulation and never submit to external brokerages.'
+        detail: 'Scheduled AI session executions settle via ExecutionGateway session runner and never submit to external brokerages.'
       })
       return
     }
-    if (!simulationConfig().enabled && execution.portfolioId && typeof prisma?.portfolio?.findUnique === 'function') {
-      const targetPortfolio = await prisma.portfolio.findUnique({
-        where: { id: execution.portfolioId }
-      }).catch(() => null)
-      if (targetPortfolio?.accountKind === 'default_simulated_paper') {
-        await refuse(execution, 'simulated_portfolio_live_broker_forbidden', {
-          detail: 'Simulated paper portfolio executions cannot be submitted to external brokerages.'
-        })
-        return
-      }
-    }
 
-    // Anything that may already be at the broker is reconciled, never resubmitted blindly.
+    // Anything that may already be at the provider is reconciled, never resubmitted blindly.
     if (execution.brokerOrderId || execution.submittedAt || execution.submitAttemptedAt) {
       await reconcileExecution(execution)
       return
     }
 
-    const broker = await getBrokerClient(execution.userId)
+    let broker
+    try {
+      broker = await resolveExecutionProviderForPortfolio({
+        userId: execution.userId,
+        portfolioId: execution.portfolioId,
+        prismaClient: prisma,
+        fallbackGetBrokerClient: getBrokerClient,
+        ...(orderWorkerConfig.engine ? { engine: orderWorkerConfig.engine } : {}),
+        ...(orderWorkerConfig.alpacaClientFactory ? { alpacaClientFactory: orderWorkerConfig.alpacaClientFactory } : {})
+      })
+    } catch (providerErr) {
+      if (providerErr instanceof LiveExecutionDisabledError || providerErr?.code === 'LIVE_EXECUTION_DISABLED' || providerErr?.code === 'LIVE_TRADING_DISABLED') {
+        await refuse(execution, 'live_execution_disabled', { detail: providerErr.message })
+        return
+      }
+      if (providerErr?.code === 'PORTFOLIO_NOT_ACTIVE') {
+        await refuse(execution, `portfolio_${providerErr.portfolioStatus || 'inactive'}`, { detail: providerErr.message })
+        return
+      }
+      if (providerErr?.code === 'BROKER_CREDENTIALS_DISCONNECTED' || providerErr?.code === 'BROKER_NOT_CONFIGURED') {
+        await refuse(execution, 'invalid_credentials', { detail: providerErr.message })
+        return
+      }
+      throw providerErr
+    }
     if (!broker) {
-      await refuse(execution, 'invalid_credentials', { detail: 'No usable broker credentials for this user' })
+      await refuse(execution, 'invalid_credentials', { detail: 'No usable execution provider or broker credentials for this portfolio' })
       return
     }
 
@@ -304,7 +319,14 @@ async function releaseForRetry(execution, err) {
 
 export async function reconcileExecution(execution) {
   try {
-    const broker = await getBrokerClient(execution.userId)
+    const broker = await resolveExecutionProviderForPortfolio({
+      userId: execution.userId,
+      portfolioId: execution.portfolioId,
+      prismaClient: prisma,
+      fallbackGetBrokerClient: getBrokerClient,
+      ...(orderWorkerConfig.engine ? { engine: orderWorkerConfig.engine } : {}),
+      ...(orderWorkerConfig.alpacaClientFactory ? { alpacaClientFactory: orderWorkerConfig.alpacaClientFactory } : {})
+    }).catch(() => null)
     if (!broker) {
       // Cannot verify. Never assume failure for something that may be at the broker.
       await releaseOpen(execution)
