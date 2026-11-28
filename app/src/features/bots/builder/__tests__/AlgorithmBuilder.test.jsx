@@ -299,7 +299,7 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     const input = await screen.findByLabelText('Trigger price ($)')
     expect(screen.getByTestId('submit-builder-btn')).toBeDisabled()
     await waitFor(() => expect(input).toHaveValue('355.12'))
-    expect(screen.getByTestId('strategy-action')).toHaveTextContent('price rises above $355')
+    expect(screen.getByTestId('strategy-action')).toHaveTextContent('price rises above $355.12')
     expect(screen.getByText(/From latest available market price/)).toBeInTheDocument()
     expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Regular market hours only')
     expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('At most one trade per symbol per hour')
