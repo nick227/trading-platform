@@ -7,7 +7,7 @@ import { getTradingMode } from '../ModeBadge'
 vi.mock('react-router-dom', async () => vi.importActual('react-router-dom'))
 vi.mock('../../app/pagePrefetch', () => ({ prefetchByPath: vi.fn() }))
 
-const authState = { user: null, brokerStatus: null }
+const authState = { user: null, sessionLoading: false, brokerStatus: null }
 vi.mock('../../app/AuthProvider', () => ({ useAuth: () => authState }))
 
 const renderNav = (path = '/') =>
@@ -15,14 +15,15 @@ const renderNav = (path = '/') =>
 
 beforeEach(() => {
   authState.user = { fullName: 'Ada' }
+  authState.sessionLoading = false
   authState.brokerStatus = { connected: true, paper: true }
 })
 
 describe('Nav', () => {
-  it('shows the four primary surfaces plus an account link for signed-in users, keeping AI workspaces contextual', () => {
+  it('keeps authenticated navigation focused on workspaces while discovery remains public', () => {
     renderNav()
     const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'Strategies', 'My Bots', 'AI Trader'])
+    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'My Bots'])
     expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/profile')
     for (const removed of ['Home', 'Orders', 'Opportunities', 'Templates', 'Profile', 'Research Partner', 'Stocks']) {
       expect(screen.queryByRole('link', { name: removed })).not.toBeInTheDocument()
@@ -33,7 +34,7 @@ describe('Nav', () => {
     authState.user = { fullName: 'Admin User', role: 'admin' }
     renderNav()
     const links = screen.getAllByRole('link').filter((a) => a.classList.contains('tl-nav-link'))
-    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'Strategies', 'My Bots', 'AI Trader', 'Admin'])
+    expect(links.map((a) => a.textContent)).toEqual(['Portfolio', 'My Bots', 'Admin'])
     expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin')
 
     cleanup()
@@ -50,13 +51,30 @@ describe('Nav', () => {
     expect(screen.getByRole('link', { name: 'Portfolio' })).toHaveAttribute('aria-current', 'page')
     cleanup()
     renderNav('/ai-stock-trader')
-    expect(screen.getByRole('link', { name: 'AI Trader' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByRole('link', { name: 'AI Trader' })).not.toBeInTheDocument()
     cleanup()
     renderNav('/strategies/tmpl_spy_trend_filter')
-    expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByRole('link', { name: 'Strategies' })).not.toBeInTheDocument()
     cleanup()
     renderNav('/opportunities')
     expect(screen.queryByRole('link', { name: 'Stocks' })).not.toBeInTheDocument()
+  })
+
+  it('does not flash guest discovery links while the session is loading', () => {
+    authState.user = null
+    authState.sessionLoading = true
+    renderNav('/strategies')
+    expect(screen.getByRole('link', { name: 'TradeLoom home' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Strategies' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'AI Trader' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument()
+  })
+
+  it('keeps public discovery links accessible on their own pages after sign-out', () => {
+    authState.user = null
+    renderNav('/ai-stock-trader')
+    expect(screen.getByRole('link', { name: 'AI Trader' })).toHaveAttribute('href', '/ai-stock-trader')
+    expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute('href', '/strategies')
   })
 
   it('always shows paper/live status', () => {
