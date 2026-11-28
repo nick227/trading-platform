@@ -101,6 +101,12 @@ export default async function accountRoutes(fastify) {
     if (!apiKey || !apiSecret) {
       return reply.code(400).send({ error: 'apiKey and apiSecret are required' })
     }
+    if (!paper && process.env.ALLOW_LIVE_TRADING !== 'true') {
+      return reply.code(403).send({
+        error: 'Live brokerage execution is disabled. Only Alpaca paper credentials may be connected.',
+        code: 'LIVE_TRADING_DISABLED'
+      })
+    }
 
     const userId = request.user.id
 

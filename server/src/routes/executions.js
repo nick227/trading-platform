@@ -93,13 +93,21 @@ export default async function executionsRoutes(app) {
     }
 
     // A manual API request cannot impersonate an automated bot decision.
-    // Check ownership before creating any execution intent.
+    // Check ownership and environment compatibility before creating any execution intent.
     const portfolio = await prisma.portfolio.findFirst({
       where: { id: request.body.portfolioId, userId: request.user.id },
-      select: { id: true }
+      select: { id: true, accountKind: true }
     })
     if (!portfolio) {
       return reply.code(404).send({ error: { code: 'PORTFOLIO_NOT_FOUND', message: 'Portfolio not found' } })
+    }
+    if (portfolio.accountKind === 'default_simulated_paper') {
+      return reply.code(409).send({
+        error: {
+          code: 'PORTFOLIO_ENVIRONMENT_MISMATCH',
+          message: 'Simulated paper portfolios cannot accept external brokerage orders'
+        }
+      })
     }
 
     // A paper broker account is mandatory for the personal pilot. Never

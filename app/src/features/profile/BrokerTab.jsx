@@ -159,7 +159,7 @@ export default function BrokerTab() {
             textTransform: 'uppercase',
             letterSpacing: '0.04em',
           }}>
-            Verified Alpaca Paper Balances
+            {brokerStatus.paper !== false ? 'Verified Alpaca Paper Balances' : 'Alpaca Account Balances (Live Execution Disabled)'}
           </h4>
           <div style={{
             display: 'grid',
@@ -291,7 +291,7 @@ export default function BrokerTab() {
         </section>
       )}
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 16 }}>
         <button
           type="button"
           className={`tl-btn tl-btn--sm ${paper ? 'tl-btn--primary' : ''}`}
@@ -301,10 +301,11 @@ export default function BrokerTab() {
         </button>
         <button
           type="button"
-          className={`tl-btn tl-btn--sm ${!paper ? 'tl-btn--primary' : ''}`}
-          onClick={() => setPaper(false)}
+          className="tl-btn tl-btn--sm"
+          disabled
+          title="Live execution is disabled during platform simulation verification"
         >
-          Live
+          Live (Disabled)
         </button>
       </div>
 

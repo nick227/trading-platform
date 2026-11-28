@@ -262,42 +262,30 @@ describe('API contract tests', () => {
     expect(prisma.execution.create).not.toHaveBeenCalled()
   })
 
-  it('rejects direct Alpaca order submission when market is closed', async () => {
-    global.fetch = vi.fn(async (url) => {
-      if (String(url).includes('/v2/clock')) {
-        return {
-          ok: true,
-          json: async () => ({
-            is_open: false,
-            next_open: '2026-04-22T13:30:00Z',
-            next_close: '2026-04-22T20:00:00Z',
-            timestamp: '2026-04-21T23:00:00Z'
-          })
-        }
-      }
-      throw new Error(`Unexpected fetch in test: ${url}`)
-    })
-
+  it('retires direct unaudited Alpaca order submission and cancellation with 410', async () => {
     const user = { id: 'usr_1', email: 't@example.com', fullName: 'Test User', subscription: { status: 'ACTIVE' } }
     prisma.user.findUnique.mockResolvedValue(user)
 
     const token = app.jwt.sign({ sub: user.id })
 
-    const response = await request(app.server)
+    const postRes = await request(app.server)
       .post('/api/alpaca/order')
       .send({ symbol: 'AAPL', side: 'buy', quantity: 1, type: 'market' })
       .set('Cookie', [`access_token=${token}`])
-      .expect(409)
+      .expect(410)
 
-    expect(response.body).toEqual({
-      error: 'Market is closed',
-      code: 'MARKET_CLOSED',
-      clock: {
-        isOpen: false,
-        nextOpen: '2026-04-22T13:30:00Z',
-        nextClose: '2026-04-22T20:00:00Z',
-        timestamp: '2026-04-21T23:00:00Z'
-      }
+    expect(postRes.body).toMatchObject({
+      code: 'DIRECT_BROKER_EXECUTION_RETIRED'
     })
+
+    const delRes = await request(app.server)
+      .delete('/api/alpaca/order/ord_123')
+      .set('Cookie', [`access_token=${token}`])
+      .expect(410)
+
+    expect(delRes.body).toMatchObject({
+      code: 'DIRECT_BROKER_EXECUTION_RETIRED'
+    })
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 })

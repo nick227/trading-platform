@@ -125,7 +125,5 @@ export async function runBackfillReconciler() {
     
   } catch (error) {
     console.error('❌ Backfill reconciler failed:', error);
-  } finally {
-    await prisma.$disconnect();
   }
 }

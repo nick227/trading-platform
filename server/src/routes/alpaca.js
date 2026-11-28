@@ -39,49 +39,17 @@ export default async function alpacaRoutes(fastify) {
   // All Alpaca routes require authentication
   const preHandler = [authenticate]
 
-  // POST /api/alpaca/order
-  fastify.post('/order', {
-    preHandler,
-    schema: {
-      body: {
-        type: 'object',
-        required: ['symbol', 'side', 'quantity', 'type'],
-        properties: {
-          symbol: { type: 'string' },
-          side: { type: 'string', enum: ['buy', 'sell'] },
-          quantity: { type: 'number', minimum: 1 },
-          type: { type: 'string', enum: ['market', 'limit'] },
-          price: { type: 'number' },
-          time_in_force: { type: 'string', enum: ['day', 'gtc', 'ioc', 'fok'] }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const creds = await resolveCredsOrReply(request.user.id, reply)
-    if (!creds) return
-
-    try {
-      const clock = await fetchAlpacaMarketClock(creds)
-      if (!clock.isOpen) {
-        return reply.code(409).send({
-          error: 'Market is closed',
-          code: 'MARKET_CLOSED',
-          clock
-        })
-      }
-
-      const order = await alpacaFetch(creds.baseUrl, '/v2/orders', creds.apiKey, creds.apiSecret, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...request.body, symbol: request.body.symbol.toUpperCase() })
-      })
-      return reply.send(order)
-    } catch (error) {
-      return reply.code(500).send({ error: error.message })
-    }
+  // POST /api/alpaca/order — RETIRED (P0 Execution Containment)
+  // Direct unaudited broker order submission is permanently disabled.
+  // All trade intents must flow through the audited Execution pipeline.
+  fastify.post('/order', { preHandler }, async (_request, reply) => {
+    return reply.code(410).send({
+      error: 'Direct broker order submission is retired. Submit trade intents through /api/executions or /api/trade.',
+      code: 'DIRECT_BROKER_EXECUTION_RETIRED'
+    })
   })
 
-  // GET /api/alpaca/order/:id
+  // GET /api/alpaca/order/:id (read-only inspection)
   fastify.get('/order/:id', { preHandler }, async (request, reply) => {
     const creds = await resolveCredsOrReply(request.user.id, reply)
     if (!creds) return
@@ -94,17 +62,13 @@ export default async function alpacaRoutes(fastify) {
     }
   })
 
-  // DELETE /api/alpaca/order/:id
-  fastify.delete('/order/:id', { preHandler }, async (request, reply) => {
-    const creds = await resolveCredsOrReply(request.user.id, reply)
-    if (!creds) return
-
-    try {
-      await alpacaFetch(creds.baseUrl, `/v2/orders/${request.params.id}`, creds.apiKey, creds.apiSecret, { method: 'DELETE' })
-      return reply.send({ success: true, message: 'Order cancelled' })
-    } catch (error) {
-      return reply.code(500).send({ error: error.message })
-    }
+  // DELETE /api/alpaca/order/:id — RETIRED (P0 Execution Containment)
+  // Direct unaudited broker cancellation is permanently disabled.
+  fastify.delete('/order/:id', { preHandler }, async (_request, reply) => {
+    return reply.code(410).send({
+      error: 'Direct broker order cancellation is retired. Cancel orders through /api/executions/:id/cancel or /api/trade/:id.',
+      code: 'DIRECT_BROKER_EXECUTION_RETIRED'
+    })
   })
 
   // GET /api/alpaca/account

@@ -19,6 +19,14 @@ export default async function brokerRoutes(app) {
     }
   }, async (request, reply) => {
     const { apiKey, apiSecret, paper = true } = request.body
+    if (!paper && process.env.ALLOW_LIVE_TRADING !== 'true') {
+      return reply.code(403).send({
+        error: {
+          code: 'LIVE_TRADING_DISABLED',
+          message: 'Live brokerage execution is disabled. Only Alpaca paper credentials may be connected.'
+        }
+      })
+    }
     const base = paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
 
     try {

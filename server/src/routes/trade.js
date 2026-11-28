@@ -5,21 +5,41 @@ import brokerService from '../services/brokerService.js'
 import executionsService from '../services/executionsService.js'
 import { fetchAlpacaMarketClock, getUserAlpacaCredentialsOrThrow } from '../services/alpacaClockService.js'
 
+import { DEFAULT_PAPER_ACCOUNT_KIND, EXTERNAL_BROKER_ACCOUNT_KIND } from '../services/defaultPaperPortfolioService.js'
+
 const TERMINAL_STATUSES = new Set(['filled', 'cancelled', 'failed', 'refused'])
 
-async function getOrCreateDefaultPortfolioId(userId) {
+async function resolveBrokeragePortfolioId(userId, explicitPortfolioId = null) {
+  if (explicitPortfolioId) {
+    const found = typeof prisma.portfolio?.findUnique === 'function'
+      ? await prisma.portfolio.findUnique({ where: { id: explicitPortfolioId } })
+      : await prisma.portfolio.findFirst({ where: { id: explicitPortfolioId, userId } })
+    if (!found || (found.userId && found.userId !== userId)) {
+      const err = new Error('Portfolio not found')
+      err.code = 'PORTFOLIO_NOT_FOUND'
+      throw err
+    }
+    if (found.accountKind === DEFAULT_PAPER_ACCOUNT_KIND) {
+      const err = new Error('Simulated paper portfolios cannot accept external brokerage orders')
+      err.code = 'PORTFOLIO_ENVIRONMENT_MISMATCH'
+      throw err
+    }
+    return found.id
+  }
+
   const existing = await prisma.portfolio.findFirst({
-    where: { userId },
+    where: { userId, accountKind: EXTERNAL_BROKER_ACCOUNT_KIND },
     orderBy: { createdAt: 'asc' },
-    select: { id: true }
+    select: { id: true, accountKind: true }
   })
-  if (existing) return existing.id
+  if (existing && existing.accountKind !== DEFAULT_PAPER_ACCOUNT_KIND) return existing.id
 
   const created = await prisma.portfolio.create({
     data: {
       id: generateId(ID_PREFIXES.PORTFOLIO),
       userId,
-      name: 'Main Portfolio'
+      accountKind: EXTERNAL_BROKER_ACCOUNT_KIND,
+      name: 'Alpaca Brokerage Portfolio'
     },
     select: { id: true }
   })
@@ -33,7 +53,7 @@ export default async function tradeRoutes(app, opts) {
     // Fastify may strip additional properties before the handler sees them.
     // Reject any client attempt to inject bot/order attribution at the boundary.
     preValidation: async (request, reply) => {
-      const allowed = new Set(['symbol', 'direction', 'quantity', 'price'])
+      const allowed = new Set(['symbol', 'direction', 'quantity', 'price', 'portfolioId'])
       if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body) ||
           Object.keys(request.body).some((key) => !allowed.has(key))) {
         return reply.code(400).send({ error: 'Unexpected trade fields', code: 'INVALID_TRADE_FIELDS' })
@@ -49,13 +69,14 @@ export default async function tradeRoutes(app, opts) {
           symbol: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9.-]{0,19}$' },
           direction: { type: 'string', enum: ['BUY', 'SELL'] },
           quantity: { type: 'number', minimum: 1 },
-          price: { type: 'number', exclusiveMinimum: 0 }
+          price: { type: 'number', exclusiveMinimum: 0 },
+          portfolioId: { type: 'string', minLength: 1 }
         }
       }
     }
   }, async (request, reply) => {
     try {
-      const { symbol, direction, quantity, price } = request.body
+      const { symbol, direction, quantity, price, portfolioId: requestedPortfolioId } = request.body
       const userId = request.user.id
 
       // Validate trade parameters
@@ -92,7 +113,18 @@ export default async function tradeRoutes(app, opts) {
         return reply.code(409).send({ error: 'Market is closed', code: 'MARKET_CLOSED', clock })
       }
 
-      const portfolioId = await getOrCreateDefaultPortfolioId(userId)
+      let portfolioId
+      try {
+        portfolioId = await resolveBrokeragePortfolioId(userId, requestedPortfolioId ?? null)
+      } catch (err) {
+        if (err?.code === 'PORTFOLIO_NOT_FOUND') {
+          return reply.code(404).send({ error: err.message, code: err.code })
+        }
+        if (err?.code === 'PORTFOLIO_ENVIRONMENT_MISMATCH') {
+          return reply.code(409).send({ error: err.message, code: err.code })
+        }
+        throw err
+      }
 
       const normalizedDirection = direction.toLowerCase() === 'buy' ? 'buy' : 'sell'
       const normalizedTicker = symbol.toUpperCase()

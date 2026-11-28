@@ -34,6 +34,7 @@ describe('BrokerTab', () => {
 
     expect(screen.getByText('Not Connected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connect Alpaca' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Live (Disabled)' })).toBeDisabled()
     expect(screen.queryByText('Verified Alpaca Paper Balances')).not.toBeInTheDocument()
   })
 
