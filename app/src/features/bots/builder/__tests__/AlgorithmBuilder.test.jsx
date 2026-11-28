@@ -272,6 +272,59 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     expect(screen.getByText(/Maximum for one trade: \$500/)).toBeInTheDocument()
   })
 
+  it('upgrades an incomplete published momentum template to a complete percentage rule with no blank price', async () => {
+    const legacy = {
+      id: 'tmpl_momentum_buy', name: 'Momentum Buy', botType: 'rule_based',
+      config: { direction: 'buy', tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000 },
+      rules: [
+        { type: 'market_hours', config: { allowPremarket: false, allowAfterHours: false } },
+        { type: 'price_threshold', config: { operator: 'above', price: 0 } },
+        { type: 'position_limit', config: { maxShares: 100 } },
+        { type: 'cooldown', config: { windowMs: 3600000 } },
+      ],
+    }
+    mockApi({ catalog: { ruleBased: [legacy, ...catalogTemplates.ruleBased], strategyBased: [] } })
+    post.mockResolvedValue({ id: 'bot_momentum' })
+    renderBuilder('/bots/new?template=tmpl_momentum_buy')
+    const form = await screen.findByTestId('algorithm-builder')
+    expect(screen.getByTestId('template-select')).toHaveValue('tmpl_momentum_buy')
+    expect(screen.getByTestId('strategy-action')).toHaveTextContent('at least 5% over 20 trading sessions')
+    expect(screen.getByLabelText('Required price increase (%)')).toHaveValue('5')
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Regular market hours only')
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('At most one trade per symbol every 1 hour')
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('100 shares')
+    expect(screen.queryByLabelText('Trigger price ($)')).not.toBeInTheDocument()
+    expect(form).not.toHaveTextContent("Uses the template's preset trading conditions")
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
+      templateId: 'tmpl_momentum_buy',
+      rules: expect.arrayContaining([
+        expect.objectContaining({ type: 'price_change', config: { sessions: 20, operator: 'above', pct: 5 } }),
+      ]),
+    })))
+    const saved = post.mock.calls[0][1]
+    expect(saved.rules.some(rule => rule.type === 'price_threshold')).toBe(false)
+  })
+
+  it('updates the condition summary and saved percentage when a momentum setting is changed', async () => {
+    const momentum = {
+      id: 'tmpl_momentum_buy', name: 'Buy After Price Increase', botType: 'rule_based',
+      config: { direction: 'buy', tickers: ['SPY'], allocatedAmount: 5000, maxOrderNotional: 1000 },
+      rules: [{ type: 'price_change', config: { sessions: 20, operator: 'above', pct: 5 } }],
+    }
+    mockApi({ catalog: { ruleBased: [momentum], strategyBased: [] } })
+    post.mockResolvedValue({ id: 'bot_momentum' })
+    renderBuilder('/bots/new?template=tmpl_momentum_buy')
+    const pct = await screen.findByLabelText('Required price increase (%)')
+    expect(pct).toHaveValue('5')
+    fireEvent.change(pct, { target: { value: '7' } })
+    expect(screen.getByTestId('strategy-action')).toHaveTextContent('at least 7% over 20 trading sessions')
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
+      rules: expect.arrayContaining([expect.objectContaining({ type: 'price_change', config: { sessions: 20, operator: 'above', pct: 7 } })]),
+    })))
+  })
+
   it('retains account safety restrictions and paper-order confirmation', async () => {
     authState.brokerStatus = { connected: true, paper: true, simulated: false }
     mockApi()
