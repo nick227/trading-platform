@@ -3,9 +3,10 @@ import { useAuth } from '../app/AuthProvider'
 import { prefetchByPath } from '../app/pagePrefetch'
 import ModeBadge from './ModeBadge'
 
-// Three product destinations. Strategy catalog is part of bot creation.
+// Preserve Strategies as its own catalog; AI Trader presents autonomous trading evidence.
 const routes = [
   { path: '/portfolio', label: 'Portfolio', match: p => p === '/' || p === '/portfolio' },
+  { path: '/strategies', label: 'Strategies', match: p => p.startsWith('/strategies') },
   { path: '/bots', label: 'My Bots', match: p => p.startsWith('/bots') },
   { path: '/ai-stock-trader', label: 'AI Trader', match: p => p.startsWith('/ai-stock-trader') }
 ]
@@ -77,6 +78,7 @@ export default function Nav() {
             </>
           ) : (
             <>
+              <Link to="/strategies" className={`tl-nav-link ${location.pathname.startsWith('/strategies') ? 'is-active' : ''}`} aria-current={location.pathname.startsWith('/strategies') ? 'page' : undefined} onMouseEnter={() => prefetchByPath('/strategies')}>Strategies</Link>
               <Link to="/ai-stock-trader" className="tl-nav-link">AI Trader</Link>
               <Link to="/auth" className="tl-nav-link">Sign in</Link>
             </>
