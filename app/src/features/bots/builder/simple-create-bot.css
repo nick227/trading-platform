@@ -50,3 +50,11 @@
 .tl-simple-builder__compact { color: var(--tl-muted); font-size: 13px; line-height: 1.4; margin: 0; }
 .tl-simple-builder__review-line { padding: 18px 0 8px; border-bottom: 0; font-variant-numeric: tabular-nums; }
 .tl-simple-builder__section-head { display: block; }
+
+/* Template conditions are the product: immediately readable, never hidden in a preset message. */
+.tl-simple-builder__behavior { padding: 18px 20px; border: 1px solid var(--tl-line); border-radius: 14px; background: var(--tl-surface-2); }
+.tl-simple-builder__behavior h3 { font-size: 13px; font-weight: 680; margin: 0 0 8px; color: var(--tl-ink-2); }
+.tl-simple-builder__behavior p { font-size: 14px; line-height: 1.55; margin: 0; color: var(--tl-ink); }
+.tl-simple-builder__behavior ul { list-style: disc; padding-left: 19px; margin: 12px 0 0; display: grid; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--tl-ink-2); }
+.tl-simple-builder__settings-heading { font-size: 14px; font-weight: 680; margin: 4px 0 -6px; color: var(--tl-ink-2); }
+@media(max-width:700px) { .tl-simple-builder__behavior { padding: 16px; } }

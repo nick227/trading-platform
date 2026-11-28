@@ -216,7 +216,7 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     expect(await screen.findByLabelText('Minimum research score (0–100)')).toHaveValue('60')
     expect(screen.getByLabelText('Maximum research age (hours)')).toHaveValue('96')
     expect(screen.getByLabelText('Maximum price drift (%)')).toHaveValue('5')
-    expect(screen.getByText(/Independent research evidence is required/)).toBeInTheDocument()
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Only research that beat its baseline out of sample')
     fireEvent.change(screen.getByLabelText('Minimum research score (0–100)'), { target: { value: '150' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(screen.getByText('Use a score from 0 to 100.')).toBeInTheDocument()
@@ -227,6 +227,49 @@ describe('Add Bot — simple strategy and stock configuration', () => {
         minConfidence: 0.45, requireEdgeOverBaseline: true,
       }) }),
     })))
+  })
+
+  it('shows prefilled strategy-specific conditions and updates them on every strategy change', async () => {
+    mockApi()
+    renderBuilder('/bots/new?template=tmpl_price')
+    expect(await screen.findByTestId('strategy-behavior')).toHaveTextContent('Buys AAPL when the price rises above $200')
+    expect(screen.getByLabelText('Trigger price ($)')).toHaveValue('200')
+    fireEvent.change(screen.getByTestId('template-select'), { target: { value: 'tmpl_golden_cross' } })
+    expect(screen.getByTestId('strategy-action')).toHaveTextContent('SPY trend is confirmed up')
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Regular market hours only')
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('At most one trade per symbol per day')
+    expect(screen.queryByText("Uses the template's preset trading conditions.")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Trigger price ($)')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('template-select'), { target: { value: 'tmpl_alpha_research' } })
+    expect(screen.getByTestId('strategy-action')).toHaveTextContent('Alpha Engine')
+    expect(screen.getByLabelText('Minimum research score (0–100)')).toHaveValue('60')
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('score ≥ 60')
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Only research that beat its baseline out of sample')
+  })
+
+  it('restores valid template defaults if users clear a populated setting and leave the field', async () => {
+    mockApi()
+    renderBuilder('/bots/new?template=tmpl_price')
+    const trigger = await screen.findByLabelText('Trigger price ($)')
+    fireEvent.change(trigger, { target: { value: '' } })
+    fireEvent.blur(trigger)
+    expect(trigger).toHaveValue('200')
+    const capital = screen.getByLabelText('Amount to allocate ($)')
+    fireEvent.change(capital, { target: { value: '' } })
+    fireEvent.blur(capital)
+    expect(capital).toHaveValue('3000')
+    const ticker = screen.getByLabelText('Target stock')
+    fireEvent.change(ticker, { target: { value: '' } })
+    fireEvent.blur(ticker)
+    expect(ticker).toHaveValue('AAPL')
+  })
+
+  it('explains allocated budget rather than an unexplained investment limit', async () => {
+    mockApi()
+    renderBuilder('/bots/new?template=tmpl_price')
+    await screen.findByTestId('strategy-behavior')
+    expect(screen.getByText(/Your budget for this bot/)).toBeInTheDocument()
+    expect(screen.getByText(/Maximum for one trade: \$500/)).toBeInTheDocument()
   })
 
   it('retains account safety restrictions and paper-order confirmation', async () => {
