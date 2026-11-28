@@ -29,3 +29,19 @@
   .tl-simple-builder__actions { justify-content: stretch; }
   .tl-simple-builder__actions > * { flex: 1; }
 }
+
+/* Template-first presentation: compact stock facts and clearly exposed strategy values. */
+.tl-simple-builder__facts { display: grid; gap: 18px; padding: 18px 20px; border: 1px solid var(--tl-line); border-radius: 14px; background: var(--tl-surface-2); }
+.tl-simple-builder__facts strong { font-weight: 650; font-size: 13px; color: var(--tl-ink); }
+.tl-simple-builder__facts p { font-size: 14px; color: var(--tl-ink-2); line-height: 1.5; margin: 6px 0 0; }
+.tl-simple-builder__facts .tl-field { margin-top: 12px; }
+.tl-simple-builder__amount { max-width: 340px; }
+.tl-simple-builder__section-head h2 { margin: 0 0 8px; }
+.tl-simple-builder__section-head p { font-size: 14px; line-height: 1.5; margin: 0; color: var(--tl-muted); max-width: 65ch; }
+.tl-simple-builder__settings { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px 24px; align-items: start; }
+.tl-simple-builder__account { font-size: 12px; color: var(--tl-muted); margin: 10px 0 22px; }
+.tl-simple-builder__settings .tl-field { min-width: 0; }
+@media(max-width:700px) {
+ .tl-simple-builder__settings { grid-template-columns: minmax(0,1fr); gap: 16px; }
+ .tl-simple-builder__facts { padding: 16px; }
+}
