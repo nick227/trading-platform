@@ -212,7 +212,7 @@ export default function SimpleCreateBot() {
         <p className="tl-simple-builder__help">{presentation.description}</p>
         <div className="tl-simple-builder__facts">
           <div><strong>Stocks</strong>
-            {presets.length > 0 ? <p data-testid="strategy-stocks">{presets.join(', ')}</p> :
+            {presets.length > 0 ? <p data-testid="strategy-stocks">{parseSymbols(draft.symbolsText).join(', ')}</p> :
               eligibleSymbols.length > 0 ? <div data-error-field="symbols"><Field label="Choose a supported stock" error={fieldError('symbols')}>
                 {({ id }) => <Select id={id} value={draft.symbolsText}
                   onChange={e => change('symbolsText', e.target.value)}>
