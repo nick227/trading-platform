@@ -118,88 +118,74 @@ beforeEach(() => {
   authState.brokerStatus = SIM
 })
 
-describe('Minimal Create Bot — /bots/new', () => {
-  it('shows an ordinary form without timelines, step editors or backtests', async () => {
+describe('Template-first Add Bot — /bots/new', () => {
+  it('uses the template name, its stock universe and real threshold values without builders', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_price')
-    expect(await screen.findByRole('heading', { name: 'Create bot' })).toBeInTheDocument()
-    for (const heading of ['Strategy','Stocks','Trading conditions','Investment limits','Review'])
+    expect(await screen.findByRole('heading', { name: 'Add Bot' })).toBeInTheDocument()
+    for (const heading of ['Strategy', 'Investment allocation', 'Strategy settings', 'Review'])
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
-    expect(screen.getByLabelText('Bot name')).toHaveValue('Price Threshold Buy · AAPL')
-    expect(screen.getByLabelText('Stock symbols')).toHaveValue('AAPL')
+    expect(screen.getByTestId('strategy-stocks')).toHaveTextContent('AAPL')
     expect(screen.getByLabelText('Trigger price ($)')).toHaveValue('200')
-    expect(screen.getByLabelText('Capital allocated ($)')).toHaveValue('3000')
-    expect(screen.queryByText('WATCH')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Edit watch|Edit when|Edit act/ })).not.toBeInTheDocument()
-    expect(screen.queryByText(/median vs.*buy.*hold/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Amount to allocate ($)')).toHaveValue('3000')
+    expect(screen.queryByLabelText('Bot name')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Stock symbols')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Order direction')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Edit watch|Edit act|Customize/ })).not.toBeInTheDocument()
     expect(screen.queryByText('Backtest')).not.toBeInTheDocument()
+    expect(screen.queryByText(/median vs/)).not.toBeInTheDocument()
   })
 
-  it('changes strategies without changing their underlying identifiers', async () => {
+  it('switches to a new template with its own underlying defaults', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_golden_cross')
-    expect(await screen.findByLabelText('Bot name')).toHaveValue('Golden Cross Hunter · SPY')
+    expect(await screen.findByTestId('strategy-stocks')).toHaveTextContent('SPY, QQQ, IWM')
     fireEvent.change(screen.getByTestId('template-select'), { target: { value: 'tmpl_price' } })
-    expect(screen.getByLabelText('Bot name')).toHaveValue('Price Threshold Buy · AAPL')
-    expect(screen.getByLabelText('Stock symbols')).toHaveValue('AAPL')
+    expect(screen.getByTestId('strategy-stocks')).toHaveTextContent('AAPL')
     expect(screen.getByLabelText('Trigger price ($)')).toHaveValue('200')
   })
 
-  it('validates inline and focuses the first erroneous field', async () => {
-    mockApi()
-    renderBuilder('/bots/new?template=tmpl_price')
-    await screen.findByLabelText('Bot name')
-    fireEvent.change(screen.getByLabelText('Bot name'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('Stock symbols'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('Trigger price ($)'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('Capital allocated ($)'), { target: { value: '0' } })
-    fireEvent.click(screen.getByTestId('submit-builder-btn'))
-    expect(screen.getByText('Give your bot a name.')).toBeInTheDocument()
-    expect(screen.getByText('Add at least one symbol.')).toBeInTheDocument()
-    expect(screen.getByText('Enter the price that should trigger an order.')).toBeInTheDocument()
-    expect(screen.getByText('Amount must be greater than $0.')).toBeInTheDocument()
-    expect(screen.getByLabelText('Bot name')).toHaveFocus()
-    expect(post).not.toHaveBeenCalled()
-  })
-
-  it('uses the existing transactional creation API and trading limits', async () => {
+  it('changes only supported thresholds and keeps the original template ID and fixed stock list', async () => {
     mockApi()
     post.mockResolvedValue({ id: 'bot_new123' })
     renderBuilder('/bots/new?template=tmpl_price')
-    await screen.findByLabelText('Bot name')
-    fireEvent.change(screen.getByLabelText('Stock symbols'), { target: { value: 'MSFT' } })
+    await screen.findByTestId('strategy-stocks')
     fireEvent.change(screen.getByLabelText('Trigger price ($)'), { target: { value: '215' } })
-    fireEvent.change(screen.getByLabelText('Capital allocated ($)'), { target: { value: '4000' } })
-    fireEvent.change(screen.getByLabelText('Maximum per order ($)'), { target: { value: '800' } })
+    fireEvent.change(screen.getByLabelText('Amount to allocate ($)'), { target: { value: '4000' } })
+    expect(screen.getByText(/Each order is capped at \$500/)).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
-      portfolioId: 'pf_1', templateId: 'tmpl_price',
-      enabled: true, config: expect.objectContaining({
-        tickers: ['MSFT'], allocatedAmount: 4000, maxOrderNotional: 800,
-      }), rules: expect.arrayContaining([expect.objectContaining({
+      name: 'Price Threshold Buy · AAPL',
+      portfolioId: 'pf_1', templateId: 'tmpl_price', enabled: true,
+      config: expect.objectContaining({ tickers: ['AAPL'], allocatedAmount: 4000, maxOrderNotional: 500 }),
+      rules: expect.arrayContaining([expect.objectContaining({
         type: 'price_threshold', config: { operator: 'above', price: 215 },
       })]),
     })))
     expect(await screen.findByTestId('bot-detail-page')).toHaveTextContent('bot_new123 created')
   })
 
-  it('requires explicit paper-order confirmation outside the simulator', async () => {
-    authState.brokerStatus = { connected: true, paper: true, simulated: false }
+  it('validates budget and strategy thresholds on the same visible form', async () => {
     mockApi()
-    renderBuilder('/bots/new?template=tmpl_golden_cross')
-    await screen.findByLabelText('Bot name')
-    const button = screen.getByTestId('submit-builder-btn')
-    expect(button).toBeDisabled()
-    fireEvent.click(screen.getByRole('checkbox', { name: /I understand this bot will place orders automatically/ }))
-    expect(button).toBeEnabled()
+    renderBuilder('/bots/new?template=tmpl_price')
+    await screen.findByLabelText('Trigger price ($)')
+    fireEvent.change(screen.getByLabelText('Trigger price ($)'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Amount to allocate ($)'), { target: { value: '0' } })
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    expect(screen.getByText('Enter the price that should trigger an order.')).toBeInTheDocument()
+    expect(screen.getByText('Amount must be greater than $0.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Trigger price ($)')).toHaveFocus()
+    expect(post).not.toHaveBeenCalled()
   })
 
-  it('keeps the Alpha Engine evidence gate and exposes research parameters', async () => {
+  it('keeps the Alpha Engine score and percentage thresholds explicit and preserves its evidence gate', async () => {
     mockApi()
     post.mockResolvedValue({ id: 'bot_research' })
     renderBuilder('/bots/new?template=tmpl_alpha_research')
     expect(await screen.findByLabelText('Minimum research score (0–100)')).toHaveValue('60')
-    expect(screen.getByText(/independent evidence check/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Maximum research age (hours)')).toHaveValue('96')
+    expect(screen.getByLabelText('Maximum price drift (%)')).toHaveValue('5')
+    expect(screen.getByText(/independent evidence requirement/)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Minimum research score (0–100)'), { target: { value: '150' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(screen.getByText('Use a score from 0 to 100.')).toBeInTheDocument()
@@ -212,17 +198,54 @@ describe('Minimal Create Bot — /bots/new', () => {
     })))
   })
 
-  it('maps backend validation problems to visible form fields', async () => {
+  it('uses a supported-stock selector only when the strategy has no stock universe', async () => {
+    mockApi({ catalog: { ruleBased: [{ ...catalogTemplates.ruleBased[1],
+      id: 'tmpl_choose_stock', config: { ...catalogTemplates.ruleBased[1].config, tickers: [] },
+    }], strategyBased: [] } })
+    authState.brokerStatus = { ...SIM, tradableSymbols: ['SPY', 'AAPL'] }
+    post.mockResolvedValue({ id: 'bot_chosen' })
+    renderBuilder('/bots/new')
+    const select = await screen.findByLabelText('Choose a supported stock')
+    expect(select).toHaveValue('')
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    expect(screen.getByText('Add at least one symbol.')).toBeInTheDocument()
+    fireEvent.change(select, { target: { value: 'SPY' } })
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
+      config: expect.objectContaining({ tickers: ['SPY'] }),
+    })))
+  })
+
+  it('blocks live account activation without hiding the shared setup design', async () => {
+    authState.brokerStatus = { connected: true, paper: false, simulated: false }
+    mockApi()
+    renderBuilder('/bots/new?template=tmpl_price')
+    expect(await screen.findByRole('heading', { name: 'Add Bot' })).toBeInTheDocument()
+    expect(screen.getByText(/Real-money bot activation is not enabled yet/)).toBeInTheDocument()
+    expect(screen.getByTestId('submit-builder-btn')).toBeDisabled()
+  })
+
+  it('keeps explicit paper-order confirmation where required', async () => {
+    authState.brokerStatus = { connected: true, paper: true, simulated: false }
+    mockApi()
+    renderBuilder('/bots/new?template=tmpl_golden_cross')
+    await screen.findByRole('heading', { name: 'Add Bot' })
+    expect(screen.getByTestId('submit-builder-btn')).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: /I understand this bot will place orders automatically/ }))
+    expect(screen.getByTestId('submit-builder-btn')).toBeEnabled()
+  })
+
+  it('shows backend validation failures in the form', async () => {
     mockApi()
     const err = new Error('HTTP 400')
     err.code = 'INVALID_CONFIG'
-    err.details = { code: 'INVALID_CONFIG', field: 'allocatedAmount', message: 'Simulated capital exceeds maximum.' }
+    err.details = { code: 'INVALID_CONFIG', field: 'allocatedAmount', message: 'Capital exceeds available funds.' }
     post.mockRejectedValue(err)
     renderBuilder('/bots/new?template=tmpl_price')
-    await screen.findByLabelText('Bot name')
+    await screen.findByRole('heading', { name: 'Add Bot' })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
-    expect(await screen.findByTestId('submit-error')).toHaveTextContent('Simulated capital exceeds maximum.')
-    expect(screen.getAllByText('Simulated capital exceeds maximum.')).toHaveLength(2)
+    expect(await screen.findByTestId('submit-error')).toHaveTextContent('Capital exceeds available funds.')
+    expect(screen.getAllByText('Capital exceeds available funds.')).toHaveLength(2)
   })
 })
 
