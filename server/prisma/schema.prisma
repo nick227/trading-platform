@@ -95,14 +95,17 @@ model Prediction {
 }
 
 model Portfolio {
-  id          String      @id @db.VarChar(191)
-  userId      String      // Using STUB_USER_ID for now
-  name        String
-  accountKind String      @default("custom") @db.VarChar(32)
-  cashBalance Decimal     @default(0) @db.Decimal(12, 2)
-  totalValue  Decimal     @default(0) @db.Decimal(12, 2)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id                 String      @id @db.VarChar(191)
+  userId             String      // Owner userId
+  name               String
+  accountKind        String      @default("custom") @db.VarChar(32)
+  environment        String      @default("internal_sim") @db.VarChar(32) // internal_sim | alpaca_paper | alpaca_live
+  brokerConnectionId String?     @db.VarChar(191)
+  status             String      @default("active") @db.VarChar(32) // active | halted_credentials | quarantined_drift | archived
+  cashBalance        Decimal     @default(0) @db.Decimal(12, 2)
+  totalValue         Decimal     @default(0) @db.Decimal(12, 2)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   executions       Execution[]
   bots             Bot[]
@@ -112,8 +115,30 @@ model Portfolio {
   @@index([createdAt])
   @@index([userId])
   @@index([userId, accountKind])
+  @@index([userId, environment])
+  @@index([brokerConnectionId])
   @@index([updatedAt])
   @@index([totalValue])
+}
+
+model BrokerConnection {
+  id                 String    @id @db.VarChar(191)
+  userId             String    @db.VarChar(191)
+  provider           String    @default("alpaca") @db.VarChar(32)
+  environment        String    @default("alpaca_paper") @db.VarChar(32) // alpaca_paper | alpaca_live
+  externalAccountId  String    @db.VarChar(128)
+  encryptedApiKey    String    @db.Text
+  encryptedApiSecret String    @db.Text
+  keyVersion         Int       @default(1)
+  status             String    @default("active") @db.VarChar(32) // active | disconnected | error
+  lastVerifiedAt     DateTime?
+  disconnectedAt     DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([userId, provider, environment, externalAccountId])
+  @@index([userId, status])
+  @@index([userId, environment])
 }
 
 model DefaultPaperPortfolio {

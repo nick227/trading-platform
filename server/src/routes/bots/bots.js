@@ -5,25 +5,51 @@ import { simulationConfig } from '../../services/simulationService.js'
 import { BotSaveError, saveBot } from '../../services/botConfigService.js'
 import { botValueHistory } from '../../services/portfolioValuationService.js'
 import { ensureDefaultPaperPortfolio } from '../../services/defaultPaperPortfolioService.js'
+import {
+  AccountDomainError,
+  normalizePortfolioEnvironment,
+  PORTFOLIO_ENVIRONMENTS,
+  PORTFOLIO_STATUSES,
+  resolvePortfolioBrokerCredentials
+} from '../../services/accountDomainService.js'
 import prisma from '../../loaders/prisma.js'
 
-async function ensureBrokerConnectedOrReply(userId, reply) {
-  // Simulator mode needs no broker: orders are filled by the internal replay simulator.
+async function ensurePortfolioReadyOrReply(userId, portfolioId, reply) {
+  const portfolio = portfolioId && typeof prisma.portfolio?.findUnique === 'function'
+    ? await prisma.portfolio.findUnique({ where: { id: portfolioId } }).catch(() => null)
+    : null
+  if (portfolio) {
+    if (portfolio.status && portfolio.status !== PORTFOLIO_STATUSES.ACTIVE) {
+      reply.code(409).send({ error: { code: 'PORTFOLIO_NOT_ACTIVE', message: `Portfolio is not active (${portfolio.status}).` } })
+      return false
+    }
+    const portEnv = normalizePortfolioEnvironment(portfolio)
+    if (portEnv === PORTFOLIO_ENVIRONMENTS.INTERNAL_SIM) {
+      return true
+    }
+    if (simulationConfig().enabled) return true
+    try {
+      await resolvePortfolioBrokerCredentials(portfolio, { prismaClient: prisma })
+      return true
+    } catch (err) {
+      if (err instanceof AccountDomainError) {
+        reply.code(err.statusCode).send({ error: { code: err.code, message: err.message } })
+        return false
+      }
+      throw err
+    }
+  }
   if (simulationConfig().enabled) return true
+
   try {
     await getUserAlpacaCredentialsOrThrow(userId)
     return true
   } catch (error) {
     if (error?.code === 'BROKER_NOT_CONFIGURED') {
-      // Keyless users operate on their unique default simulated paper portfolio
       await ensureDefaultPaperPortfolio(userId, { prismaClient: prisma })
       return true
     }
-    if (error?.code === 'BROKER_CREDENTIALS_INVALID') {
-      reply.code(403).send({ error: { code: error.code, message: error.message } })
-      return false
-    }
-    if (error?.code === 'LIVE_TRADING_DISABLED') {
+    if (error?.code === 'BROKER_CREDENTIALS_INVALID' || error?.code === 'LIVE_TRADING_DISABLED') {
       reply.code(403).send({ error: { code: error.code, message: error.message } })
       return false
     }
@@ -32,8 +58,21 @@ async function ensureBrokerConnectedOrReply(userId, reply) {
 }
 
 /** Throwing form of the broker check, for the unified save. */
-async function ensureBroker(userId) {
+async function ensureBroker(userId, portfolio = null) {
   if (simulationConfig().enabled) return
+  if (portfolio) {
+    const portEnv = normalizePortfolioEnvironment(portfolio)
+    if (portEnv === PORTFOLIO_ENVIRONMENTS.INTERNAL_SIM) return
+    try {
+      await resolvePortfolioBrokerCredentials(portfolio, { prismaClient: prisma })
+      return
+    } catch (err) {
+      if (err instanceof AccountDomainError) {
+        throw new BotSaveError(err.statusCode, err.code, err.message)
+      }
+      throw err
+    }
+  }
   try {
     await getUserAlpacaCredentialsOrThrow(userId)
   } catch (error) {
@@ -177,7 +216,7 @@ export default async function botsRoutes(app, opts) {
         if (stop.active) {
           return reply.code(403).send({ error: { code: 'EMERGENCY_STOP_ACTIVE', message: 'Emergency stop is active. Clear it before resuming bots.' } })
         }
-        const connected = await ensureBrokerConnectedOrReply(request.user.id, reply)
+        const connected = await ensurePortfolioReadyOrReply(request.user.id, existing.portfolioId, reply)
         if (!connected) return
       }
 

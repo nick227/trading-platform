@@ -11,6 +11,10 @@ function clone(v) {
 
 function cmp(a, b) {
   if (a instanceof Date || b instanceof Date) return new Date(a).getTime() - new Date(b).getTime()
+  if (typeof a === 'bigint' || typeof b === 'bigint') {
+    const ba = BigInt(a), bb = BigInt(b)
+    return ba < bb ? -1 : ba > bb ? 1 : 0
+  }
   if (typeof a === 'number' && typeof b === 'number') return a - b
   return String(a).localeCompare(String(b))
 }
@@ -77,7 +81,13 @@ const DEFAULTS = {
     status: 'queued', attempts: 0, lockedAt: null, lockedBy: null, brokerOrderId: null, brokerStatus: null,
     submittedAt: null, submitAttemptedAt: null, lastBrokerSyncAt: null, filledAt: null, filledPrice: null,
     filledQuantity: null, cancelReason: null, cancelRequestedAt: null, cancelRequestedBy: null,
-    cancelRequestReason: null, activeIntentKey: null, botId: null, commission: 0, fees: 0, pnl: 0, origin: 'manual'
+    cancelRequestReason: null, activeIntentKey: null, botId: null, commission: 0, fees: 0, pnl: 0, origin: 'manual', version: 0
+  }),
+  portfolio: () => ({
+    accountKind: 'custom', environment: 'internal_sim', brokerConnectionId: null, status: 'active', cashBalance: 0, totalValue: 0
+  }),
+  brokerConnection: () => ({
+    provider: 'alpaca', environment: 'alpaca_paper', keyVersion: 1, status: 'active', lastVerifiedAt: null, disconnectedAt: null
   }),
   bot: () => ({ enabled: true, deletedAt: null, config: {} }),
   botRule: () => ({ enabled: true, config: {} }),

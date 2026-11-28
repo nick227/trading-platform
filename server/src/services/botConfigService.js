@@ -20,6 +20,12 @@ import { EXIT_RULE_TYPES } from '../../../worker/src/engine/decisionCore.js'
 import { isResearchDriven, resolveResearchPolicy } from '../../../worker/src/engine/researchDecision.js'
 import { getEmergencyStop } from './emergencyStopService.js'
 import { simulationConfig } from './simulationService.js'
+import {
+  isLiveTradingEnabled,
+  normalizePortfolioEnvironment,
+  PORTFOLIO_ENVIRONMENTS,
+  PORTFOLIO_STATUSES
+} from './accountDomainService.js'
 
 export const RULE_TYPES = ['price_threshold', 'position_limit', 'daily_loss', 'market_hours', 'cooldown', 'trend_filter', 'time_window', 'relative_volume', 'price_change']
 export const RULE_NAMES = {
@@ -155,12 +161,21 @@ export async function saveBot(userId, input = {}, { ensureBroker = async () => {
     if (!input.portfolioId) throw invalid('portfolioId is required.', { field: 'portfolioId' })
     const portfolio = await prisma.portfolio.findUnique({ where: { id: input.portfolioId } })
     if (!portfolio || portfolio.userId !== userId) throw new BotSaveError(400, 'INVALID_PORTFOLIO', 'Invalid portfolioId')
+    const portEnv = normalizePortfolioEnvironment(portfolio)
+    if (portEnv === PORTFOLIO_ENVIRONMENTS.ALPACA_LIVE && !isLiveTradingEnabled()) {
+      throw new BotSaveError(403, 'LIVE_TRADING_DISABLED', 'Live brokerage portfolios are disabled.')
+    }
+    if (portfolio.status && portfolio.status !== PORTFOLIO_STATUSES.ACTIVE) {
+      throw new BotSaveError(409, 'PORTFOLIO_NOT_ACTIVE', `Portfolio is not active (${portfolio.status}).`)
+    }
     if (input.templateId !== undefined) {
       template = await prisma.botTemplate.findUnique({ where: { id: input.templateId } })
       if (!template) throw new BotSaveError(404, 'TEMPLATE_NOT_FOUND', 'Starting point not found')
     }
     if (!(input.name ?? template?.name)) throw invalid('Name can’t be empty.', { field: 'name' })
-    await ensureBroker(userId)
+    if (portEnv !== PORTFOLIO_ENVIRONMENTS.INTERNAL_SIM) {
+      await ensureBroker(userId, portfolio)
+    }
   }
 
   const result = await prisma.$transaction(async (tx) => {
@@ -173,7 +188,19 @@ export async function saveBot(userId, input = {}, { ensureBroker = async () => {
       if (input.expectedUpdatedAt !== undefined && new Date(input.expectedUpdatedAt).getTime() !== new Date(bot.updatedAt).getTime()) {
         throw new BotSaveError(409, 'STALE_BOT', 'This bot changed since it was loaded. Reload and try again.', { updatedAt: bot.updatedAt })
       }
-      if (input.enabled === true && !bot.enabled) await ensureBroker(userId)
+      if (input.enabled === true && !bot.enabled) {
+        const portfolio = await tx.portfolio.findUnique({ where: { id: bot.portfolioId } })
+        if (portfolio?.status && portfolio.status !== PORTFOLIO_STATUSES.ACTIVE) {
+          throw new BotSaveError(409, 'PORTFOLIO_NOT_ACTIVE', `Portfolio is not active (${portfolio.status}).`)
+        }
+        const portEnv = normalizePortfolioEnvironment(portfolio)
+        if (portEnv === PORTFOLIO_ENVIRONMENTS.ALPACA_LIVE && !isLiveTradingEnabled()) {
+          throw new BotSaveError(403, 'LIVE_TRADING_DISABLED', 'Live brokerage portfolios are disabled.')
+        }
+        if (portEnv !== PORTFOLIO_ENVIRONMENTS.INTERNAL_SIM) {
+          await ensureBroker(userId, portfolio)
+        }
+      }
     }
 
     const base = creating ? (template?.config ?? {}) : bot.config

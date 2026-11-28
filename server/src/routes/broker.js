@@ -1,5 +1,10 @@
 import brokerService from '../services/brokerService.js'
 import { authenticate } from '../middleware/authenticate.js'
+import {
+  AccountDomainError,
+  connectOrRotateBrokerAccount,
+  disconnectUserBrokerConnections
+} from '../services/accountDomainService.js'
 
 export default async function brokerRoutes(app) {
   app.addHook('preHandler', authenticate)
@@ -29,6 +34,7 @@ export default async function brokerRoutes(app) {
     }
     const base = paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
 
+    let verifiedAccount = null
     try {
       const verifyRes = await fetch(`${base}/v2/account`, {
         headers: { 'APCA-API-KEY-ID': apiKey, 'APCA-API-SECRET-KEY': apiSecret }
@@ -36,18 +42,37 @@ export default async function brokerRoutes(app) {
       if (!verifyRes.ok) {
         return reply.code(400).send({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid Alpaca credentials — verification failed' } })
       }
+      verifiedAccount = await verifyRes.json().catch(() => null)
     } catch {
       return reply.code(502).send({ error: { code: 'BROKER_UNREACHABLE', message: 'Could not reach Alpaca to verify credentials' } })
     }
 
-    const account = await brokerService.createBrokerAccount({
-      userId: request.user.id,
-      apiKey,
-      apiSecret,
-      paper
-    })
-    // Never echo the secret back — return masked version
-    return reply.code(201).send({ data: maskSecret(account) })
+    try {
+      const { legacyAccount, connection } = await connectOrRotateBrokerAccount({
+        userId: request.user.id,
+        apiKey,
+        apiSecret,
+        paper,
+        verifiedAccount
+      })
+      const account = legacyAccount ?? await brokerService.createBrokerAccount({
+        userId: request.user.id,
+        apiKey,
+        apiSecret,
+        paper
+      })
+      return reply.code(201).send({
+        data: {
+          ...maskSecret(account),
+          ...(connection ? { brokerConnectionId: connection.id, externalAccountId: connection.externalAccountId } : {})
+        }
+      })
+    } catch (err) {
+      if (err instanceof AccountDomainError) {
+        return reply.code(err.statusCode).send({ error: { code: err.code, message: err.message } })
+      }
+      throw err
+    }
   })
 
   // GET /api/broker — fetch current user account info (masked)
@@ -59,9 +84,9 @@ export default async function brokerRoutes(app) {
     return reply.send({ data: account })
   })
 
-  // DELETE /api/broker — remove current user broker account
+  // DELETE /api/broker — remove current user broker account & halt bound brokerage portfolios without redirecting bots
   app.delete('/', async (request, reply) => {
-    const result = await brokerService.deleteBrokerAccount(request.user.id)
+    const result = await disconnectUserBrokerConnections(request.user.id)
     if (!result) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'No broker account configured' } })
     }

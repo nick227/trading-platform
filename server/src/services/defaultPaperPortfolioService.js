@@ -14,6 +14,7 @@ import prisma from '../loaders/prisma.js'
 export const DEFAULT_PAPER_STARTING_CASH = 10_000
 export const DEFAULT_PAPER_ACCOUNT_KIND = 'default_simulated_paper'
 export const BROKERAGE_ACCOUNT_KIND = 'brokerage'
+export const EXTERNAL_BROKER_ACCOUNT_KIND = BROKERAGE_ACCOUNT_KIND
 
 export function defaultPaperPortfolioIdForUser(userId) {
   const clean = String(userId ?? '').trim()
@@ -50,11 +51,13 @@ export async function ensureDefaultPaperPortfolio(
   const createInClient = async (db) => {
     const portfolio = await db.portfolio.upsert({
       where: { id },
-      update: { accountKind: DEFAULT_PAPER_ACCOUNT_KIND },
+      update: { accountKind: DEFAULT_PAPER_ACCOUNT_KIND, environment: 'internal_sim' },
       create: {
         id,
         userId: uid,
         accountKind: DEFAULT_PAPER_ACCOUNT_KIND,
+        environment: 'internal_sim',
+        status: 'active',
         name: 'Simulated Paper Portfolio',
         cashBalance: startingCash,
         totalValue: startingCash
@@ -128,7 +131,8 @@ export async function ensureExternalBrokeragePortfolio(
   const existing = await prismaClient.portfolio.findFirst({
     where: {
       userId: uid,
-      accountKind: { not: DEFAULT_PAPER_ACCOUNT_KIND }
+      accountKind: BROKERAGE_ACCOUNT_KIND,
+      status: 'active'
     },
     orderBy: { createdAt: 'asc' }
   })
@@ -143,6 +147,8 @@ export async function ensureExternalBrokeragePortfolio(
       id,
       userId: uid,
       accountKind: BROKERAGE_ACCOUNT_KIND,
+      environment: 'alpaca_paper',
+      status: 'active',
       name: 'Brokerage Portfolio',
       cashBalance: 0,
       totalValue: 0

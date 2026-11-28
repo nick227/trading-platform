@@ -7,6 +7,11 @@ import { getReconcileStatus, reconcileBrokerActivity } from '../services/brokerR
 import { DEFAULT_TRADABLE_SYMBOLS, simulationConfig } from '../services/simulationService.js'
 import { valuePortfolio, valueHistory } from '../services/portfolioValuationService.js'
 import { ensureDefaultPaperPortfolio } from '../services/defaultPaperPortfolioService.js'
+import {
+  AccountDomainError,
+  connectOrRotateBrokerAccount,
+  disconnectUserBrokerConnections
+} from '../services/accountDomainService.js'
 
 async function fetchAlpacaAccount(userId) {
   // Simulator mode never contacts Alpaca.
@@ -112,6 +117,7 @@ export default async function accountRoutes(fastify) {
 
     // Verify credentials against Alpaca before saving
     const base = paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
+    let verifiedAccount = null
     try {
       const verifyRes = await fetch(`${base}/v2/account`, {
         headers: { 'APCA-API-KEY-ID': apiKey, 'APCA-API-SECRET-KEY': apiSecret }
@@ -119,30 +125,31 @@ export default async function accountRoutes(fastify) {
       if (!verifyRes.ok) {
         return reply.code(400).send({ error: 'Invalid Alpaca credentials — verification failed' })
       }
+      verifiedAccount = await verifyRes.json().catch(() => null)
     } catch {
       return reply.code(502).send({ error: 'Could not reach Alpaca to verify credentials' })
     }
 
-    const encryptedKey    = encrypt(apiKey)
-    const encryptedSecret = encrypt(apiSecret)
-
-    const now = new Date()
-    await prisma.brokerAccount.upsert({
-      where:  { userId },
-      update: { apiKey: encryptedKey, apiSecret: encryptedSecret, paper, status: 'active', lastVerifiedAt: now },
-      create: {
-        id:            generateId(ID_PREFIXES.BROKER),
+    try {
+      const { connection } = await connectOrRotateBrokerAccount({
         userId,
-        broker:        'alpaca',
-        apiKey:        encryptedKey,
-        apiSecret:     encryptedSecret,
+        apiKey,
+        apiSecret,
         paper,
-        status:        'active',
-        lastVerifiedAt: now
+        verifiedAccount,
+        prismaClient: prisma
+      })
+      return reply.send({
+        ok: true,
+        paper,
+        ...(connection ? { brokerConnectionId: connection.id, externalAccountId: connection.externalAccountId } : {})
+      })
+    } catch (err) {
+      if (err instanceof AccountDomainError) {
+        return reply.code(err.statusCode).send({ error: err.message, code: err.code })
       }
-    })
-
-    return reply.send({ ok: true, paper })
+      throw err
+    }
   })
 
   // GET /api/account/broker-credentials — check if broker account is connected
@@ -191,11 +198,11 @@ export default async function accountRoutes(fastify) {
     })
   })
 
-  // DELETE /api/account/broker-credentials — disconnect broker account
+  // DELETE /api/account/broker-credentials — disconnect broker account & halt bound brokerage portfolios
   fastify.delete('/broker-credentials', async (request, reply) => {
     const userId = request.user.id
-    await prisma.brokerAccount.deleteMany({ where: { userId: String(userId) } })
-    return reply.send({ ok: true })
+    const res = await disconnectUserBrokerConnections(userId, { prismaClient: prisma })
+    return reply.send({ ok: true, ...(res ?? { deleted: false }) })
   })
 
   fastify.get('/reconcile-status', async (request, reply) => {

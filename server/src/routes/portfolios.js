@@ -6,6 +6,11 @@ import {
   ensureDefaultPaperPortfolio,
   ensureExternalBrokeragePortfolio
 } from '../services/defaultPaperPortfolioService.js'
+import {
+  AccountDomainError,
+  createIndependentPortfolio,
+  PORTFOLIO_ENVIRONMENTS
+} from '../services/accountDomainService.js'
 
 export default async function portfoliosRoutes(app) {
   // Enforce authentication across all portfolio endpoints
@@ -57,14 +62,33 @@ export default async function portfoliosRoutes(app) {
     return { data: portfolio }
   })
 
-  // POST /api/portfolios — creates portfolio for authenticated user
+  // GET /api/portfolios/connections — returns masked BrokerConnection records for the authenticated user
+  app.get('/connections', async (request, reply) => {
+    const userId = request.user?.id
+    if (!userId) return reply.code(401).send({ error: 'User authentication required' })
+    const rows = typeof prisma.brokerConnection?.findMany === 'function'
+      ? await prisma.brokerConnection.findMany({
+          where: { userId: String(userId) },
+          orderBy: { createdAt: 'desc' }
+        })
+      : []
+    return reply.send({
+      data: rows.map(({ encryptedApiKey: _k, encryptedApiSecret: _s, ...safe }) => safe)
+    })
+  })
+
+  // POST /api/portfolios — creates an independent portfolio for authenticated user
   app.post('/', {
     schema: {
       body: {
         type: 'object',
+        additionalProperties: false,
         required: ['name'],
         properties: {
-          name: { type: 'string', minLength: 1 }
+          name: { type: 'string', minLength: 1 },
+          environment: { type: 'string', enum: ['internal_sim', 'alpaca_paper', 'alpaca_live'] },
+          brokerConnectionId: { type: ['string', 'null'] },
+          startingCash: { type: 'number', minimum: 0 }
         }
       }
     }
@@ -74,18 +98,42 @@ export default async function portfoliosRoutes(app) {
       return reply.code(401).send({ error: 'User authentication required' })
     }
 
-    const portfolio = await portfoliosService.createPortfolio({
-      name: request.body.name,
-      userId
-    })
-    return reply.code(201).send({ data: portfolio })
+    try {
+      const portfolio = await createIndependentPortfolio({
+        userId,
+        name: request.body.name,
+        environment: request.body.environment ?? PORTFOLIO_ENVIRONMENTS.INTERNAL_SIM,
+        brokerConnectionId: request.body.brokerConnectionId ?? null,
+        startingCash: request.body.startingCash,
+        prismaClient: prisma
+      })
+      return reply.code(201).send({ data: portfolio })
+    } catch (error) {
+      if (error instanceof AccountDomainError) {
+        return reply.code(error.statusCode).send({ error: { code: error.code, message: error.message } })
+      }
+      throw error
+    }
   })
 
-  // PUT /api/portfolios/:id — verifies ownership before updating
+  // PUT /api/portfolios/:id — verifies ownership and enforces immutable environment/broker identity
   app.put('/:id', {
+    preValidation: async (request, reply) => {
+      if (request.body && typeof request.body === 'object') {
+        if ('environment' in request.body || 'brokerConnectionId' in request.body || 'accountKind' in request.body) {
+          return reply.code(409).send({
+            error: {
+              code: 'PORTFOLIO_IDENTITY_IMMUTABLE',
+              message: 'Portfolio environment and brokerage connection binding cannot be changed after creation.'
+            }
+          })
+        }
+      }
+    },
     schema: {
       body: {
         type: 'object',
+        additionalProperties: false,
         properties: {
           name: { type: 'string', minLength: 1 }
         }
