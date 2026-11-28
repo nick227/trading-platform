@@ -7,6 +7,9 @@
 import { listJoin, moneyWhole } from './format'
 
 const isPos = (n) => Number.isFinite(Number(n)) && Number(n) > 0
+const priceText = n => Number(n).toLocaleString('en-US', {
+  style: 'currency', currency: 'USD', minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 4,
+})
 
 function findRule(rules, type) {
   return (rules ?? []).find((r) => r?.type === type && r.enabled !== false) ?? null
@@ -90,7 +93,7 @@ export function describeAction({ config = {}, rules = [] } = {}, { template = fa
     return `Buys ${syms} at the open when the ${trend.symbol ?? 'SPY'} trend is confirmed up, and stays out when it isn’t.`
   }
   if (price) {
-    const level = isPos(price.price) ? moneyWhole(price.price) : null
+    const level = isPos(price.price) ? priceText(price.price) : null
     const op = price.operator ?? price.direction ?? (sell ? 'below' : 'above')
     const verb = sell ? 'Sells' : 'Buys'
     if (!level) return `${verb} ${syms} when the price ${op === 'below' ? 'falls below' : 'rises above'} a trigger price you set.`
