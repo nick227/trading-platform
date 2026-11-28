@@ -3,13 +3,12 @@ import { useAuth } from '../app/AuthProvider'
 import { prefetchByPath } from '../app/pagePrefetch'
 import ModeBadge from './ModeBadge'
 
-// Four primary surfaces: Portfolio, Stocks, Strategies, and My Bots.
-// Research Partner and AI Stock Trader are contextual destinations, not primary top-nav items.
+// Four product workflows; stock lookup is contextual to automation.
 const routes = [
-  { path: '/', label: 'Portfolio', match: (p) => p === '/' || p === '/portfolio' || p === '/history' },
-  { path: '/opportunities', label: 'Stocks', match: (p) => p.startsWith('/opportunities') || p.startsWith('/assets') },
-  { path: '/strategies', label: 'Strategies', match: (p) => p.startsWith('/strategies') },
-  { path: '/bots', label: 'My Bots', match: (p) => p.startsWith('/bots') },
+  { path: '/portfolio', label: 'Portfolio', match: p => p === '/' || p === '/portfolio' },
+  { path: '/bots', label: 'My Bots', match: p => p.startsWith('/bots') },
+  { path: '/strategies', label: 'Strategies', match: p => p.startsWith('/strategies') },
+  { path: '/ai-stock-trader', label: 'AI Trader', match: p => p.startsWith('/ai-stock-trader') }
 ]
 
 function Mark() {
@@ -80,14 +79,6 @@ export default function Nav() {
           ) : (
             <>
               <Link
-                to="/opportunities"
-                className={`tl-nav-link ${location.pathname.startsWith('/opportunities') || location.pathname.startsWith('/assets') ? 'is-active' : ''}`}
-                aria-current={location.pathname.startsWith('/opportunities') || location.pathname.startsWith('/assets') ? 'page' : undefined}
-                onMouseEnter={() => prefetchByPath('/opportunities')}
-              >
-                Stocks
-              </Link>
-              <Link
                 to="/strategies"
                 className={`tl-nav-link ${location.pathname.startsWith('/strategies') ? 'is-active' : ''}`}
                 aria-current={location.pathname.startsWith('/strategies') ? 'page' : undefined}
@@ -95,6 +86,7 @@ export default function Nav() {
               >
                 Strategies
               </Link>
+              <Link to="/ai-stock-trader" className="tl-nav-link">AI Trader</Link>
               <Link to="/auth" className="tl-nav-link">Sign in</Link>
             </>
           )}
