@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get } from '../../api/client'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../../app/AuthProvider'
+import PersonalAiTraderCard from './PersonalAiTraderCard'
 import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } from '../../ui/format'
 import TraderCandidateEvidence from './TraderCandidateEvidence'
 import TraderStoryOverview from './TraderStoryOverview'
@@ -16,6 +19,7 @@ function Stat({ label, value, detail }) {
 }
 
 export default function StockTraderDashboard() {
+  const { user, sessionLoading } = useAuth() || {}
   const [state, setState] = useState({ status: 'loading', data: null })
   const refresh = useCallback(() => {
     setState(s => ({ ...s, status: 'loading' }))
@@ -34,6 +38,18 @@ export default function StockTraderDashboard() {
         detail="Platform-owned paper trading. No customer funds are invested. Historical or simulated results do not guarantee future returns."
         actions={<button type="button" className="tl-link-btn" onClick={refresh}
           disabled={state.status === 'loading'}>Refresh</button>} />
+    </section>
+    <section className="tl-section" id="personal-ai-trader" aria-label="Your Personal AI Trader">
+      <div className="tl-section-head"><div>
+        <h2 className="tl-section-title">Your AI Trader</h2>
+        <p className="tl-section-note">Set up a personal simulated trading bot with your own sector preferences, risk limits and approval settings. Its account is separate from the platform demonstration above.</p>
+      </div></div>
+      {sessionLoading ? <p role="status">Checking your account…</p>
+        : user ? <PersonalAiTraderCard />
+        : <div className="tl-flow-card">
+          <p>Sign in to configure your personal AI Trader. The public performance record above is not your account history.</p>
+          <Link className="tl-btn tl-btn--primary" to="/auth">Sign in to get started</Link>
+        </div>}
     </section>
     {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
     {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
