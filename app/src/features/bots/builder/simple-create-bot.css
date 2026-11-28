@@ -45,3 +45,8 @@
  .tl-simple-builder__settings { grid-template-columns: minmax(0,1fr); gap: 16px; }
  .tl-simple-builder__facts { padding: 16px; }
 }
+
+/* Remove duplicate narrative blocks; keep only actionable fields and compact factual metadata. */
+.tl-simple-builder__compact { color: var(--tl-muted); font-size: 13px; line-height: 1.4; margin: 0; }
+.tl-simple-builder__review-line { padding: 18px 0 8px; border-bottom: 0; font-variant-numeric: tabular-nums; }
+.tl-simple-builder__section-head { display: block; }
