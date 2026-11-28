@@ -80,6 +80,7 @@ export function describeAction({ config = {}, rules = [] } = {}, { template = fa
     return `Buys ${syms} when Alpha Engine publishes current, verified BUY research, and sells what it holds on SELL research.`
   }
   const price = findRule(rules, 'price_threshold')?.config
+  const change = findRule(rules, 'price_change')?.config
   const trend = findRule(rules, 'trend_filter')?.config
   const loss = findRule(rules, 'daily_loss')?.config
   const cd = durationText(cooldownMs(findRule(rules, 'cooldown')?.config))
@@ -97,6 +98,10 @@ export function describeAction({ config = {}, rules = [] } = {}, { template = fa
   }
   if (loss && !sell) {
     return `Buys ${syms} steadily, and stops for the day once the account has realized ${isPos(loss.maxLoss) ? `a ${moneyWhole(loss.maxLoss)} loss` : 'its loss limit'}.`
+  }
+  if (change && isPos(change.pct) && isPos(change.sessions)) {
+    const verb = sell ? 'Sells' : 'Buys'
+    return `${verb} ${syms} after the price ${change.operator === 'below' ? 'falls' : 'rises'} at least ${change.pct}% over ${change.sessions} trading sessions.`
   }
   if (!sell) {
     return cd ? `Buys ${syms} on a fixed schedule — once every ${cd}, whatever the price.` : `Buys ${syms} at each check.`
