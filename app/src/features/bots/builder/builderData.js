@@ -22,30 +22,8 @@ function researchDefaults(research) {
   }
 }
 
-/**
- * Backward-compatible catalog upgrade for databases seeded before the published
- * momentum strategy gained its stock-independent trigger. The zero-dollar rule
- * never represented an executable configuration.
- * Mirror server/prisma/seeds/bot-templates.json until all environments are reseeded.
- */
-export function completeLegacyMomentumTemplate(row) {
-  if (row?.id !== 'tmpl_momentum_buy') return row
-  const rules = Array.isArray(row.rules) ? row.rules : []
-  const emptyPriceRule = rules.some(r => r.type === 'price_threshold' && r.enabled !== false && !(Number(r.config?.price) > 0))
-  if (!emptyPriceRule) return row
-  return {
-    ...row,
-    name: 'Buy After Price Increase',
-    description: 'Buys the chosen stock after it rises at least 5% over 20 trading sessions.',
-    rules: rules.map(r => r.type === 'price_threshold' && r.enabled !== false && !(Number(r.config?.price) > 0)
-      ? { name: 'Price Increase', type: 'price_change', config: { sessions: 20, operator: 'above', pct: 5 }, enabled: true }
-      : r),
-  }
-}
-
 /** Normalizes a BotTemplate row into what the wizard shows. */
-export function normalizeTemplate(input) {
-  const t = completeLegacyMomentumTemplate(input)
+export function normalizeTemplate(t) {
   const config = t?.config && typeof t.config === 'object' ? t.config : {}
   const tickers = Array.isArray(config.tickers) ? config.tickers.filter(Boolean).map(String) : []
   // The bot engine throws "not yet implemented" for every strategy_based bot,
