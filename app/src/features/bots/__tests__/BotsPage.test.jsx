@@ -141,7 +141,7 @@ describe('BotsPage', () => {
     mockApi()
     renderPage()
     await screen.findAllByTestId('featured-bot')
-    expect(screen.getAllByRole('link', { name: 'Create bot' })).toHaveLength(1)
+    expect(screen.getAllByRole('link', { name: 'Add bot' })).toHaveLength(1)
     expect(screen.queryByRole('heading', { name: /My bots/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Activity' })).not.toBeInTheDocument()
   })

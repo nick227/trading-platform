@@ -10,15 +10,42 @@ import { loadWizardData, parseSymbols } from './builderData'
 import { strategyPresentation } from '../strategyPresentation'
 import './simple-create-bot.css'
 
-/** Create-only: one visible form, no timeline, editorial card, step editors or mandatory backtest. */
+const amount = value => '$' + Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
+const numeric = value => String(value ?? '').replace(/[^0-9.]/g, '')
+
+/** Only a genuine template stock universe or an account-provided universe can be selected. */
+export function initializeTemplateDraft(template, data, eligibleSymbols, requestedTicker) {
+  const tickers = Array.isArray(template.config?.tickers) ? template.config.tickers.map(s => String(s).toUpperCase()) : []
+  const eligible = Array.isArray(eligibleSymbols) ? eligibleSymbols.map(s => String(s).toUpperCase()) : []
+  const selected = requestedTicker && tickers.includes(requestedTicker.toUpperCase())
+    ? requestedTicker.toUpperCase() : tickers.length ? null
+      : requestedTicker && eligible.includes(requestedTicker.toUpperCase()) ? requestedTicker.toUpperCase()
+        : eligible.length === 1 ? eligible[0] : null
+  const draft = initCreateDraft(template, data, selected)
+  // Templates with a predefined universe are not silently transformed by the account UI.
+  if (!tickers.length && !selected) draft.symbolsText = ''
+  return draft
+}
+
+function NumberSetting({ label, value, error, onChange, help, field }) {
+  return <div data-error-field={field}>
+    <Field label={label} error={error || null} help={help}>
+      {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
+        <Input id={id} inputMode="decimal" value={String(value ?? '')}
+          aria-invalid={invalid} aria-describedby={describedby}
+          onChange={e => onChange(numeric(e.target.value))} />}
+    </Field>
+  </div>
+}
+
 export default function SimpleCreateBot() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const { brokerStatus, brokerStatusLoading, brokerStatusError } = useAuth()
   const mode = getTradingMode(brokerStatus, { loading: brokerStatusLoading, error: brokerStatusError })
   const simulated = isSimulated(brokerStatus)
-  const tradableSymbols = Array.isArray(brokerStatus?.tradableSymbols) && brokerStatus.tradableSymbols.length ? brokerStatus.tradableSymbols : null
-  const pinnedTicker = params.get('ticker') || params.get('symbol')
+  const eligibleSymbols = Array.isArray(brokerStatus?.tradableSymbols) ? brokerStatus.tradableSymbols : []
+  const tickerQuery = (params.get('ticker') || params.get('symbol') || '').toUpperCase()
   const templateQuery = params.get('template') || params.get('strategy')
   const [data, setData] = useState(null)
   const [template, setTemplate] = useState(null)
@@ -35,34 +62,48 @@ export default function SimpleCreateBot() {
     loadWizardData().then(wd => {
       if (!live) return
       setData(wd)
-      const selected = wd.templates.find(t => t.id === templateQuery && t.available)
-        || wd.templates.find(t => t.available)
-      if (!selected) { setLoadError(wd.catalogError || 'No available strategies.'); return }
-      setTemplate(selected)
-      setDraft(initCreateDraft(selected, wd, pinnedTicker))
-    }).catch(() => live && setLoadError('Bot setup is unavailable.'))
+      const next = wd.templates.find(item => item.id === templateQuery && item.available)
+        || wd.templates.find(item => item.available)
+      if (!next) { setLoadError(wd.catalogError || 'No strategies are currently available.'); return }
+      setTemplate(next)
+      setDraft(initializeTemplateDraft(next, wd, brokerStatus?.tradableSymbols, tickerQuery))
+    }).catch(() => { if (live) setLoadError('Unable to load available strategies.') })
     return () => { live = false }
-  }, []) // Intentional: preserve user edits if query parameters change while the form is open.
+  }, []) // Do not discard a user's edits on account-provider re-renders.
 
-  const builtBot = useMemo(() => draft ? buildBotFromDraft(draft, template || {}) : null, [draft, template])
-  const errors = useMemo(() => draft ? validateBuilderDraft(draft, { buyingPower: data?.buyingPower ?? null, tradableSymbols }) : {}, [draft, data?.buyingPower, tradableSymbols])
-  const patch = (key, value) => {
-    setServerErrors(current => ({ ...current, [key]: null }))
-    setDraft(current => ({ ...current, [key]: value }))
-  }
+  const preview = useMemo(() => draft && template ? buildBotFromDraft(draft, template) : null, [draft, template])
+  const errors = useMemo(() => draft ? validateBuilderDraft(draft, {
+    buyingPower: data?.buyingPower ?? null,
+    tradableSymbols: eligibleSymbols.length ? eligibleSymbols : null,
+  }) : {}, [draft, data?.buyingPower, brokerStatus?.tradableSymbols])
   const fieldError = key => serverErrors[key] || (touched ? errors[key] : null)
-  const presentation = template && strategyPresentation(template)
-  const guards = builtBot ? describeGuards(builtBot) : []
-
-  const changeTemplate = id => {
+  const change = (key, value) => {
+    setServerErrors(old => ({ ...old, [key]: null }))
+    setDraft(old => ({ ...old, [key]: value }))
+  }
+  const changeNested = (key, subKey, value, errorKey = key) => {
+    setServerErrors(old => ({ ...old, [errorKey]: null }))
+    setDraft(old => ({ ...old, [key]: { ...old[key], [subKey]: value } }))
+  }
+  const switchTemplate = id => {
     const next = data.templates.find(item => item.id === id && item.available)
     if (!next) return
     setTemplate(next)
-    setDraft(initCreateDraft(next, data, pinnedTicker))
-    setParams({ template: id, ...(pinnedTicker ? { ticker: pinnedTicker } : {}) }, { replace: true })
+    setDraft(initializeTemplateDraft(next, data, brokerStatus?.tradableSymbols, tickerQuery))
+    setParams({ template: id }, { replace: true })
     setTouched(false)
     setServerErrors({})
     setSubmitError(null)
+  }
+  const onCapitalChange = value => {
+    const originalLimit = Number(template.config?.maxOrderNotional ?? draft.maxPerOrder)
+    setServerErrors(old => ({ ...old, capital: null, maxPerOrder: null }))
+    setDraft(old => ({
+      ...old,
+      capital: numeric(value),
+      // Keep the template's per-order cap; never silently increase risk as allocation grows.
+      maxPerOrder: String(Math.min(Number.isFinite(originalLimit) && originalLimit > 0 ? originalLimit : Number(old.maxPerOrder), Number(value) || 0)),
+    }))
   }
 
   const handleSubmit = async event => {
@@ -70,155 +111,172 @@ export default function SimpleCreateBot() {
     setTouched(true)
     setSubmitError(null)
     if (Object.keys(errors).length) {
-      const first = ['name', 'symbols', 'triggerPrice', 'minScore', 'maxAgeHours', 'maxDriftPct', 'capital', 'maxPerOrder', 'cooldown', 'positionLimit', 'dailyLoss', 'exit', 'relVolume', 'priceChange'].find(key => errors[key])
-      formRef.current?.querySelector(`[data-error-field="${first}"] input, [data-error-field="${first}"] select`)?.focus()
+      const first = ['symbols','triggerPrice','minScore','maxAgeHours','maxDriftPct','capital','maxPerOrder',
+        'relVolume','priceChange','exit','dailyLoss','positionLimit','cooldown','name'].find(key => errors[key])
+      formRef.current?.querySelector('[data-error-field="' + first + '"] input, [data-error-field="' + first + '"] select')?.focus()
       return
     }
     if (mode !== 'paper' || !data?.portfolioId || (!simulated && !draft.confirmed)) return
     setSaving(true)
     try {
-      const result = await createBotConfiguration({ portfolioId: data.portfolioId, templateId: draft.templateId,
-        draft, originalTemplate: template, api: { post } })
-      navigate(`/bots/${result?.id || result?.botId}`, { state: { created: true } })
+      const response = await createBotConfiguration({
+        portfolioId: data.portfolioId, templateId: template.id, draft, originalTemplate: template, api: { post },
+      })
+      navigate('/bots/' + (response?.id || response?.botId), { state: { created: true } })
     } catch (error) {
-      const mapped = mapServerValidationError(error, formatDesiredRules(draft, template?.rules || []))
+      const mapped = mapServerValidationError(error, formatDesiredRules(draft, template.rules || []))
       setServerErrors(mapped.fieldErrors || {})
-      setSubmitError(mapped.message || 'Bot could not be created.')
+      setSubmitError(mapped.message || 'Bot could not be added.')
     } finally {
       setSaving(false)
     }
   }
 
   if (loadError) return <main className="tl-page tl-simple-builder"><Link to="/bots" className="tl-back">← My Bots</Link><div role="alert">{loadError}</div></main>
-  if (!draft || !template || !data) return <main className="tl-page tl-simple-builder" role="status">Loading bot setup…</main>
+  if (!data || !draft || !template) return <main className="tl-page tl-simple-builder" role="status">Loading strategies…</main>
 
-  const trigger = draft.triggerType
-  const isResearch = trigger === 'alpha_research'
-  const restricted = mode !== 'paper' || !data.portfolioId
+  const presets = Array.isArray(template.config?.tickers) ? template.config.tickers : []
+  const noUniverse = !presets.length && !eligibleSymbols.length
+  const hasPrice = draft.triggerType === 'price_threshold'
+  const hasResearch = draft.triggerType === 'alpha_research'
+  const modeBlocked = mode !== 'paper'
+  const blocked = modeBlocked || !data.portfolioId || noUniverse
+  const presentation = strategyPresentation(template)
+  const settings = []
+  if (hasPrice) settings.push({
+    field: 'triggerPrice', label: 'Trigger price ($)', value: draft.trigger?.price,
+    help: 'The stock price that activates this template’s ' + (draft.trigger.operator === 'below' ? 'below-price' : 'above-price') + ' condition.',
+    update: value => changeNested('trigger', 'price', value, 'triggerPrice'),
+  })
+  if (hasResearch) {
+    settings.push({
+      field: 'minScore', label: 'Minimum research score (0–100)', value: draft.research?.minScore,
+      update: value => changeNested('research', 'minScore', value, 'minScore'),
+    }, {
+      field: 'maxAgeHours', label: 'Maximum research age (hours)', value: draft.research?.maxAgeHours,
+      update: value => changeNested('research', 'maxAgeHours', value, 'maxAgeHours'),
+    }, {
+      field: 'maxDriftPct', label: 'Maximum price drift (%)', value: draft.research?.maxDriftPct,
+      update: value => changeNested('research', 'maxDriftPct', value, 'maxDriftPct'),
+    })
+  }
+  if (draft.relVolume?.on) settings.push({
+    field: 'relVolume', label: 'Minimum relative volume (× 20-day average)',
+    value: draft.relVolume.minRatio, update: value => changeNested('relVolume', 'minRatio', value),
+  })
+  if (draft.priceChange?.on) settings.push({
+    field: 'priceChange', label: 'Required ' + (draft.priceChange.operator === 'below' ? 'price decline' : 'price increase') + ' (%)',
+    value: draft.priceChange.pct, help: 'Measured over ' + draft.priceChange.sessions + ' trading sessions.',
+    update: value => changeNested('priceChange', 'pct', value),
+  })
+  if (draft.exit?.stopLoss?.on) settings.push({
+    field: 'exit', label: 'Sell after a decline from purchase price (%)',
+    value: draft.exit.stopLoss.pct,
+    update: value => setDraft(old => ({ ...old, exit: { ...old.exit, stopLoss: { ...old.exit.stopLoss, pct: value } } })),
+  })
+  if (draft.exit?.reversal?.on) settings.push({
+    field: 'exitReversal', label: 'Sell after a price reversal (%)',
+    value: draft.exit.reversal.pct, help: 'Measured over ' + draft.exit.reversal.sessions + ' sessions.',
+    update: value => setDraft(old => ({ ...old, exit: { ...old.exit, reversal: { ...old.exit.reversal, pct: value } } })),
+  })
+  if (draft.dailyLoss?.on) settings.push({
+    field: 'dailyLoss', label: 'Stop after daily realized losses ($)',
+    value: draft.dailyLoss.maxLoss, update: value => changeNested('dailyLoss', 'maxLoss', value),
+  })
+  if (draft.positionLimit?.on) settings.push({
+    field: 'positionLimit', label: 'Maximum shares per stock',
+    value: draft.positionLimit.maxShares, update: value => changeNested('positionLimit', 'maxShares', value),
+  })
+
   return <main className="tl-page tl-simple-builder" data-testid="algorithm-builder">
     <Link to="/bots" className="tl-back">← My Bots</Link>
-    <header className="tl-simple-builder__heading">
-      <h1>Create bot</h1>
-      <span className="tl-small tl-muted">Simulated trading</span>
-    </header>
-    {restricted && <div className="tl-notice tl-notice--warn" role="status">
-      Bot activation requires an available paper trading account. <Link to="/profile">Account settings</Link>
+    <header className="tl-simple-builder__heading"><h1>Add Bot</h1></header>
+    {modeBlocked && <div className="tl-notice tl-notice--warn" role="status">
+      {mode === 'live-disabled' ? 'Real-money bot activation is not enabled yet.' :
+        mode === 'checking' ? 'Checking your trading account.' :
+          mode === 'unknown' ? 'Your trading account could not be verified.' :
+            'Connect a supported trading account to add a bot.'}{' '}
+      <Link to="/profile">Account settings</Link>
     </div>}
     {data.portfolioError && <div className="tl-notice tl-notice--warn" role="alert">{data.portfolioError}</div>}
-    <form ref={formRef} onSubmit={handleSubmit} noValidate>
-      <section className="tl-simple-builder__section" aria-labelledby="create-strategy-title">
-        <h2 id="create-strategy-title">Strategy</h2>
-        <Field label="Trading strategy">
-          {({ id }) => <Select id={id} data-testid="template-select" value={template.id}
-            onChange={e => changeTemplate(e.target.value)}>
-            {data.templates.map(item => <option value={item.id} key={item.id} disabled={!item.available}>
-              {strategyPresentation(item).name}{!item.available ? ' (unavailable)' : ''}
+    <form ref={formRef} noValidate onSubmit={handleSubmit}>
+      <section className="tl-simple-builder__section" aria-labelledby="strategy-heading">
+        <h2 id="strategy-heading">Strategy</h2>
+        <Field label="Choose a strategy">{({ id }) =>
+          <Select id={id} data-testid="template-select" value={template.id} onChange={e => switchTemplate(e.target.value)}>
+            {data.templates.map(item => <option key={item.id} value={item.id} disabled={!item.available}>
+              {strategyPresentation(item).name}{!item.available ? ' (not available yet)' : ''}
             </option>)}
           </Select>}
         </Field>
         <p className="tl-simple-builder__help">{presentation.description}</p>
-        <div data-error-field="name"><Field label="Bot name" error={fieldError('name')}>
-          {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
-            <Input id={id} value={draft.name} aria-invalid={invalid} aria-describedby={describedby}
-              onChange={e => patch('name', e.target.value)} />}
-        </Field></div>
-      </section>
-
-      <section className="tl-simple-builder__section" aria-labelledby="create-stocks-title">
-        <h2 id="create-stocks-title">Stocks</h2>
-        <div data-error-field="symbols"><Field label="Stock symbols" error={fieldError('symbols')}
-          help={tradableSymbols ? `Available in this simulated account: ${tradableSymbols.join(', ')}` : 'Separate symbols with commas.'}>
-          {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
-            <Input id={id} value={draft.symbolsText} placeholder="SPY, AAPL" aria-invalid={invalid}
-              aria-describedby={describedby} onChange={e => patch('symbolsText', e.target.value)} />}
-        </Field></div>
-      </section>
-
-      <section className="tl-simple-builder__section" aria-labelledby="create-trigger-title">
-        <h2 id="create-trigger-title">Trading conditions</h2>
-        <Field label="When to trade">
-          {({ id }) => <Select id={id} value={trigger} onChange={e => setDraft(current => ({
-            ...current, triggerType: e.target.value,
-            trigger: current.trigger?.price ? current.trigger : { operator: current.direction === 'sell' ? 'below' : 'above', price: '' },
-            research: e.target.value === 'alpha_research' && !current.research
-              ? { minScore: '60', maxAgeHours: '96', maxDriftPct: '5', requireEdge: true } : current.research,
-          }))}>
-            <option value="price_threshold">Stock reaches a price</option>
-            <option value="schedule">On a regular schedule</option>
-            <option value="alpha_research">When Alpha Engine publishes qualifying research</option>
-            {draft.fixed.some(rule => rule.type === 'trend_filter') && <option value="trend_filter">When market trend is confirmed</option>}
-          </Select>}
-        </Field>
-        {trigger === 'price_threshold' && <div className="tl-simple-builder__columns">
-          <Field label="Condition">{({ id }) => <Select id={id} value={draft.trigger?.operator || 'above'}
-            onChange={e => setDraft(current => ({ ...current, trigger: { ...current.trigger, operator: e.target.value } }))}>
-            <option value="above">Price rises above</option><option value="below">Price falls below</option>
-          </Select>}</Field>
-          <div data-error-field="triggerPrice"><Field label="Trigger price ($)" error={fieldError('triggerPrice')}>
-            {({ id, 'aria-invalid': invalid }) => <Input id={id} inputMode="decimal" value={draft.trigger?.price ?? ''}
-              aria-invalid={invalid} onChange={e => {
-                setServerErrors(current => ({ ...current, triggerPrice: null }))
-                setDraft(current => ({ ...current, trigger: { ...current.trigger, price: e.target.value } }))
-              }} />}
-          </Field></div>
-        </div>}
-        {isResearch && <div className="tl-simple-builder__columns tl-simple-builder__columns--three">
-          {[
-            ['minScore', 'Minimum research score (0–100)'],
-            ['maxAgeHours', 'Maximum research age (hours)'],
-            ['maxDriftPct', 'Maximum price drift (%)'],
-          ].map(([key, label]) => <div key={key} data-error-field={key}>
-            <Field label={label} error={fieldError(key)}>
-              {({ id, 'aria-invalid': invalid }) => <Input id={id} inputMode="decimal" value={draft.research?.[key] ?? ''}
-                aria-invalid={invalid} onChange={e => setDraft(current => ({ ...current,
-                  research: { ...current.research, [key]: e.target.value } }))} />}
-            </Field>
-          </div>)}
-          <p className="tl-simple-builder__rule">Research must pass the existing independent evidence check before trading.</p>
-        </div>}
-        <Field label="Order direction">{({ id }) => <Select id={id} value={draft.direction ?? 'research'}
-          onChange={e => patch('direction', e.target.value === 'research' ? null : e.target.value)}>
-          {isResearch && <option value="research">Follow research (buy and sell)</option>}
-          <option value="buy">Buy</option><option value="sell">Sell</option>
-        </Select>}</Field>
-      </section>
-
-      <section className="tl-simple-builder__section" aria-labelledby="create-money-title">
-        <h2 id="create-money-title">Investment limits</h2>
-        <div className="tl-simple-builder__columns">
-          <div data-error-field="capital"><Field label="Capital allocated ($)" error={fieldError('capital')}>
-            {({ id, 'aria-invalid': invalid }) => <Input id={id} inputMode="decimal" value={draft.capital}
-              aria-invalid={invalid} onChange={e => patch('capital', e.target.value)} />}
-          </Field></div>
-          <div data-error-field="maxPerOrder"><Field label="Maximum per order ($)" error={fieldError('maxPerOrder')}>
-            {({ id, 'aria-invalid': invalid }) => <Input id={id} inputMode="decimal" value={draft.maxPerOrder}
-              aria-invalid={invalid} onChange={e => patch('maxPerOrder', e.target.value)} />}
-          </Field></div>
+        <div className="tl-simple-builder__facts">
+          <div><strong>Stocks</strong>
+            {presets.length > 0 ? <p data-testid="strategy-stocks">{parseSymbols(draft.symbolsText).join(', ')}</p> :
+              eligibleSymbols.length > 0 ? <div data-error-field="symbols"><Field label="Choose a supported stock" error={fieldError('symbols')}>
+                {({ id }) => <Select id={id} value={draft.symbolsText}
+                  onChange={e => change('symbolsText', e.target.value)}>
+                  <option value="">Select a stock</option>
+                  {eligibleSymbols.map(s => <option key={s} value={s}>{s}</option>)}
+                </Select>}</Field></div> :
+                <p role="alert">This strategy has no defined stocks and the account has no supported stock list.</p>}
+          </div>
+          <div><strong>Trading condition</strong><p>{
+            hasPrice ? 'Trade when a stock price moves ' + (draft.trigger.operator === 'below' ? 'below' : 'above') + ' the specified dollar price.' :
+            hasResearch ? 'Trade using qualifying Alpha Engine research.' :
+            draft.triggerType === 'trend_filter' ? 'Trade when the strategy’s market trend condition is met.' :
+            'Use the strategy’s recurring trading schedule.'
+          }</p></div>
         </div>
-        {guards.length > 0 && <div className="tl-simple-builder__limits">
-          <h3>Additional trading limits</h3>
-          <ul>{guards.filter(text => !text.includes('simulated capital') && !text.includes('per order')).map(text => <li key={text}>{text}</li>)}</ul>
-        </div>}
       </section>
 
-      <section className="tl-simple-builder__section tl-simple-builder__review" aria-labelledby="create-review-title">
-        <h2 id="create-review-title">Review</h2>
-        <p data-testid="builder-summary">{builtBot ? describeAction(builtBot) : ''}</p>
-        <p className="tl-small tl-muted">{parseSymbols(draft.symbolsText).join(', ') || 'No symbols selected'} ·
-          ${Number(draft.capital || 0).toLocaleString()} allocated ·
-          ${Number(draft.maxPerOrder || 0).toLocaleString()} maximum per order</p>
+      <section className="tl-simple-builder__section" aria-labelledby="allocation-heading">
+        <h2 id="allocation-heading">Investment allocation</h2>
+        <div className="tl-simple-builder__amount" data-error-field="capital">
+          <Field label="Amount to allocate ($)" error={fieldError('capital')}
+            help="The total capital this bot may use across its investments.">
+            {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
+              <Input id={id} value={draft.capital} aria-invalid={invalid} aria-describedby={describedby}
+                inputMode="decimal" onChange={e => onCapitalChange(e.target.value)} />}
+          </Field>
+        </div>
+        <p className="tl-simple-builder__help">Each order is capped at {amount(draft.maxPerOrder)} by this strategy's existing safeguards. Increasing your allocation does not increase this per-order cap.</p>
+        {fieldError('maxPerOrder') && <p role="alert" className="tl-field-error">{fieldError('maxPerOrder')}</p>}
       </section>
 
-      {!simulated && mode === 'paper' && <label className="tl-simple-builder__confirm">
-        <input type="checkbox" checked={draft.confirmed} onChange={e => patch('confirmed', e.target.checked)} />
+      <section className="tl-simple-builder__section" aria-labelledby="settings-heading">
+        <div className="tl-simple-builder__section-head">
+          <div><h2 id="settings-heading">Strategy settings</h2><p>These are the strategy’s current trigger values. You can adjust supported values before adding your bot.</p></div>
+        </div>
+        {hasPrice && <p className="tl-simple-builder__help">The default condition is <strong>{draft.trigger.operator === 'below' ? 'below' : 'above'}</strong> the target price.</p>}
+        {settings.length ? <div className="tl-simple-builder__settings">
+          {settings.map(s => <NumberSetting key={s.field} field={s.field} label={s.label} value={s.value}
+            error={fieldError(s.field === 'exitReversal' ? 'exit' : s.field)} help={s.help} onChange={s.update} />)}
+        </div> : <p className="tl-simple-builder__help">This strategy has no adjustable trigger values. Its existing trading conditions will be used.</p>}
+        {hasResearch && <p className="tl-simple-builder__help">Research must pass the independent evidence requirement. This protection cannot be disabled.</p>}
+        <div className="tl-simple-builder__limits">
+          <h3>Other conditions and protections</h3>
+          <ul>{describeGuards(preview).map(text => <li key={text}>{text}</li>)}</ul>
+        </div>
+      </section>
+
+      <section className="tl-simple-builder__section tl-simple-builder__review" aria-labelledby="review-heading">
+        <h2 id="review-heading">Review</h2>
+        <p data-testid="builder-summary">{describeAction(preview)}</p>
+        <p className="tl-simple-builder__help">{amount(draft.capital)} allocated · maximum {amount(draft.maxPerOrder)} per order</p>
+      </section>
+      {mode === 'paper' && !simulated && <label className="tl-simple-builder__confirm">
+        <input type="checkbox" checked={draft.confirmed} onChange={e => change('confirmed', e.target.checked)} />
         I understand this bot will place orders automatically in my paper account.
       </label>}
-      {submitError && <div className="tl-notice tl-notice--error" role="alert" data-testid="submit-error">{submitError}</div>}
+      <p className="tl-simple-builder__account">Account: {mode === 'paper' ? 'Paper trading' :
+        mode === 'live-disabled' ? 'Live trading unavailable' : 'Not verified'}</p>
+      {submitError && <div role="alert" className="tl-notice tl-notice--error" data-testid="submit-error">{submitError}</div>}
       <footer className="tl-simple-builder__actions">
         <Link to="/bots" className="tl-btn tl-btn--secondary">Cancel</Link>
         <button type="submit" className="tl-btn tl-btn--primary" data-testid="submit-builder-btn"
-          disabled={saving || restricted || (!simulated && !draft.confirmed)}>
-          {saving ? 'Starting…' : 'Start bot'}
+          disabled={saving || blocked || (mode === 'paper' && !simulated && !draft.confirmed)}>
+          {saving ? 'Adding…' : 'Add bot'}
         </button>
       </footer>
     </form>
