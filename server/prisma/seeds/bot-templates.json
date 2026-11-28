@@ -1,8 +1,8 @@
 [
   {
     "id": "tmpl_momentum_buy",
-    "name": "Momentum Buy",
-    "description": "Buys a ticker when price rises above a configurable threshold. Enforces market hours, position limits, and a per-ticker cooldown to prevent overtrading.",
+    "name": "Buy After Price Increase",
+    "description": "Buys the chosen stock after it rises at least 5% over 20 trading sessions. Trades during regular market hours, with a one-hour cooldown and a position limit.",
     "botType": "rule_based",
     "tags": [
       "momentum",
@@ -29,12 +29,12 @@
         }
       },
       {
-        "name": "Price Above Threshold",
-        "type": "price_threshold",
+        "name": "Price Increase",
+        "type": "price_change",
         "config": {
-          "direction": "above",
+          "sessions": 20,
           "operator": "above",
-          "price": 0
+          "pct": 5
         }
       },
       {
