@@ -38,14 +38,8 @@ export default function StockTraderDashboard() {
         actions={<button type="button" className="tl-link-btn" onClick={refresh}
           disabled={state.status === 'loading'}>Refresh</button>} />
     </section>
-    {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
-    {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
-    {state.status === 'ready' && data?.status === 'not_initialized' && <section className="tl-section" data-testid="flagship-uninitialized">
-      <h2 className="tl-section-title">Awaiting beta initialization</h2>
-      <p>There are no verified paper-trading results or AI research decisions to publish yet.</p>
-    </section>}
-    {state.status === 'ready' && data?.status !== 'not_initialized' && data && <>
-      <TraderStoryOverview data={data} />
+    {state.status === 'ready' && data?.status !== 'not_initialized' && data &&
+      <TraderStoryOverview data={data} />}
     <section className="tl-section" id="personal-ai-trader" aria-label="Your Personal AI Trader">
       <div className="tl-section-head"><div>
         <h2 className="tl-section-title">Your AI Trader</h2>
@@ -59,6 +53,13 @@ export default function StockTraderDashboard() {
         </div>}
     </section>
 
+    {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
+    {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
+    {state.status === 'ready' && data?.status === 'not_initialized' && <section className="tl-section" data-testid="flagship-uninitialized">
+      <h2 className="tl-section-title">Awaiting beta initialization</h2>
+      <p>There are no verified paper-trading results or AI research decisions to publish yet.</p>
+    </section>}
+    {state.status === 'ready' && data?.status !== 'not_initialized' && data && <>
       <details className="tl-section tl-trader-technical tl-trader-breakdown" aria-label="Additional paper performance detail">
         <summary>Show detailed paper performance figures</summary>
       <section className="tl-section" id="ai-trader-history" aria-label="Paper portfolio performance">
