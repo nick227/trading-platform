@@ -118,75 +118,42 @@ beforeEach(() => {
   authState.brokerStatus = SIM
 })
 
-describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
-  it('renders the algorithm with collapsed editors and a live strategy sentence', async () => {
-    mockApi()
-    renderBuilder('/bots/new?template=tmpl_golden_cross')
-
-    expect(await screen.findByRole('heading', { level: 1, name: 'Create a simulated trading bot' })).toBeInTheDocument()
-    expect(screen.getByTestId('builder-summary')).toBeInTheDocument()
-    expect(screen.getByText(/Buys SPY, QQQ.*at the open when the SPY trend is confirmed up/)).toBeInTheDocument()
-
-    // 3 expandable sections
-    expect(screen.getByTestId('section-when')).toBeInTheDocument()
-    expect(screen.getByTestId('section-trade')).toBeInTheDocument()
-    expect(screen.getByTestId('section-more')).toBeInTheDocument()
-
-    expect(screen.getByRole('button', { name: 'Edit watch' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('button', { name: 'Edit when' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('button', { name: 'Edit act' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByLabelText('Symbols')).not.toBeVisible()
-
-    // Preloaded draft values
-    expect(screen.getByLabelText('Bot name')).toHaveValue('Golden Cross Hunter · SPY')
-    expect(screen.getByLabelText('Symbols')).toHaveValue('SPY, QQQ, IWM')
-    expect(screen.getByLabelText('Capital allocated')).toHaveValue('5000')
-
-    // Submit button
-    expect(screen.getByTestId('submit-builder-btn')).toHaveTextContent('Start bot')
-  })
-
-  it('edits in place, closes the previous step, and preserves changes in the sentence', async () => {
+describe('Minimal Create Bot — /bots/new', () => {
+  it('shows an ordinary form without timelines, step editors or backtests', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_price')
-    await screen.findByLabelText('Bot name')
-    fireEvent.change(editField('Symbols'), { target: { value: 'MSFT' } })
-    expect(screen.getByRole('button', { name: 'Done editing watch' })).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.change(editField('Trigger price'), { target: { value: '350' } })
-    expect(screen.getByRole('button', { name: 'Edit watch' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByLabelText('Symbols')).not.toBeVisible()
-    expect(screen.getByTestId('builder-summary')).toHaveTextContent('MSFT')
-    expect(screen.getByTestId('builder-summary')).toHaveTextContent('$350')
-    fireEvent.click(screen.getByRole('button', { name: 'Done editing when' }))
-    expect(editField('Symbols')).toHaveValue('MSFT')
-    expect(post).not.toHaveBeenCalled()
-  })
-
-  it('allows switching starting point from the template selector', async () => {
-    mockApi()
-    renderBuilder('/bots/new?template=tmpl_golden_cross')
-    await screen.findByLabelText('Bot name')
-
-    const select = screen.getByTestId('template-select')
-    fireEvent.change(select, { target: { value: 'tmpl_price' } })
-
+    expect(await screen.findByRole('heading', { name: 'Create bot' })).toBeInTheDocument()
+    for (const heading of ['Strategy','Stocks','Trading conditions','Investment limits','Review'])
+      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
     expect(screen.getByLabelText('Bot name')).toHaveValue('Price Threshold Buy · AAPL')
-    expect(screen.getByLabelText('Symbols')).toHaveValue('AAPL')
-    expect(screen.getByLabelText('Trigger price')).toHaveValue('200')
+    expect(screen.getByLabelText('Stock symbols')).toHaveValue('AAPL')
+    expect(screen.getByLabelText('Trigger price ($)')).toHaveValue('200')
+    expect(screen.getByLabelText('Capital allocated ($)')).toHaveValue('3000')
+    expect(screen.queryByText('WATCH')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Edit watch|Edit when|Edit act/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/median vs.*buy.*hold/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Backtest')).not.toBeInTheDocument()
   })
 
-  it('validates required fields inline on submit attempt', async () => {
+  it('changes strategies without changing their underlying identifiers', async () => {
+    mockApi()
+    renderBuilder('/bots/new?template=tmpl_golden_cross')
+    expect(await screen.findByLabelText('Bot name')).toHaveValue('Golden Cross Hunter · SPY')
+    fireEvent.change(screen.getByTestId('template-select'), { target: { value: 'tmpl_price' } })
+    expect(screen.getByLabelText('Bot name')).toHaveValue('Price Threshold Buy · AAPL')
+    expect(screen.getByLabelText('Stock symbols')).toHaveValue('AAPL')
+    expect(screen.getByLabelText('Trigger price ($)')).toHaveValue('200')
+  })
+
+  it('validates inline and focuses the first erroneous field', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_price')
     await screen.findByLabelText('Bot name')
-
-    fireEvent.change(editField('Bot name'), { target: { value: '' } })
-    fireEvent.change(editField('Symbols'), { target: { value: '' } })
-    fireEvent.change(editField('Trigger price'), { target: { value: '' } })
-    fireEvent.change(editField('Capital allocated'), { target: { value: '0' } })
-
+    fireEvent.change(screen.getByLabelText('Bot name'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Stock symbols'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Trigger price ($)'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Capital allocated ($)'), { target: { value: '0' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
-
     expect(screen.getByText('Give your bot a name.')).toBeInTheDocument()
     expect(screen.getByText('Add at least one symbol.')).toBeInTheDocument()
     expect(screen.getByText('Enter the price that should trigger an order.')).toBeInTheDocument()
@@ -195,101 +162,67 @@ describe('Algorithm Builder — Creation Journey (/bots/new)', () => {
     expect(post).not.toHaveBeenCalled()
   })
 
-  it('creates and starts the bot atomically in one POST /api/bots/configuration call', async () => {
+  it('uses the existing transactional creation API and trading limits', async () => {
     mockApi()
     post.mockResolvedValue({ id: 'bot_new123' })
-
     renderBuilder('/bots/new?template=tmpl_price')
     await screen.findByLabelText('Bot name')
-
-    fireEvent.change(editField('Trigger price'), { target: { value: '215' } })
-    fireEvent.change(editField('Capital allocated'), { target: { value: '4000' } })
-    fireEvent.change(editField('Max spend per order'), { target: { value: '800' } })
-
+    fireEvent.change(screen.getByLabelText('Stock symbols'), { target: { value: 'MSFT' } })
+    fireEvent.change(screen.getByLabelText('Trigger price ($)'), { target: { value: '215' } })
+    fireEvent.change(screen.getByLabelText('Capital allocated ($)'), { target: { value: '4000' } })
+    fireEvent.change(screen.getByLabelText('Maximum per order ($)'), { target: { value: '800' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
-
-    await waitFor(() => expect(post).toHaveBeenCalled())
-    expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
-      portfolioId: 'pf_1',
-      templateId: 'tmpl_price',
-      name: 'Price Threshold Buy · AAPL',
-      enabled: true,
-      config: expect.objectContaining({
-        tickers: ['AAPL'],
-        allocatedAmount: 4000,
-        maxOrderNotional: 800,
-      }),
-      rules: expect.arrayContaining([
-        expect.objectContaining({
-          type: 'price_threshold',
-          config: { operator: 'above', price: 215 },
-        }),
-      ]),
-    }))
-    expect(await screen.findByTestId('bot-detail-page')).toHaveTextContent('bot-detail bot_new123 created')
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
+      portfolioId: 'pf_1', templateId: 'tmpl_price',
+      enabled: true, config: expect.objectContaining({
+        tickers: ['MSFT'], allocatedAmount: 4000, maxOrderNotional: 800,
+      }), rules: expect.arrayContaining([expect.objectContaining({
+        type: 'price_threshold', config: { operator: 'above', price: 215 },
+      })]),
+    })))
+    expect(await screen.findByTestId('bot-detail-page')).toHaveTextContent('bot_new123 created')
   })
 
-  it('requires explicit confirmation outside simulator', async () => {
+  it('requires explicit paper-order confirmation outside the simulator', async () => {
     authState.brokerStatus = { connected: true, paper: true, simulated: false }
     mockApi()
-
     renderBuilder('/bots/new?template=tmpl_golden_cross')
     await screen.findByLabelText('Bot name')
-
-    const submitBtn = screen.getByTestId('submit-builder-btn')
-    expect(submitBtn).toBeDisabled()
-
-    const confirmBox = screen.getByRole('checkbox', { name: /I understand this bot will place orders automatically/ })
-    fireEvent.click(confirmBox)
-    expect(submitBtn).toBeEnabled()
+    const button = screen.getByTestId('submit-builder-btn')
+    expect(button).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: /I understand this bot will place orders automatically/ }))
+    expect(button).toBeEnabled()
   })
 
-  it('validates Alpha Engine research parameters and edge requirement', async () => {
+  it('keeps the Alpha Engine evidence gate and exposes research parameters', async () => {
     mockApi()
-    post.mockResolvedValue({ id: 'bot_res_1' })
-
+    post.mockResolvedValue({ id: 'bot_research' })
     renderBuilder('/bots/new?template=tmpl_alpha_research')
-    expect(await screen.findByLabelText('Minimum research score')).toHaveValue('60')
-    expect(screen.getByText('(0–100; a score, not a probability)')).toBeInTheDocument()
-
-    // Test research score validation
-    fireEvent.change(editField('Minimum research score'), { target: { value: '150' } })
+    expect(await screen.findByLabelText('Minimum research score (0–100)')).toHaveValue('60')
+    expect(screen.getByText(/independent evidence check/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Minimum research score (0–100)'), { target: { value: '150' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(screen.getByText('Use a score from 0 to 100.')).toBeInTheDocument()
-
-    fireEvent.change(editField('Minimum research score'), { target: { value: '45' } })
-
-    // The evidence requirement is stated, not toggleable.
-    fireEvent.click(within(screen.getByTestId('section-more')).getByRole('button', { name: /Limits & schedule/ }))
-    expect(screen.getByTestId('research-evidence-rule')).toHaveTextContent('can’t be turned off')
-    expect(screen.queryByRole('checkbox', { name: /holdout beat the always-up baseline/ })).not.toBeInTheDocument()
-
+    fireEvent.change(screen.getByLabelText('Minimum research score (0–100)'), { target: { value: '45' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
-    await waitFor(() => expect(post).toHaveBeenCalled())
-    expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
-      config: expect.objectContaining({
-        research: expect.objectContaining({
-          minConfidence: 0.45,
-          requireEdgeOverBaseline: true,
-        }),
-      }),
-    }))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
+      config: expect.objectContaining({ research: expect.objectContaining({
+        minConfidence: 0.45, requireEdgeOverBaseline: true,
+      }) }),
+    })))
   })
 
-  it('handles creation server validation error and maps field inline', async () => {
+  it('maps backend validation problems to visible form fields', async () => {
     mockApi()
     const err = new Error('HTTP 400')
     err.code = 'INVALID_CONFIG'
     err.details = { code: 'INVALID_CONFIG', field: 'allocatedAmount', message: 'Simulated capital exceeds maximum.' }
     post.mockRejectedValue(err)
-
     renderBuilder('/bots/new?template=tmpl_price')
     await screen.findByLabelText('Bot name')
-
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(await screen.findByTestId('submit-error')).toHaveTextContent('Simulated capital exceeds maximum.')
     expect(screen.getAllByText('Simulated capital exceeds maximum.')).toHaveLength(2)
-    expect(screen.getByLabelText('Capital allocated')).toHaveFocus()
   })
 })
 

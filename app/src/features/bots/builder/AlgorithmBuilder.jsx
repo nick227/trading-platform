@@ -1,4 +1,5 @@
 import { PageIdentity } from '../../../components/content/ContentBlocks'
+import SimpleCreateBot from './SimpleCreateBot'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { get, post, put } from '../../../api/client'
@@ -44,7 +45,7 @@ function ModeNotice({ mode }) {
   )
 }
 
-export default function AlgorithmBuilder() {
+function LegacyAlgorithmBuilder() {
   const { id, botId: paramBotId } = useParams()
   const botId = id || paramBotId
   const isEdit = Boolean(botId)
@@ -1100,4 +1101,11 @@ export default function AlgorithmBuilder() {
       </form>
     </main>
   )
+}
+
+
+/** Existing bots keep their full rule editor; new bots use the direct configuration form. */
+export default function AlgorithmBuilder() {
+  const { id, botId } = useParams()
+  return id || botId ? <LegacyAlgorithmBuilder /> : <SimpleCreateBot />
 }
