@@ -12,6 +12,7 @@ import prisma from '../../loaders/prisma.js'
 import { engineClient } from '../../clients/engine.js'
 import { getExpectedCompletedExchangeSession } from '../../utils/marketCalendar.js'
 import { calculateFifoAccounting, loadBotFills } from '../botAccountingService.js'
+import { buildPaperEquityHistory } from './paperEquityHistory.js'
 import { screenAiStockUniverse } from './stockScreener.js'
 import { describeUniverseSymbol } from './stockUniverseCatalog.js'
 import { createBroadBarsEngine } from './stockDiscoveryService.js'
@@ -213,6 +214,10 @@ export async function evaluateAiPerformanceIntelligence({
     }
   }
 
+  const equityHistory = buildPaperEquityHistory({
+    fills, barsBySymbol, spyBars, allocatedCapital,
+    startSession: firstSession, endSession: latestSession, accountant
+  })
   const accounting = accountant(fills, { currentPrices })
   const realizedPnl = Number(accounting.performance?.realizedPnl ?? 0)
   const unrealizedPnl = Number(accounting.performance?.unrealizedPnl ?? 0)
@@ -420,6 +425,7 @@ export async function evaluateAiPerformanceIntelligence({
       latestSession,
       activeSessionsCount
     },
+    equityHistory,
     comparison: {
       allocatedCapital,
       aiGrossReturnPct: hasActivity ? grossReturnPct : null,
