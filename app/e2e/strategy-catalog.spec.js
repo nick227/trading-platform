@@ -19,7 +19,9 @@ for(const width of [320,375,768,1024,1440]) {
     await mockCatalog(page)
     await page.goto('/strategies')
     const root=page.getByTestId('strategies-index')
-    await expect(root.getByRole('heading',{name:"Automated trading strategies"})).toBeVisible()
+    await expect(root.getByRole('heading',{name:'Automated strategies, tested openly',level:1})).toBeVisible()
+    await expect(root.getByRole('heading',{name:'Explore trading strategies',level:2})).toBeVisible()
+    await expect(root.getByTestId('cross-strategy-leaderboard')).toHaveCount(0)
     const cards=root.getByTestId('strategy-card')
     await expect(cards).toHaveCount(3)
     for(const card of await cards.all()) {
@@ -29,6 +31,9 @@ for(const width of [320,375,768,1024,1440]) {
     }
     await expect(cards.first()).toContainText('−7.25%')
     await expect(cards.first()).toContainText('+3.50%')
+    await expect(cards.first()).toContainText('−10.75% vs bench')
+    await expect(cards.first()).toContainText('Developing sample')
+    await expect(cards.first()).toContainText('6 trades · 3 stocks')
     await expect(cards.first()).toContainText('Typical strategy return')
     await expect(cards.nth(1)).toContainText('qualifying forward paper trades')
     await expect(cards.nth(2)).toContainText('cannot be evaluated using the available historical testing method')

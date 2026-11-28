@@ -358,7 +358,8 @@ async function latestRows(prismaClient, versionId) {
 }
 
 export async function listPublicStrategies({ prismaClient = prisma } = {}) {
-  const templates = await prismaClient.botTemplate.findMany({ orderBy: { id: 'asc' } })
+  const allTemplates = await prismaClient.botTemplate.findMany({ orderBy: { id: 'asc' } })
+  const templates = allTemplates.filter((t) => t.id !== 'tmpl_ai_stock_trader')
   return Promise.all(templates.map(async (t) => {
     const version = await currentVersion(prismaClient, t)
     const { endDate, rows } = version ? await latestRows(prismaClient, version.id) : { endDate: null, rows: [] }

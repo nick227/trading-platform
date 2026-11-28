@@ -111,7 +111,7 @@ body {
 
 .tl-page {
   width: 100%;
-  max-width: calc(var(--tl-width) + 2 * var(--tl-gutter));
+  max-width: 1180px;
   margin: 0 auto;
   padding: 36px var(--tl-gutter) 112px;
   font-size: 15px;
@@ -784,7 +784,7 @@ div[style*='grid'] > .tl-field, .tl-grid > .tl-field { margin-top: 0; }
   font-family: var(--tl-font);
 }
 .tl-nav-inner {
-  max-width: calc(var(--tl-width) + 2 * var(--tl-gutter));
+  max-width: 1180px;
   margin: 0 auto;
   height: 60px;
   padding: 0 var(--tl-gutter);

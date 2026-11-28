@@ -230,6 +230,22 @@ Run migrations:
 npm run db:push --workspace=server
 ```
 
+### Seeding & Admin Credentials
+
+Seed bot templates, the canonical system account, and the initial admin user:
+
+```bash
+npm run db:seed --workspace=server
+```
+
+Default seeded admin credentials (defined in `server/prisma/seed.js`):
+
+- **Email**: `admin@tradeloom.com` (override with `INITIAL_ADMIN_EMAIL`)
+- **Password**: `AdminSecret123!` (override with `INITIAL_ADMIN_PASSWORD`)
+- **Role**: `admin` (provisioned with an active `PRO` subscription)
+
+> Note: Re-running `db:seed` upserts the account by email and ensures `role: 'admin'` without overwriting an existing user's password. A locked internal system account (`tradeloom-ai@tradeloom.internal` / `usr_platform_canonical`) is also seeded with `admin` role.
+
 ## Documentation
 
 - [Backend API Documentation](./server/docs/)

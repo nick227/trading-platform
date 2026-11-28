@@ -27,7 +27,7 @@ export default function ProductStorySection() {
       <div className="tl-public-panel">
         <p className="tl-public-eyebrow">PRODUCT LIMITATIONS</p>
         <h2 id="public-trust-title">Published strategy results include losses and testing limitations.</h2>
-        <p>TradeLoom is being developed for real-money brokerage trading. The current beta supports paper trading, and live orders and deposits are not yet available. All accounts are currently free during beta development.</p>
+        <p>TradeLoom is being developed for real-money brokerage trading. The current beta supports paper trading, and live orders and deposits are not yet available. All accounts are free during beta</p>
         <p>Historical backtests and forward paper observations are not actual investor returns. Research scores and past strategy performance do not establish future outcomes.</p>
       </div>
     </section>

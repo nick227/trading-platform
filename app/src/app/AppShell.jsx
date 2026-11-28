@@ -74,7 +74,11 @@ function AppLayout() {
       '/research-partners': 'AI Research Partner',
       '/opportunities': 'Stocks',
       '/ops': 'Operations',
-      '/admin': 'Administration',
+      '/admin': 'Admin — Overview',
+      '/admin/users': 'Admin — Users',
+      '/admin/trading': 'Admin — Trading',
+      '/admin/ai': 'Admin — AI & Data',
+      '/admin/system': 'Admin — System',
       '/auth': 'Authentication',
       '/login': 'Login',
       '/register': 'Register',
@@ -149,7 +153,7 @@ export function AppShell() {
         <Route path="/profile/account" element={<Navigate to="/profile" replace />} />
         <Route path="/profile/broker" element={<Navigate to="/profile" replace />} />
         <Route
-          path="/admin"
+          path="/admin/*"
           element={
             <AdminRoute>
               <Suspense fallback={<PageSkeleton />}>

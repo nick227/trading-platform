@@ -3,7 +3,17 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { get } from '../../../api/client'
 import StrategyDetail from '../StrategyDetail'
-import { catalogOverview, catalogPeriod, catalogResult, catalogResultHeading, STRATEGY_EXPLANATIONS } from '../strategyCatalogCopy'
+import {
+  catalogOverview,
+  catalogPeriod,
+  catalogResult,
+  catalogResultHeading,
+  classifySampleSize,
+  computeRiskAdjustedScore,
+  deriveCardEvidenceMetrics,
+  STRATEGY_EXPLANATIONS,
+  strategyCategoryMeta,
+} from '../strategyCatalogCopy'
 import { mainEvidenceWindow } from '../StrategyCard'
 import StrategiesIndex from '../StrategiesIndex'
 import TemplateBaseline, { behaviourKey } from '../../bots/builder/TemplateBaseline'
@@ -22,19 +32,40 @@ const strategy = {
 }
 
 describe('public strategy evidence', () => {
-  it('index lists every strategy with plain results, including non-results', async () => {
-    get.mockResolvedValue([{ templateId: 'a', name: 'A', description: 'd', asOf: '2026-11-20', windows: { '5Y': strategy.summary['5Y'], '1Y': strategy.summary['1Y'] } }, { templateId: 'r', name: 'Research', description: 'd', windows: { '5Y': { status: 'not_backtestable' } } }])
+  it('index renders editorial intro, excludes leaderboard and internal flagship template, and enriches cards with risk & sample metrics', async () => {
+    get.mockResolvedValue([
+      { templateId: 'a', name: 'A', description: 'd', asOf: '2026-11-20', windows: { '5Y': strategy.summary['5Y'], '1Y': strategy.summary['1Y'] } },
+      { templateId: 'r', name: 'Research', tags: ['research'], description: 'd', windows: { '5Y': { status: 'not_backtestable' } } },
+      { templateId: 'tmpl_ai_stock_trader', name: 'Internal Flagship', tags: ['ai'], windows: {} },
+    ])
     render(<MemoryRouter><StrategiesIndex /></MemoryRouter>)
-    const [a, r] = await screen.findAllByTestId('strategy-card')
-    expect(a).toHaveTextContent('+4.00%')
-    expect(a).toHaveTextContent('+60.00%')
+
+    expect(screen.getByRole('heading', { name: 'Automated strategies, tested openly', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Explore trading strategies', level: 2 })).toBeInTheDocument()
+    expect(screen.queryByTestId('cross-strategy-leaderboard')).not.toBeInTheDocument()
+
+    const cards = await screen.findAllByTestId('strategy-card')
+    expect(cards).toHaveLength(2)
+    expect(screen.getByTestId('strategy-family-counts')).toHaveTextContent('01 rule-based / 01 AI & research')
+
+    const [a, r] = cards
+    expect(within(a).getByTestId('strategy-family-tag')).toHaveTextContent('Rule-based')
+    expect(within(a).getByTestId('strategy-sample-tier')).toHaveTextContent('Developing sample')
+    expect(within(a).getByTestId('strategy-primary-return')).toHaveTextContent('+4.00%')
+    expect(within(a).getByTestId('strategy-benchmark-delta')).toHaveTextContent('−56.00% vs bench')
     expect(within(a).getByText('Typical strategy return')).toBeInTheDocument()
     expect(within(a).getByText('Typical buy-and-hold return')).toBeInTheDocument()
+    expect(a).toHaveTextContent('+60.00%')
+    expect(within(a).getByTestId('strategy-drawdown')).toHaveTextContent('−12.50%')
+    expect(within(a).getByTestId('strategy-risk-score')).toHaveTextContent('0.32x')
+    expect(within(a).getByTestId('strategy-sample-detail')).toHaveTextContent('8 trades · 0/2 beat')
     expect(a).toHaveTextContent('Historical test · Five years')
     expect(a.querySelectorAll('a')).toHaveLength(1)
     expect(a.querySelector('a')).toHaveAttribute('href', '/strategies/a')
     expect(within(a).getByRole('link', { name: /View strategy/ })).toBeInTheDocument()
     expect(within(a).getByTestId('strategy-thumbnail')).toHaveAttribute('aria-hidden', 'true')
+
+    expect(within(r).getByTestId('strategy-family-tag')).toHaveTextContent('Research signal')
     expect(r).toHaveTextContent('Results unavailable')
     expect(r).toHaveTextContent('This strategy cannot be evaluated using the available historical testing method.')
     expect(within(r).queryByText('Typical strategy return')).not.toBeInTheDocument()
@@ -157,6 +188,40 @@ describe('public strategy catalog contract', () => {
     expect(mainEvidenceWindow({windows:{'5Y':{status:'insufficient_data'},'1Y':{status:'ok'}}})).toBe('1Y')
     expect(mainEvidenceWindow({tags:['ai'],windows:{'5Y':{status:'ok'},forward:{status:'awaiting_sessions'}}})).toBe('forward')
     expect(mainEvidenceWindow({templateId:'tmpl_alpha_research',windows:{'5Y':{status:'not_backtestable'},forward:{status:'not_backtestable'}}})).toBe('forward')
+  })
+  it('computes risk-adjusted scores, sample tiers, and category badges deterministically', () => {
+    expect(computeRiskAdjustedScore(16, 8, 48)).toBe(2)
+    expect(computeRiskAdjustedScore(4, 0.1, 5)).toBe(8) // 0.50% drawdown floor
+    expect(computeRiskAdjustedScore(10, 5, 0)).toBeNull() // untraded strategies are never scored
+    expect(classifySampleSize({ sessionsCount: 1260, tradesCount: 48 }).tier).toBe('substantive')
+    expect(classifySampleSize({ sessionsCount: 25, tradesCount: 4 }).tier).toBe('developing')
+    expect(classifySampleSize({ sessionsCount: 5, tradesCount: 1 }).tier).toBe('early')
+    expect(classifySampleSize({ sessionsCount: 0, tradesCount: 0, status: 'awaiting_sessions' }).label).toBe('Awaiting trades')
+    expect(strategyCategoryMeta({ templateId: 'tmpl_ai_catalyst_momentum', tags: ['ai'] })).toEqual({
+      family: 'Autonomous AI',
+      mode: 'Forward paper',
+      isAiOrResearch: true,
+    })
+    expect(strategyCategoryMeta({ templateId: 'tmpl_alpha_research' })).toEqual({
+      family: 'Research signal',
+      mode: 'Paper only',
+      isAiOrResearch: true,
+    })
+    const derived = deriveCardEvidenceMetrics({
+      status: 'ok',
+      symbolsTested: 10,
+      symbolsTraded: 8,
+      beatBuyAndHold: 6,
+      medianReturnPct: 16,
+      medianBuyAndHoldPct: 13.5,
+      medianDrawdownPct: 8,
+      trades: 48,
+    }, '5Y')
+    expect(derived.excessVsBenchmarkPct).toBe(2.5)
+    expect(derived.drawdownText).toBe('−8.00%')
+    expect(derived.riskAdjustedText).toBe('2.00x')
+    expect(derived.sampleSize.label).toBe('Substantive sample')
+    expect(derived.sampleDetailText).toBe('48 trades · 6/10 beat')
   })
 })
 

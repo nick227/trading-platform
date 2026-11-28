@@ -155,7 +155,7 @@
 .tl-public-result .tl-public-result-meta{margin-top:auto}
 
 /* MR4: read-only, real Alpha Engine stock research snapshots. */
-.tl-public-picker{max-width:920px;padding:0;overflow:hidden}
+.tl-public-picker{max-width:1180px;padding:0;overflow:hidden}
 .tl-public-picker__head{padding:24px 28px;display:flex;align-items:start;justify-content:space-between;gap:16px;background:#f8fafc;border-bottom:1px solid var(--tl-public-border)}
 .tl-public-picker__eyebrow{font-size:11px!important;letter-spacing:.09em;font-weight:800;color:var(--tl-public-accent)!important;margin:0 0 6px}
 .tl-public-picker__head h3{font-size:22px;line-height:1.25;letter-spacing:-.03em;margin:0}
@@ -222,7 +222,7 @@
 .tl-public-home h2{letter-spacing:-.04em}
 .tl-public-panel{border-radius:14px}
 .tl-public-button{border-radius:9px;font-weight:750;min-height:46px}
-.tl-public-section-head{max-width:750px}
+.tl-public-section-head{max-width:850px}
 .tl-public-story-grid{gap:16px;align-items:stretch}
 .tl-public-story{min-height:174px;padding:28px}
 .tl-public-story h3{font-size:19px;letter-spacing:-.02em}

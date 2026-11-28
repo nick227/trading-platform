@@ -5,7 +5,7 @@ export const JOURNEY = [
 ]
 export const CAPABILITIES = [
   {title:'AI-assisted stock research',body:'TradeLoom publishes ranked stock candidates and supporting research observations for further investigation.'},
-  {title:'Automated trading strategies',body:'The platform is being developed to execute configured strategies through brokerage connections. The beta currently supports eligible paper-trading workflows.'},
+  {title:'One-click automated trading',body:'The platform is being developed to execute configured strategies through brokerage connections. The beta currently supports eligible paper-trading workflows.'},
   {title:'Portfolio monitoring',body:'Users can inspect recorded holdings, orders, and changes in portfolio value within supported beta workflows.'},
   {title:'Strategy testing and reporting',body:'Historical tests and simulated trading records provide performance comparisons, market benchmarks, and documented limitations.'},
 ]

@@ -119,24 +119,6 @@ export function buildStocksNarrativeSummary(discovery) {
 }
 
 /**
- * Primary Surface 3 — Strategies (`/strategies`)
- * Answers: "What investment approaches can I explore?"
- */
-export function buildLeaderboardNarrativeSummary(board) {
-  if (!board || !Array.isArray(board.entries) || board.entries.length === 0) {
-    return null
-  }
-  const ranked = board.entries.filter((e) => e.rank != null && e.returnPct != null)
-  if (ranked.length === 0) {
-    return `None of the ${board.summary?.totalStrategies ?? board.entries.length} listed strategies have completed ranked test results in this view yet.`
-  }
-  const leader = ranked[0]
-  const ddText = leader.maxDrawdownPct != null ? ` with a −${pct(leader.maxDrawdownPct, 2)} maximum drawdown` : ''
-  const pendingCount = board.summary?.pendingOrForwardOnlyCount ?? 0
-  return `Across ${ranked.length} ranked approaches, ${leader.name} (${leader.categoryLabel}) leads on risk-adjusted return at ${signedPct(leader.returnPct)} over ${leader.horizon}${ddText}.${pendingCount > 0 ? ` ${plural(pendingCount, 'forward paper strategy')} ${pendingCount === 1 ? 'is' : 'are'} still building sample size.` : ''}`
-}
-
-/**
  * Primary Surface 4 — My Bots (`/bots`)
  * Answers: "What automated systems have I configured, and what are they doing?"
  */

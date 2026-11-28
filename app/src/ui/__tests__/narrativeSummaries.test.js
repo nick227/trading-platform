@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   buildBotsNarrativeSummary,
   buildFlagshipNarrativeSummary,
-  buildLeaderboardNarrativeSummary,
   buildPerformanceIntelNarrative,
   buildPortfolioIntelNarrative,
   buildPortfolioNarrativeSummary,
@@ -51,15 +50,6 @@ describe('deterministic narrative summaries (zero LLM calls)', () => {
     })
     expect(stocksText).toContain('Healthcare leads with 87.5% positive 20-day breadth (led by LLY)')
     expect(stocksText).toContain('Top-ranked candidate is LLY')
-
-    const boardText = buildLeaderboardNarrativeSummary({
-      summary: { totalStrategies: 3, pendingOrForwardOnlyCount: 1 },
-      entries: [
-        { rank: 1, name: 'Momentum Buy', categoryLabel: 'Rule-Based', returnPct: 16.0, maxDrawdownPct: 8.0, horizon: 'Historical 5Y' }
-      ]
-    })
-    expect(boardText).toContain('Momentum Buy (Rule-Based) leads on risk-adjusted return at +16.00%')
-    expect(boardText).toContain('1 forward paper strategy is still building sample size')
 
     expect(
       buildBotsNarrativeSummary([

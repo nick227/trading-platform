@@ -5,7 +5,7 @@ const FAQ = [
   {q:'When will TradeLoom support real-money trading?',a:'TradeLoom is being developed for live brokerage execution, with access intended for a future Premium membership. Live trading, deposits, and a launch date are not currently available.'},
   {q:'Can I inspect results before registering?',a:'Yes. Published strategy evidence, including negative and incomplete results, is available without an account.'},
   {q:'Are stock research rankings buy recommendations?',a:'No. Rankings are research observations; they are not personalized investment advice or predictions of returns.'},
-  {q:'Are TradeLoom accounts free during beta?',a:'Yes. All accounts are currently free during beta development. Paid memberships are planned for commercial release, but pricing and subscription terms have not been announced.'},
+  {q:'Are TradeLoom accounts free during beta?',a:'Yes. All accounts are free during beta Paid memberships are planned for commercial release, but pricing and subscription terms have not been announced.'},
   {q:'What trading capabilities are available now?',a:'The beta includes available stock research, strategy evaluation, and supported paper-trading workflows. Live brokerage orders and deposits are not yet available.'},
   {q:'Do historical tests predict investment returns?',a:'No. Historical testing and simulated orders do not reflect actual customer investment returns or predict how a strategy will perform in live markets.'},
 ]

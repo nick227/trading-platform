@@ -76,7 +76,7 @@ export default function LiveBotsSection() {
     <section className="tl-public-section" id="public-live-evidence" aria-labelledby="live-evidence-title">
       <header className="tl-public-section-head">
         <p className="tl-public-eyebrow">PUBLISHED STRATEGY EVIDENCE</p>
-        <h2 id="live-evidence-title">Review the performance of our automated trading strategies.</h2>
+        <h2 id="live-evidence-title">Review our performance</h2>
         <p>Explore published strategy results, compare historical performance, and inspect the trading activity recorded during supported simulations. Historical and forward paper observations are identified separately, including losses and incomplete records.</p>
       </header>
       <div className="tl-public-evidence-area">{visible ? <StrategyEvidence/> : <div className="tl-public-panel tl-public-result-state" aria-hidden="true">Strategy evidence</div>}</div>

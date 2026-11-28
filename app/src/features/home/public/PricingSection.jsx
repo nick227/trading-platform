@@ -3,7 +3,7 @@ export default function PricingSection() {
     <section className="tl-public-section" id="pricing" aria-labelledby="pricing-title">
       <header className="tl-public-section-head">
         <p className="tl-public-eyebrow">MEMBERSHIP</p>
-        <h2 id="pricing-title">All accounts are currently free during beta development.</h2>
+        <h2 id="pricing-title">All accounts are free during beta</h2>
         <p>TradeLoom is available without a subscription while the platform is being developed and tested. Paid memberships are planned for commercial release, with Premium intended to provide access to real-money brokerage trading when that capability becomes available.</p>
       </header>
       <div className="tl-public-plan-grid">
