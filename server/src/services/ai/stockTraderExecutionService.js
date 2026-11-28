@@ -12,6 +12,14 @@ import { nextStockTraderSession } from './stockTraderTradingSession.js'
 import { reconcileStockTraderFills, calculateStockTraderSessionRealizedPnl, STOCK_TRADER_ACTIVE_ORDER_STATUSES } from './stockTraderAccounting.js'
 import { evaluateStockTraderPaperProposal } from './stockTraderRiskPolicy.js'
 import { AI_STOCK_TRADER_STRATEGY_ID } from './strategies/aiStockTraderStrategy.js'
+import {
+  AUTHORIZATION_MODES,
+  buildAuthorizationEnvelope,
+  buildMarketObservation,
+  evaluateAndReserveTradeIntentTx,
+  EXECUTION_TIMINGS
+} from '../../policy/centralPolicyEngine.js'
+import { MARKET_LATENCY_CLASSES } from '../../execution/providers/ExecutionProvider.js'
 
 const money = value => Math.round(value * 100) / 100
 
@@ -128,8 +136,37 @@ export async function queueStockTraderPaperOrders({
         }
         if (!caps?.allowed) return { reason: caps?.reason || 'risk_policy_denied' }
 
+        const executionId = `exec_stock_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+        const policyRes = await evaluateAndReserveTradeIntentTx(tx, {
+          executionId,
+          userId: bot.userId,
+          portfolioId: bot.portfolioId,
+          botId: bot.id,
+          preloadedPortfolio: portfolio,
+          preloadedBot: bot,
+          symbol: intent.symbol,
+          side: intent.action.toLowerCase(),
+          quantity: plan.quantity,
+          referencePrice: price,
+          executionTiming: EXECUTION_TIMINGS.NEXT_OPEN,
+          authorization: buildAuthorizationEnvelope({
+            authorizationMode: AUTHORIZATION_MODES.PLATFORM_SIM_SHOWCASE,
+            actorUserId: bot.userId,
+            botId: bot.id,
+            mandatePayload: { strategyId: AI_STOCK_TRADER_STRATEGY_ID, asOfSession: screening.asOfSession }
+          }),
+          marketObservation: buildMarketObservation({
+            symbol: intent.symbol,
+            price,
+            asOfSession: screening.asOfSession,
+            source: 'alpha-engine',
+            latencyClass: MARKET_LATENCY_CLASSES.SESSION_CLOSE
+          })
+        })
+        if (!policyRes.allowed) return { reason: policyRes.reason }
+
         const execution = {
-          id: `exec_stock_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+          id: executionId,
           userId: bot.userId,
           portfolioId: bot.portfolioId,
           botId: bot.id,

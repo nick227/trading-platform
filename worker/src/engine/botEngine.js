@@ -25,6 +25,14 @@ import { computeBuyQuantity as coreBuyQuantity, deriveDirection, exitQuantity, e
 import { priceChangeDecision, relativeVolumeDecision, stopLossDecision } from './rules/marketConditions.js'
 import { isResearchDriven, resolveResearchPolicy, evaluateResearchDecision } from './researchDecision.js'
 import { currentSimSession, simulationConfig } from '../../../server/src/services/simulationService.js'
+import {
+  AUTHORIZATION_MODES,
+  buildAuthorizationEnvelope,
+  buildMarketObservation,
+  evaluateAndReserveTradeIntentTx,
+  EXECUTION_TIMINGS
+} from '../../../server/src/policy/centralPolicyEngine.js'
+import { MARKET_LATENCY_CLASSES } from '../../../server/src/execution/providers/ExecutionProvider.js'
 
 /** The simulator session now (fixed for replay, latest close for paper_daily); null if none. */
 async function simSessionOrNull(sim = simulationConfig()) {
@@ -651,6 +659,44 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
           const recheck = await evaluateCooldown(cooldownRule.config ?? {}, bot.id, ticker, { fresh: true, prismaClient: tx })
           if (!recheck.pass) throw Object.assign(new Error('cooldown_active'), { cooldownBlock: recheck })
         }
+
+        // Central Policy & Atomic Portfolio Reservation Gate (P4)
+        const nowAt = botEngineConfig.now()
+        const policyOutcome = await evaluateAndReserveTradeIntentTx(tx, {
+          executionId,
+          userId: bot.userId,
+          portfolioId: bot.portfolioId,
+          botId: bot.id,
+          symbol: ticker,
+          side: direction,
+          quantity,
+          referencePrice: tick.last,
+          executionTiming: simCfg.enabled ? EXECUTION_TIMINGS.SESSION_CLOSE : EXECUTION_TIMINGS.IMMEDIATE,
+          authorization: buildAuthorizationEnvelope({
+            authorizationMode: AUTHORIZATION_MODES.USER_RULE_MANDATE,
+            actorUserId: bot.userId,
+            botId: bot.id,
+            mandatePayload: { botId: bot.id, rulesCount: (bot.rules ?? []).length },
+            authorizedAt: nowAt
+          }),
+          marketObservation: buildMarketObservation({
+            symbol: ticker,
+            price: tick.last,
+            bid: tick.bid ?? null,
+            ask: tick.ask ?? null,
+            observedAt: nowAt,
+            asOfSession: simSession ?? new Date(nowAt).toISOString().slice(0, 10),
+            source: simCfg.enabled ? 'alpha-engine' : 'alpaca-stream',
+            latencyClass: simCfg.enabled
+              ? (simCfg.mode === 'historical_replay' ? MARKET_LATENCY_CLASSES.HISTORICAL_REPLAY : MARKET_LATENCY_CLASSES.SESSION_CLOSE)
+              : MARKET_LATENCY_CLASSES.REALTIME_STREAM
+          }),
+          now: nowAt
+        })
+        if (!policyOutcome.allowed) {
+          throw Object.assign(new Error(policyOutcome.reason), { policyBlock: policyOutcome })
+        }
+
         execution = await tx.execution.create({
           data: {
             id:            executionId,
@@ -691,6 +737,15 @@ async function createExecution(bot, ticker, evaluationResult, tick, context) {
   } catch (err) {
     if (err?.cooldownBlock) {
       await maybeLogRuleBlock(bot, ticker, direction, cooldownRule, err.cooldownBlock)
+      return
+    }
+    if (err?.policyBlock) {
+      await logBotEvent(bot, 'execution_blocked_by_risk', `Central policy blocked execution for ${ticker}: ${err.policyBlock.reason}`, ticker, {
+        signal,
+        confidence,
+        reason: err.policyBlock.reason,
+        policyDecision: err.policyBlock.decision
+      })
       return
     }
     if (isActiveIntentConflict(err)) {

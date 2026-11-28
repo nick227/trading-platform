@@ -5,6 +5,8 @@
  * an operator/reconciler must inspect needs_reconciliation before retry.
  * The worker token fences a delayed worker from overwriting another claim.
  */
+import { finalizeReservationForExecution } from '../../policy/centralPolicyEngine.js'
+
 export async function claimQueuedAiPaperExecution({
   prismaClient,
   executionId,
@@ -73,6 +75,11 @@ export async function completeClaimedAiPaperExecution({
           ...(fill.marketObservation ? { marketObservation: fill.marketObservation } : {})
         }
       }
+    })
+    await finalizeReservationForExecution(tx, {
+      executionId: execution.id,
+      status: 'filled',
+      reason: 'settled_simulated_fill'
     })
     return true
   })

@@ -12,6 +12,7 @@ import { calculateFillPnl } from '../../../server/src/services/botAccountingServ
 import { simulationConfig } from '../../../server/src/services/simulationService.js'
 import { resolveExecutionProviderForPortfolio } from '../../../server/src/execution/providerRegistry.js'
 import { LiveExecutionDisabledError } from '../../../server/src/execution/providers/ExecutionProvider.js'
+import { finalizeReservationForExecution } from '../../../server/src/policy/centralPolicyEngine.js'
 
 /**
  * AI paper executions (Personal AI Trader, Copilot proposals, Flagship AI Trader)
@@ -578,6 +579,12 @@ async function finalize(execution, status, cancelReason, fillData = {}, { refusa
     ...(cancelReason ? { cancelReason } : {}),
     ...fillData
   }, auditFor(eventType, `${status}${cancelReason ? ` (${cancelReason})` : fillData.refusalReason ? ` (${fillData.refusalReason})` : ''}`, { cancelReason, ...fillData, ...(metrics ? { metrics } : {}), ...(error ? { error } : {}) }))
+
+  await finalizeReservationForExecution(prisma, {
+    executionId: execution.id,
+    status,
+    reason: cancelReason ?? fillData?.refusalReason ?? status
+  }).catch(() => {})
 
   if (refusal && execution.botId) await recordBotRefusal(execution, fillData.refusalReason, metrics)
 

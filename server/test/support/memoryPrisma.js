@@ -100,6 +100,8 @@ const UNIQUE = {
   backtestRun: ['activeKey'],
   portfolioCashEntry: ['externalActivityId'],
   positionLot: ['openExecutionId', 'externalPositionKey'],
+  tradeIntentRecord: ['executionId'],
+  portfolioCapitalReservation: ['intentId', 'executionId'],
   strategyEvidence: [],
 }
 

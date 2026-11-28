@@ -3,6 +3,7 @@ import prisma from '../loaders/prisma.js'
 import { generateId, ID_PREFIXES } from '../utils/idGenerator.js'
 import { validateEventMetadata } from '../utils/validation.js'
 import { buildExecutionWhere } from '../utils/pagination.js'
+import { finalizeReservationForExecution } from '../policy/centralPolicyEngine.js'
 
 function buildClientOrderId(executionId) {
   return `tp_${executionId}`
@@ -126,6 +127,11 @@ export default {
       })
       if (direct.count === 1) {
         await audit('cancelled', `Cancelled by the user before it was sent (${execution.ticker})`)
+        await finalizeReservationForExecution(tx, {
+          executionId: id,
+          status: 'cancelled',
+          reason: 'user_cancel'
+        })
         return { ...(await tx.execution.findUnique({ where: { id } })), cancelOutcome: 'cancelled' }
       }
 

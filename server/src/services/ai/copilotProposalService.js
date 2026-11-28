@@ -20,6 +20,14 @@ import { isExchangeEarlyClose, isExchangeTradingDay } from '../../utils/marketCa
 import { nextStockTraderSession } from './stockTraderTradingSession.js'
 import { evaluateStockTraderPaperProposal } from './stockTraderRiskPolicy.js'
 import {
+  AUTHORIZATION_MODES,
+  buildAuthorizationEnvelope,
+  buildMarketObservation,
+  evaluateAndReserveTradeIntentTx,
+  EXECUTION_TIMINGS
+} from '../../policy/centralPolicyEngine.js'
+import { MARKET_LATENCY_CLASSES } from '../../execution/providers/ExecutionProvider.js'
+import {
   STOCK_TRADER_ACTIVE_ORDER_STATUSES,
   calculateStockTraderSessionRealizedPnl,
   reconcileStockTraderFills
@@ -303,6 +311,43 @@ async function admitProposalPaperExecutionTx(tx, {
   }
 
   const executionId = `exec_cprop_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+
+  // Central Policy, Authorization Provenance & Atomic Reservation Gate (P4)
+  const authMode = nextStatus === 'approved'
+    ? AUTHORIZATION_MODES.USER_EXPLICIT_PROPOSAL_APPROVAL
+    : AUTHORIZATION_MODES.PAPER_VETO_SIM_ONLY
+  const policyRes = await evaluateAndReserveTradeIntentTx(tx, {
+    executionId,
+    userId: proposal.userId,
+    portfolioId: proposal.portfolioId,
+    botId: proposal.botId,
+    proposalId: proposal.id,
+    symbol: proposal.symbol,
+    side: proposal.action.toLowerCase(),
+    quantity: riskPlan.quantity,
+    referencePrice: executionPrice,
+    executionTiming: EXECUTION_TIMINGS.NEXT_OPEN,
+    authorization: buildAuthorizationEnvelope({
+      authorizationMode: authMode,
+      actorUserId: proposal.userId,
+      botId: proposal.botId,
+      proposalId: proposal.id,
+      mandatePayload: { approvalMode: proposal.approvalMode, signalSession: proposal.signalSession },
+      authorizedAt: now
+    }),
+    marketObservation: buildMarketObservation({
+      symbol: proposal.symbol,
+      price: executionPrice,
+      observedAt: now,
+      asOfSession: proposal.signalSession,
+      source: 'alpha-engine',
+      latencyClass: MARKET_LATENCY_CLASSES.SESSION_CLOSE
+    }),
+    now
+  })
+  if (!policyRes.allowed) {
+    return { admitted: false, reason: `central_policy_blocked:${policyRes.reason}` }
+  }
 
   // Atomic compare-and-swap on CopilotProposal BEFORE creating Execution
   const cas = await tx.copilotProposal.updateMany({

@@ -1103,3 +1103,50 @@ model PortfolioDailySnapshot {
   @@unique([portfolioId, sessionDate])
   @@index([userId, sessionDate])
 }
+
+model TradeIntentRecord {
+  id                   String   @id @db.VarChar(191)
+  userId               String   @db.VarChar(191)
+  portfolioId          String   @db.VarChar(191)
+  botId                String?  @db.VarChar(191)
+  proposalId           String?  @db.VarChar(191)
+  symbol               String   @db.VarChar(24)
+  side                 String   @db.VarChar(8)
+  quantityMicros       BigInt
+  referencePriceMicros BigInt
+  notionalMicros       BigInt
+  executionTiming      String   @db.VarChar(24)
+  authorization        Json
+  marketObservation    Json
+  policyDecision       Json
+  status               String   @db.VarChar(24) // approved | rejected
+  rejectionReason      String?  @db.VarChar(191)
+  executionId          String?  @unique @db.VarChar(191)
+  createdAt            DateTime @default(now())
+
+  @@index([portfolioId, createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model PortfolioCapitalReservation {
+  id                 String   @id @db.VarChar(191)
+  portfolioId        String   @db.VarChar(191)
+  userId             String   @db.VarChar(191)
+  intentId           String   @unique @db.VarChar(191)
+  executionId        String?  @unique @db.VarChar(191)
+  ownerType          String   @db.VarChar(32) // bot | manual_platform
+  ownerId            String   @db.VarChar(191)
+  side               String   @db.VarChar(8)  // buy | sell
+  symbol             String   @db.VarChar(24)
+  reservedCashMicros BigInt   @default(0)
+  reservedQtyMicros  BigInt   @default(0)
+  status             String   @default("active") @db.VarChar(24) // active | settled | released
+  releasedReason     String?  @db.VarChar(128)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([portfolioId, status])
+  @@index([portfolioId, symbol, status])
+  @@index([userId, status])
+}
