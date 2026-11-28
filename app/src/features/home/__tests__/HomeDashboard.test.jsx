@@ -75,19 +75,19 @@ beforeEach(() => {
 })
 
 describe('HomeDashboard', () => {
-  it('shows the reconciled portfolio value, change and composition', async () => {
+  it('prioritizes account totals and an investments table without bot setup', async () => {
     mockApi()
     renderPortfolio()
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('$99,966.75')
     expect(screen.getByTestId('portfolio-total-pnl')).toHaveTextContent('−$33.25 (−0.03%)')
-    expect(screen.getByText('since you started with $100,000')).toBeInTheDocument()
-    expect(screen.getByTestId('as-of')).toHaveTextContent('Valued at Nov 20 closing prices · simulated fills replay the Nov 19 close')
-    // Two sessions are shown as values, not as a misleading line chart.
-    expect(screen.getByTestId('value-compare')).toHaveTextContent('Nov 19 close$100,000.00')
-    expect(screen.getByText('Simulated portfolio')).toBeInTheDocument()
-    expect(screen.getByText('Cash').nextSibling).toHaveTextContent('$98,253.95')
-    // With only two sessions the one-day change equals the total, so it isn't repeated.
-    expect(screen.queryByTestId('balance-today')).not.toBeInTheDocument()
+    expect(screen.getByText('Available cash').nextSibling).toHaveTextContent('$98,253.95')
+    expect(screen.getByText('Invested').nextSibling).toHaveTextContent('$1,712.80')
+    expect(screen.getByTestId('as-of')).toHaveTextContent('Valued at Nov 20 closing prices')
+    expect(screen.getByTestId('holdings-table')).toHaveTextContent('AAPL')
+    expect(screen.queryByRole('link',{name:/Create bot|Build a bot/})).not.toBeInTheDocument()
+    expect(screen.queryByText('Personal AI Trader')).not.toBeInTheDocument()
+    expect(get).not.toHaveBeenCalledWith('/account/value-history', expect.anything())
+    expect(get).not.toHaveBeenCalledWith('/executions', expect.anything())
   })
 
   it('summarizes enabled and paused bots and updates after a pause', async () => {
@@ -104,18 +104,46 @@ describe('HomeDashboard', () => {
     expect(screen.getByText('Price Scout')).toBeInTheDocument()
   })
 
-  it('lists holdings from the valuation and expands one in place', async () => {
+  it('expands individual investments only when requested', async () => {
     mockApi()
     renderPortfolio()
     const row = await screen.findByTestId('holding-row')
     expect(row).toHaveTextContent('AAPL')
-    expect(row).toHaveTextContent('Momentum AAPL')
     expect(row).toHaveTextContent('−$33.25')
-    fireEvent.click(row)
+    expect(screen.queryByTestId('holding-detail-AAPL')).not.toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button',{name:/AAPL/}))
     const detail = await screen.findByTestId('holding-detail-AAPL')
     expect(within(detail).getByRole('link', { name: 'Build a bot for AAPL' })).toHaveAttribute('href', '/bots/new?ticker=AAPL')
-    expect(within(detail).queryByRole('link', { name: /Research AAPL/ })).not.toBeInTheDocument()
     expect(within(detail).getByRole('button', { name: 'Pause Momentum AAPL' })).toBeInTheDocument()
+  })
+
+  it('sorts multiple investments by value and reverses order on a second click', async () => {
+    mockApi({value: {...valuation, positions: [
+      valuation.positions[0],
+      {...valuation.positions[0], symbol:'MSFT', marketValue:4000, unrealizedPnl:42, unrealizedPct:1.1, bots:[]},
+      {...valuation.positions[0], symbol:'NVDA', marketValue:null, unrealizedPnl:null, unrealizedPct:null, bots:[]},
+    ]}})
+    renderPortfolio()
+    const rows = await screen.findAllByTestId('holding-row')
+    expect(rows.map(r=>within(r).getByRole('button').textContent)).toEqual(['MSFT▾','AAPL▾','NVDA▾'])
+    const valueHead = screen.getByRole('columnheader', {name:/Value/})
+    expect(valueHead).toHaveAttribute('aria-sort','descending')
+    fireEvent.click(within(valueHead).getByRole('button',{name:'Sort by Value'}))
+    expect(valueHead).toHaveAttribute('aria-sort','ascending')
+    expect(screen.getAllByTestId('holding-row').map(r=>within(r).getByRole('button').textContent))
+      .toEqual(['AAPL▾','MSFT▾','NVDA▾'])
+    fireEvent.click(screen.getByRole('button',{name:'Sort by Investment'}))
+    expect(screen.getAllByTestId('holding-row').map(r=>within(r).getByRole('button').textContent))
+      .toEqual(['AAPL▾','MSFT▾','NVDA▾'])
+  })
+
+  it('shows a calm investment empty state with no bot catalog', async () => {
+    mockApi({value:{...valuation, equity:100000, cash:100000, marketValue:0, positions:[], fillCount:0, totalPnl:0}})
+    renderPortfolio()
+    expect(await screen.findByTestId('balance-equity')).toHaveTextContent('$100,000.00')
+    expect(screen.getByTestId('holdings-table')).toHaveTextContent('No investments yet')
+    expect(screen.queryByRole('link',{name:/Create a bot|Build a bot/})).not.toBeInTheDocument()
+    expect(screen.queryByTestId('portfolio-total-pnl')).not.toBeInTheDocument()
   })
 
   it('shows bots with status, capital and exactly one control each', async () => {
