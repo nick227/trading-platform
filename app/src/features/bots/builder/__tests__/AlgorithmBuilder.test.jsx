@@ -291,7 +291,7 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     expect(screen.getByTestId('strategy-action')).toHaveTextContent('at least 5% over 20 trading sessions')
     expect(screen.getByLabelText('Required price increase (%)')).toHaveValue('5')
     expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Regular market hours only')
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('At most one trade per symbol every 1 hour')
+    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('At most one trade per symbol per hour')
     expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('100 shares')
     expect(screen.queryByLabelText('Trigger price ($)')).not.toBeInTheDocument()
     expect(form).not.toHaveTextContent("Uses the template's preset trading conditions")
