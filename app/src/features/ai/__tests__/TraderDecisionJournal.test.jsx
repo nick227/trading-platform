@@ -13,6 +13,9 @@ describe('recorded AI journal',()=>{
     expect(rows[0].filled).toBe(false)
     expect(rows[1].thesis).toBe('No safe entry')
   })
+  it('discards records without valid timestamps instead of inventing 1970 events',()=>{
+    expect(buildTraderJournal({research:[],orders:[{id:'missing',symbol:'AAPL',direction:'buy'}]})).toEqual([])
+  })
   it('labels paper orders and model proposals separately, with useful filters',()=>{
     render(<TraderDecisionJournal {...data}/>)
     expect(screen.getByText(/No filled quantity or price was confirmed/)).toBeInTheDocument()
