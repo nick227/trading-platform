@@ -17,6 +17,7 @@ import { useAuth } from './AuthProvider'
 import pageTitleService from '../services/pageTitleService'
 
 const AssetsIndex = lazy(() => import('../features/AssetsIndex'))
+const PortfolioPage = lazy(() => import('../features/home/PortfolioPage'))
 const StrategiesIndex = lazy(() => import('../features/strategies/StrategiesIndex'))
 const StockTraderDashboard = lazy(() => import('../features/ai/StockTraderDashboard'))
 const StockDiscoveryPage = lazy(() => import('../features/ai/StockDiscoveryPage'))
@@ -110,7 +111,7 @@ export function AppShell() {
         <Route path="/research" element={<Protected><Landing /></Protected>} />
         <Route path="/research-partners" element={<Protected><Suspense fallback={<PageSkeleton />}><ResearchPartnerWorkspace /></Suspense></Protected>} />
         <Route path="/opportunities" element={<Suspense fallback={<PageSkeleton />}><StockDiscoveryPage /></Suspense>} />
-        <Route path="/portfolio" element={<Navigate to="/#holdings" replace />} />
+        <Route path="/portfolio" element={<Protected><Suspense fallback={<PageSkeleton />}><PortfolioPage /></Suspense></Protected>} />
         <Route
           path="/assets"
           element={
