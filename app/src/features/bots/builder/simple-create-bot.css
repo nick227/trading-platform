@@ -58,3 +58,8 @@
 .tl-simple-builder__behavior ul { list-style: disc; padding-left: 19px; margin: 12px 0 0; display: grid; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--tl-ink-2); }
 .tl-simple-builder__settings-heading { font-size: 14px; font-weight: 680; margin: 4px 0 -6px; color: var(--tl-ink-2); }
 @media(max-width:700px) { .tl-simple-builder__behavior { padding: 16px; } }
+
+/* Available account funds are the allocation reference, not template capital. */
+.tl-simple-builder__heading .mode-badge { margin-left: auto; flex-shrink: 0; }
+.tl-simple-builder__balance { margin: 0; color: var(--tl-ink-2); font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.tl-simple-builder__balance strong { color: var(--tl-ink); font-weight: 680; }

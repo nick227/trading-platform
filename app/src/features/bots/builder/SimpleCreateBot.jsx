@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { get, post } from '../../../api/client'
 import { useAuth } from '../../../app/AuthProvider'
-import { getTradingMode, isSimulated } from '../../../components/ModeBadge'
+import ModeBadge, { getTradingMode, isSimulated } from '../../../components/ModeBadge'
 import { Field, Input, Select } from '../../../components/ui/Field'
 import { describeAction, describeGuards } from '../../../ui/describeBot'
 import { buildBotFromDraft, createBotConfiguration, formatDesiredRules, initCreateDraft, mapServerValidationError, validateBuilderDraft } from './builderModel'
@@ -273,7 +273,10 @@ export default function SimpleCreateBot() {
 
   return <main className="tl-page tl-simple-builder" data-testid="algorithm-builder">
     <Link to="/bots" className="tl-back">← My Bots</Link>
-    <header className="tl-simple-builder__heading"><h1>Add Bot</h1></header>
+    <header className="tl-simple-builder__heading">
+      <h1>Add Bot</h1>
+      <ModeBadge brokerStatus={brokerStatus} loading={brokerStatusLoading} error={brokerStatusError} />
+    </header>
     {modeBlocked && <div className="tl-notice tl-notice--warn" role="status">
       {mode === 'live-disabled' ? 'Real-money bot activation is not enabled yet.' :
         mode === 'checking' ? 'Checking your trading account.' :
@@ -312,9 +315,15 @@ export default function SimpleCreateBot() {
 
       <section className="tl-simple-builder__section" aria-labelledby="allocation-heading">
         <h2 id="allocation-heading">Investment allocation</h2>
+        <p className="tl-simple-builder__balance" data-testid="available-funds" role="status">
+          {Number.isFinite(data.buyingPower) && data.buyingPower >= 0
+            ? <>Available to trade: <strong>{amount(data.buyingPower)}</strong></>
+            : 'Available funds could not be verified.'}
+          {' · '}{simulated ? 'Simulation funds' : mode === 'paper' ? 'Paper trading funds' : mode === 'live-disabled' ? 'Real account · trading disabled' : 'Account status not verified'}
+        </p>
         <div className="tl-simple-builder__amount" data-error-field="capital">
           <Field label="Amount to allocate ($)" error={fieldError('capital')}
-            help="Your budget for this bot. It can place multiple trades without exceeding this allocation.">
+            help="The amount of your account's available funds assigned to this bot. It can place multiple trades within this budget.">
             {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
               <Input id={id} value={draft.capital} aria-invalid={invalid} aria-describedby={describedby}
                 inputMode="decimal" onChange={e => onCapitalChange(e.target.value)}
