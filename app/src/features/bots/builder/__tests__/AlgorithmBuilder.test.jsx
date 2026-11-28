@@ -224,7 +224,7 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     expect(await screen.findByLabelText('Minimum research score (0–100)')).toHaveValue('60')
     expect(screen.getByLabelText('Maximum research age (hours)')).toHaveValue('96')
     expect(screen.getByLabelText('Maximum price drift (%)')).toHaveValue('5')
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Only research that beat its baseline out of sample')
+    expect(screen.getByText('Must beat baseline in out-of-sample testing')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Minimum research score (0–100)'), { target: { value: '150' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(screen.getByText('Use a score from 0 to 100.')).toBeInTheDocument()
@@ -240,19 +240,37 @@ describe('Add Bot — simple strategy and stock configuration', () => {
   it('shows prefilled strategy-specific conditions and updates them on every strategy change', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_price')
-    expect(await screen.findByTestId('strategy-behavior')).toHaveTextContent('Buys AAPL when the price rises above $200')
+    expect(await screen.findByTestId('trading-condition-fields')).toBeInTheDocument()
     expect(screen.getByLabelText('Trigger price ($)')).toHaveValue('200')
+    expect(screen.queryByText('Strategy settings')).not.toBeInTheDocument()
     fireEvent.change(screen.getByTestId('template-select'), { target: { value: 'tmpl_golden_cross' } })
-    expect(screen.getByTestId('strategy-action')).toHaveTextContent('SPY trend is confirmed up')
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Regular market hours only')
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('At most one trade per symbol per day')
-    expect(screen.queryByText("Uses the template's preset trading conditions.")).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Market trend to follow')).toHaveValue('SPY')
+    expect(screen.getByLabelText('Trend confirmation periods')).toHaveValue('2')
+    expect(screen.getByLabelText('Trading hours')).toHaveValue('regular')
+    expect(screen.getByLabelText('Minimum hours between trades')).toHaveValue('24')
     expect(screen.queryByLabelText('Trigger price ($)')).not.toBeInTheDocument()
     fireEvent.change(screen.getByTestId('template-select'), { target: { value: 'tmpl_alpha_research' } })
-    expect(screen.getByTestId('strategy-action')).toHaveTextContent('Alpha Engine')
     expect(screen.getByLabelText('Minimum research score (0–100)')).toHaveValue('60')
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('score ≥ 60')
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Only research that beat its baseline out of sample')
+    expect(screen.getByText('Must beat baseline in out-of-sample testing')).toBeInTheDocument()
+  })
+
+  it('persists edits to trend, trading hours, and cooldown rules instead of leaving them as text', async () => {
+    mockApi()
+    post.mockResolvedValue({ id: 'bot_custom' })
+    renderBuilder('/bots/new?template=tmpl_golden_cross')
+    await screen.findByLabelText('Market trend to follow')
+    fireEvent.change(screen.getByLabelText('Market trend to follow'), { target: { value: 'QQQ' } })
+    fireEvent.change(screen.getByLabelText('Trend confirmation periods'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Minimum hours between trades'), { target: { value: '6' } })
+    fireEvent.change(screen.getByLabelText('Trading hours'), { target: { value: 'extended' } })
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
+      rules: expect.arrayContaining([
+        expect.objectContaining({ type: 'trend_filter', config: expect.objectContaining({ symbol: 'QQQ', confirmationBars: 3 }) }),
+        expect.objectContaining({ type: 'cooldown', config: expect.objectContaining({ windowMs: 21600000 }) }),
+        expect.objectContaining({ type: 'market_hours', config: expect.objectContaining({ allowPremarket: true, allowAfterHours: true }) }),
+      ]),
+    })))
   })
 
   it('restores valid template defaults if users clear a populated setting and leave the field', async () => {
@@ -275,8 +293,8 @@ describe('Add Bot — simple strategy and stock configuration', () => {
   it('explains allocated budget rather than an unexplained investment limit', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_price')
-    await screen.findByTestId('strategy-behavior')
-    expect(screen.getByText(/Your budget for this bot/)).toBeInTheDocument()
+    await screen.findByTestId('trading-condition-fields')
+    expect(screen.getByText(/amount of your account's available funds assigned to this bot/i)).toBeInTheDocument()
     expect(screen.getByText(/Maximum for one trade: \$500/)).toBeInTheDocument()
   })
 
@@ -314,11 +332,11 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     const input = await screen.findByLabelText('Trigger price ($)')
     expect(screen.getByTestId('submit-builder-btn')).toBeDisabled()
     await waitFor(() => expect(input).toHaveValue('355.12'))
-    expect(screen.getByTestId('strategy-action')).toHaveTextContent('price rises above $355.12')
+    expect(input).toHaveValue('355.12')
     expect(screen.getByText(/From latest available market price/)).toBeInTheDocument()
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('Regular market hours only')
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('At most one trade per symbol per hour')
-    expect(screen.getByTestId('strategy-conditions')).toHaveTextContent('100 shares')
+    expect(screen.getByLabelText('Trading hours')).toHaveValue('regular')
+    expect(screen.getByLabelText('Minimum hours between trades')).toHaveValue('1')
+    expect(screen.getByLabelText('Maximum shares per stock')).toHaveValue('100')
     expect(screen.queryByText("Uses the template's preset trading conditions.")).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
@@ -345,9 +363,9 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     await waitFor(() => expect(input).toHaveValue('355.12'))
     fireEvent.change(screen.getByLabelText('Target stock'), { target: { value: 'AAPL' } })
     await waitFor(() => expect(input).toHaveValue('401.23'))
-    expect(screen.getByTestId('strategy-action')).toHaveTextContent('Buys AAPL')
+    expect(screen.getByLabelText('Target stock')).toHaveValue('AAPL')
     fireEvent.change(input, { target: { value: '410' } })
-    expect(screen.getByTestId('strategy-action')).toHaveTextContent('price rises above $410')
+    expect(input).toHaveValue('410')
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
       config: expect.objectContaining({ tickers: ['AAPL'] }),
