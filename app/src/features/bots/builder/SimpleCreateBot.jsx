@@ -145,11 +145,11 @@ export default function SimpleCreateBot() {
   if (loadError) return <main className="tl-page tl-simple-builder"><Link to="/bots" className="tl-back">← My Bots</Link><div role="alert">{loadError}</div></main>
   if (!data || !draft || !template) return <main className="tl-page tl-simple-builder" role="status">Loading strategies…</main>
 
-  const noUniverse = !stockOptions.length
+  const hasKnownUniverse = eligibleSymbols.length > 0
   const hasPrice = draft.triggerType === 'price_threshold'
   const hasResearch = draft.triggerType === 'alpha_research'
   const modeBlocked = mode !== 'paper'
-  const blocked = modeBlocked || !data.portfolioId || noUniverse
+  const blocked = modeBlocked || !data.portfolioId
   const settings = []
   if (hasPrice) settings.push({
     field: 'triggerPrice', label: 'Trigger price ($)', value: draft.trigger?.price,
@@ -219,15 +219,19 @@ export default function SimpleCreateBot() {
         </Field>
         <div data-error-field="symbols">
           <Field label="Target stock" error={fieldError('symbols')}>
-            {({ id }) => <Select id={id} data-testid="target-stock-select"
-              value={draft.symbolsText} onChange={e => chooseStock(e.target.value)}
-              disabled={noUniverse}>
-              {noUniverse && <option value="">No supported stocks available</option>}
-              {stockOptions.map(ticker => <option key={ticker} value={ticker}>{ticker}</option>)}
-            </Select>}
+            {({ id, 'aria-invalid': invalid, 'aria-describedby': describedby }) =>
+              hasKnownUniverse
+                ? <Select id={id} data-testid="target-stock-select" value={draft.symbolsText}
+                    aria-invalid={invalid} aria-describedby={describedby}
+                    onChange={e => chooseStock(e.target.value)}>
+                    {stockOptions.map(ticker => <option key={ticker} value={ticker}>{ticker}</option>)}
+                  </Select>
+                : <Input id={id} data-testid="target-stock-input" value={draft.symbolsText}
+                    autoComplete="off" spellCheck={false} aria-invalid={invalid} aria-describedby={describedby}
+                    onChange={e => chooseStock(e.target.value.toUpperCase().replace(/[^A-Z0-9.-]/g, ''))} />
+            }
           </Field>
         </div>
-        {noUniverse && <p role="alert" className="tl-field-error">No supported stocks are available for this account.</p>}
       </section>
 
       <section className="tl-simple-builder__section" aria-labelledby="allocation-heading">
