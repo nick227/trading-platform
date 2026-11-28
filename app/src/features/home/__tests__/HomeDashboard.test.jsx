@@ -3,6 +3,7 @@ import { render, screen, within, fireEvent, waitFor } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { del, get, getPage, post, put } from '../../../api/client'
 import HomeDashboard from '../HomeDashboard'
+import PortfolioPage from '../PortfolioPage'
 import { normalizeBot, normalizeValuation, toNumberOrNull } from '../homeApi'
 
 // Global setup stubs react-router-dom without Link/MemoryRouter; use the real module.
@@ -65,6 +66,7 @@ function mockApi({ value = valuation, botList = bots, executions = {}, events = 
 }
 
 const renderHome = (path = '/') => render(<MemoryRouter initialEntries={[path]}><HomeDashboard /></MemoryRouter>)
+const renderPortfolio = () => render(<MemoryRouter initialEntries={['/portfolio']}><PortfolioPage /></MemoryRouter>)
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -75,7 +77,7 @@ beforeEach(() => {
 describe('HomeDashboard', () => {
   it('shows the reconciled portfolio value, change and composition', async () => {
     mockApi()
-    renderHome()
+    renderPortfolio()
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('$99,966.75')
     expect(screen.getByTestId('portfolio-total-pnl')).toHaveTextContent('−$33.25 (−0.03%)')
     expect(screen.getByText('since you started with $100,000')).toBeInTheDocument()
@@ -104,7 +106,7 @@ describe('HomeDashboard', () => {
 
   it('lists holdings from the valuation and expands one in place', async () => {
     mockApi()
-    renderHome()
+    renderPortfolio()
     const row = await screen.findByTestId('holding-row')
     expect(row).toHaveTextContent('AAPL')
     expect(row).toHaveTextContent('Momentum AAPL')
@@ -166,7 +168,7 @@ describe('HomeDashboard', () => {
   it('does not load research dashboards', async () => {
     mockApi()
     renderHome()
-    await screen.findByTestId('balance-equity')
+    await screen.findByRole('link', { name: 'View portfolio' })
     const calledPaths = get.mock.calls.map(([p]) => p)
     expect(calledPaths.some((p) => /rank|recommend|signal|predict/.test(p))).toBe(false)
     // The general research dashboard isn't linked while it's being rebuilt.
@@ -176,7 +178,7 @@ describe('HomeDashboard', () => {
   it('shows unavailable values (not $0) and a connect prompt when no account is connected', async () => {
     authState.brokerStatus = { connected: false }
     mockApi({ value: { ...valuation, source: 'none', simulated: false, cash: null, equity: null, totalPnl: null, positions: [] } })
-    renderHome()
+    renderPortfolio()
     expect(await screen.findByTestId('balance-equity')).toHaveTextContent('—')
     expect(screen.queryByText(/\$0\.00/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Connect a paper account' })).toHaveAttribute('href', '/profile')
@@ -217,7 +219,7 @@ describe('HomeDashboard', () => {
     renderHome()
     expect(await screen.findByText('You don’t have any bots yet.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Build a bot' })).toHaveAttribute('href', '/bots')
-    expect(screen.getByTestId('portfolio-all-cash')).toHaveTextContent('All cash — $100,000.00 available to your bots')
+    expect(screen.getByRole('link', { name: 'View portfolio' })).toHaveAttribute('href', '/portfolio')
     // Sections with nothing to show stay out of the way.
     expect(screen.queryByRole('heading', { name: /Holdings/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Recent activity' })).not.toBeInTheDocument()
@@ -278,8 +280,8 @@ describe('HomeDashboard', () => {
   it('keeps the page usable when one source fails', async () => {
     mockApi({ value: new Error('HTTP 502') })
     renderHome()
-    expect(await screen.findByTestId('balance-equity')).toHaveTextContent('—')
-    expect(screen.getAllByRole('alert')[0]).toHaveTextContent('couldn’t be loaded')
+    expect(await screen.findByText('Portfolio value unavailable.')).toBeInTheDocument()
+    expect(screen.getAllByTestId('bot-card')).toHaveLength(2)
     expect(screen.getAllByTestId('bot-card')).toHaveLength(2)
   })
 })

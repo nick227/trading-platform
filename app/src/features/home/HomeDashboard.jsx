@@ -45,7 +45,7 @@ function ValueHistory({ points, startingCash }) {
   )
 }
 
-function Portfolio({ valuation, history, error, narrativeSummary = null, sinceLastChecked = null }) {
+export function Portfolio({ valuation, history, error, narrativeSummary = null, sinceLastChecked = null }) {
   if (error || !valuation) {
     return (
       <section className="tl-section" aria-labelledby="portfolio-title">
@@ -125,7 +125,7 @@ function concentration(v) {
   return <>Largest holding <strong>{top.symbol}</strong> · {((top.marketValue / v.marketValue) * 100).toFixed(0)}% of invested value</>
 }
 
-function Holdings({ valuation, bots, open, setOpen, busy, onToggleBot }) {
+export function Holdings({ valuation, bots, open, setOpen, busy, onToggleBot }) {
   const positions = valuation?.positions ?? []
   if (positions.length === 0) return null
   const botName = (id) => bots.find((b) => b.id === id)?.name ?? 'Stopped bot'
@@ -346,13 +346,16 @@ export default function HomeDashboard() {
       ) : (
         <>
           <div className={`tl-workshop-dashboard${data.bots.length ? '' : ' tl-workshop-dashboard--empty'}`}>
-            <Portfolio
-              valuation={data.valuation}
-              history={data.history}
-              error={data.valuationError}
-              narrativeSummary={narrativeSummary}
-              sinceLastChecked={sinceLastChecked}
-            />
+            <section className="tl-section" aria-label="Portfolio overview">
+              <div className="tl-section-head">
+                <h2 className="tl-section-title">Portfolio</h2>
+                <Link to="/portfolio" className="tl-btn tl-btn--secondary">View portfolio</Link>
+              </div>
+              {data.valuationError || !data.valuation
+                ? <p role="alert">Portfolio value unavailable.</p>
+                : <p className="tl-hero-value">{money(data.valuation.equity)}</p>}
+              <p className="tl-section-note">View holdings, returns and valuation history in Portfolio.</p>
+            </section>
             <CopilotProposalsInbox onResolved={refresh} onCountChange={setActionableProposalsCount} />
             <PersonalAiTraderCard compact onUpdated={refresh} />
           </div>
@@ -374,7 +377,7 @@ export default function HomeDashboard() {
           {data.bots.length > 0 && <SafetyBar stop={stop} onActivate={onActivate} fact={concentration(data.valuation)} />}
           {data.bots.length === 0 && !data.botsError && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
           {(data.bots.length > 0 || data.botsError) && <MyBots bots={data.bots} error={data.botsError} controls={controls} />}
-          <Holdings valuation={data.valuation} bots={data.bots} open={open} setOpen={setOpen} busy={controls.busy} onToggleBot={controls.toggle} />
+
           <p className="tl-small tl-faint tl-flow-footer">
             {data.valuation?.simulated
               ? `Simulated money · ${data.valuation?.simMode === 'paper_daily' ? 'bots act once per trading day at the close' : 'fills replay historical closes'}, not broker executions · research is an input, not a recommendation.`
