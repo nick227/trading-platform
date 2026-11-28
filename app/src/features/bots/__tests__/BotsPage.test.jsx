@@ -34,6 +34,7 @@ function mockApi({ bots = [], platformRows = platform, catalogData = catalog, ev
     if (path === '/bots/catalog') return catalogData
     if (path === '/strategies/platform') { if (platformRows instanceof Error) throw platformRows; return platformRows }
     if (path === '/bots') return bots
+    if (path === '/ai/personal-trader') return { lifecycle: { badge: 'Ready', headline: 'Configured', whatHappensNext: 'The next paper session.' }, configured: true, bot: { enabled: true, personalMandate: { riskProfile: 'balanced', sectors: ['Technology'], approvalMode: 'paper_veto_1s' } }, portfolio: { startingCash: 10000 }, options: { riskProfiles: [], sectors: [], approvalModes: [] } }
     if (path === '/executions') return []
     if (/^\/bots\/[^/]+\/events$/.test(path)) return params.type ? [] : []
     throw new Error(`unexpected GET ${path}`)
@@ -121,6 +122,19 @@ describe('BotsPage', () => {
     expect(cards.every(card => card.classList.contains('tl-strategy-card'))).toBe(true)
     expect(within(cards[2]).getByText('AI-powered')).toBeInTheDocument()
     expect(within(cards[2]).queryByRole('link', { name: 'Customize' })).not.toBeInTheDocument()
+  })
+
+  it('offers a personal AI trading card with real in-place controls and no AI Trader route link', async () => {
+    mockApi()
+    renderPage()
+    const personal = await screen.findByTestId('personal-ai-strategy')
+    expect(personal).toHaveTextContent('Personal AI Stock Trader')
+    expect(personal).toHaveTextContent('AI-powered')
+    expect(within(personal).queryByTestId('personal-ai-trader-card')).not.toBeInTheDocument()
+    fireEvent.click(within(personal).getByRole('button', { name: /Personal AI Stock Trader/ }))
+    expect(await within(personal).findByTestId('personal-ai-trader-card')).toBeInTheDocument()
+    expect(within(personal).getByTestId('personal-trader-edit-btn')).toBeInTheDocument()
+    expect(document.querySelector('a[href^="/ai-stock-trader"]')).toBeNull()
   })
 
   it('has exactly one Create action, and hides My bots and Activity for a new account', async () => {
