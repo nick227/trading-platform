@@ -343,3 +343,30 @@ button {
   .tl-trader-journal-filters .tl-btn, .tl-trader-story-links .tl-btn { flex: 1 1 100%; text-align: center; }
   .tl-trader-journal-entry { padding-left: 1.2rem; }
 }
+
+/* AI Trader redesign: the evidence record is primary, secondary analytics opt-in. */
+.tl-trader-story {
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  border: 1px solid var(--tl-border, #d3d9df);
+  border-radius: 1rem;
+}
+.tl-trader-story .tl-stats {
+  gap: clamp(1rem, 2vw, 2rem);
+  margin-top: 1.5rem;
+}
+#personal-ai-trader {
+  padding-block: clamp(1.25rem, 3vw, 2rem);
+}
+#personal-ai-trader > .tl-section-head { margin-bottom: 1.25rem; }
+.tl-trader-breakdown, .tl-trader-analysis {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+}
+.tl-trader-breakdown[open], .tl-trader-analysis[open] { padding-bottom: 1.5rem; }
+.tl-trader-analysis > .tl-section, .tl-trader-breakdown > .tl-section {
+  margin-top: 1rem;
+}
+@media (max-width: 640px) {
+  .tl-trader-story { padding: 1.25rem; }
+  .tl-trader-story .tl-stats { grid-template-columns: 1fr; }
+}
