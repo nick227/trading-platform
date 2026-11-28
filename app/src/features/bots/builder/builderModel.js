@@ -300,7 +300,7 @@ export function validateBuilderDraft(draft, { buyingPower = null, tradableSymbol
   } else if (maxOrderNum <= 0) {
     errors.maxPerOrder = 'Must be greater than $0.'
   } else if (capitalNum !== null && maxOrderNum > capitalNum) {
-    errors.maxPerOrder = 'Can’t be more than the bot’s simulated capital.'
+    errors.maxPerOrder = 'Can’t be more than the bot budget.'
   }
 
   // Trigger
