@@ -167,7 +167,7 @@ describe('builderModel', () => {
       }
 
       const errors = validateBuilderDraft(draft)
-      expect(errors.maxPerOrder).toBe('Can’t be more than the bot’s simulated capital.')
+      expect(errors.maxPerOrder).toBe('Can’t be more than the bot budget.')
     })
   })
 
