@@ -133,7 +133,7 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     expect(await screen.findByRole('heading', { name: 'Add Bot' })).toBeInTheDocument()
     expect(screen.getByLabelText('Target stock')).toHaveValue('AAPL')
     expect(screen.getByLabelText('Trigger price ($)')).toHaveValue('200')
-    expect(screen.getByLabelText('Amount to allocate ($)')).toHaveValue('3000')
+    expect(screen.getByLabelText('Bot budget ($)')).toHaveValue('3000')
     expect(screen.queryByLabelText('Bot name')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Stock symbols')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Review' })).not.toBeInTheDocument()
@@ -152,7 +152,7 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     expect(stock).toHaveValue('AAPL')
     fireEvent.change(stock, { target: { value: 'MSFT' } })
     fireEvent.change(screen.getByLabelText('Trigger price ($)'), { target: { value: '215' } })
-    fireEvent.change(screen.getByLabelText('Amount to allocate ($)'), { target: { value: '4000' } })
+    fireEvent.change(screen.getByLabelText('Bot budget ($)'), { target: { value: '4000' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
       name: 'Price Threshold Buy · MSFT',
@@ -208,7 +208,7 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     const stock = await screen.findByLabelText('Target stock')
     fireEvent.change(stock, { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('Trigger price ($)'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('Amount to allocate ($)'), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText('Bot budget ($)'), { target: { value: '0' } })
     fireEvent.click(screen.getByTestId('submit-builder-btn'))
     expect(screen.getByText('Add at least one symbol.')).toBeInTheDocument()
     expect(screen.getByText('Enter the price that should trigger an order.')).toBeInTheDocument()
@@ -280,7 +280,7 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     fireEvent.change(trigger, { target: { value: '' } })
     fireEvent.blur(trigger)
     expect(trigger).toHaveValue('200')
-    const capital = screen.getByLabelText('Amount to allocate ($)')
+    const capital = screen.getByLabelText('Bot budget ($)')
     fireEvent.change(capital, { target: { value: '' } })
     fireEvent.blur(capital)
     expect(capital).toHaveValue('3000')
@@ -290,12 +290,31 @@ describe('Add Bot — simple strategy and stock configuration', () => {
     expect(ticker).toHaveValue('AAPL')
   })
 
-  it('explains allocated budget rather than an unexplained investment limit', async () => {
+  it('presents bot budget and per-trade cap as editable values without redundant description', async () => {
     mockApi()
     renderBuilder('/bots/new?template=tmpl_price')
-    await screen.findByTestId('trading-condition-fields')
-    expect(screen.getByText(/amount of your account's available funds assigned to this bot/i)).toBeInTheDocument()
-    expect(screen.getByText(/Maximum for one trade: \$500/)).toBeInTheDocument()
+    expect(await screen.findByLabelText('Bot budget ($)')).toHaveValue('3000')
+    expect(screen.getByLabelText('Maximum per trade ($)')).toHaveValue('500')
+    expect(screen.queryByText(/amount of your account's available funds assigned to this bot/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Maximum for one trade:/)).not.toBeInTheDocument()
+  })
+
+  it('persists the edited per-trade limit and rejects limits exceeding the bot budget', async () => {
+    mockApi()
+    post.mockResolvedValue({ id: 'bot_budget' })
+    renderBuilder('/bots/new?template=tmpl_price')
+    const limit = await screen.findByLabelText('Maximum per trade ($)')
+    fireEvent.change(limit, { target: { value: '750' } })
+    fireEvent.change(screen.getByLabelText('Bot budget ($)'), { target: { value: '600' } })
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    expect(screen.getByText('Can’t be more than the bot budget.')).toBeInTheDocument()
+    expect(limit).toHaveValue('750')
+    expect(post).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Bot budget ($)'), { target: { value: '1200' } })
+    fireEvent.click(screen.getByTestId('submit-builder-btn'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/bots/configuration', expect.objectContaining({
+      config: expect.objectContaining({ allocatedAmount: 1200, maxOrderNotional: 750 }),
+    })))
   })
 
   it('shows account buying power and simulation mode alongside the prefilled allocation', async () => {
