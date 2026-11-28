@@ -40,7 +40,12 @@
 .tl-simple-builder__section-head p { font-size: 14px; line-height: 1.5; margin: 0; color: var(--tl-muted); max-width: 65ch; }
 .tl-simple-builder__settings { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px 24px; align-items: start; }
 .tl-simple-builder__account { font-size: 12px; color: var(--tl-muted); margin: 10px 0 22px; }
-.tl-simple-builder__settings .tl-field { min-width: 0; }
+.tl-simple-builder__settings > * { min-width: 0; }
+.tl-simple-builder__settings .tl-field { min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+.tl-simple-builder__settings .tl-label { display: flex; align-items: flex-end; min-height: 2.8em; line-height: 1.3; padding-bottom: 7px; }
+.tl-simple-builder__settings .tl-input { flex-shrink: 0; }
+.tl-simple-builder__settings .tl-help { margin-top: 6px; }
+.tl-simple-builder__settings .tl-field-error { margin-top: 6px; }
 @media(max-width:700px) {
  .tl-simple-builder__settings { grid-template-columns: minmax(0,1fr); gap: 16px; }
  .tl-simple-builder__facts { padding: 16px; }
@@ -48,7 +53,6 @@
 
 /* Remove duplicate narrative blocks; keep only actionable fields and compact factual metadata. */
 .tl-simple-builder__compact { color: var(--tl-muted); font-size: 13px; line-height: 1.4; margin: 0; }
-.tl-simple-builder__review-line { padding: 18px 0 8px; border-bottom: 0; font-variant-numeric: tabular-nums; }
 .tl-simple-builder__section-head { display: block; }
 
 /* Template conditions are the product: immediately readable, never hidden in a preset message. */
@@ -69,3 +73,7 @@
 .tl-simple-builder__fixed span { color: var(--tl-ink-2); font-size: 13px; font-weight: 600; }
 .tl-simple-builder__fixed strong { color: var(--tl-ink); font-size: 14px; font-weight: 600; line-height: 1.4; }
 .tl-simple-builder__fixed small { color: var(--tl-muted); font-size: 12px; }
+
+/* Non-editable template schedules occupy a full row, not a mismatched form column. */
+.tl-simple-builder__fixed { grid-column: 1 / -1; padding: 0; }
+@media (max-width: 700px) { .tl-simple-builder__settings .tl-label { min-height: 0; padding-bottom: 7px; } }
