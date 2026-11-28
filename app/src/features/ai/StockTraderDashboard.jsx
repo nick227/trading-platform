@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get } from '../../api/client'
 import { useAuth } from '../../app/AuthProvider'
+import { AiTradingIntroduction, AiTraderBotExplorer } from './AiTraderShowcase'
 import PersonalAiTraderCard from './PersonalAiTraderCard'
 import { money, signedMoney, ratioPct, sessionDate, shares, dateTime, tone } from '../../ui/format'
 import TraderCandidateEvidence from './TraderCandidateEvidence'
@@ -9,95 +10,68 @@ import TraderEquityHistory from './TraderEquityHistory'
 import TraderDecisionJournal from './TraderDecisionJournal'
 import PortfolioIntelligencePanel from './PortfolioIntelligencePanel'
 import PerformanceIntelligencePanel from './PerformanceIntelligencePanel'
-import AgentHeader from '../../ui/agents/AgentHeader'
-import { traderAgentStatus } from '../../ui/agents/agentExperience'
 import { buildFlagshipNarrativeSummary } from '../../ui/narrativeSummaries'
+
+const VIEWS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'research', label: 'Research' },
+  { id: 'decisions', label: 'Decisions' },
+  { id: 'trades', label: 'Trades & holdings' }
+]
 
 function Stat({ label, value, detail }) {
   return <div className="tl-stat"><dt>{label}</dt><dd>{value}<small>{detail}</small></dd></div>
 }
 
-export default function StockTraderDashboard() {
-  const { user, sessionLoading } = useAuth() || {}
-  const [state, setState] = useState({ status: 'loading', data: null })
-  const refresh = useCallback(() => {
-    setState(s => ({ ...s, status: 'loading' }))
-    get('/public/ai-stock-trader')
-      .then(data => setState({ status: 'ready', data }))
-      .catch(() => setState({ status: 'error', data: null }))
-  }, [])
-  useEffect(() => { refresh() }, [refresh])
-
-  const data = state.data
-  return <main className="tl-page tl-flow-page" data-testid="flagship-ai-dashboard">
-    <section className="tl-section">
-      <AgentHeader title="AI Stock Trader" kind="trader"
-        status={traderAgentStatus({ requestStatus: state.status, dataStatus: data?.status })}
-        description="Follow the AI’s recorded stock decisions and paper-trading performance."
-        detail="Public simulated trading record. Your Personal AI Trader is a separate account; simulated results do not predict future returns."
-        actions={<button type="button" className="tl-link-btn" onClick={refresh}
-          disabled={state.status === 'loading'}>Refresh</button>} />
-    </section>
-    {state.status === 'ready' && data?.status !== 'not_initialized' && data &&
-      <TraderStoryOverview data={data} />}
-    <section className="tl-section" id="personal-ai-trader" aria-label="Your Personal AI Trader">
-      <div className="tl-section-head"><div>
-        <h2 className="tl-section-title">Your AI Trader</h2>
-        <p className="tl-section-note">Set up a personal simulated trading bot with your own sector preferences, risk limits and approval settings. Its account is separate from the platform demonstration on this page.</p>
-      </div></div>
-      {sessionLoading ? <p role="status">Checking your account…</p>
-        : user ? <PersonalAiTraderCard />
-        : <div className="tl-flow-card">
-          <p>Sign in to configure your personal AI Trader. The public performance record on this page is not your account history.</p>
-          <a className="tl-btn tl-btn--primary" href="/auth">Sign in to get started</a>
-        </div>}
-    </section>
-
-    {state.status === 'loading' && <section className="tl-section" role="status">Loading paper-trading results…</section>}
-    {state.status === 'error' && <section className="tl-section" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</section>}
-    {state.status === 'ready' && data?.status === 'not_initialized' && <section className="tl-section" data-testid="flagship-uninitialized">
-      <h2 className="tl-section-title">Awaiting beta initialization</h2>
-      <p>There are no verified paper-trading results or AI research decisions to publish yet.</p>
-    </section>}
-    {state.status === 'ready' && data?.status !== 'not_initialized' && data && <>
-      <details className="tl-section tl-trader-technical tl-trader-breakdown" aria-label="Additional paper performance detail">
-        <summary>Show detailed paper performance figures</summary>
-      <section className="tl-section" id="ai-trader-history" aria-label="Paper portfolio performance">
-        <div className="tl-section-head">
-          <h2 className="tl-section-title">Paper performance</h2>
-          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-            {data.universePolicy && (
-              <span className="tl-tag" data-testid="flagship-universe-policy">
-                {data.universePolicy.dynamicDiscoveryEnabled
-                  ? `Dynamic universe (${data.universePolicy.baseSymbolsCount} core + up to ${data.universePolicy.maxPromotions} promoted)`
-                  : `Curated universe (${data.universePolicy.baseSymbolsCount} core)`}
-              </span>
-            )}
-            <span className="tl-tag">{data.status === 'enabled' ? 'Beta enabled' : 'Paused'}</span>
-          </div>
-        </div>
-        {buildFlagshipNarrativeSummary(data) && (
-          <p className="tl-lead-sentence" style={{ margin: '0.35rem 0 0.75rem' }} data-testid="flagship-narrative-summary">
-            {buildFlagshipNarrativeSummary(data)}
-          </p>
-        )}
-        <dl className="tl-stats tl-stats--3 tl-stat-grid--flush" data-testid="flagship-performance">
-          <Stat label="Allocated paper capital" value={money(data.capitalAllocated)} detail="Simulated" />
-          <Stat label="Total P&L" value={signedMoney(data.performance?.totalPnl)} detail={data.performance ? 'From recorded fills and current marks' : 'No verified fills yet'} />
-          <Stat label="Filled executions" value={data.performance?.fillCount ?? '—'} detail={data.performance ? 'Recorded paper fills' : 'No verified fills yet'} />
-        </dl>
-        {data.performance?.totalPnl === null || !data.performance ? <p className="tl-section-note">Portfolio return is not yet available from verified fill and price data.</p> : null}
-        {data.performance?.totalEquity != null && <p className="tl-section-note">Estimated paper equity: <strong>{money(data.performance.totalEquity)}</strong></p>}
-      </section>
-      </details>
-      <TraderEquityHistory intelligence={data.performanceIntelligence} initialCapital={data.capitalAllocated} />
-      <TraderDecisionJournal research={data.research} orders={data.orders}
-        intelligence={data.performanceIntelligence}/>
-      {data.discovery && <TraderCandidateEvidence discovery={data.discovery} research={data.research} />}
-      <details className="tl-section tl-trader-technical tl-trader-analysis"><summary>Additional performance and portfolio analysis</summary>
-      {data.performanceIntelligence && <PerformanceIntelligencePanel intelligence={data.performanceIntelligence} />}
-      {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
-      </details>
+function FlagshipDetails({ data, state, refresh }) {
+  const [view, setView] = useState('overview')
+  return <>
+    <div className="tl-ai-selected__actions">
+      <div className="tl-ai-view-nav" role="group" aria-label="Flagship information">
+        {VIEWS.map(item => <button key={item.id} type="button"
+          className={view === item.id ? 'tl-ai-view-nav__button is-active' : 'tl-ai-view-nav__button'}
+          aria-pressed={view === item.id} onClick={() => setView(item.id)}>{item.label}</button>)}
+      </div>
+      <button type="button" className="tl-btn tl-btn--secondary tl-ai-refresh"
+        disabled={state.status === 'loading'} onClick={refresh}>Refresh records</button>
+    </div>
+    {state.status === 'loading' && <div className="tl-ai-selected__empty" role="status">Loading the latest available paper-trading records…</div>}
+    {state.status === 'error' && <div className="tl-ai-selected__empty" role="alert">Paper-trading data is temporarily unavailable. Retry to see verified results.</div>}
+    {state.status === 'ready' && data?.status === 'not_initialized' && (
+      <div className="tl-ai-selected__empty" data-testid="flagship-uninitialized">
+        <h4>Awaiting beta initialization</h4>
+        <p>There are no verified paper-trading results or AI research decisions to publish yet. The flagship's activity, decisions and paper portfolio will appear here when recorded.</p>
+      </div>
+    )}
+    {state.status === 'ready' && data && data.status !== 'not_initialized' && <>
+      {view === 'overview' && <>
+        <TraderStoryOverview data={data} />
+        {buildFlagshipNarrativeSummary(data) &&
+          <p className="tl-ai-selected__record" data-testid="flagship-narrative-summary">{buildFlagshipNarrativeSummary(data)}</p>}
+        <TraderEquityHistory intelligence={data.performanceIntelligence} initialCapital={data.capitalAllocated} />
+        <details className="tl-ai-selected__details">
+          <summary>Detailed performance and comparisons</summary>
+          <section className="tl-section" id="ai-trader-history" aria-label="Paper portfolio performance">
+            <h4>Paper performance</h4>
+            {data.universePolicy && <span className="tl-tag" data-testid="flagship-universe-policy">
+              {data.universePolicy.dynamicDiscoveryEnabled
+                ? `Dynamic universe (${data.universePolicy.baseSymbolsCount} core + up to ${data.universePolicy.maxPromotions} promoted)`
+                : `Curated universe (${data.universePolicy.baseSymbolsCount} core)`}
+            </span>}
+            <dl className="tl-stats tl-stats--3 tl-stat-grid--flush" data-testid="flagship-performance">
+              <Stat label="Allocated paper capital" value={money(data.capitalAllocated)} detail="Simulated" />
+              <Stat label="Total P&L" value={signedMoney(data.performance?.totalPnl)}
+                detail={data.performance ? 'From recorded fills and available marks' : 'No verified fills yet'} />
+              <Stat label="Filled executions" value={data.performance?.fillCount ?? '—'}
+                detail={data.performance ? 'Recorded paper fills' : 'No verified fills yet'} />
+            </dl>
+          </section>
+          {data.performanceIntelligence && <PerformanceIntelligencePanel intelligence={data.performanceIntelligence} />}
+          {data.portfolioIntelligence && <PortfolioIntelligencePanel intelligence={data.portfolioIntelligence} />}
+        </details>
+      </>}
+      {view === 'research' && <>
+        {data.discovery && <TraderCandidateEvidence discovery={data.discovery} research={data.research} />}
       <details className="tl-section tl-trader-technical">
         <summary>Full technical research records</summary>
         <section className="tl-section" aria-labelledby="flagship-research-heading">
@@ -125,6 +99,11 @@ export default function StockTraderDashboard() {
         <p className="tl-section-note">Model conviction is not a calibrated probability of profit. Research proposals are not execution confirmations.</p>
       </section>
       </details>
+
+      </>}
+      {view === 'decisions' && <TraderDecisionJournal research={data.research} orders={data.orders}
+        intelligence={data.performanceIntelligence} />}
+      {view === 'trades' && <>
       <section className="tl-section" aria-label="Open paper positions">
         <div className="tl-section-head"><h2 className="tl-section-title">Holdings</h2></div>
         {!data.positions?.length ? <p data-testid="flagship-no-positions">No open paper positions.</p> :
@@ -153,6 +132,63 @@ export default function StockTraderDashboard() {
             </table>
           </details>}
       </section>
+
+      </>}
     </>}
+    <p className="tl-ai-selected__record">Public simulated account only. AI proposals are not confirmed executions. Historical results do not guarantee future returns.</p>
+  </>
+}
+
+export default function StockTraderDashboard() {
+  const { user, sessionLoading } = useAuth() || {}
+  const [selected, setSelected] = useState('flagship')
+  const [state, setState] = useState({ status: 'loading', data: null })
+  const [personalStatus, setPersonalStatus] = useState(null)
+
+  const refresh = useCallback(() => {
+    setState(s => ({ ...s, status: 'loading' }))
+    get('/public/ai-stock-trader')
+      .then(data => setState({ status: 'ready', data }))
+      .catch(() => setState({ status: 'error', data: null }))
+  }, [])
+  useEffect(() => { refresh() }, [refresh])
+
+  // Personal status is private: never request it for a guest.
+  useEffect(() => {
+    if (!user) { setPersonalStatus(null); return undefined }
+    let current = true
+    get('/ai/personal-trader')
+      .then(result => {
+        if (!current) return
+        const payload = result?.data ?? result
+        setPersonalStatus(payload?.lifecycle
+          ? { status: 'ready', configured: Boolean(payload.configured), enabled: payload.bot?.enabled === true }
+          : { status: 'unavailable' })
+      })
+      .catch(() => { if (current) setPersonalStatus({ status: 'unavailable' }) })
+    return () => { current = false }
+  }, [user?.id])
+
+  return <main className="tl-page tl-flow-page tl-ai-page" data-testid="flagship-ai-dashboard">
+    <AiTradingIntroduction />
+    <AiTraderBotExplorer selected={selected} onSelect={setSelected} user={user}
+      personalStatus={personalStatus} publicState={state.status} publicData={state.data}>
+      {selected === 'flagship' && <FlagshipDetails data={state.data} state={state} refresh={refresh} />}
+      {selected === 'personal' && <div className="tl-ai-personal-detail" id="personal-ai-trader">
+        {sessionLoading ? <p role="status">Checking your account…</p>
+          : user ? <PersonalAiTraderCard onStatusChange={setPersonalStatus} />
+            : <div className="tl-ai-selected__empty">
+              <h4>Make the research your own</h4>
+              <p>Choose the sectors your trader researches, how much risk you're comfortable with, and whether you want to approve simulated trades. Sign in to create your personal paper-trading account.</p>
+              <a className="tl-btn tl-btn--primary" href="/auth">Sign in to get started</a>
+            </div>}
+      </div>}
+      {(selected === 'catalyst' || selected === 'defensive') && <div className="tl-ai-selected__empty" data-testid="planned-ai-bot">
+        <h4>Planned concept</h4>
+        <p>This is an approach we're exploring, not an available trading system. There is no active bot, decision history or performance record for this concept.</p>
+        <p>Available AI strategies can be explored in the public catalog.</p>
+        <a href="/strategies" className="tl-btn tl-btn--secondary">Browse existing strategies</a>
+      </div>}
+    </AiTraderBotExplorer>
   </main>
 }
